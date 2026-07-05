@@ -3,8 +3,8 @@ import CompassPanel from './CompassPanel'
 export default function CentreDisplayPanel(): JSX.Element {
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
-      {/* Upper Media Panel (40% height) */}
-      <div className="h-2/5 rounded-xl border border-slate-700 bg-slate-950/90 p-4 shadow-lg shadow-slate-950/30">
+      {/* Upper Media Panel (30% height) */}
+      <div className="h-3/10 rounded-xl border border-slate-700 bg-slate-950/90 p-4 shadow-lg shadow-slate-950/30">
         <div className="flex h-full flex-col rounded-lg border border-dashed border-slate-700 bg-slate-900/60">
           <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
             <div>
@@ -26,8 +26,8 @@ export default function CentreDisplayPanel(): JSX.Element {
         </div>
       </div>
 
-      {/* Lower Compass Panel (60% height) */}
-      <div className="h-3/5 overflow-hidden rounded-xl">
+      {/* Lower Compass Panel (70% height) */}
+      <div className="h-7/10 overflow-hidden rounded-xl">
         <CompassPanel />
       </div>
     </div>
