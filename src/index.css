@@ -14,3 +14,31 @@ body {
 body {
   background: #0b1220;
 }
+
+/* Wind Arrow Colour Variants */
+.wind-arrow.arrow-green {
+  color: #10b981; /* emerald */
+}
+
+.wind-arrow.arrow-green .arrow-head,
+.wind-arrow.arrow-green .arrow-tail {
+  filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.7));
+}
+
+.wind-arrow.arrow-amber {
+  color: #f59e0b; /* amber */
+}
+
+.wind-arrow.arrow-amber .arrow-head,
+.wind-arrow.arrow-amber .arrow-tail {
+  filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.7));
+}
+
+.wind-arrow.arrow-red {
+  color: #ef4444; /* red */
+}
+
+.wind-arrow.arrow-red .arrow-head,
+.wind-arrow.arrow-red .arrow-tail {
+  filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.7));
+}

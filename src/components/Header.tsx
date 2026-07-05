@@ -24,34 +24,29 @@ export default function Header(): JSX.Element {
   })
 
   return (
-    <div className="grid h-full grid-cols-[2fr_1fr_1fr] gap-4 rounded-3xl border border-slate-700 bg-slate-950/85 px-6 py-5 shadow-xl shadow-slate-950/20">
-      <div className="flex flex-col justify-center gap-2">
-        <div className="text-sm uppercase tracking-[0.3em] text-slate-500">Shobdon Central</div>
-        <div className="text-4xl font-semibold text-white">Clubhouse Operations</div>
+    <div className="h-full w-full rounded-xl bg-gradient-to-r from-slate-800/60 via-slate-900/50 to-slate-800/50 p-4 shadow-lg" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: '12px' }}>
+      {/* Left - title */}
+      <div className="pl-4">
+        <div className="text-xs uppercase tracking-widest text-slate-300">SHOBDON CENTRAL</div>
+        <div className="mt-1 text-4xl font-extrabold text-white">Clubhouse</div>
       </div>
 
-      <div className="flex flex-col justify-center gap-3 border-x border-slate-700 px-4 text-right text-slate-300">
-        <div className="text-xs uppercase tracking-[0.25em] text-slate-500">Date</div>
-        <div className="text-2xl font-semibold text-white">{dateString}</div>
-        <div className="text-xs uppercase tracking-[0.25em] text-slate-500">Time</div>
-        <div className="text-3xl font-semibold text-white">{timeString}</div>
+      {/* Centre - date + large clock */}
+      <div className="text-center">
+        <div className="text-sm uppercase tracking-wider text-slate-300">{dateString}</div>
+        <div className="mt-1 text-5xl font-extrabold text-white">{timeString}</div>
       </div>
 
-      <div className="grid items-center gap-3 text-right">
-        <div className="rounded-3xl bg-slate-900/90 p-4 text-left text-slate-200">
-          <div className="text-xs uppercase tracking-[0.25em] text-slate-500">Current Runway</div>
-          <div className="mt-2 text-3xl font-semibold text-white">05/23</div>
+      {/* Right - source and runway */}
+      <div className="flex items-center justify-end gap-6 pr-4">
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-wider text-slate-300">Weather Source</div>
+          <div className="text-2xl font-bold text-white">Local Network</div>
         </div>
-        <div className="rounded-3xl bg-slate-900/90 p-4 text-left text-slate-200">
-          <div className="text-xs uppercase tracking-[0.25em] text-slate-500">Weather Status</div>
-          <div className="mt-2 text-3xl font-semibold text-white">VFR, light wind</div>
+        <div className="text-right">
+          <div className="text-xs uppercase tracking-wider text-slate-300">Runway</div>
+          <div className="text-3xl font-extrabold text-white">05/23</div>
         </div>
-        <Link
-          to={isConfigPage ? '/' : '/config'}
-          className="inline-flex justify-center rounded-full border border-slate-700 bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-500"
-        >
-          {isConfigPage ? 'Back to Dashboard' : 'Weather Config'}
-        </Link>
       </div>
     </div>
   )
