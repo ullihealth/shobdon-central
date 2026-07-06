@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { testAtcConnection } from '../../services/atcDiagnostics'
 import type { AtcConnectionTestResult } from '../../services/atcDiagnostics'
 import { CAPTURE_LOG_URL } from '../../config/captureEndpoint'
+import { setCaptureInProgress } from '../../services/captureActivity'
 
 interface AtcDeveloperToolsProps {
   stationUrl: string
@@ -141,12 +142,17 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
 
   async function handleCapture() {
     setStatus('working')
-    const result = await testAtcConnection(stationUrl, connectionTimeoutMs)
-    const nextReport = buildCaptureReport(stationUrl, result)
-    setReport(nextReport)
-    logCaptureRemotely(stationUrl, result, nextReport)
-    setClipboardOk(await copyToClipboard(nextReport))
-    setStatus('done')
+    setCaptureInProgress(true)
+    try {
+      const result = await testAtcConnection(stationUrl, connectionTimeoutMs)
+      const nextReport = buildCaptureReport(stationUrl, result)
+      setReport(nextReport)
+      logCaptureRemotely(stationUrl, result, nextReport)
+      setClipboardOk(await copyToClipboard(nextReport))
+      setStatus('done')
+    } finally {
+      setCaptureInProgress(false)
+    }
   }
 
   async function handleManualCopy() {

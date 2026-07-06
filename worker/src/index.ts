@@ -38,6 +38,50 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+// Remote-refresh trigger: a single-shot flag in the same KV namespace, gated
+// by the same shared key. GET /refresh sets it (so opening the URL on a
+// phone is enough - no button/JS required); GET /refresh-check is polled by
+// the app and clears the flag the moment it's read, whether or not the app
+// actually reloads that cycle. This keeps the worker itself simple - the
+// "don't interrupt an in-progress capture" logic lives entirely client-side.
+const REFRESH_FLAG_KEY = 'refresh-requested'
+
+async function handleSetRefreshFlag(env: Env): Promise<Response> {
+  await env.CAPTURES.put(REFRESH_FLAG_KEY, new Date().toISOString())
+
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Shobdon Central - Refresh Requested</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#03101a; color:#e2e8f0; padding:2rem; max-width:600px; margin:0 auto; text-align:center;">
+  <h1 style="font-size:1.25rem;">✅ Refresh requested</h1>
+  <p style="color:#94a3b8;">PC2 will pick this up within about 15 seconds - immediately if it's idle, or right after
+  the current capture finishes if one is running.</p>
+</body>
+</html>`
+
+  return new Response(html, {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'text/html; charset=utf-8', 'X-Robots-Tag': 'noindex, nofollow' },
+  })
+}
+
+async function handleCheckRefreshFlag(env: Env): Promise<Response> {
+  const flag = await env.CAPTURES.get(REFRESH_FLAG_KEY)
+  if (flag) {
+    await env.CAPTURES.delete(REFRESH_FLAG_KEY)
+  }
+
+  return new Response(JSON.stringify({ refreshRequested: !!flag }), {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
+
 async function handlePost(request: Request, env: Env): Promise<Response> {
   let payload: unknown
   try {
@@ -114,6 +158,16 @@ export default {
 
     if (!checkKey(request, env)) {
       return new Response('Unauthorized', { status: 403, headers: CORS_HEADERS })
+    }
+
+    const pathname = new URL(request.url).pathname
+
+    if (pathname === '/refresh' && request.method === 'GET') {
+      return handleSetRefreshFlag(env)
+    }
+
+    if (pathname === '/refresh-check' && request.method === 'GET') {
+      return handleCheckRefreshFlag(env)
     }
 
     if (request.method === 'POST') return handlePost(request, env)
