@@ -1,12 +1,20 @@
-const data = [
-  { label: 'Wind', value: 'NNE 12 kt' },
-  { label: 'QNH', value: '1016 hPa' },
-  { label: 'Temperature', value: '16°C' },
-  { label: 'Visibility', value: '10 km' },
-  { label: 'Notices', value: '4 active' }
-]
+import { useWeather } from '../context/WeatherContext'
+import { degreesToCardinal } from '../utils/windCalculations'
 
 export default function LeftInfoPanel(): JSX.Element {
+  const { weather } = useWeather()
+
+  const data = [
+    {
+      label: 'Wind',
+      value: weather ? `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt` : '—',
+    },
+    { label: 'QNH', value: weather ? `${weather.qnh} hPa` : '—' },
+    { label: 'Temperature', value: weather ? `${weather.temperature}°C` : '—' },
+    { label: 'Visibility', value: 'N/A' },
+    { label: 'Notices', value: '4 active' },
+  ]
+
   return (
     <div className="h-full rounded-3xl border border-slate-700 bg-slate-950/85 p-6 shadow-xl shadow-slate-950/20">
       <div className="mb-5 text-lg font-semibold uppercase tracking-[0.25em] text-slate-400">Weather Summary</div>

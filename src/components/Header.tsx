@@ -1,7 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 
-export default function Header(): JSX.Element {
+interface HeaderProps {
+  rightSlot?: ReactNode
+}
+
+export default function Header({ rightSlot }: HeaderProps): JSX.Element {
   const [now, setNow] = useState(new Date())
   const location = useLocation()
   const isConfigPage = location.pathname === '/config'
@@ -11,43 +16,38 @@ export default function Header(): JSX.Element {
     return () => window.clearInterval(interval)
   }, [])
 
-  const dateString = now.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })
   const timeString = now.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
   })
 
+  const lastUpdatedString = now.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
   return (
-    <div className="h-full w-full rounded-xl bg-gradient-to-r from-slate-800/60 via-slate-900/50 to-slate-800/50 p-4 shadow-lg" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: '12px' }}>
-      {/* Left - title */}
-      <div className="pl-4">
-        <div className="text-xs uppercase tracking-widest text-slate-300">SHOBDON CENTRAL</div>
-        <div className="mt-1 text-4xl font-extrabold text-white">Clubhouse</div>
+    <div className="relative h-full w-full rounded-xl bg-gradient-to-r from-slate-800/60 via-slate-900/50 to-slate-800/50 p-3 shadow-lg flex items-center justify-between px-5">
+      {/* Left - title (doubles as the Configuration nav control) with Last Updated, read as one info block */}
+      <Link
+        to={isConfigPage ? '/' : '/config'}
+        className="group flex flex-col cursor-pointer"
+        title={isConfigPage ? 'Back to Dashboard' : 'Weather Config'}
+      >
+        <div className="text-3xl font-black uppercase tracking-wide text-white transition-colors group-hover:text-sky-400">
+          SHOBDON AIRFIELD
+        </div>
+        <div className="text-sm font-medium text-slate-300 leading-tight">Last updated {lastUpdatedString}</div>
+      </Link>
+
+      {/* Centre - large clock, absolutely centred against the full header width */}
+      <div className="absolute left-1/2 -translate-x-1/2">
+        <div className="text-5xl font-extrabold text-white">{timeString}</div>
       </div>
 
-      {/* Centre - date + large clock */}
-      <div className="text-center">
-        <div className="text-sm uppercase tracking-wider text-slate-300">{dateString}</div>
-        <div className="mt-1 text-5xl font-extrabold text-white">{timeString}</div>
-      </div>
-
-      {/* Right - source and runway */}
-      <div className="flex items-center justify-end gap-6 pr-4">
-        <div className="text-right">
-          <div className="text-xs uppercase tracking-wider text-slate-300">Weather Source</div>
-          <div className="text-2xl font-bold text-white">Local Network</div>
-        </div>
-        <div className="text-right">
-          <div className="text-xs uppercase tracking-wider text-slate-300">Runway</div>
-          <div className="text-3xl font-extrabold text-white">05/23</div>
-        </div>
-      </div>
+      {/* Right - optional slot (e.g. weather status indicator on the dashboard) */}
+      {rightSlot}
     </div>
   )
 }

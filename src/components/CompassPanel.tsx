@@ -1,13 +1,9 @@
-import { useMemo, useState } from 'react'
-
-interface WeatherData {
-  windSpeed: number // knots
-  windDirection: number // degrees (0–360)
-  windGust?: number // knots
-  temperature: number // Celsius
-  qnh: number // millibars
-  pressureTrend: 'rising' | 'falling' | 'steady'
-}
+import { useMemo } from 'react'
+import { useWeather } from '../context/WeatherContext'
+import { RUNWAY_HEADING, RUNWAY_IDENTIFIERS } from '../config/weatherStation'
+import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
+import type { ArrowColour } from '../utils/windCalculations'
+import type { PressureTrend } from '../types/weather'
 
 interface CompassState {
   windSpeed: number
@@ -15,24 +11,11 @@ interface CompassState {
   windGust?: number
   temperature: number
   qnh: number
-  pressureTrend: 'rising' | 'falling' | 'steady'
+  pressureTrend: PressureTrend
   headwind: number
   crosswind: number
-  arrowColour: 'green' | 'amber' | 'red'
+  arrowColour: ArrowColour
 }
-
-// Default mock data
-const MOCK_WEATHER: WeatherData = {
-  windSpeed: 14,
-  windDirection: 250,
-  windGust: 5,
-  temperature: 16,
-  qnh: 1013,
-  pressureTrend: 'rising',
-}
-
-const RUNWAY_HEADING = 50 // Shobdon runway 05/23
-const RUNWAY_NUMBERS = ['05', '23']
 
 // Intermediate bearings for compass rose
 const INTERMEDIATE_BEARINGS = [
@@ -45,39 +28,6 @@ const INTERMEDIATE_BEARINGS = [
   { degrees: 300, label: '30' }, // WNW
   { degrees: 330, label: '33' }, // NNW
 ]
-
-
-function calculateWindComponents(
-  windSpeed: number,
-  windDirection: number,
-  runwayHeading: number
-): { headwind: number; crosswind: number } {
-  const windRadians = (windDirection * Math.PI) / 180
-  const runwayRadians = (runwayHeading * Math.PI) / 180
-
-  const headwind = windSpeed * Math.cos(windRadians - runwayRadians)
-  const crosswind = windSpeed * Math.sin(windRadians - runwayRadians)
-
-  return { headwind, crosswind }
-}
-
-function determineArrowColour(headwind: number, crosswind: number): 'green' | 'amber' | 'red' {
-  const absCrosswind = Math.abs(crosswind)
-
-  if (headwind < -2) {
-    return 'red'
-  }
-
-  if (absCrosswind > 5) {
-    return 'amber'
-  }
-
-  if (headwind < 3 && headwind >= -2) {
-    return 'amber'
-  }
-
-  return 'green'
-}
 
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180
@@ -96,10 +46,27 @@ function circlePoint(
   }
 }
 
-export default function CompassPanel(): JSX.Element {
-  const [weather] = useState<WeatherData>(MOCK_WEATHER)
+interface ReadoutRowProps {
+  label: string
+  value: string
+  valueClassName?: string
+}
 
-  const compassState = useMemo<CompassState>(() => {
+function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowProps): JSX.Element {
+  return (
+    <>
+      <div className="text-right text-[16px] font-semibold uppercase leading-none tracking-widest text-slate-400">{label}</div>
+      <div className={`text-[28px] font-extrabold leading-none ${valueClassName}`}>{value}</div>
+    </>
+  )
+}
+
+export default function CompassPanel(): JSX.Element {
+  const { weather } = useWeather()
+
+  const compassState = useMemo<CompassState | null>(() => {
+    if (!weather) return null
+
     const { headwind, crosswind } = calculateWindComponents(
       weather.windSpeed,
       weather.windDirection,
@@ -121,7 +88,7 @@ export default function CompassPanel(): JSX.Element {
   }, [weather])
 
   const trendSymbol = useMemo(() => {
-    switch (compassState.pressureTrend) {
+    switch (compassState?.pressureTrend) {
       case 'rising':
         return '↗'
       case 'falling':
@@ -129,10 +96,21 @@ export default function CompassPanel(): JSX.Element {
       default:
         return '→'
     }
-  }, [compassState.pressureTrend])
+  }, [compassState])
+
+  const trendLabel = useMemo(() => {
+    switch (compassState?.pressureTrend) {
+      case 'rising':
+        return 'Rising'
+      case 'falling':
+        return 'Falling'
+      default:
+        return 'Steady'
+    }
+  }, [compassState])
 
   const trendColour = useMemo(() => {
-    switch (compassState.pressureTrend) {
+    switch (compassState?.pressureTrend) {
       case 'rising':
         return 'text-green-500'
       case 'falling':
@@ -140,352 +118,214 @@ export default function CompassPanel(): JSX.Element {
       default:
         return 'text-slate-500'
     }
-  }, [compassState.pressureTrend])
+  }, [compassState])
 
   const crosswindColour = useMemo(() => {
-    return Math.abs(compassState.crosswind) > 5 ? 'text-amber-500' : 'text-slate-300'
-  }, [compassState.crosswind])
+    return Math.abs(compassState?.crosswind ?? 0) > 5 ? 'text-amber-500' : 'text-slate-300'
+  }, [compassState])
 
   const headwindColour = useMemo(() => {
-    return compassState.headwind > 0 ? 'text-green-500' : 'text-red-500'
-  }, [compassState.headwind])
+    return (compassState?.headwind ?? 0) > 0 ? 'text-green-500' : 'text-red-500'
+  }, [compassState])
 
   const arrowColourClass = useMemo(() => {
-    switch (compassState.arrowColour) {
+    switch (compassState?.arrowColour) {
       case 'green':
         return 'arrow-green'
       case 'amber':
         return 'arrow-amber'
       case 'red':
         return 'arrow-red'
+      default:
+        return 'arrow-green'
     }
-  }, [compassState.arrowColour])
+  }, [compassState])
+
+  if (!compassState) {
+    return (
+      <div className="flex h-full items-center justify-center text-slate-400">
+        Loading weather…
+      </div>
+    )
+  }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4">
-      {/* TOP LABEL: WIND */}
-      <div className="text-center pt-4">
-        <div className="text-sm uppercase tracking-widest text-slate-400">Wind</div>
-        <div className="text-4xl font-black text-white">
-          {compassState.windDirection}° / {compassState.windSpeed} kt
-        </div>
-      </div>
+    <div className="flex h-full items-center justify-center gap-7 pt-6">
+      {/* ── COMPASS INSTRUMENT ─────────────────────────────────────────
+          Two overlapping SVGs sharing the same 400×400 viewBox.
+          Layer 1 (bottom): static — compass rose and runway reference.
+          Layer 2 (top):    live  — wind arrow only, always on top.
+          Separate SVG elements guarantee the arrow can never merge
+          with the runway regardless of wind/runway alignment.
+          Shifted left (visually only, via transform) to open up room
+          for the readout panel while the pair still reads as centred. */}
+      <div className="relative h-80 w-80 flex-shrink-0 -translate-x-[85px]">
 
-      {/* MAIN COMPASS WITH SIDE LABELS - FLOATING DESIGN */}
-      <div className="relative flex flex-1 w-full items-center justify-center gap-16 px-8">
-        {/* LEFT LABELS */}
-        <div className="flex flex-col items-end gap-10 text-right">
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-500">Temperature</div>
-            <div className="text-2xl font-bold text-white">{compassState.temperature}°C</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-500">QNH</div>
-            <div className="text-2xl font-bold text-white">{compassState.qnh} mb</div>
-          </div>
-        </div>
-
-        {/* SVG COMPASS CIRCLE - ENLARGED TO 308px (h-80 w-80) */}
-        <svg
-          viewBox="0 0 400 400"
-          className="h-80 w-80 flex-shrink-0"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <defs>
-            {/* Glow filter for wind arrow */}
-            <filter id="arrow-glow-filter" x="-70%" y="-70%" width="240%" height="240%">
-              <feGaussianBlur stdDeviation="5" result="coloredBlur" />
-              <feMerge>
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          {/* Background Circle */}
-          <circle
-            cx="200"
-            cy="200"
-            r="180"
-            fill="rgba(15, 23, 42, 0.95)"
-            stroke="rgba(59, 130, 246, 0.25)"
-            strokeWidth="1.5"
-          />
-
-          {/* COMPASS ROSE - Cardinal Points */}
-          <g id="cardinal-points" className="pointer-events-none">
-            <text
-              x="200"
-              y="28"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="36"
-              fontWeight="900"
-            >
-              N
-            </text>
-            <text
-              x="372"
-              y="208"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="36"
-              fontWeight="900"
-            >
-              E
-            </text>
-            <text
-              x="200"
-              y="382"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="36"
-              fontWeight="900"
-            >
-              S
-            </text>
-            <text
-              x="28"
-              y="208"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="36"
-              fontWeight="900"
-            >
-              W
-            </text>
-          </g>
-
-          {/* Cardinal Direction Lines */}
-          <g id="cardinal-lines" stroke="rgba(59, 130, 246, 0.2)" strokeWidth="1.5">
-            <line x1="200" y1="20" x2="200" y2="50" />
-            <line x1="350" y1="200" x2="380" y2="200" />
-            <line x1="200" y1="350" x2="200" y2="380" />
-            <line x1="20" y1="200" x2="50" y2="200" />
-          </g>
-
-          {/* Intermediate Bearings (33, 3, 6, 12, 15, 21, 24, 30) */}
-          <g id="intermediate-bearings" className="pointer-events-none">
-            {INTERMEDIATE_BEARINGS.map((bearing) => {
-              const point = circlePoint(200, 200, 155, bearing.degrees)
-              return (
-                <text
-                  key={`bearing-${bearing.degrees}`}
-                  x={point.x}
-                  y={point.y}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  className="select-none"
-                  fill="rgba(148, 163, 184, 0.7)"
-                  fontSize="16"
-                  fontWeight="600"
-                >
-                  {bearing.label}
-                </text>
-              )
-            })}
-          </g>
-
-          {/* Degree Markers (every 30°) */}
-          <g id="degree-markers" stroke="rgba(100, 116, 139, 0.15)" strokeWidth="1">
-            {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
-              const point = circlePoint(200, 200, 175, degree)
-              const innerPoint = circlePoint(200, 200, 163, degree)
-              return (
-                <line
-                  key={`marker-${degree}`}
-                  x1={point.x}
-                  y1={point.y}
-                  x2={innerPoint.x}
-                  y2={innerPoint.y}
-                />
-              )
-            })}
-          </g>
-
-          {/* RUNWAY GRAPHIC - Two Parallel Strips (Grass & Tarmac) */}
-          <g id="runway-graphic" transform={`rotate(${RUNWAY_HEADING} 200 200)`}>
-            {/* Grass Strip (Left) - 12px wide */}
-            <rect x="180" y="60" width="12" height="260" fill="#5a7d65" opacity="0.7" />
-
-            {/* Tarmac Strip (Right) - 12px wide */}
-            <rect x="208" y="60" width="12" height="260" fill="#a8b4c4" opacity="0.85" />
-
-            {/* Tarmac Centreline (dashed) */}
-            <line
-              x1="214"
-              y1="60"
-              x2="214"
-              y2="320"
-              stroke="white"
-              strokeWidth="1.5"
-              strokeDasharray="6,4"
-              opacity="0.5"
-            />
-
-            {/* Threshold Markers (tarmac strip) */}
-            <line x1="205" y1="70" x2="219" y2="70" stroke="white" strokeWidth="2" opacity="0.6" />
-            <line x1="205" y1="330" x2="219" y2="330" stroke="white" strokeWidth="2" opacity="0.6" />
-
-            {/* Runway Numbers - positioned above strips */}
-            <text
-              x="186"
-              y="95"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="14"
-              fontWeight="900"
-              opacity="0.8"
-            >
-              {RUNWAY_NUMBERS[0]}
-            </text>
-            <text
-              x="214"
-              y="315"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="14"
-              fontWeight="900"
-              opacity="0.8"
-            >
-              {RUNWAY_NUMBERS[1]}
-            </text>
-          </g>
-
-          {/* WIND ARROW - Sleap-style (longer, thinner, dynamic colour) */}
-          <g
-            id="wind-arrow"
-            className={`wind-arrow ${arrowColourClass}`}
-            transform={`rotate(${compassState.windDirection} 200 200)`}
-            style={{
-              transition: 'transform 0.8s ease-in-out',
-              transformOrigin: '200px 200px',
-            }}
+          {/* LAYER 1 — Static reference: compass rose + runway */}
+          <svg
+            viewBox="0 0 400 400"
+            className="h-80 w-80"
+            preserveAspectRatio="xMidYMid meet"
           >
-            {/* Arrow head (triangle) - reaches closer to circumference */}
-            <polygon
-              points="200,50 180,95 220,95"
-              className="arrow-head fill-current transition-all duration-300"
-              filter="url(#arrow-glow-filter)"
+            {/* Background Circle */}
+            <circle
+              cx="200"
+              cy="200"
+              r="180"
+              fill="rgba(15, 23, 42, 0.95)"
+              stroke="rgba(59, 130, 246, 0.25)"
+              strokeWidth="1.5"
             />
 
-            {/* Arrow tail (line) - thinner, elegant */}
-            <line
-              x1="200"
-              y1="95"
-              x2="200"
-              y2="200"
-              className="arrow-tail stroke-current transition-all duration-300"
-              strokeWidth="2.5"
-            />
-          </g>
+            {/* COMPASS ROSE - Cardinal Points */}
+            <g id="cardinal-points" className="pointer-events-none">
+              <text x="200" y="28" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
+              <text x="372" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
+              <text x="200" y="382" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
+              <text x="28" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+            </g>
 
-          {/* CENTRE WIND LABEL - floating above runway */}
-          <g id="centre-wind-label">
-            {/* Background rounded rect */}
-            <rect
-              x="165"
-              y="165"
-              width="70"
-              height="70"
-              rx="6"
-              ry="6"
-              fill="rgba(15, 23, 42, 0.9)"
-              stroke="rgba(59, 130, 246, 0.3)"
-              strokeWidth="1"
-            />
-            {/* Wind direction */}
-            <text
-              x="200"
-              y="180"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="22"
-              fontWeight="700"
-              fontFamily="monospace"
-            >
-              {compassState.windDirection}
-            </text>
-            {/* Separator */}
-            <text
-              x="200"
-              y="195"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="rgba(148, 163, 184, 0.6)"
-              fontSize="14"
-              fontWeight="500"
-            >
-              /
-            </text>
-            {/* Wind speed */}
-            <text
-              x="200"
-              y="215"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              className="select-none"
-              fill="white"
-              fontSize="22"
-              fontWeight="700"
-              fontFamily="monospace"
-            >
-              {compassState.windSpeed}
-            </text>
-          </g>
+            {/* Cardinal Direction Lines */}
+            <g id="cardinal-lines" stroke="rgba(59, 130, 246, 0.2)" strokeWidth="1.5">
+              <line x1="200" y1="20" x2="200" y2="50" />
+              <line x1="350" y1="200" x2="380" y2="200" />
+              <line x1="200" y1="350" x2="200" y2="380" />
+              <line x1="20" y1="200" x2="50" y2="200" />
+            </g>
 
-          {/* Centre Point */}
-          <circle cx="200" cy="200" r="4" fill="white" opacity="0.5" />
-        </svg>
+            {/* Intermediate Bearings */}
+            <g id="intermediate-bearings" className="pointer-events-none">
+              {INTERMEDIATE_BEARINGS.map((bearing) => {
+                const point = circlePoint(200, 200, 153, bearing.degrees)
+                return (
+                  <text
+                    key={`bearing-${bearing.degrees}`}
+                    x={point.x}
+                    y={point.y}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    className="select-none"
+                    fill="rgba(148, 163, 184, 0.85)"
+                    fontSize="18"
+                    fontWeight="600"
+                    letterSpacing="0.5"
+                  >
+                    {bearing.label}
+                  </text>
+                )
+              })}
+            </g>
 
-        {/* RIGHT LABELS */}
-        <div className="flex flex-col items-start gap-10 text-left">
-          {compassState.windGust && (
-            <div>
-              <div className="text-xs uppercase tracking-widest text-slate-500">Gust</div>
-              <div className="text-2xl font-bold text-amber-500">G {compassState.windGust} kt</div>
-            </div>
-          )}
-          {!compassState.windGust && (
-            <div>
-              <div className="text-xs uppercase tracking-widest text-slate-500">Gust</div>
-              <div className="text-2xl font-bold text-slate-500">—</div>
-            </div>
-          )}
-          <div>
-            <div className="text-xs uppercase tracking-widest text-slate-500">Trend</div>
-            <div className={`text-2xl font-bold ${trendColour}`}>{trendSymbol}</div>
-          </div>
+            {/* Degree Markers (every 30°) */}
+            <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+              {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
+                const point = circlePoint(200, 200, 175, degree)
+                const innerPoint = circlePoint(200, 200, 163, degree)
+                return (
+                  <line
+                    key={`marker-${degree}`}
+                    x1={point.x}
+                    y1={point.y}
+                    x2={innerPoint.x}
+                    y2={innerPoint.y}
+                  />
+                )
+              })}
+            </g>
+
+            {/* RUNWAY GRAPHIC - background reference axis; never to compete with the wind arrow */}
+            <g id="runway-graphic" transform={`rotate(${RUNWAY_HEADING} 200 200)`}>
+              {/* Grass Strip (Left) */}
+              <rect x="180" y="60" width="12" height="260" fill="#5a7d65" opacity="0.24" />
+              {/* Tarmac Strip (Right) */}
+              <rect x="208" y="60" width="12" height="260" fill="#a8b4c4" opacity="0.30" />
+              {/* Centreline (dashed) */}
+              <line x1="214" y1="60" x2="214" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+              {/* Threshold Markers */}
+              <line x1="205" y1="70" x2="219" y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
+              <line x1="205" y1="330" x2="219" y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
+              {/* Runway Numbers */}
+              <text x="186" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[0]}</text>
+              <text x="214" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[1]}</text>
+            </g>
+
+            {/* Centre Point */}
+            <circle cx="200" cy="200" r="4" fill="white" opacity="0.5" />
+          </svg>
+
+          {/* LAYER 2 — Wind arrow + annotation: always renders above Layer 1 */}
+          <svg
+            viewBox="0 0 400 400"
+            className="absolute inset-0 h-80 w-80"
+            style={{ pointerEvents: 'none' }}
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {/* Rotating wind arrow — long, thin needle; always on its own layer above the runway */}
+            <g
+              id="wind-arrow"
+              className={`wind-arrow ${arrowColourClass}`}
+              transform={`rotate(${compassState.windDirection} 200 200)`}
+              style={{ transition: 'transform 0.8s ease-in-out' }}
+            >
+              {/* Dark halo - keeps the needle legible over both runway strips */}
+              <polygon points="200,37 213,80 207,80 207,362 193,362 193,80 187,80" fill="rgba(3, 7, 18, 0.85)" />
+              {/* Full-length instrument needle: arrowhead + shaft through the centre to a plain tail, ~88% radius each way */}
+              <polygon points="200,42 208,84 202,84 202,358 198,358 198,84 192,84" className="arrow-head fill-current" />
+            </g>
+
+            {/* Centre annotation — avionics instrument tag, static, always on top of the rotating arrow */}
+            <g id="centre-wind-label">
+              <rect
+                x="154"
+                y="188"
+                width="92"
+                height="24"
+                rx="6"
+                ry="6"
+                fill="rgba(15, 23, 42, 0.94)"
+                stroke="rgba(148, 163, 184, 0.28)"
+                strokeWidth="1"
+                style={{ filter: 'drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45))' }}
+              />
+              <text
+                x="200"
+                y="200"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className="select-none"
+                fill="white"
+                fontSize="16"
+                fontWeight="700"
+                fontFamily="monospace"
+                letterSpacing="0.5"
+              >
+                {compassState.windDirection} / {compassState.windSpeed}
+              </text>
+            </g>
+          </svg>
         </div>
-      </div>
 
-      {/* BOTTOM LABEL: HEADWIND / CROSSWIND */}
-      <div className="text-center pb-4">
-        <div className="text-sm uppercase tracking-widest text-slate-400">Headwind / Crosswind</div>
-        <div className="flex gap-6 justify-center text-2xl font-bold mt-2">
-          <span className={headwindColour}>
-            HW {compassState.headwind > 0 ? '+' : ''}
-            {compassState.headwind.toFixed(1)} kt
-          </span>
-          <span className={crosswindColour}>
-            XW {Math.abs(compassState.crosswind).toFixed(1)} kt {compassState.crosswind > 0 ? 'R' : 'L'}
-          </span>
-        </div>
+      {/* INSTRUMENT READOUT PANEL — fixed-width right-aligned labels, left-aligned values, no cards/borders/dividers */}
+      <div className="grid grid-cols-[120px_1fr] items-baseline gap-x-4 gap-y-2.5">
+        <ReadoutRow label="Wind" value={`${compassState.windDirection}° / ${compassState.windSpeed} kt`} />
+        <ReadoutRow
+          label="Gust"
+          value={compassState.windGust ? `${compassState.windGust} kt` : '—'}
+          valueClassName={compassState.windGust ? 'text-amber-500' : 'text-slate-500'}
+        />
+        <ReadoutRow
+          label="Headwind"
+          value={`${compassState.headwind > 0 ? '+' : ''}${compassState.headwind.toFixed(1)} kt`}
+          valueClassName={headwindColour}
+        />
+        <ReadoutRow
+          label="Crosswind"
+          value={`${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
+          valueClassName={crosswindColour}
+        />
+        <ReadoutRow label="Trend" value={`${trendSymbol} ${trendLabel}`} valueClassName={trendColour} />
+        <ReadoutRow label="Temp" value={`${compassState.temperature}°C`} />
+        <ReadoutRow label="QNH" value={`${compassState.qnh} hPa`} />
       </div>
     </div>
   )

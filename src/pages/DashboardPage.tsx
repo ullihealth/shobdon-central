@@ -1,37 +1,37 @@
 import CentreDisplayPanel from '../components/CentreDisplayPanel'
-import FooterStatusBar from '../components/FooterStatusBar'
 import Header from '../components/Header'
 import LeftInfoPanel from '../components/LeftInfoPanel'
 import RightInfoPanel from '../components/RightInfoPanel'
+import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
+import { WeatherProvider } from '../context/WeatherContext'
 
 export default function DashboardPage(): JSX.Element {
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gradient-to-b from-[#071229] via-[#081827] to-[#03101a] text-slate-100">
-      <div
-        className="mx-auto h-full max-w-[1920px] px-6 py-6"
-        style={{ display: 'grid', gridTemplateRows: '10% 82% 8%', gap: '16px' }}
-      >
-        {/* HEADER (10%) */}
-        <Header />
+    <WeatherProvider>
+      <div className="h-screen w-screen overflow-hidden bg-gradient-to-b from-[#071229] via-[#081827] to-[#03101a] text-slate-100">
+        <div
+          className="mx-auto h-full max-w-[1920px] p-10"
+          style={{ display: 'grid', gridTemplateRows: '7% 1fr', gap: '16px' }}
+        >
+          {/* HEADER (10%) */}
+          <Header rightSlot={<WeatherStatusIndicator />} />
 
-        {/* BODY (82%) - three columns left/center/right */}
-        <div style={{ display: 'grid', gridTemplateColumns: '23% 54% 23%', gap: '16px', height: '100%' }}>
-          <div className="h-full">
-            <LeftInfoPanel />
-          </div>
+          {/* BODY (90%) - three columns left/center/right */}
+          <div style={{ display: 'grid', gridTemplateColumns: '23% 54% 23%', gap: '16px', height: '100%' }}>
+            <div className="h-full">
+              <LeftInfoPanel />
+            </div>
 
-          <div className="h-full">
-            <CentreDisplayPanel />
-          </div>
+            <div className="h-full">
+              <CentreDisplayPanel />
+            </div>
 
-          <div className="h-full">
-            <RightInfoPanel />
+            <div className="h-full">
+              <RightInfoPanel />
+            </div>
           </div>
         </div>
-
-        {/* FOOTER (8%) */}
-        <FooterStatusBar />
       </div>
-    </div>
+    </WeatherProvider>
   )
 }
