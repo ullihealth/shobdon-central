@@ -158,9 +158,28 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
   return (
     <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
       <div className="mb-1 text-sm font-bold uppercase tracking-widest text-amber-500">Developer Tools</div>
-      <p className="mb-6 text-sm text-slate-400">
-        Press the button, walk away from the ATC PC, then paste the clipboard into an LLM back at your Mac.
+      <p className="mb-4 text-sm text-slate-400">
+        On ATC PC2: download the two relay files below (once), run start-relay.bat, then press Capture. The
+        result is copied to the clipboard, shown below, and logged automatically so it's viewable from home
+        afterward.
       </p>
+
+      <div className="mb-6 flex flex-wrap gap-3">
+        <a
+          href="/downloads/relay.ps1"
+          download="relay.ps1"
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+        >
+          ⬇ Download relay.ps1
+        </a>
+        <a
+          href="/downloads/start-relay.bat"
+          download="start-relay.bat"
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+        >
+          ⬇ Download start-relay.bat
+        </a>
+      </div>
 
       <button
         type="button"
