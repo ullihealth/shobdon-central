@@ -240,8 +240,8 @@ export default function CompassPanel(): JSX.Element {
               {/* Centreline (dashed) */}
               <line x1="214" y1="60" x2="214" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
               {/* Threshold Markers */}
-              <line x1="205" y1="70" x2="219" y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
-              <line x1="205" y1="330" x2="219" y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
+              <line x1="176" y1="70" x2="225" y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
+              <line x1="176" y1="330" x2="225" y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
               {/* Runway Numbers */}
               <text x="187" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[0]}</text>
               <text x="214" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[1]}</text>
