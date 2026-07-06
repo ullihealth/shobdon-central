@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { testAtcConnection } from '../../services/atcDiagnostics'
 import type { AtcConnectionTestResult } from '../../services/atcDiagnostics'
+import { CAPTURE_LOG_URL } from '../../config/captureEndpoint'
 
 interface AtcDeveloperToolsProps {
   stationUrl: string
@@ -119,6 +120,19 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+// Best-effort remote log so a capture can be viewed from another device later.
+// Deliberately not awaited by callers and never throws - must never delay or
+// break the existing clipboard/display behaviour if it fails.
+function logCaptureRemotely(stationUrl: string, result: AtcConnectionTestResult, reportText: string): void {
+  fetch(CAPTURE_LOG_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stationUrl, result, reportText }),
+  }).catch(() => {
+    // No connectivity to the log endpoint at this instant - ignored on purpose.
+  })
+}
+
 export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: AtcDeveloperToolsProps): JSX.Element {
   const [status, setStatus] = useState<CaptureStatus>('idle')
   const [report, setReport] = useState<string | null>(null)
@@ -130,6 +144,7 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
     const result = await testAtcConnection(stationUrl, connectionTimeoutMs)
     const nextReport = buildCaptureReport(stationUrl, result)
     setReport(nextReport)
+    logCaptureRemotely(stationUrl, result, nextReport)
     setClipboardOk(await copyToClipboard(nextReport))
     setStatus('done')
   }

@@ -1,0 +1,10 @@
+name = "shobdon-central-capture"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+# Not built or referenced by the Cloudflare Pages project - deployed
+# independently with `npx wrangler deploy` from this directory.
+
+[[kv_namespaces]]
+binding = "CAPTURES"
+id = "3b9cf9c372684ed3b94dcad4dfef6165"
