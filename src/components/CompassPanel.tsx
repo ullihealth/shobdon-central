@@ -234,16 +234,16 @@ export default function CompassPanel(): JSX.Element {
             {/* RUNWAY GRAPHIC - background reference axis; never to compete with the wind arrow */}
             <g id="runway-graphic" transform={`rotate(${RUNWAY_HEADING} 200 200)`}>
               {/* Grass Strip (Left) */}
-              <rect x="180" y="60" width="12" height="260" fill="#5a7d65" opacity="0.24" />
+              <rect x="176" y="60" width="22" height="260" fill="#4caf50" opacity="0.65" />
               {/* Tarmac Strip (Right) */}
-              <rect x="208" y="60" width="12" height="260" fill="#a8b4c4" opacity="0.30" />
+              <rect x="203" y="60" width="22" height="260" fill="#a8b4c4" opacity="0.5" />
               {/* Centreline (dashed) */}
               <line x1="214" y1="60" x2="214" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
               {/* Threshold Markers */}
               <line x1="205" y1="70" x2="219" y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
               <line x1="205" y1="330" x2="219" y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
               {/* Runway Numbers */}
-              <text x="186" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[0]}</text>
+              <text x="187" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[0]}</text>
               <text x="214" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[1]}</text>
             </g>
 
