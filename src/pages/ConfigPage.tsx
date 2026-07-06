@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Header from '../components/Header'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
@@ -30,6 +31,13 @@ export default function ConfigPage(): JSX.Element {
 
       <div className="mx-auto max-w-3xl px-6 pb-10">
         <div className="mt-6 rounded-3xl border border-slate-700 bg-slate-950/85 p-10 shadow-xl shadow-slate-950/20">
+          <Link
+            to="/checklist"
+            className="mb-8 inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+          >
+            📋 ATC Visit Checklist
+          </Link>
+
           <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />
 
           <div className="mt-10 border-t border-slate-800 pt-10">
