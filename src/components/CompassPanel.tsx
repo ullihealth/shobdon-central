@@ -156,10 +156,8 @@ export default function CompassPanel(): JSX.Element {
           Layer 1 (bottom): static — compass rose and runway reference.
           Layer 2 (top):    live  — wind arrow only, always on top.
           Separate SVG elements guarantee the arrow can never merge
-          with the runway regardless of wind/runway alignment.
-          Shifted left (visually only, via transform) to open up room
-          for the readout panel while the pair still reads as centred. */}
-      <div className="relative h-80 w-80 flex-shrink-0 -translate-x-[85px]">
+          with the runway regardless of wind/runway alignment. */}
+      <div className="relative h-80 w-80 flex-shrink-0">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg
