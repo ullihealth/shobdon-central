@@ -234,9 +234,9 @@ export default function CompassPanel(): JSX.Element {
             {/* RUNWAY GRAPHIC - background reference axis; never to compete with the wind arrow */}
             <g id="runway-graphic" transform={`rotate(${RUNWAY_HEADING} 200 200)`}>
               {/* Grass Strip (Left) */}
-              <rect x="176" y="60" width="22" height="260" fill="#4caf50" opacity="0.65" />
+              <rect x="176" y="70" width="22" height="260" fill="#4caf50" opacity="0.65" />
               {/* Tarmac Strip (Right) */}
-              <rect x="203" y="60" width="22" height="260" fill="#a8b4c4" opacity="0.5" />
+              <rect x="203" y="70" width="22" height="260" fill="#a8b4c4" opacity="0.5" />
               {/* Centreline (dashed) */}
               <line x1="214" y1="60" x2="214" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
               {/* Threshold Markers */}
