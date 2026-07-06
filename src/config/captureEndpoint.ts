@@ -15,3 +15,6 @@ export const REFRESH_CHECK_URL = `${CAPTURE_WORKER_BASE}/refresh-check?key=${CAP
 
 // Called by the "Refresh PC2 Now" button to set the flag RemoteRefreshWatcher polls for.
 export const REFRESH_TRIGGER_URL = `${CAPTURE_WORKER_BASE}/refresh?key=${CAPTURE_KEY}`
+
+// Called by InvestigateStation's preset outcome buttons to log a one-tap result.
+export const INVESTIGATION_LOG_URL = `${CAPTURE_WORKER_BASE}/investigate?key=${CAPTURE_KEY}`

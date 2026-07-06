@@ -29,6 +29,14 @@ interface CaptureEntry {
   payload: unknown
 }
 
+interface InvestigationEntry {
+  check: string
+  label: string
+  loggedAt: string
+}
+
+const MAX_INVESTIGATIONS = 50
+
 function checkKey(request: Request, env: Env): boolean {
   const key = new URL(request.url).searchParams.get('key')
   return !!key && !!env.CAPTURE_KEY && key === env.CAPTURE_KEY
@@ -82,6 +90,36 @@ async function handleCheckRefreshFlag(env: Env): Promise<Response> {
   })
 }
 
+// One-tap station investigation logging: a preset check name + preset label,
+// no free text. Kept in its own KV list (separate from capture history) so
+// it's easy to tell apart when reviewing later.
+async function handleLogInvestigation(request: Request, env: Env): Promise<Response> {
+  let payload: unknown
+  try {
+    payload = await request.json()
+  } catch {
+    return new Response('Invalid JSON', { status: 400, headers: CORS_HEADERS })
+  }
+
+  const body = payload as { check?: unknown; label?: unknown }
+  const check = typeof body.check === 'string' ? body.check : 'unknown'
+  const label = typeof body.label === 'string' ? body.label : 'unknown'
+
+  const entry: InvestigationEntry = { check, label, loggedAt: new Date().toISOString() }
+
+  const raw = await env.CAPTURES.get('investigations')
+  const investigations: InvestigationEntry[] = raw ? JSON.parse(raw) : []
+  investigations.unshift(entry)
+  investigations.length = Math.min(investigations.length, MAX_INVESTIGATIONS)
+
+  await env.CAPTURES.put('investigations', JSON.stringify(investigations))
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
+
 async function handlePost(request: Request, env: Env): Promise<Response> {
   let payload: unknown
   try {
@@ -118,15 +156,28 @@ function renderEntry(entry: CaptureEntry): string {
 </section>`
 }
 
+function renderInvestigation(entry: InvestigationEntry): string {
+  return `<div style="padding:0.5rem 0;border-bottom:1px solid #1e293b;font-size:0.9rem;">
+  <span style="color:#94a3b8;font-size:0.8rem;">${escapeHtml(entry.loggedAt)}</span>
+  &mdash; <strong>${escapeHtml(entry.check)}:</strong> ${escapeHtml(entry.label)}
+</div>`
+}
+
 async function handleGet(env: Env): Promise<Response> {
-  const [latestRaw, historyRaw] = await Promise.all([env.CAPTURES.get('latest'), env.CAPTURES.get('history')])
+  const [latestRaw, historyRaw, investigationsRaw] = await Promise.all([
+    env.CAPTURES.get('latest'),
+    env.CAPTURES.get('history'),
+    env.CAPTURES.get('investigations'),
+  ])
   const history: CaptureEntry[] = historyRaw ? JSON.parse(historyRaw) : []
+  const investigations: InvestigationEntry[] = investigationsRaw ? JSON.parse(investigationsRaw) : []
 
   const latestEntry: CaptureEntry | null = latestRaw ? JSON.parse(latestRaw) : null
   const latestHtml = latestEntry ? renderEntry(latestEntry) : '<p style="color:#94a3b8;">No captures received yet.</p>'
 
   // History includes the latest entry at index 0 - skip it here so it isn't shown twice.
   const olderHtml = history.slice(1).map(renderEntry).join('\n')
+  const investigationsHtml = investigations.map(renderInvestigation).join('\n')
 
   const html = `<!doctype html>
 <html>
@@ -141,6 +192,7 @@ async function handleGet(env: Env): Promise<Response> {
   <h2 style="font-size:1rem;color:#94a3b8;">Latest</h2>
   ${latestHtml}
   ${olderHtml ? `<h2 style="font-size:1rem;color:#94a3b8;">History</h2>${olderHtml}` : ''}
+  ${investigationsHtml ? `<h2 style="font-size:1rem;color:#94a3b8;margin-top:2rem;">Station Investigations</h2>${investigationsHtml}` : ''}
 </body>
 </html>`
 
@@ -168,6 +220,10 @@ export default {
 
     if (pathname === '/refresh-check' && request.method === 'GET') {
       return handleCheckRefreshFlag(env)
+    }
+
+    if (pathname === '/investigate' && request.method === 'POST') {
+      return handleLogInvestigation(request, env)
     }
 
     if (request.method === 'POST') return handlePost(request, env)

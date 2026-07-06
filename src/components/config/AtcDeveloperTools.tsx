@@ -3,6 +3,7 @@ import { testAtcConnection } from '../../services/atcDiagnostics'
 import type { AtcConnectionTestResult } from '../../services/atcDiagnostics'
 import { CAPTURE_LOG_URL, REFRESH_TRIGGER_URL } from '../../config/captureEndpoint'
 import { setCaptureInProgress } from '../../services/captureActivity'
+import InvestigateStation from './InvestigateStation'
 
 interface AtcDeveloperToolsProps {
   stationUrl: string
@@ -262,6 +263,8 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
           />
         </div>
       )}
+
+      <InvestigateStation />
     </div>
   )
 }
