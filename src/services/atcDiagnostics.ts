@@ -11,6 +11,18 @@ export interface AtcConnectionTestResult {
   retrievedAt: Date
   rawText: string | null
   errorMessage: string | null
+  pageProtocol: string
+  userAgent: string
+  localNetworkAccessState: 'granted' | 'denied' | 'prompt' | 'unsupported'
+}
+
+async function queryLocalNetworkAccessState(): Promise<AtcConnectionTestResult['localNetworkAccessState']> {
+  try {
+    const status = await navigator.permissions.query({ name: 'local-network-access' as PermissionName })
+    return status.state as 'granted' | 'denied' | 'prompt'
+  } catch {
+    return 'unsupported'
+  }
 }
 
 function extractCharset(contentType: string | null): string | null {
@@ -26,6 +38,9 @@ function extractCharset(contentType: string | null): string | null {
  */
 export async function testAtcConnection(stationUrl: string, timeoutMs: number): Promise<AtcConnectionTestResult> {
   const startedAt = performance.now()
+  const pageProtocol = window.location.protocol
+  const userAgent = navigator.userAgent
+  const localNetworkAccessState = await queryLocalNetworkAccessState()
 
   try {
     const response = await fetchWithTimeout(stationUrl, timeoutMs)
@@ -43,6 +58,9 @@ export async function testAtcConnection(stationUrl: string, timeoutMs: number): 
       retrievedAt: new Date(),
       rawText,
       errorMessage: null,
+      pageProtocol,
+      userAgent,
+      localNetworkAccessState,
     }
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === 'AbortError'
@@ -61,6 +79,9 @@ export async function testAtcConnection(stationUrl: string, timeoutMs: number): 
         : error instanceof Error
           ? error.message
           : 'Unknown error',
+      pageProtocol,
+      userAgent,
+      localNetworkAccessState,
     }
   }
 }

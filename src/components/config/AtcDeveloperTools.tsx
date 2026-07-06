@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { testAtcConnection } from '../../services/atcDiagnostics'
 import type { AtcConnectionTestResult } from '../../services/atcDiagnostics'
 
@@ -26,10 +26,31 @@ function formatReportTimestamp(date: Date): string {
  * this builds one plain-text engineering report - success or failure - for
  * pasting into an LLM back at a machine that can't reach 192.168.2.1.
  */
+const MIXED_CONTENT_NOTE =
+  'This app is served over HTTPS but the station URL is plain HTTP. Browsers block this request ' +
+  '("mixed content") by default regardless of network reachability or CORS - a failure here may ' +
+  'mean the station was never actually contacted.'
+
+function isLoopbackHost(stationUrl: string): boolean {
+  try {
+    const hostname = new URL(stationUrl).hostname
+    return hostname === 'localhost' || hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
+
 function buildCaptureReport(stationUrl: string, result: AtcConnectionTestResult): string {
   const rawSection = result.ok ? (result.rawText ?? '') : `ERROR: ${result.errorMessage ?? 'Unknown error'}`
+  const targetsLoopback = isLoopbackHost(stationUrl)
 
-  return [
+  const likelyLnaDenied =
+    !result.ok && targetsLoopback && result.localNetworkAccessState !== 'granted' && result.localNetworkAccessState !== 'unsupported'
+
+  const likelyMixedContent =
+    !result.ok && result.pageProtocol === 'https:' && stationUrl.startsWith('http://') && !targetsLoopback
+
+  const lines = [
     REPORT_DIVIDER,
     'SHOBDON CENTRAL WEATHER CAPTURE',
     REPORT_DIVIDER,
@@ -39,6 +60,12 @@ function buildCaptureReport(stationUrl: string, result: AtcConnectionTestResult)
     '',
     'Station:',
     stationUrl,
+    '',
+    'Page Protocol:',
+    result.pageProtocol,
+    '',
+    'Browser:',
+    result.userAgent,
     '',
     'HTTP Status:',
     result.status !== null ? String(result.status) : '—',
@@ -54,6 +81,20 @@ function buildCaptureReport(stationUrl: string, result: AtcConnectionTestResult)
     '',
     'Response Size:',
     result.responseSizeBytes !== null ? `${result.responseSizeBytes} bytes` : '—',
+  ]
+
+  if (likelyLnaDenied) {
+    lines.push(
+      '',
+      'Note:',
+      `Local Network Access permission is not granted for this page (state: ${result.localNetworkAccessState}). ` +
+        'Chrome should show a one-time prompt asking to allow access to your local network - click Allow, then press Capture again.'
+    )
+  } else if (likelyMixedContent) {
+    lines.push('', 'Note:', MIXED_CONTENT_NOTE)
+  }
+
+  lines.push(
     '',
     SECTION_DIVIDER,
     'RAW RESPONSE',
@@ -64,18 +105,39 @@ function buildCaptureReport(stationUrl: string, result: AtcConnectionTestResult)
     REPORT_DIVIDER,
     'END OF CAPTURE',
     REPORT_DIVIDER,
-  ].join('\n')
+  )
+
+  return lines.join('\n')
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: AtcDeveloperToolsProps): JSX.Element {
   const [status, setStatus] = useState<CaptureStatus>('idle')
+  const [report, setReport] = useState<string | null>(null)
+  const [clipboardOk, setClipboardOk] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   async function handleCapture() {
     setStatus('working')
     const result = await testAtcConnection(stationUrl, connectionTimeoutMs)
-    const report = buildCaptureReport(stationUrl, result)
-    await navigator.clipboard.writeText(report)
+    const nextReport = buildCaptureReport(stationUrl, result)
+    setReport(nextReport)
+    setClipboardOk(await copyToClipboard(nextReport))
     setStatus('done')
+  }
+
+  async function handleManualCopy() {
+    if (!report) return
+    setClipboardOk(await copyToClipboard(report))
+    textareaRef.current?.select()
   }
 
   return (
@@ -94,8 +156,33 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
         {status === 'working' ? 'Capturing…' : '📋 CAPTURE & COPY WEATHER SNAPSHOT'}
       </button>
 
-      {status === 'done' && (
-        <p className="mt-4 text-sm font-semibold text-green-400">✅ Weather snapshot copied to clipboard.</p>
+      {status === 'done' && report && (
+        <div className="mt-4">
+          {clipboardOk ? (
+            <p className="text-sm font-semibold text-green-400">✅ Weather snapshot copied to clipboard.</p>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-semibold text-amber-400">
+                ⚠️ Could not copy automatically — select the text below or press Copy.
+              </p>
+              <button
+                type="button"
+                onClick={handleManualCopy}
+                className="shrink-0 rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+              >
+                Copy
+              </button>
+            </div>
+          )}
+
+          <textarea
+            ref={textareaRef}
+            readOnly
+            value={report}
+            onFocus={(event) => event.currentTarget.select()}
+            className="mt-3 h-64 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-xs text-slate-200"
+          />
+        </div>
       )}
     </div>
   )
