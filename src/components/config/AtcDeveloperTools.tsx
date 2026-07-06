@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { testAtcConnection } from '../../services/atcDiagnostics'
 import type { AtcConnectionTestResult } from '../../services/atcDiagnostics'
-import { CAPTURE_LOG_URL } from '../../config/captureEndpoint'
+import { CAPTURE_LOG_URL, REFRESH_TRIGGER_URL } from '../../config/captureEndpoint'
 import { setCaptureInProgress } from '../../services/captureActivity'
 
 interface AtcDeveloperToolsProps {
@@ -134,11 +134,14 @@ function logCaptureRemotely(stationUrl: string, result: AtcConnectionTestResult,
   })
 }
 
+type RefreshTriggerStatus = 'idle' | 'success' | 'error'
+
 export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: AtcDeveloperToolsProps): JSX.Element {
   const [status, setStatus] = useState<CaptureStatus>('idle')
   const [report, setReport] = useState<string | null>(null)
   const [clipboardOk, setClipboardOk] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [refreshTriggerStatus, setRefreshTriggerStatus] = useState<RefreshTriggerStatus>('idle')
 
   async function handleCapture() {
     setStatus('working')
@@ -159,6 +162,17 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
     if (!report) return
     setClipboardOk(await copyToClipboard(report))
     textareaRef.current?.select()
+  }
+
+  async function handleRefreshTrigger() {
+    if (!window.confirm('Trigger a remote refresh on PC2?')) return
+
+    try {
+      const response = await fetch(REFRESH_TRIGGER_URL)
+      setRefreshTriggerStatus(response.ok ? 'success' : 'error')
+    } catch {
+      setRefreshTriggerStatus('error')
+    }
   }
 
   return (
@@ -193,7 +207,23 @@ export default function AtcDeveloperTools({ stationUrl, connectionTimeoutMs }: A
         >
           ↗ View Capture Logs
         </a>
+        <button
+          type="button"
+          onClick={handleRefreshTrigger}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+        >
+          🔄 Refresh PC2 Now
+        </button>
       </div>
+
+      {refreshTriggerStatus === 'success' && (
+        <p className="mb-4 text-sm font-semibold text-green-400">✅ Refresh requested.</p>
+      )}
+      {refreshTriggerStatus === 'error' && (
+        <p className="mb-4 text-sm font-semibold text-red-400">
+          ❌ Could not reach the refresh trigger — check connectivity and try again.
+        </p>
+      )}
 
       <button
         type="button"
