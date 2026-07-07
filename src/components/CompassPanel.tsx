@@ -257,12 +257,12 @@ export default function CompassPanel(): JSX.Element {
           Layer 2 (top):    live  — wind arrow only, always on top.
           Separate SVG elements guarantee the arrow can never merge
           with the runway regardless of wind/runway alignment. */}
-      <div className="relative h-80 w-80 flex-shrink-0">
+      <div className="relative w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)] flex-shrink-0">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg
             viewBox="0 0 400 400"
-            className="h-80 w-80"
+            className="w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)]"
             preserveAspectRatio="xMidYMid meet"
           >
             {/* Background Circle */}
@@ -345,7 +345,7 @@ export default function CompassPanel(): JSX.Element {
           {/* LAYER 2 — Wind arrow + annotation: always renders above Layer 1 */}
           <svg
             viewBox="0 0 400 400"
-            className="absolute inset-0 h-80 w-80"
+            className="absolute inset-0 w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)]"
             style={{ pointerEvents: 'none' }}
             preserveAspectRatio="xMidYMid meet"
           >

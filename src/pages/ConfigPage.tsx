@@ -22,7 +22,7 @@ export default function ConfigPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#071229] via-[#081827] to-[#03101a] text-slate-100">
+    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
       {/* Header uses the same wide container as the dashboard so the absolutely-centred
           clock has room and never overlaps the title. */}
       <div className="mx-auto h-24 max-w-[1920px] px-10 pt-6">

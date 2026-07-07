@@ -28,8 +28,16 @@ function refreshIntervalSecondsFor(config: WeatherConfig): number {
 
 const WeatherContext = createContext<WeatherContextValue | undefined>(undefined)
 
-export function WeatherProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [config] = useState<WeatherConfig>(() => loadWeatherConfig())
+interface WeatherProviderProps {
+  children: ReactNode
+  // Overrides the persisted config instead of reading it from localStorage.
+  // Used by the /design preview so it always shows mock data, regardless of
+  // whatever weather source is currently configured for the real dashboard.
+  forcedConfig?: WeatherConfig
+}
+
+export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps): JSX.Element {
+  const [config] = useState<WeatherConfig>(() => forcedConfig ?? loadWeatherConfig())
   const [value, setValue] = useState<Omit<WeatherContextValue, 'activeProvider' | 'config'>>({
     weather: null,
     source: 'mock',
