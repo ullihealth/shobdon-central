@@ -2,6 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dashboard theme tokens - defaults are byte-identical to the values that were
+   hardcoded throughout the dashboard components before this file existed.
+   Changing these values changes the live dashboard; see src/pages/DesignPage.tsx
+   for a sandbox that previews changes WITHOUT touching these :root defaults. */
+:root {
+  /* Page background gradient (DashboardPage, ConfigPage, ChecklistPage) */
+  --color-page-from: #071229;
+  --color-page-via: #081827;
+  --color-page-to: #03101a;
+
+  /* Header bar background gradient (Header.tsx only) */
+  --color-header-from: rgba(30, 41, 59, 0.6);
+  --color-header-via: rgba(15, 23, 42, 0.5);
+  --color-header-to: rgba(30, 41, 59, 0.5);
+
+  /* Panels */
+  --color-panel-bg: rgba(2, 6, 23, 0.85);
+  --color-card-bg: rgba(15, 23, 42, 0.9);
+  --color-border: #334155;
+
+  /* Text */
+  --color-text-primary: #ffffff;
+  --color-text-muted-300: #cbd5e1;
+  --color-text-muted-400: #94a3b8;
+  --color-text-muted-500: #64748b;
+
+  /* Accent blue (buttons/nav/hover) */
+  --color-accent-sky-400: #38bdf8;
+  --color-accent-sky-500: #0ea5e9;
+
+  /* Status colours - "arrow" family (wind arrow + glow) */
+  --color-status-good-arrow: #10b981;
+  --color-status-warn-arrow: #f59e0b;
+  --color-status-bad-arrow: #ef4444;
+
+  /* Status colours - "text" family (Headwind/Crosswind/Trend/Gust readouts) */
+  --color-status-good-text: #22c55e;
+  --color-status-warn-text: #f59e0b;
+  --color-status-bad-text: #ef4444;
+
+  /* Compass (CompassPanel.tsx inline SVG only) */
+  --color-compass-fill: rgba(15, 23, 42, 0.95);
+  --color-compass-ring: rgba(59, 130, 246, 0.25);
+  --color-compass-cardinal: rgba(59, 130, 246, 0.2);
+  --color-compass-markers: #94a3b8;
+}
+
 html, body, #root {
   height: 100%;
 }
@@ -17,7 +64,7 @@ body {
 
 /* Wind Arrow Colour Variants - subtle glow befitting a precision instrument pointer */
 .wind-arrow.arrow-green {
-  color: #10b981; /* emerald */
+  color: var(--color-status-good-arrow);
 }
 
 .wind-arrow.arrow-green .arrow-head {
@@ -25,7 +72,7 @@ body {
 }
 
 .wind-arrow.arrow-amber {
-  color: #f59e0b; /* amber */
+  color: var(--color-status-warn-arrow);
 }
 
 .wind-arrow.arrow-amber .arrow-head {
@@ -33,7 +80,7 @@ body {
 }
 
 .wind-arrow.arrow-red {
-  color: #ef4444; /* red */
+  color: var(--color-status-bad-arrow);
 }
 
 .wind-arrow.arrow-red .arrow-head {
