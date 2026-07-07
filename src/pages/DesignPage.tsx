@@ -311,6 +311,29 @@ export default function DesignPage(): JSX.Element {
           </div>
         </div>
 
+        {/* COLOUR PICKERS - shown before Templates/Apply so the workflow reads
+            top-to-bottom: pick colours first, then save/apply them below. */}
+        <div className="mb-8 flex flex-col gap-6">
+          {TOKEN_GROUPS.map((group) => (
+            <section key={group.title} className="rounded-2xl border border-border bg-panel p-6">
+              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{group.title}</div>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                {group.keys.map((key) => (
+                  <label key={key} className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={rgbaToHex(activeTokens[key])}
+                      onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
+                      className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
+                    />
+                    <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
         {/* TEMPLATES */}
         <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
           <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Templates</div>
@@ -423,28 +446,6 @@ export default function DesignPage(): JSX.Element {
             <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the theme - check connectivity and try again.</p>
           )}
         </section>
-
-        {/* COLOUR PICKERS */}
-        <div className="flex flex-col gap-6">
-          {TOKEN_GROUPS.map((group) => (
-            <section key={group.title} className="rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{group.title}</div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-                {group.keys.map((key) => (
-                  <label key={key} className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={rgbaToHex(activeTokens[key])}
-                      onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                      className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
-                    />
-                    <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
       </div>
     </div>
   )

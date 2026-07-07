@@ -269,24 +269,24 @@ export default function CompassPanel(): JSX.Element {
     )
   }
 
-  // justify-start, not justify-center: MediaPanel above renders flush-width
-  // (max-w-full is the binding constraint at typical column sizes), so
-  // centering this narrower compass+readout row would leave it inset from
-  // the left relative to Media's own flush left edge.
   return (
-    <div className="flex h-full items-center justify-start gap-7 pt-6">
+    <div className="flex h-full items-center justify-center gap-7 pt-6">
       {/* ── COMPASS INSTRUMENT ─────────────────────────────────────────
           Two overlapping SVGs sharing the same 400×400 viewBox.
           Layer 1 (bottom): static — compass rose and runway reference.
           Layer 2 (top):    live  — wind arrow only, always on top.
           Separate SVG elements guarantee the arrow can never merge
-          with the runway regardless of wind/runway alignment. */}
-      <div className="relative w-[clamp(200px,28vh,335px)] h-[clamp(200px,28vh,335px)] flex-shrink-0">
+          with the runway regardless of wind/runway alignment.
+          position:relative + left:-18px shifts ONLY this instrument left -
+          unlike a negative margin, it doesn't drag the readout panel
+          (the next flex sibling) along with it, since relative positioning
+          doesn't affect where following siblings are laid out. */}
+      <div className="relative left-[-18px] w-[clamp(200px,30vh,340px)] h-[clamp(200px,30vh,340px)] flex-shrink-0">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg
             viewBox="0 0 400 400"
-            className="w-[clamp(200px,28vh,335px)] h-[clamp(200px,28vh,335px)]"
+            className="w-[clamp(200px,30vh,340px)] h-[clamp(200px,30vh,340px)]"
             preserveAspectRatio="xMidYMid meet"
           >
             {/* Background Circle - the one themeable fill in this file; everything
@@ -370,7 +370,7 @@ export default function CompassPanel(): JSX.Element {
           {/* LAYER 2 — Wind arrow + annotation: always renders above Layer 1 */}
           <svg
             viewBox="0 0 400 400"
-            className="absolute inset-0 w-[clamp(200px,28vh,335px)] h-[clamp(200px,28vh,335px)]"
+            className="absolute inset-0 w-[clamp(200px,30vh,340px)] h-[clamp(200px,30vh,340px)]"
             style={{ pointerEvents: 'none' }}
             preserveAspectRatio="xMidYMid meet"
           >
