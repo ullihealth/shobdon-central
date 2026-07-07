@@ -44,10 +44,7 @@ export default function ConfigPage(): JSX.Element {
             {config.activeProvider === 'atc' && (
               <>
                 <AtcWeatherConfigSection config={config.atc} onChange={(atc) => updateConfig({ ...config, atc })} />
-                <AtcDeveloperTools
-                  stationUrl={config.atc.stationUrl}
-                  connectionTimeoutMs={config.atc.connectionTimeoutMs}
-                />
+                <AtcDeveloperTools />
               </>
             )}
             {config.activeProvider === 'internet' && (

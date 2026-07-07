@@ -46,18 +46,7 @@ export default function ChecklistPage(): JSX.Element {
             </Item>
           </Step>
 
-          <Step title="Step 2 — If the script doesn't work: manual capture">
-            <Item>
-              On the Config page, confirm Station URL is set to the real station address, then press{' '}
-              <Code>Capture &amp; Copy Weather Snapshot</Code> as a fallback.
-            </Item>
-            <Item>
-              If Chrome shows a one-time prompt asking to connect to devices on your local network, click{' '}
-              <Code>Allow</Code>.
-            </Item>
-          </Step>
-
-          <Step title="Step 3 — Check the result from your own Mac/phone">
+          <Step title="Step 2 — Check the result from your own Mac/phone">
             <Item>
               On your own device (not PC2), open Shobdon Central, go to Config, tap{' '}
               <Code>View Capture Logs</Code>.
@@ -68,7 +57,7 @@ export default function ChecklistPage(): JSX.Element {
             </Item>
           </Step>
 
-          <Step title="Step 4 — If something needs fixing">
+          <Step title="Step 3 — If something needs fixing">
             <Item>Diagnose using your own Mac with AI access, right there.</Item>
             <Item>Make the fix, push it live.</Item>
             <Item>
@@ -76,11 +65,11 @@ export default function ChecklistPage(): JSX.Element {
               reload, no need to touch its keyboard.
             </Item>
             <Item>Allow up to ~60 seconds for this to take effect (propagation can vary).</Item>
-            <Item>Go back to PC2 and press Capture again.</Item>
-            <Item>Repeat from Step 3 as many times as time allows.</Item>
+            <Item>Run <Code>capture-weathercentral.ps1</Code> again on PC2.</Item>
+            <Item>Repeat from Step 2 as many times as time allows.</Item>
           </Step>
 
-          <Step title="Step 5 — Optional: Investigate Station (only if time remains, lower priority than the above)">
+          <Step title="Step 4 — Optional: Investigate Station (only if time remains, lower priority than the above)">
             <Item>
               Click the <Code>Try HTTPS</Code> heading — this is the most useful of the three checks if time is
               short.
@@ -92,7 +81,7 @@ export default function ChecklistPage(): JSX.Element {
             </Item>
           </Step>
 
-          <Step title="Step 6 — Before leaving">
+          <Step title="Step 5 — Before leaving">
             <Item>Nothing to close or leave running - the script exits on its own once the capture is sent.</Item>
           </Step>
         </div>
