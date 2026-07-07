@@ -39,6 +39,12 @@ export default function ConfigPage(): JSX.Element {
               📋 ATC Visit Checklist
             </Link>
             <Link
+              to="/design"
+              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+            >
+              🎨 Dashboard Design
+            </Link>
+            <Link
               to="/runways"
               className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
             >
