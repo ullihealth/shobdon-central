@@ -25,6 +25,16 @@ import type { DesignTemplate, DesignTokens } from '../services/designTemplateSto
 // actually configured for the real dashboard right now.
 const MOCK_CONFIG = { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'mock' as const }
 
+// The preview renders the real dashboard layout at its actual reference
+// size, then scales the whole thing down with a single CSS transform - not
+// a shrunken box with the layout crammed into it. That's what keeps every
+// element (compass included) proportionally correct instead of clipped.
+const PREVIEW_REFERENCE_WIDTH = 1920
+const PREVIEW_REFERENCE_HEIGHT = 1080
+const PREVIEW_DISPLAY_WIDTH = 1000
+const PREVIEW_SCALE = PREVIEW_DISPLAY_WIDTH / PREVIEW_REFERENCE_WIDTH
+const PREVIEW_DISPLAY_HEIGHT = PREVIEW_REFERENCE_HEIGHT * PREVIEW_SCALE
+
 const TOKEN_GROUPS: { title: string; keys: (keyof DesignTokens)[] }[] = [
   {
     title: 'Backgrounds',
@@ -268,20 +278,37 @@ export default function DesignPage(): JSX.Element {
           every device that loads the real dashboard.
         </p>
 
-        {/* LIVE PREVIEW - isolated: CSS variable overrides only ever apply to this wrapper */}
-        <div className="mb-8 overflow-hidden rounded-2xl border border-border" style={{ height: 620, ...previewStyle }}>
-          <WeatherProvider forcedConfig={MOCK_CONFIG}>
-            <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-6 text-slate-100">
-              <div className="grid h-full grid-rows-[15%_1fr] gap-3">
-                <Header rightSlot={<WeatherStatusIndicator />} />
-                <div className="grid h-full grid-cols-[23%_54%_23%] gap-3">
-                  <LeftInfoPanel />
-                  <CentreDisplayPanel />
-                  <RightInfoPanel />
+        {/* LIVE PREVIEW - isolated: CSS variable overrides only ever apply to this wrapper.
+            Rendered at the dashboard's real 1920x1080 reference size (matching
+            DashboardPage.tsx's own max-w-[1920px]/7%-1fr/23-54-23 layout exactly), then
+            scaled down as one unit via transform - not squeezed into a shorter box - so
+            every element, including the compass, stays proportionally correct instead
+            of being clipped. */}
+        <div
+          className="mb-8 overflow-hidden rounded-2xl border border-border"
+          style={{ width: PREVIEW_DISPLAY_WIDTH, height: PREVIEW_DISPLAY_HEIGHT, ...previewStyle }}
+        >
+          <div
+            style={{
+              width: PREVIEW_REFERENCE_WIDTH,
+              height: PREVIEW_REFERENCE_HEIGHT,
+              transform: `scale(${PREVIEW_SCALE})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            <WeatherProvider forcedConfig={MOCK_CONFIG}>
+              <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
+                <div className="grid h-full grid-rows-[7%_1fr] gap-4">
+                  <Header rightSlot={<WeatherStatusIndicator />} />
+                  <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
+                    <LeftInfoPanel />
+                    <CentreDisplayPanel />
+                    <RightInfoPanel />
+                  </div>
                 </div>
               </div>
-            </div>
-          </WeatherProvider>
+            </WeatherProvider>
+          </div>
         </div>
 
         {/* TEMPLATES */}

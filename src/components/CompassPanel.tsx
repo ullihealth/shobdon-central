@@ -68,9 +68,12 @@ const SOUTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 180)
 const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 
 // Shobdon's own seeded runway group keeps its exact hand-tuned literal pixel
-// offsets (176/203/214 etc.) rather than the general derived formula below -
-// this is the one group where pixel-identical rendering is a hard
-// requirement, not just a nice-to-have.
+// cross-axis offsets (176/203/214 etc.) rather than the general derived
+// formula below - this is the one group where pixel-identical width/colour
+// rendering is a hard requirement. Its along-axis length, however, is
+// shared with every other group (see RUNWAY_STRIP_* below) so all runway
+// strips keep clear margin from the cardinal letters, not just non-Shobdon
+// ones.
 const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 
 // Geometry for any OTHER (non-Shobdon) runway group: a clean, symmetric
@@ -80,6 +83,20 @@ const GENERAL_STRIP_WIDTH = 22
 const GENERAL_STRIP_GAP = 5
 const GENERAL_TWIN_OFFSET = GENERAL_STRIP_GAP / 2 + GENERAL_STRIP_WIDTH / 2
 const GENERAL_SINGLE_STRIP_WIDTH = GENERAL_STRIP_WIDTH * 2
+
+// Shortened from the strip's original 130px half-length (measured from the
+// centre) so strip ends - and the centreline, which extends 10px further -
+// sit clearly below the cardinal letters' radius (149.4) instead of nearly
+// touching them, using the same margin-as-a-fraction-of-RING_RADIUS logic
+// already used for the letters themselves.
+const RUNWAY_STRIP_HALF_LENGTH = RING_RADIUS * 0.6
+const RUNWAY_STRIP_TOP = 200 - RUNWAY_STRIP_HALF_LENGTH
+const RUNWAY_STRIP_BOTTOM = 200 + RUNWAY_STRIP_HALF_LENGTH
+const RUNWAY_STRIP_HEIGHT = RUNWAY_STRIP_HALF_LENGTH * 2
+const RUNWAY_CENTRELINE_TOP = RUNWAY_STRIP_TOP - 10
+const RUNWAY_CENTRELINE_BOTTOM = RUNWAY_STRIP_BOTTOM + 10
+const RUNWAY_NUMBER_TOP_Y = RUNWAY_STRIP_TOP + 20
+const RUNWAY_NUMBER_BOTTOM_Y = RUNWAY_STRIP_BOTTOM - 20
 
 function splitRunwayLabel(label: string): [string, string] {
   const [first = '', second = ''] = label.split('/').map((part) => part.trim())
@@ -94,17 +111,20 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
         {/* Grass Strip (Left) */}
-        <rect x="176" y="70" width="22" height="260" fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x="176" y={RUNWAY_STRIP_TOP} width="22" height={RUNWAY_STRIP_HEIGHT} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
         {/* Tarmac Strip (Right) */}
-        <rect x="203" y="70" width="22" height="260" fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
+        <rect x="203" y={RUNWAY_STRIP_TOP} width="22" height={RUNWAY_STRIP_HEIGHT} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
         {/* Centreline (dashed) */}
-        <line x1="214" y1="60" x2="214" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        <line x1="214" y1={RUNWAY_CENTRELINE_TOP} x2="214" y2={RUNWAY_CENTRELINE_BOTTOM} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
         {/* Threshold Markers */}
-        <line x1="176" y1="70" x2="225" y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1="176" y1="330" x2="225" y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
-        {/* Runway Numbers */}
-        <text x="187" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{labelTop}</text>
-        <text x="214" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{labelBottom}</text>
+        <line x1="176" y1={RUNWAY_STRIP_TOP} x2="225" y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
+        <line x1="176" y1={RUNWAY_STRIP_BOTTOM} x2="225" y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />
+        {/* Runway Numbers - opacity raised from 0.28 (effectively invisible
+            against the disc background in practice) to 0.85, matching the
+            visibility of other secondary compass labels (e.g. intermediate
+            bearings). */}
+        <text x="187" y={RUNWAY_NUMBER_TOP_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
+        <text x="214" y={RUNWAY_NUMBER_BOTTOM_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
       </g>
     )
   }
@@ -117,13 +137,13 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
     const rightEdge = stripBX + GENERAL_STRIP_WIDTH
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        <rect x={stripAX} y="70" width={GENERAL_STRIP_WIDTH} height="260" fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
-        <rect x={stripBX} y="70" width={GENERAL_STRIP_WIDTH} height="260" fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
-        <line x1="200" y1="60" x2="200" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
-        <line x1={leftEdge} y1="70" x2={rightEdge} y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1={leftEdge} y1="330" x2={rightEdge} y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
-        <text x="200" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{labelTop}</text>
-        <text x="200" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{labelBottom}</text>
+        <rect x={stripAX} y={RUNWAY_STRIP_TOP} width={GENERAL_STRIP_WIDTH} height={RUNWAY_STRIP_HEIGHT} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x={stripBX} y={RUNWAY_STRIP_TOP} width={GENERAL_STRIP_WIDTH} height={RUNWAY_STRIP_HEIGHT} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
+        <line x1="200" y1={RUNWAY_CENTRELINE_TOP} x2="200" y2={RUNWAY_CENTRELINE_BOTTOM} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        <line x1={leftEdge} y1={RUNWAY_STRIP_TOP} x2={rightEdge} y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
+        <line x1={leftEdge} y1={RUNWAY_STRIP_BOTTOM} x2={rightEdge} y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />
+        <text x="200" y={RUNWAY_NUMBER_TOP_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
+        <text x="200" y={RUNWAY_NUMBER_BOTTOM_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
       </g>
     )
   }
@@ -134,12 +154,12 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const edge = stripX + GENERAL_SINGLE_STRIP_WIDTH
   return (
     <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-      <rect x={stripX} y="70" width={GENERAL_SINGLE_STRIP_WIDTH} height="260" fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
-      <line x1="200" y1="60" x2="200" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
-      <line x1={stripX} y1="70" x2={edge} y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
-      <line x1={stripX} y1="330" x2={edge} y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
-      <text x="200" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{labelTop}</text>
-      <text x="200" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{labelBottom}</text>
+      <rect x={stripX} y={RUNWAY_STRIP_TOP} width={GENERAL_SINGLE_STRIP_WIDTH} height={RUNWAY_STRIP_HEIGHT} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
+      <line x1="200" y1={RUNWAY_CENTRELINE_TOP} x2="200" y2={RUNWAY_CENTRELINE_BOTTOM} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+      <line x1={stripX} y1={RUNWAY_STRIP_TOP} x2={edge} y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
+      <line x1={stripX} y1={RUNWAY_STRIP_BOTTOM} x2={edge} y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />
+      <text x="200" y={RUNWAY_NUMBER_TOP_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
+      <text x="200" y={RUNWAY_NUMBER_BOTTOM_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
     </g>
   )
 }
@@ -249,20 +269,24 @@ export default function CompassPanel(): JSX.Element {
     )
   }
 
+  // justify-start, not justify-center: MediaPanel above renders flush-width
+  // (max-w-full is the binding constraint at typical column sizes), so
+  // centering this narrower compass+readout row would leave it inset from
+  // the left relative to Media's own flush left edge.
   return (
-    <div className="flex h-full items-center justify-center gap-7 pt-6">
+    <div className="flex h-full items-center justify-start gap-7 pt-6">
       {/* ── COMPASS INSTRUMENT ─────────────────────────────────────────
           Two overlapping SVGs sharing the same 400×400 viewBox.
           Layer 1 (bottom): static — compass rose and runway reference.
           Layer 2 (top):    live  — wind arrow only, always on top.
           Separate SVG elements guarantee the arrow can never merge
           with the runway regardless of wind/runway alignment. */}
-      <div className="relative w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)] flex-shrink-0">
+      <div className="relative w-[clamp(200px,28vh,335px)] h-[clamp(200px,28vh,335px)] flex-shrink-0">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg
             viewBox="0 0 400 400"
-            className="w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)]"
+            className="w-[clamp(200px,28vh,335px)] h-[clamp(200px,28vh,335px)]"
             preserveAspectRatio="xMidYMid meet"
           >
             {/* Background Circle - the one themeable fill in this file; everything
@@ -346,7 +370,7 @@ export default function CompassPanel(): JSX.Element {
           {/* LAYER 2 — Wind arrow + annotation: always renders above Layer 1 */}
           <svg
             viewBox="0 0 400 400"
-            className="absolute inset-0 w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)]"
+            className="absolute inset-0 w-[clamp(200px,28vh,335px)] h-[clamp(200px,28vh,335px)]"
             style={{ pointerEvents: 'none' }}
             preserveAspectRatio="xMidYMid meet"
           >
