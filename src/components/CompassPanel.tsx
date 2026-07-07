@@ -47,6 +47,26 @@ function circlePoint(
   }
 }
 
+// Matches the outer ring circle's own r="180" below. Cardinal letters are
+// placed at a fraction of this, not a bare literal, so the two stay linked.
+const RING_RADIUS = 180
+
+// 0.83 leaves clear margin between each glyph's rendered edge and the ring,
+// replacing the previous inconsistent per-letter radii (172/172/182/172),
+// where N/E/W nearly touched the ring and S sat past it entirely.
+const CARDINAL_LETTER_RADIUS = RING_RADIUS * 0.83
+
+// Pre-existing correction, preserved as-is at the new radius - likely
+// compensating for dominantBaseline="middle" centering less reliably than
+// textAnchor="middle" does across browsers (N/S never needed an equivalent
+// horizontal nudge).
+const CARDINAL_LETTER_VERTICAL_NUDGE = 8
+
+const NORTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 0)
+const EAST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 90)
+const SOUTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 180)
+const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
+
 // Shobdon's own seeded runway group keeps its exact hand-tuned literal pixel
 // offsets (176/203/214 etc.) rather than the general derived formula below -
 // this is the one group where pixel-identical rendering is a hard
@@ -249,7 +269,7 @@ export default function CompassPanel(): JSX.Element {
             <circle
               cx="200"
               cy="200"
-              r="180"
+              r={RING_RADIUS}
               fill="rgba(15, 23, 42, 0.95)"
               stroke="rgba(59, 130, 246, 0.25)"
               strokeWidth="1.5"
@@ -257,10 +277,10 @@ export default function CompassPanel(): JSX.Element {
 
             {/* COMPASS ROSE - Cardinal Points */}
             <g id="cardinal-points" className="pointer-events-none">
-              <text x="200" y="28" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
-              <text x="372" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
-              <text x="200" y="382" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
-              <text x="28" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+              <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
+              <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
+              <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
+              <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
             </g>
 
             {/* Cardinal Direction Lines */}
