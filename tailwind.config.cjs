@@ -25,6 +25,7 @@ module.exports = {
         'status-good': 'var(--color-status-good-text)',
         'status-warn': 'var(--color-status-warn-text)',
         'status-bad': 'var(--color-status-bad-text)',
+        'compass-disc-bg': 'var(--color-compass-disc-bg)',
       }
     }
   },

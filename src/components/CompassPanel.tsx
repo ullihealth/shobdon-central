@@ -265,12 +265,13 @@ export default function CompassPanel(): JSX.Element {
             className="w-[clamp(200px,28vh,320px)] h-[clamp(200px,28vh,320px)]"
             preserveAspectRatio="xMidYMid meet"
           >
-            {/* Background Circle */}
+            {/* Background Circle - the one themeable fill in this file; everything
+                else below stays on its existing literal colour, deliberately. */}
             <circle
               cx="200"
               cy="200"
               r={RING_RADIUS}
-              fill="rgba(15, 23, 42, 0.95)"
+              fill="var(--color-compass-disc-bg)"
               stroke="rgba(59, 130, 246, 0.25)"
               strokeWidth="1.5"
             />

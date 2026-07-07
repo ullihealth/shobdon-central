@@ -38,6 +38,7 @@ const TOKEN_GROUPS: { title: string; keys: (keyof DesignTokens)[] }[] = [
       '--color-panel-bg',
       '--color-card-bg',
       '--color-border',
+      '--color-compass-disc-bg',
     ],
   },
   {

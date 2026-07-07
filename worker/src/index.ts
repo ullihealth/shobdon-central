@@ -286,6 +286,7 @@ const THEME_TOKEN_KEYS = [
   '--color-status-good-arrow', '--color-status-warn-arrow', '--color-status-bad-arrow',
   '--color-status-good-text', '--color-status-warn-text', '--color-status-bad-text',
   '--color-compass-fill', '--color-compass-ring', '--color-compass-cardinal', '--color-compass-markers',
+  '--color-compass-disc-bg',
 ]
 
 function isValidThemeTokens(value: unknown): value is Record<string, string> {

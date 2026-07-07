@@ -24,6 +24,7 @@ export interface DesignTokens {
   '--color-compass-ring': string
   '--color-compass-cardinal': string
   '--color-compass-markers': string
+  '--color-compass-disc-bg': string
 }
 
 export interface DesignTemplate {
@@ -69,6 +70,7 @@ export const CURRENT_LIVE_THEME: DesignTemplate = {
     '--color-compass-ring': 'rgba(59, 130, 246, 0.25)',
     '--color-compass-cardinal': 'rgba(59, 130, 246, 0.2)',
     '--color-compass-markers': '#94a3b8',
+    '--color-compass-disc-bg': 'rgba(15, 23, 42, 0.95)',
   },
 }
 
@@ -112,6 +114,10 @@ export const BRIGHT_BLUE_THEME: DesignTemplate = {
     '--color-compass-ring': 'rgba(34, 211, 238, 0.45)',
     '--color-compass-cardinal': 'rgba(34, 211, 238, 0.3)',
     '--color-compass-markers': '#7dd3fc',
+    // Dark navy fitting the theme's overall depth, close to Sleap Airfield's
+    // own measured disc colour - no closer-fitting value already existed
+    // elsewhere in this theme's tokens.
+    '--color-compass-disc-bg': '#11192e',
   },
 }
 

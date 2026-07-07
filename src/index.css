@@ -47,6 +47,12 @@
   --color-compass-ring: rgba(59, 130, 246, 0.25);
   --color-compass-cardinal: rgba(59, 130, 246, 0.2);
   --color-compass-markers: #94a3b8;
+
+  /* Compass disc background - the one themeable piece of CompassPanel.tsx;
+     everything else in that file (runway, needle, ticks, letters, readout
+     text) stays on literal colours. Seeded byte-for-byte to the disc's
+     existing literal fill so default rendering is unchanged. */
+  --color-compass-disc-bg: rgba(15, 23, 42, 0.95);
 }
 
 html, body, #root {
