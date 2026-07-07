@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
-import { RUNWAY_HEADING, RUNWAY_IDENTIFIERS } from '../config/weatherStation'
+import { loadClubProfile } from '../services/clubProfileStore'
+import type { RunwayGroup } from '../types/clubProfile'
 import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
 import type { ArrowColour } from '../utils/windCalculations'
 import type { PressureTrend } from '../types/weather'
@@ -46,16 +47,93 @@ function circlePoint(
   }
 }
 
+// Shobdon's own seeded runway group keeps its exact hand-tuned literal pixel
+// offsets (176/203/214 etc.) rather than the general derived formula below -
+// this is the one group where pixel-identical rendering is a hard
+// requirement, not just a nice-to-have.
+const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
+
+// Geometry for any OTHER (non-Shobdon) runway group: a clean, symmetric
+// derivation instead of hand-tuned literals - offset = half the gap plus
+// half a strip's width, either side of the group's own axis.
+const GENERAL_STRIP_WIDTH = 22
+const GENERAL_STRIP_GAP = 5
+const GENERAL_TWIN_OFFSET = GENERAL_STRIP_GAP / 2 + GENERAL_STRIP_WIDTH / 2
+const GENERAL_SINGLE_STRIP_WIDTH = GENERAL_STRIP_WIDTH * 2
+
+function splitRunwayLabel(label: string): [string, string] {
+  const [first = '', second = ''] = label.split('/').map((part) => part.trim())
+  return [first, second]
+}
+
+function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
+  const [labelTop, labelBottom] = splitRunwayLabel(group.label)
+
+  if (group.id === SHOBDON_SEEDED_GROUP_ID) {
+    const [grass, tarmac] = group.strips
+    return (
+      <g transform={`rotate(${group.headingDegrees} 200 200)`}>
+        {/* Grass Strip (Left) */}
+        <rect x="176" y="70" width="22" height="260" fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
+        {/* Tarmac Strip (Right) */}
+        <rect x="203" y="70" width="22" height="260" fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
+        {/* Centreline (dashed) */}
+        <line x1="214" y1="60" x2="214" y2="320" stroke="var(--color-text-primary)" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        {/* Threshold Markers */}
+        <line x1="176" y1="70" x2="225" y2="70" stroke="var(--color-text-primary)" strokeWidth="2" opacity="0.18" />
+        <line x1="176" y1="330" x2="225" y2="330" stroke="var(--color-text-primary)" strokeWidth="2" opacity="0.18" />
+        {/* Runway Numbers */}
+        <text x="187" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="14" fontWeight="900" opacity="0.28">{labelTop}</text>
+        <text x="214" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="14" fontWeight="900" opacity="0.28">{labelBottom}</text>
+      </g>
+    )
+  }
+
+  if (group.twin) {
+    const [stripA, stripB] = group.strips
+    const stripAX = 200 - GENERAL_TWIN_OFFSET - GENERAL_STRIP_WIDTH
+    const stripBX = 200 + GENERAL_TWIN_OFFSET
+    const leftEdge = stripAX
+    const rightEdge = stripBX + GENERAL_STRIP_WIDTH
+    return (
+      <g transform={`rotate(${group.headingDegrees} 200 200)`}>
+        <rect x={stripAX} y="70" width={GENERAL_STRIP_WIDTH} height="260" fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x={stripBX} y="70" width={GENERAL_STRIP_WIDTH} height="260" fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
+        <line x1="200" y1="60" x2="200" y2="320" stroke="var(--color-text-primary)" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        <line x1={leftEdge} y1="70" x2={rightEdge} y2="70" stroke="var(--color-text-primary)" strokeWidth="2" opacity="0.18" />
+        <line x1={leftEdge} y1="330" x2={rightEdge} y2="330" stroke="var(--color-text-primary)" strokeWidth="2" opacity="0.18" />
+        <text x="200" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="14" fontWeight="900" opacity="0.28">{labelTop}</text>
+        <text x="200" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="14" fontWeight="900" opacity="0.28">{labelBottom}</text>
+      </g>
+    )
+  }
+
+  // Not twin: one full-width strip centred on the group's own axis.
+  const [strip] = group.strips
+  const stripX = 200 - GENERAL_SINGLE_STRIP_WIDTH / 2
+  const edge = stripX + GENERAL_SINGLE_STRIP_WIDTH
+  return (
+    <g transform={`rotate(${group.headingDegrees} 200 200)`}>
+      <rect x={stripX} y="70" width={GENERAL_SINGLE_STRIP_WIDTH} height="260" fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
+      <line x1="200" y1="60" x2="200" y2="320" stroke="var(--color-text-primary)" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+      <line x1={stripX} y1="70" x2={edge} y2="70" stroke="var(--color-text-primary)" strokeWidth="2" opacity="0.18" />
+      <line x1={stripX} y1="330" x2={edge} y2="330" stroke="var(--color-text-primary)" strokeWidth="2" opacity="0.18" />
+      <text x="200" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="14" fontWeight="900" opacity="0.28">{labelTop}</text>
+      <text x="200" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="14" fontWeight="900" opacity="0.28">{labelBottom}</text>
+    </g>
+  )
+}
+
 interface ReadoutRowProps {
   label: string
   value: string
   valueClassName?: string
 }
 
-function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowProps): JSX.Element {
+function ReadoutRow({ label, value, valueClassName = 'text-primary' }: ReadoutRowProps): JSX.Element {
   return (
     <>
-      <div className="text-right text-[16px] font-semibold uppercase leading-none tracking-widest text-slate-400">{label}</div>
+      <div className="text-right text-[16px] font-semibold uppercase leading-none tracking-widest text-muted-400">{label}</div>
       <div className={`text-[28px] font-extrabold leading-none ${valueClassName}`}>{value}</div>
     </>
   )
@@ -63,14 +141,16 @@ function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowP
 
 export default function CompassPanel(): JSX.Element {
   const { weather } = useWeather()
+  const [clubProfile] = useState(() => loadClubProfile())
 
   const compassState = useMemo<CompassState | null>(() => {
     if (!weather) return null
 
+    const activeRunwayHeading = clubProfile.runwayGroups[0].headingDegrees
     const { headwind, crosswind } = calculateWindComponents(
       weather.windSpeed,
       weather.windDirection,
-      RUNWAY_HEADING
+      activeRunwayHeading
     )
     const arrowColour = determineArrowColour(headwind, crosswind)
 
@@ -85,7 +165,7 @@ export default function CompassPanel(): JSX.Element {
       crosswind,
       arrowColour,
     }
-  }, [weather])
+  }, [weather, clubProfile])
 
   const trendSymbol = useMemo(() => {
     switch (compassState?.pressureTrend) {
@@ -112,20 +192,20 @@ export default function CompassPanel(): JSX.Element {
   const trendColour = useMemo(() => {
     switch (compassState?.pressureTrend) {
       case 'rising':
-        return 'text-green-500'
+        return 'text-status-good'
       case 'falling':
-        return 'text-red-500'
+        return 'text-status-bad'
       default:
-        return 'text-slate-500'
+        return 'text-muted-500'
     }
   }, [compassState])
 
   const crosswindColour = useMemo(() => {
-    return Math.abs(compassState?.crosswind ?? 0) > 5 ? 'text-amber-500' : 'text-slate-300'
+    return Math.abs(compassState?.crosswind ?? 0) > 5 ? 'text-status-warn' : 'text-muted-300'
   }, [compassState])
 
   const headwindColour = useMemo(() => {
-    return (compassState?.headwind ?? 0) > 0 ? 'text-green-500' : 'text-red-500'
+    return (compassState?.headwind ?? 0) > 0 ? 'text-status-good' : 'text-status-bad'
   }, [compassState])
 
   const arrowColourClass = useMemo(() => {
@@ -143,7 +223,7 @@ export default function CompassPanel(): JSX.Element {
 
   if (!compassState) {
     return (
-      <div className="flex h-full items-center justify-center text-slate-400">
+      <div className="flex h-full items-center justify-center text-muted-400">
         Loading weather…
       </div>
     )
@@ -170,21 +250,21 @@ export default function CompassPanel(): JSX.Element {
               cx="200"
               cy="200"
               r="180"
-              fill="rgba(15, 23, 42, 0.95)"
-              stroke="rgba(59, 130, 246, 0.25)"
+              fill="var(--color-compass-fill)"
+              stroke="var(--color-compass-ring)"
               strokeWidth="1.5"
             />
 
             {/* COMPASS ROSE - Cardinal Points */}
             <g id="cardinal-points" className="pointer-events-none">
-              <text x="200" y="28" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
-              <text x="372" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
-              <text x="200" y="382" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
-              <text x="28" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+              <text x="200" y="28" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="41" fontWeight="800">N</text>
+              <text x="372" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="41" fontWeight="800">E</text>
+              <text x="200" y="382" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="41" fontWeight="800">S</text>
+              <text x="28" y="208" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="var(--color-text-primary)" fontSize="41" fontWeight="800">W</text>
             </g>
 
             {/* Cardinal Direction Lines */}
-            <g id="cardinal-lines" stroke="rgba(59, 130, 246, 0.2)" strokeWidth="1.5">
+            <g id="cardinal-lines" stroke="var(--color-compass-cardinal)" strokeWidth="1.5">
               <line x1="200" y1="20" x2="200" y2="50" />
               <line x1="350" y1="200" x2="380" y2="200" />
               <line x1="200" y1="350" x2="200" y2="380" />
@@ -203,7 +283,8 @@ export default function CompassPanel(): JSX.Element {
                     textAnchor="middle"
                     dominantBaseline="middle"
                     className="select-none"
-                    fill="rgba(148, 163, 184, 0.85)"
+                    fill="var(--color-compass-markers)"
+                    fillOpacity={0.85}
                     fontSize="18"
                     fontWeight="600"
                     letterSpacing="0.5"
@@ -215,7 +296,7 @@ export default function CompassPanel(): JSX.Element {
             </g>
 
             {/* Degree Markers (every 30°) */}
-            <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+            <g id="degree-markers" stroke="var(--color-compass-markers)" strokeOpacity={0.25} strokeWidth="1">
               {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
                 const point = circlePoint(200, 200, 175, degree)
                 const innerPoint = circlePoint(200, 200, 163, degree)
@@ -231,24 +312,15 @@ export default function CompassPanel(): JSX.Element {
               })}
             </g>
 
-            {/* RUNWAY GRAPHIC - background reference axis; never to compete with the wind arrow */}
-            <g id="runway-graphic" transform={`rotate(${RUNWAY_HEADING} 200 200)`}>
-              {/* Grass Strip (Left) */}
-              <rect x="176" y="70" width="22" height="260" fill="#4caf50" opacity="0.65" />
-              {/* Tarmac Strip (Right) */}
-              <rect x="203" y="70" width="22" height="260" fill="#a8b4c4" opacity="0.5" />
-              {/* Centreline (dashed) */}
-              <line x1="214" y1="60" x2="214" y2="320" stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
-              {/* Threshold Markers */}
-              <line x1="176" y1="70" x2="225" y2="70" stroke="white" strokeWidth="2" opacity="0.18" />
-              <line x1="176" y1="330" x2="225" y2="330" stroke="white" strokeWidth="2" opacity="0.18" />
-              {/* Runway Numbers */}
-              <text x="187" y="95" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[0]}</text>
-              <text x="214" y="315" textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.28">{RUNWAY_IDENTIFIERS[1]}</text>
+            {/* RUNWAY GRAPHIC(S) - background reference axis; never to compete with the wind arrow */}
+            <g id="runway-graphics">
+              {clubProfile.runwayGroups.map((group) => (
+                <RunwayGroupGraphic key={group.id} group={group} />
+              ))}
             </g>
 
             {/* Centre Point */}
-            <circle cx="200" cy="200" r="4" fill="white" opacity="0.5" />
+            <circle cx="200" cy="200" r="4" fill="var(--color-text-primary)" opacity="0.5" />
           </svg>
 
           {/* LAYER 2 — Wind arrow + annotation: always renders above Layer 1 */}
@@ -291,7 +363,7 @@ export default function CompassPanel(): JSX.Element {
                 textAnchor="middle"
                 dominantBaseline="middle"
                 className="select-none"
-                fill="white"
+                fill="var(--color-text-primary)"
                 fontSize="16"
                 fontWeight="700"
                 fontFamily="monospace"
@@ -309,7 +381,7 @@ export default function CompassPanel(): JSX.Element {
         <ReadoutRow
           label="Gust"
           value={compassState.windGust ? `${compassState.windGust} kt` : '—'}
-          valueClassName={compassState.windGust ? 'text-amber-500' : 'text-slate-500'}
+          valueClassName={compassState.windGust ? 'text-status-warn' : 'text-muted-500'}
         />
         <ReadoutRow
           label="Headwind"

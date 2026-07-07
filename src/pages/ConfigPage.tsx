@@ -31,12 +31,20 @@ export default function ConfigPage(): JSX.Element {
 
       <div className="mx-auto max-w-3xl px-6 pb-10">
         <div className="mt-6 rounded-3xl border border-slate-700 bg-slate-950/85 p-10 shadow-xl shadow-slate-950/20">
-          <Link
-            to="/checklist"
-            className="mb-8 inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-          >
-            📋 ATC Visit Checklist
-          </Link>
+          <div className="mb-8 flex flex-wrap gap-3">
+            <Link
+              to="/checklist"
+              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+            >
+              📋 ATC Visit Checklist
+            </Link>
+            <Link
+              to="/runways"
+              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+            >
+              🛬 Runways
+            </Link>
+          </div>
 
           <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />
 
