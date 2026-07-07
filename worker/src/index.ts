@@ -272,6 +272,65 @@ async function parseWeatherHtml(html: string): Promise<{ parsed: Record<string, 
   return { parsed, raw_unparsed }
 }
 
+// ── Active theme (shared across all devices via KV) ────────────────────
+// Mirrors the DesignTokens key set in src/services/designTemplateStore.ts.
+// Duplicated here rather than imported, since this worker is a separate
+// deployable with no shared build/import path into the Vite app - keep
+// both lists in sync if a token is ever added or removed.
+const THEME_TOKEN_KEYS = [
+  '--color-page-from', '--color-page-via', '--color-page-to',
+  '--color-header-from', '--color-header-via', '--color-header-to',
+  '--color-panel-bg', '--color-card-bg', '--color-border',
+  '--color-text-primary', '--color-text-muted-300', '--color-text-muted-400', '--color-text-muted-500',
+  '--color-accent-sky-400', '--color-accent-sky-500',
+  '--color-status-good-arrow', '--color-status-warn-arrow', '--color-status-bad-arrow',
+  '--color-status-good-text', '--color-status-warn-text', '--color-status-bad-text',
+  '--color-compass-fill', '--color-compass-ring', '--color-compass-cardinal', '--color-compass-markers',
+]
+
+function isValidThemeTokens(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== 'object') return false
+  return THEME_TOKEN_KEYS.every((key) => typeof (value as Record<string, unknown>)[key] === 'string')
+}
+
+async function handleSetTheme(request: Request, env: Env): Promise<Response> {
+  let payload: unknown
+  try {
+    payload = await request.json()
+  } catch {
+    return new Response('Invalid JSON', { status: 400, headers: CORS_HEADERS })
+  }
+
+  if (!isValidThemeTokens(payload)) {
+    return new Response('Invalid theme token shape', { status: 400, headers: CORS_HEADERS })
+  }
+
+  await env.CAPTURES.put('theme', JSON.stringify(payload))
+
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
+
+// Returns the stored token set verbatim, or a 404 with a null body if no
+// theme has ever been applied yet - the client's fallback for either case
+// is simply to leave the page's committed :root defaults in place.
+async function handleGetTheme(env: Env): Promise<Response> {
+  const raw = await env.CAPTURES.get('theme')
+  if (!raw) {
+    return new Response(JSON.stringify(null), {
+      status: 404,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
+  }
+
+  return new Response(raw, {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
+
 async function handlePost(request: Request, env: Env): Promise<Response> {
   let payload: unknown
   try {
@@ -395,6 +454,14 @@ export default {
 
     if (pathname === '/investigate' && request.method === 'POST') {
       return handleLogInvestigation(request, env)
+    }
+
+    if (pathname === '/theme' && request.method === 'POST') {
+      return handleSetTheme(request, env)
+    }
+
+    if (pathname === '/theme' && request.method === 'GET') {
+      return handleGetTheme(env)
     }
 
     if (request.method === 'POST') return handlePost(request, env)

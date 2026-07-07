@@ -82,12 +82,17 @@ export const BRIGHT_BLUE_THEME: DesignTemplate = {
   name: 'Bright Blue',
   createdAt: '2026-07-07T00:00:00.000Z',
   tokens: {
-    '--color-page-from': '#0b3d91',
-    '--color-page-via': '#1450b8',
-    '--color-page-to': '#0a2f6e',
-    '--color-header-from': 'rgba(20, 80, 184, 0.6)',
-    '--color-header-via': 'rgba(11, 61, 145, 0.5)',
-    '--color-header-to': 'rgba(20, 80, 184, 0.5)',
+    // Anchored to Sleap Airfield's real background, pixel-sampled from a
+    // photo: rgb(19, 26, 215) / #131AD7. Kept as the brightest "via" stop,
+    // with from/to as darker variants of the exact same hue (channels
+    // scaled down, not desaturated) to preserve the existing dark-to-
+    // light-to-dark gradient feel rather than flattening to one colour.
+    '--color-page-from': '#0a0e76',
+    '--color-page-via': '#131ad7',
+    '--color-page-to': '#07094b',
+    '--color-header-from': 'rgba(19, 26, 215, 0.6)',
+    '--color-header-via': 'rgba(10, 14, 118, 0.5)',
+    '--color-header-to': 'rgba(19, 26, 215, 0.5)',
     '--color-panel-bg': 'rgba(10, 47, 110, 0.85)',
     '--color-card-bg': 'rgba(20, 80, 184, 0.9)',
     '--color-border': '#3b82f6',

@@ -8,6 +8,7 @@ import RightInfoPanel from '../components/RightInfoPanel'
 import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
 import { WeatherProvider } from '../context/WeatherContext'
 import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
+import { THEME_URL, REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 import {
   CURRENT_LIVE_THEME,
   CURRENT_LIVE_THEME_ID,
@@ -51,11 +52,11 @@ const TOKEN_GROUPS: { title: string; keys: (keyof DesignTokens)[] }[] = [
       '--color-status-good-arrow',
       '--color-status-warn-arrow',
       '--color-status-bad-arrow',
-      '--color-status-good-text',
-      '--color-status-warn-text',
-      '--color-status-bad-text',
     ],
   },
+  // No Status Text (good/warn/bad) swatches: nothing in the preview or the
+  // live dashboard reads text-status-good/warn/bad - only /design's and
+  // /runways' own Delete/Remove buttons do, outside the preview entirely.
   // No "Compass" group: CompassPanel.tsx renders with literal colours only
   // (deliberately, post-regression-fix) and doesn't read these tokens, so
   // sliders for them here would silently do nothing.
@@ -99,6 +100,8 @@ function hexToRgbaPreservingAlpha(hex: string, originalValue: string): string {
   return `rgba(${r}, ${g}, ${b}, ${parsed.a})`
 }
 
+type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
+
 export default function DesignPage(): JSX.Element {
   const [templates, setTemplates] = useState<DesignTemplate[]>(() => loadDesignTemplates())
   const [activeTokens, setActiveTokens] = useState<DesignTokens>(CURRENT_LIVE_THEME.tokens)
@@ -107,6 +110,7 @@ export default function DesignPage(): JSX.Element {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameInput, setRenameInput] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
+  const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
 
   const allTemplates = [CURRENT_LIVE_THEME, BRIGHT_BLUE_THEME, ...templates]
 
@@ -171,6 +175,38 @@ export default function DesignPage(): JSX.Element {
     }
   }
 
+  // Distinct from "Save as template" (a local, personal action) - this
+  // pushes activeTokens to every device that loads the dashboard, via the
+  // same KV + refresh-flag mechanism "Refresh PC2 Now" already uses. Gated
+  // behind a confirm() since it affects the shared, physically-visible
+  // display, not just this browser.
+  async function handleApplyToLiveDashboard() {
+    if (
+      !window.confirm(
+        'Apply this theme to the live dashboard? This affects every device that loads it (PC2, clubhouse display, etc.) within about 15 seconds.'
+      )
+    ) {
+      return
+    }
+
+    setApplyStatus('working')
+    try {
+      const response = await fetch(THEME_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(activeTokens),
+      })
+      if (!response.ok) {
+        setApplyStatus('error')
+        return
+      }
+      await fetch(REFRESH_TRIGGER_URL)
+      setApplyStatus('success')
+    } catch {
+      setApplyStatus('error')
+    }
+  }
+
   function handleExport() {
     const activeTemplate = allTemplates.find((t) => t.id === selectedId)
     const exportName = activeTemplate?.name ?? 'Untitled Theme'
@@ -226,9 +262,9 @@ export default function DesignPage(): JSX.Element {
         </Link>
         <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">Dashboard Design</h1>
         <p className="mb-6 max-w-2xl text-sm text-muted-400">
-          A sandbox for experimenting with the dashboard's colours. This preview only reacts to the colours
-          below - it never affects the live dashboard, and nothing is saved to it. Applying a template to the
-          real dashboard is a deliberate future step, not part of this tool.
+          Experiment freely - the preview below only reacts to the colours you pick here, and nothing is saved
+          until you choose to. When you're ready, use "Apply to Live Dashboard" further down to push a theme to
+          every device that loads the real dashboard.
         </p>
 
         {/* LIVE PREVIEW - isolated: CSS variable overrides only ever apply to this wrapper */}
@@ -331,6 +367,33 @@ export default function DesignPage(): JSX.Element {
             </label>
           </div>
           {importError && <p className="mt-3 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
+        </section>
+
+        {/* APPLY TO LIVE DASHBOARD - deliberately separate from the Templates
+            section above: this affects the shared, physically-visible
+            display on every device, not just this browser's local template
+            list, so it gets its own confirm-gated action and its own
+            status feedback rather than being folded into "Save as template". */}
+        <section className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
+          <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Dashboard</div>
+          <p className="mb-4 text-sm text-muted-400">
+            Pushes the colours currently shown above to every device that loads the real dashboard - PC2, the
+            clubhouse display, home browsers - within about 15 seconds.
+          </p>
+          <button
+            type="button"
+            onClick={handleApplyToLiveDashboard}
+            disabled={applyStatus === 'working'}
+            className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Dashboard'}
+          </button>
+          {applyStatus === 'success' && (
+            <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
+          )}
+          {applyStatus === 'error' && (
+            <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the theme - check connectivity and try again.</p>
+          )}
         </section>
 
         {/* COLOUR PICKERS */}

@@ -18,3 +18,7 @@ export const REFRESH_TRIGGER_URL = `${CAPTURE_WORKER_BASE}/refresh?key=${CAPTURE
 
 // Called by InvestigateStation's preset outcome buttons to log a one-tap result.
 export const INVESTIGATION_LOG_URL = `${CAPTURE_WORKER_BASE}/investigate?key=${CAPTURE_KEY}`
+
+// GET fetches the active theme's tokens (DashboardPage.tsx, on load); POST
+// sets them (/design's "Apply to Live Dashboard").
+export const THEME_URL = `${CAPTURE_WORKER_BASE}/theme?key=${CAPTURE_KEY}`
