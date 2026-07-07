@@ -25,7 +25,7 @@ function Code({ children }: { children: ReactNode }): JSX.Element {
 
 export default function ChecklistPage(): JSX.Element {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#071229] via-[#081827] to-[#03101a] text-slate-100">
+    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
       <div className="mx-auto max-w-2xl px-5 pb-16 pt-8">
         <Link to="/config" className="text-sm font-semibold text-slate-400 hover:text-sky-400">
           ← Back to Config
@@ -34,24 +34,22 @@ export default function ChecklistPage(): JSX.Element {
         <h1 className="mb-8 mt-3 text-2xl font-black uppercase tracking-wide text-white">ATC Visit Checklist</h1>
 
         <div className="flex flex-col gap-5">
-          <Step title="Step 1 — Get the relay running on PC2">
+          <Step title="Step 1 — Get real data in from PC2">
             <Item>Open Shobdon Central on PC2's browser, go to Config.</Item>
             <Item>
-              Click <Code>Download relay.ps1</Code> and <Code>Download start-relay.bat</Code> (save both to the
-              same folder, e.g. Desktop).
+              Click <Code>Download capture-weathercentral.ps1</Code> (save it anywhere, e.g. Desktop).
             </Item>
             <Item>
-              Double-click <Code>start-relay.bat</Code>. Confirm the console window shows{' '}
-              <Code>Relay listening on http://localhost:8791/adisp</Code>.
+              Right-click the downloaded file and choose <Code>Run with PowerShell</Code>. It fetches the
+              station directly and sends the result to Shobdon Central on its own - no browser step needed.
+              Confirm the console shows <Code>Capture sent successfully at ...</Code>.
             </Item>
           </Step>
 
-          <Step title="Step 2 — Run the capture">
+          <Step title="Step 2 — If the script doesn't work: manual capture">
             <Item>
-              On the Config page, change Station URL to <Code>http://localhost:8791/adisp</Code>.
-            </Item>
-            <Item>
-              Press <Code>Capture &amp; Copy Weather Snapshot</Code>.
+              On the Config page, confirm Station URL is set to the real station address, then press{' '}
+              <Code>Capture &amp; Copy Weather Snapshot</Code> as a fallback.
             </Item>
             <Item>
               If Chrome shows a one-time prompt asking to connect to devices on your local network, click{' '}
@@ -95,8 +93,7 @@ export default function ChecklistPage(): JSX.Element {
           </Step>
 
           <Step title="Step 6 — Before leaving">
-            <Item>Close the relay console window on PC2.</Item>
-            <Item>No need to leave anything running unless told otherwise.</Item>
+            <Item>Nothing to close or leave running - the script exits on its own once the capture is sent.</Item>
           </Step>
         </div>
       </div>

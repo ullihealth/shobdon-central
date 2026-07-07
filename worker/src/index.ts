@@ -120,6 +120,158 @@ async function handleLogInvestigation(request: Request, env: Env): Promise<Respo
   })
 }
 
+// ── WeatherLink adisp.php parsing ───────────────────────────────────────
+// Real field IDs confirmed from a live capture. Each field gets its own
+// small named function so a future WeatherLink format change only requires
+// touching the one function for the field that changed.
+
+const KNOWN_FIELD_IDS = [
+  'RWY', 'QNH', 'QFE', 'WIND', 'AVGWSPEED', 'TEMPDEW',
+  'Time', 'UTCDATE', 'LOCALTIME', 'WATCHDOG', 'NOTAMSBOX',
+]
+
+// HTMLRewriter's text() hands back RAW text - entities like &deg; are not
+// decoded to °. Decode the handful that actually show up in this page's
+// fields so every parser below can match against real Unicode characters
+// regardless of whether the station emits literal UTF-8 or entities.
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&deg;/gi, '°')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+}
+
+// Extracts the text content of every element that has an `id` attribute,
+// using the Workers runtime's built-in HTMLRewriter - no parsing library
+// needed. Elements not in KNOWN_FIELD_IDS are left for the caller to route
+// into raw_unparsed rather than silently dropping them.
+async function extractFieldsById(html: string): Promise<Record<string, string>> {
+  const fields: Record<string, string> = {}
+  let currentId: string | null = null
+
+  const rewriter = new HTMLRewriter().on('[id]', {
+    element(el: Element) {
+      const id = el.getAttribute('id')
+      if (!id) return
+      currentId = id
+      fields[id] = fields[id] ?? ''
+      el.onEndTag(() => {
+        currentId = null
+      })
+    },
+    text(chunk: Text) {
+      if (currentId) {
+        fields[currentId] += chunk.text
+      }
+    },
+  })
+
+  await rewriter.transform(new Response(html)).text()
+
+  for (const id of Object.keys(fields)) {
+    fields[id] = decodeHtmlEntities(fields[id])
+  }
+
+  return fields
+}
+
+// "RWY 26 LH" -> { runway: "26", hand: "LH" }
+function parseRunway(raw: string): { runway: string | null; hand: string | null } {
+  const match = raw.match(/RWY\s+(\d+)\s+([A-Z]+)/i)
+  return match ? { runway: match[1], hand: match[2] } : { runway: null, hand: null }
+}
+
+// "1017.9hPa" -> { qnh_hpa: 1017.9 }
+function parseQnh(raw: string): { qnh_hpa: number | null } {
+  const match = raw.match(/([\d.]+)\s*hPa/i)
+  return { qnh_hpa: match ? parseFloat(match[1]) : null }
+}
+
+// "1006.3hPa" -> { qfe_hpa: 1006.3 }
+function parseQfe(raw: string): { qfe_hpa: number | null } {
+  const match = raw.match(/([\d.]+)\s*hPa/i)
+  return { qfe_hpa: match ? parseFloat(match[1]) : null }
+}
+
+// "300°/7kt" -> { wind_dir_deg: 300, wind_speed_kt: 7 }
+function parseWind(raw: string): { wind_dir_deg: number | null; wind_speed_kt: number | null } {
+  const match = raw.match(/(\d+)\s*°\s*\/\s*([\d.]+)\s*kt/i)
+  return match
+    ? { wind_dir_deg: parseInt(match[1], 10), wind_speed_kt: parseFloat(match[2]) }
+    : { wind_dir_deg: null, wind_speed_kt: null }
+}
+
+// "7.8kt (10min avg.)" -> { wind_avg_kt: 7.8, wind_avg_period_min: 10 }
+function parseAvgWind(raw: string): { wind_avg_kt: number | null; wind_avg_period_min: number | null } {
+  const match = raw.match(/([\d.]+)\s*kt\s*\(\s*(\d+)\s*min/i)
+  return match
+    ? { wind_avg_kt: parseFloat(match[1]), wind_avg_period_min: parseInt(match[2], 10) }
+    : { wind_avg_kt: null, wind_avg_period_min: null }
+}
+
+// "25.3°C/17.3°C" -> { temp_c: 25.3, dewpoint_c: 17.3 }
+function parseTempDew(raw: string): { temp_c: number | null; dewpoint_c: number | null } {
+  const match = raw.match(/(-?[\d.]+)\s*°C\s*\/\s*(-?[\d.]+)\s*°C/i)
+  return match
+    ? { temp_c: parseFloat(match[1]), dewpoint_c: parseFloat(match[2]) }
+    : { temp_c: null, dewpoint_c: null }
+}
+
+// Time "11:46:26 UTC" + UTCDATE "07/07/26" (DD/MM/YY) -> "2026-07-07T11:46:26Z"
+function parseObservedAt(time: string, utcDate: string): { observed_at_utc: string | null } {
+  const dateMatch = utcDate.match(/^(\d{2})\/(\d{2})\/(\d{2})$/)
+  const timeMatch = time.match(/^(\d{2}):(\d{2}):(\d{2})/)
+  if (!dateMatch || !timeMatch) return { observed_at_utc: null }
+
+  const [, dd, mm, yy] = dateMatch
+  const [, hh, min, ss] = timeMatch
+  const year = 2000 + Number(yy)
+
+  return { observed_at_utc: `${year}-${mm}-${dd}T${hh}:${min}:${ss}Z` }
+}
+
+// Empty string is a valid, expected state. Anything else is a real warning.
+function parseWatchdog(raw: string): { watchdog_ok: boolean; watchdog_message: string | null } {
+  const trimmed = raw.trim()
+  return trimmed === '' ? { watchdog_ok: true, watchdog_message: null } : { watchdog_ok: false, watchdog_message: trimmed }
+}
+
+// Empty string -> no NOTAMs. Non-empty: the real delimiter is unconfirmed
+// (never seen non-empty in a live capture yet), so store the whole string
+// as a single-element array rather than guessing at a split character.
+function parseNotams(raw: string): { notams: string[] } {
+  const trimmed = raw.trim()
+  return trimmed === '' ? { notams: [] } : { notams: [trimmed] }
+}
+
+async function parseWeatherHtml(html: string): Promise<{ parsed: Record<string, unknown>; raw_unparsed: Record<string, string> }> {
+  const fields = await extractFieldsById(html)
+
+  const parsed: Record<string, unknown> = {
+    ...parseRunway(fields.RWY ?? ''),
+    ...parseQnh(fields.QNH ?? ''),
+    ...parseQfe(fields.QFE ?? ''),
+    ...parseWind(fields.WIND ?? ''),
+    ...parseAvgWind(fields.AVGWSPEED ?? ''),
+    ...parseTempDew(fields.TEMPDEW ?? ''),
+    ...parseObservedAt(fields.Time ?? '', fields.UTCDATE ?? ''),
+    ...parseWatchdog(fields.WATCHDOG ?? ''),
+    ...parseNotams(fields.NOTAMSBOX ?? ''),
+    // Secondary debug field only - never the primary timestamp.
+    local_time_debug: fields.LOCALTIME ?? null,
+  }
+
+  const raw_unparsed: Record<string, string> = {}
+  for (const [id, text] of Object.entries(fields)) {
+    if (!KNOWN_FIELD_IDS.includes(id)) {
+      raw_unparsed[id] = text
+    }
+  }
+
+  return { parsed, raw_unparsed }
+}
+
 async function handlePost(request: Request, env: Env): Promise<Response> {
   let payload: unknown
   try {
@@ -128,7 +280,26 @@ async function handlePost(request: Request, env: Env): Promise<Response> {
     return new Response('Invalid JSON', { status: 400, headers: CORS_HEADERS })
   }
 
-  const entry: CaptureEntry = { receivedAt: new Date().toISOString(), payload }
+  const body = payload as { html?: unknown; capturedAt?: unknown }
+  let entry: CaptureEntry
+
+  if (typeof body.html === 'string') {
+    // New-style capture from capture-weathercentral.ps1: parse server-side,
+    // keep the raw HTML alongside the parsed result rather than replacing it.
+    const { parsed, raw_unparsed } = await parseWeatherHtml(body.html)
+    entry = {
+      receivedAt: new Date().toISOString(),
+      payload: {
+        capturedAt: typeof body.capturedAt === 'string' ? body.capturedAt : null,
+        raw: body.html,
+        parsed,
+        raw_unparsed,
+      },
+    }
+  } else {
+    // Existing browser-report shape (Capture & Copy button) - unchanged.
+    entry = { receivedAt: new Date().toISOString(), payload }
+  }
 
   const historyRaw = await env.CAPTURES.get('history')
   const history: CaptureEntry[] = historyRaw ? JSON.parse(historyRaw) : []
