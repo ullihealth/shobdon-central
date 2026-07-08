@@ -40,9 +40,26 @@ export default function ChecklistPage(): JSX.Element {
               Click <Code>Download capture-weathercentral.ps1</Code> (save it anywhere, e.g. Desktop).
             </Item>
             <Item>
-              Right-click the downloaded file and choose <Code>Run with PowerShell</Code>. It fetches the
-              station directly and sends the result to Shobdon Central on its own - no browser step needed.
-              Confirm the console shows <Code>Capture sent successfully at ...</Code>.
+              Right-click the downloaded file and choose <Code>Run with PowerShell</Code>. This opens a black
+              PowerShell window.
+            </Item>
+            <Item>
+              You may see a message asking something like "Do you want to run this script?" because the file
+              was downloaded from the internet — this is normal, expected Windows security behaviour, not an
+              error. Type <Code>R</Code> and press Enter to run it once.
+            </Item>
+            <Item>
+              Confirm the window shows <Code>Starting continuous capture every 60 seconds...</Code> followed by{' '}
+              <Code>Capture sent successfully at ...</Code>, repeating on its own every minute.
+            </Item>
+            <Item>
+              Leave this window open — minimizing it is fine, but closing it stops the data feed. The browser
+              can be used completely normally at the same time; this script doesn't use or need it. No further
+              action is needed — it keeps capturing automatically every 60 seconds.
+            </Item>
+            <Item>
+              If PC2 restarts, or this window ever gets closed, the data feed stops — just repeat this step to
+              start it again.
             </Item>
           </Step>
 
@@ -65,7 +82,11 @@ export default function ChecklistPage(): JSX.Element {
               reload, no need to touch its keyboard.
             </Item>
             <Item>Allow up to ~60 seconds for this to take effect (propagation can vary).</Item>
-            <Item>Run <Code>capture-weathercentral.ps1</Code> again on PC2.</Item>
+            <Item>
+              No need to re-run the capture script — if it's still running from Step 1, it's already sending
+              fresh captures every 60 seconds on its own. Only re-run it if that window was closed or PC2 was
+              restarted.
+            </Item>
             <Item>Repeat from Step 2 as many times as time allows.</Item>
           </Step>
 
@@ -82,7 +103,10 @@ export default function ChecklistPage(): JSX.Element {
           </Step>
 
           <Step title="Step 5 — Before leaving">
-            <Item>Nothing to close or leave running - the script exits on its own once the capture is sent.</Item>
+            <Item>
+              Leave the PowerShell window running on PC2 (minimized is fine) so captures keep coming in after
+              you leave. Only stop it (Ctrl+C in the window, or close it) if you're told to.
+            </Item>
           </Step>
         </div>
       </div>

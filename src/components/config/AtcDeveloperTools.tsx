@@ -33,8 +33,9 @@ export default function AtcDeveloperTools(): JSX.Element {
     <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
       <div className="mb-1 text-sm font-bold uppercase tracking-widest text-amber-500">Developer Tools</div>
       <p className="mb-4 text-sm text-slate-400">
-        On ATC PC2, download and run <span className="font-mono text-slate-300">{CAPTURE_SCRIPT_FILENAME}</span>{' '}
-        once — it fetches the station directly and sends the result here automatically, no browser involved.
+        On ATC PC2, download and run <span className="font-mono text-slate-300">{CAPTURE_SCRIPT_FILENAME}</span> —
+        it fetches the station directly and sends the result here automatically every 60 seconds, no browser
+        involved. Leave the window open (minimizing is fine); closing it stops the data feed.
       </p>
 
       <div className="mb-3 flex flex-wrap gap-3">
