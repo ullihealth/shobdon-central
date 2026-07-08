@@ -17,17 +17,16 @@ export const DEFAULT_CLUB_PROFILE: ClubProfile = {
         // Exact current literal width from CompassPanel.tsx's Shobdon-seeded
         // geometry (was hardcoded width="22" for both) - seeding these keeps
         // default rendering byte-identical now that width is per-strip, not
-        // shared across the group.
-        { colour: '#4caf50', widthPx: 22 }, // grass
-        { colour: '#a8b4c4', widthPx: 22 }, // tarmac
+        // shared across the group. Markings off / label on for both, by
+        // default - admin can flip either independently per strip.
+        { colour: '#4caf50', widthPx: 22, hasThresholdMarkings: false, showIdentifierLabel: true }, // grass
+        { colour: '#a8b4c4', widthPx: 22, hasThresholdMarkings: false, showIdentifierLabel: true }, // tarmac
       ],
       // Exact current length: RING_RADIUS * 0.6 * 2 = 180 * 0.6 * 2 = 216,
       // CompassPanel.tsx's existing RUNWAY_STRIP_HALF_LENGTH-derived value
       // before it became per-group - seeding this keeps default rendering
       // byte-identical now that length is configurable too.
       stripLengthPx: 216,
-      hasThresholdMarkings: false,
-      showIdentifierLabels: true,
       // Exact current literal font size from CompassPanel.tsx's runway
       // number <text> elements (was hardcoded fontSize="14") - seeding
       // this keeps default rendering byte-identical now it's per-group.
@@ -45,8 +44,6 @@ function isValidRunwayGroup(value: unknown): value is RunwayGroup {
     typeof group.headingDegrees === 'number' &&
     typeof group.twin === 'boolean' &&
     typeof group.stripLengthPx === 'number' &&
-    typeof group.hasThresholdMarkings === 'boolean' &&
-    typeof group.showIdentifierLabels === 'boolean' &&
     typeof group.identifierFontSizePx === 'number' &&
     Array.isArray(group.strips) &&
     group.strips.every(
@@ -54,7 +51,9 @@ function isValidRunwayGroup(value: unknown): value is RunwayGroup {
         typeof strip === 'object' &&
         strip !== null &&
         typeof (strip as Record<string, unknown>).colour === 'string' &&
-        typeof (strip as Record<string, unknown>).widthPx === 'number'
+        typeof (strip as Record<string, unknown>).widthPx === 'number' &&
+        typeof (strip as Record<string, unknown>).hasThresholdMarkings === 'boolean' &&
+        typeof (strip as Record<string, unknown>).showIdentifierLabel === 'boolean'
     )
   )
 }

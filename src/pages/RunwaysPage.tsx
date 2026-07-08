@@ -26,10 +26,8 @@ function createBlankGroup(): RunwayGroup {
     label: '',
     headingDegrees: 0,
     twin: false,
-    strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX }],
+    strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true }],
     stripLengthPx: DEFAULT_STRIP_LENGTH_PX,
-    hasThresholdMarkings: false,
-    showIdentifierLabels: true,
     identifierFontSizePx: DEFAULT_IDENTIFIER_FONT_SIZE_PX,
   }
 }
@@ -114,16 +112,30 @@ export default function RunwaysPage(): JSX.Element {
     const entry = editableGroups[index]
     const strips = twin
       ? [
-          entry.group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX },
-          entry.group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX },
+          entry.group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true },
+          entry.group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true },
         ]
-      : [entry.group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX }]
+      : [entry.group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true }]
     updateGroup(index, { twin, strips })
   }
 
   function handleStripColourChange(groupIndex: number, stripIndex: number, colour: string) {
     const entry = editableGroups[groupIndex]
-    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { colour } : strip))
+    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, colour } : strip))
+    updateGroup(groupIndex, { strips })
+  }
+
+  // Threshold markings (checkerboard) and direction labels are both
+  // independent per physical strip - e.g. tarmac markings on, grass off.
+  function handleStripMarkingsChange(groupIndex: number, stripIndex: number, hasThresholdMarkings: boolean) {
+    const entry = editableGroups[groupIndex]
+    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, hasThresholdMarkings } : strip))
+    updateGroup(groupIndex, { strips })
+  }
+
+  function handleStripLabelChange(groupIndex: number, stripIndex: number, showIdentifierLabel: boolean) {
+    const entry = editableGroups[groupIndex]
+    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, showIdentifierLabel } : strip))
     updateGroup(groupIndex, { strips })
   }
 
@@ -221,28 +233,6 @@ export default function RunwaysPage(): JSX.Element {
                 <span className="text-sm text-muted-300">Twin runway (two parallel strips, e.g. grass + tarmac)</span>
               </label>
 
-              <label className="mt-3 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={entry.group.hasThresholdMarkings}
-                  onChange={(event) => updateGroup(index, { hasThresholdMarkings: event.target.checked })}
-                  className="h-4 w-4"
-                />
-                <span className="text-sm text-muted-300">Threshold markings (checkerboard block at each end)</span>
-              </label>
-
-              <label className="mt-3 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={entry.group.showIdentifierLabels}
-                  onChange={(event) => updateGroup(index, { showIdentifierLabels: event.target.checked })}
-                  className="h-4 w-4"
-                />
-                <span className="text-sm text-muted-300">
-                  Direction labels (identifier numbers at both ends, e.g. "08"/"26")
-                </span>
-              </label>
-
               <label className="mt-3 flex max-w-xs flex-col gap-1.5">
                 <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
                   Direction label font size (px)
@@ -255,32 +245,57 @@ export default function RunwaysPage(): JSX.Element {
                   className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
               </label>
+              <p className="mt-1 text-xs text-muted-500">
+                Shared font size for whichever strips below have their direction labels switched on. Threshold
+                markings and direction labels are each set independently per strip - e.g. tarmac markings on,
+                grass off.
+              </p>
 
               <div className="mt-4 flex flex-wrap gap-6">
                 {entry.group.strips.map((strip, stripIndex) => (
-                  <div key={stripIndex} className="flex items-end gap-3">
-                    <label className="flex items-center gap-3">
+                  <div key={stripIndex} className="flex flex-col gap-3">
+                    <div className="flex items-end gap-3">
+                      <label className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          value={strip.colour}
+                          onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
+                          className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
+                        />
+                        <span className="text-xs text-muted-400">
+                          {entry.group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
+                        </span>
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                          {entry.group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={strip.widthPx}
+                          onChange={(event) => handleStripWidthChange(index, stripIndex, event.target.value)}
+                          className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        />
+                      </label>
+                    </div>
+                    <label className="flex items-center gap-2">
                       <input
-                        type="color"
-                        value={strip.colour}
-                        onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
-                        className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
+                        type="checkbox"
+                        checked={strip.hasThresholdMarkings}
+                        onChange={(event) => handleStripMarkingsChange(index, stripIndex, event.target.checked)}
+                        className="h-4 w-4"
                       />
-                      <span className="text-xs text-muted-400">
-                        {entry.group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
-                      </span>
+                      <span className="text-sm text-muted-300">Threshold markings (checkerboard)</span>
                     </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                        {entry.group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
-                      </span>
+                    <label className="flex items-center gap-2">
                       <input
-                        type="number"
-                        min={1}
-                        value={strip.widthPx}
-                        onChange={(event) => handleStripWidthChange(index, stripIndex, event.target.value)}
-                        className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        type="checkbox"
+                        checked={strip.showIdentifierLabel}
+                        onChange={(event) => handleStripLabelChange(index, stripIndex, event.target.checked)}
+                        className="h-4 w-4"
                       />
+                      <span className="text-sm text-muted-300">Direction labels (both ends)</span>
                     </label>
                   </div>
                 ))}

@@ -1,6 +1,8 @@
 export interface RunwayStrip {
   colour: string
   widthPx: number // this strip's own width, independent of any other strip in the group (e.g. a narrower grass strip beside a wider tarmac one)
+  hasThresholdMarkings: boolean // checkerboard block at each end of this specific strip - independent per strip (e.g. tarmac on, grass off)
+  showIdentifierLabel: boolean // whether this strip's own identifier numbers (e.g. "08"/"26") render at both its ends - independent per strip
 }
 
 export interface RunwayGroup {
@@ -10,9 +12,7 @@ export interface RunwayGroup {
   twin: boolean
   strips: RunwayStrip[] // length 1 if !twin, length 2 if twin
   stripLengthPx: number // full strip length (along the runway's own axis), shared by every strip in the group - CompassPanel.tsx's internal 0-400 SVG coordinate space
-  hasThresholdMarkings: boolean // checkerboard block at each strip end, per physical strip
-  showIdentifierLabels: boolean // whether the two identifier numbers (e.g. "08"/"26") render at all, at both ends
-  identifierFontSizePx: number // font size for both identifier numbers
+  identifierFontSizePx: number // font size for both identifier numbers, shared by every strip in the group that has its label shown
 }
 
 // The Club Profile concept spans three pieces of per-airfield data: colour
