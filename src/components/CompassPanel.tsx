@@ -79,7 +79,7 @@ const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 // Geometry for any OTHER (non-Shobdon) runway group: a clean, symmetric
 // derivation instead of hand-tuned literals - offset = half the gap plus
 // half a strip's width, either side of the group's own axis.
-const GENERAL_STRIP_WIDTH = 22
+const GENERAL_STRIP_WIDTH = 26
 const GENERAL_STRIP_GAP = 5
 const GENERAL_TWIN_OFFSET = GENERAL_STRIP_GAP / 2 + GENERAL_STRIP_WIDTH / 2
 const GENERAL_SINGLE_STRIP_WIDTH = GENERAL_STRIP_WIDTH * 2
