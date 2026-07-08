@@ -1,5 +1,6 @@
 export interface RunwayStrip {
   colour: string
+  widthPx: number // this strip's own width, independent of any other strip in the group (e.g. a narrower grass strip beside a wider tarmac one)
 }
 
 export interface RunwayGroup {
@@ -8,8 +9,7 @@ export interface RunwayGroup {
   headingDegrees: number // precise magnetic heading for the first identifier, independently editable
   twin: boolean
   strips: RunwayStrip[] // length 1 if !twin, length 2 if twin
-  stripWidthPx: number // strip width in CompassPanel.tsx's internal 0-400 SVG coordinate space, shared by both strips in a twin group
-  stripLengthPx: number // full strip length (along the runway's own axis), same coordinate space - CompassPanel.tsx clamps this against the cardinal-letter margin at render time
+  stripLengthPx: number // full strip length (along the runway's own axis), shared by every strip in the group - CompassPanel.tsx's internal 0-400 SVG coordinate space
   hasThresholdMarkings: boolean // checkerboard block at each strip end, per physical strip
 }
 

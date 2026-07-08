@@ -70,11 +70,11 @@ const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 // Shobdon's own seeded runway group keeps its exact hand-tuned literal pixel
 // cross-axis positions (centreline at 214 etc.) rather than the general
 // derived formula below - this is the one group where pixel-identical
-// colour/position rendering is a hard requirement. Strip WIDTH, however, is
-// now a per-group field (RunwayGroup.stripWidthPx) shared by every group
-// including Shobdon's - see the width formulas inside RunwayGroupGraphic
-// below. Along-axis length is likewise shared (see RUNWAY_STRIP_* below) so
-// all runway strips keep clear margin from the cardinal letters.
+// colour/position rendering is a hard requirement. Strip WIDTH is a
+// per-strip field (RunwayStrip.widthPx) - each physical strip in a group
+// (e.g. a narrower grass strip beside a wider tarmac one) is independently
+// sized - see the width formulas inside RunwayGroupGraphic below. Along-
+// axis length is still shared per-group (see RUNWAY_STRIP_* below).
 const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 
 // Gap between the two strips of a twin group, in px - shared by Shobdon's
@@ -82,8 +82,9 @@ const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 // below at the seeded 22px width) and the general symmetric formula.
 const RUNWAY_STRIP_GAP = 5
 
-// Strip width and length (RunwayGroup.stripWidthPx/stripLengthPx) are both
-// admin-configurable with no upper bound - deliberately no longer clamped
+// Strip width (RunwayStrip.widthPx, per strip) and length
+// (RunwayGroup.stripLengthPx, per group) are both admin-configurable with
+// no upper bound - deliberately no longer clamped
 // to any "safe distance from the cardinal letters" ceiling. Overlapping
 // the ring or letters at an extreme value is the admin's own visual
 // choice to make, not something to silently prevent. Only a small floor
@@ -155,7 +156,6 @@ function splitRunwayLabel(label: string): [string, string] {
 
 function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const [labelTop, labelBottom] = splitRunwayLabel(group.label)
-  const stripWidth = clampStripWidth(group.stripWidthPx)
   const halfLength = clampStripHalfLength(group.stripLengthPx / 2)
   const stripTop = 200 - halfLength
   const stripBottom = 200 + halfLength
@@ -168,25 +168,32 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
 
   if (group.id === SHOBDON_SEEDED_GROUP_ID) {
     const [grass, tarmac] = group.strips
+    const grassWidth = clampStripWidth(grass?.widthPx ?? 22)
+    const tarmacWidth = clampStripWidth(tarmac?.widthPx ?? 22)
     // Centreline stays anchored to the tarmac strip's own centre (214) -
     // matches the real-world detail that only the paved surface has a
-    // painted line - independent of width. At the seeded 22px width this
+    // painted line - independent of width. At the seeded 22px widths this
     // reproduces today's exact literal positions (176/203/214) exactly.
-    const tarmacX = 214 - stripWidth / 2
-    const grassX = tarmacX - RUNWAY_STRIP_GAP - stripWidth
+    const tarmacX = 214 - tarmacWidth / 2
+    const grassX = tarmacX - RUNWAY_STRIP_GAP - grassWidth
     const thresholdLeft = grassX
-    const thresholdRight = tarmacX + stripWidth
+    const thresholdRight = tarmacX + tarmacWidth
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        {group.hasThresholdMarkings && <ThresholdMarkingPattern patternId={patternId} squareSize={stripWidth / THRESHOLD_MARKING_COLUMNS} />}
-        {/* Grass Strip (Left) */}
-        <rect x={grassX} y={stripTop} width={stripWidth} height={stripHeight} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
-        {/* Tarmac Strip (Right) */}
-        <rect x={tarmacX} y={stripTop} width={stripWidth} height={stripHeight} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
         {group.hasThresholdMarkings && (
           <>
-            <ThresholdMarkingBlocks patternId={patternId} stripX={grassX} stripWidth={stripWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
-            <ThresholdMarkingBlocks patternId={patternId} stripX={tarmacX} stripWidth={stripWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
+            <ThresholdMarkingPattern patternId={`${patternId}-grass`} squareSize={grassWidth / THRESHOLD_MARKING_COLUMNS} />
+            <ThresholdMarkingPattern patternId={`${patternId}-tarmac`} squareSize={tarmacWidth / THRESHOLD_MARKING_COLUMNS} />
+          </>
+        )}
+        {/* Grass Strip (Left) */}
+        <rect x={grassX} y={stripTop} width={grassWidth} height={stripHeight} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
+        {/* Tarmac Strip (Right) */}
+        <rect x={tarmacX} y={stripTop} width={tarmacWidth} height={stripHeight} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
+        {group.hasThresholdMarkings && (
+          <>
+            <ThresholdMarkingBlocks patternId={`${patternId}-grass`} stripX={grassX} stripWidth={grassWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
+            <ThresholdMarkingBlocks patternId={`${patternId}-tarmac`} stripX={tarmacX} stripWidth={tarmacWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
           </>
         )}
         {/* Centreline (dashed) */}
@@ -198,7 +205,7 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
             against the disc background in practice) to 0.85, matching the
             visibility of other secondary compass labels (e.g. intermediate
             bearings). */}
-        <text x={grassX + stripWidth / 2} y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
+        <text x={grassX + grassWidth / 2} y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
         <text x="214" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
       </g>
     )
@@ -206,20 +213,30 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
 
   if (group.twin) {
     const [stripA, stripB] = group.strips
-    const twinOffset = RUNWAY_STRIP_GAP / 2 + stripWidth / 2
-    const stripAX = 200 - twinOffset - stripWidth
-    const stripBX = 200 + twinOffset
+    const stripAWidth = clampStripWidth(stripA?.widthPx ?? 22)
+    const stripBWidth = clampStripWidth(stripB?.widthPx ?? 22)
+    // Gap is centred on the group's own axis (200); each strip then
+    // extends outward from its own edge of that gap by its own width -
+    // independent widths, but the physical gap between them stays exactly
+    // RUNWAY_STRIP_GAP regardless of what either width is.
+    const stripBX = 200 + RUNWAY_STRIP_GAP / 2
+    const stripAX = 200 - RUNWAY_STRIP_GAP / 2 - stripAWidth
     const leftEdge = stripAX
-    const rightEdge = stripBX + stripWidth
+    const rightEdge = stripBX + stripBWidth
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        {group.hasThresholdMarkings && <ThresholdMarkingPattern patternId={patternId} squareSize={stripWidth / THRESHOLD_MARKING_COLUMNS} />}
-        <rect x={stripAX} y={stripTop} width={stripWidth} height={stripHeight} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
-        <rect x={stripBX} y={stripTop} width={stripWidth} height={stripHeight} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
         {group.hasThresholdMarkings && (
           <>
-            <ThresholdMarkingBlocks patternId={patternId} stripX={stripAX} stripWidth={stripWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
-            <ThresholdMarkingBlocks patternId={patternId} stripX={stripBX} stripWidth={stripWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
+            <ThresholdMarkingPattern patternId={`${patternId}-a`} squareSize={stripAWidth / THRESHOLD_MARKING_COLUMNS} />
+            <ThresholdMarkingPattern patternId={`${patternId}-b`} squareSize={stripBWidth / THRESHOLD_MARKING_COLUMNS} />
+          </>
+        )}
+        <rect x={stripAX} y={stripTop} width={stripAWidth} height={stripHeight} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x={stripBX} y={stripTop} width={stripBWidth} height={stripHeight} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
+        {group.hasThresholdMarkings && (
+          <>
+            <ThresholdMarkingBlocks patternId={`${patternId}-a`} stripX={stripAX} stripWidth={stripAWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
+            <ThresholdMarkingBlocks patternId={`${patternId}-b`} stripX={stripBX} stripWidth={stripBWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
           </>
         )}
         <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
@@ -231,17 +248,18 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
     )
   }
 
-  // Not twin: one full-width strip centred on the group's own axis.
+  // Not twin: one strip, its own width used directly - no more doubling
+  // trick, since width no longer comes from a shared group-level value.
   const [strip] = group.strips
-  const singleWidth = stripWidth * 2
-  const stripX = 200 - singleWidth / 2
-  const edge = stripX + singleWidth
+  const width = clampStripWidth(strip?.widthPx ?? 44)
+  const stripX = 200 - width / 2
+  const edge = stripX + width
   return (
     <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-      {group.hasThresholdMarkings && <ThresholdMarkingPattern patternId={patternId} squareSize={singleWidth / THRESHOLD_MARKING_COLUMNS} />}
-      <rect x={stripX} y={stripTop} width={singleWidth} height={stripHeight} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
+      {group.hasThresholdMarkings && <ThresholdMarkingPattern patternId={patternId} squareSize={width / THRESHOLD_MARKING_COLUMNS} />}
+      <rect x={stripX} y={stripTop} width={width} height={stripHeight} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
       {group.hasThresholdMarkings && (
-        <ThresholdMarkingBlocks patternId={patternId} stripX={stripX} stripWidth={singleWidth} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
+        <ThresholdMarkingBlocks patternId={patternId} stripX={stripX} stripWidth={width} stripTop={stripTop} stripBottom={stripBottom} numberTopY={numberTopY} numberBottomY={numberBottomY} />
       )}
       <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
       <line x1={stripX} y1={stripTop} x2={edge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />

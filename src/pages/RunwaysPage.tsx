@@ -25,8 +25,7 @@ function createBlankGroup(): RunwayGroup {
     label: '',
     headingDegrees: 0,
     twin: false,
-    strips: [{ colour: '#a8b4c4' }],
-    stripWidthPx: DEFAULT_STRIP_WIDTH_PX,
+    strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX }],
     stripLengthPx: DEFAULT_STRIP_LENGTH_PX,
     hasThresholdMarkings: false,
   }
@@ -74,14 +73,17 @@ export default function RunwaysPage(): JSX.Element {
     )
   }
 
-  // If cleared or given a non-positive/non-numeric value, falls back to
-  // Shobdon's seeded default (22px) rather than a zero-width, invisible
-  // strip - chosen over a separate "sensible minimum" constant since 22px
-  // is already an established, meaningful default elsewhere in this system.
-  function handleStripWidthChange(index: number, rawValue: string) {
+  // Each strip's own width, independent of any other strip in the same
+  // group (e.g. a narrower grass strip beside a wider tarmac one). Same
+  // fallback pattern as before: cleared or non-positive/non-numeric falls
+  // back to Shobdon's seeded default (22px) rather than a zero-width,
+  // invisible strip.
+  function handleStripWidthChange(groupIndex: number, stripIndex: number, rawValue: string) {
     const parsed = Number(rawValue)
-    const stripWidthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_WIDTH_PX : parsed
-    updateGroup(index, { stripWidthPx })
+    const widthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_WIDTH_PX : parsed
+    const entry = editableGroups[groupIndex]
+    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, widthPx } : strip))
+    updateGroup(groupIndex, { strips })
   }
 
   // Same fallback pattern as width: cleared or non-positive/non-numeric
@@ -98,8 +100,11 @@ export default function RunwaysPage(): JSX.Element {
   function handleTwinChange(index: number, twin: boolean) {
     const entry = editableGroups[index]
     const strips = twin
-      ? [entry.group.strips[0] ?? { colour: '#4caf50' }, entry.group.strips[1] ?? { colour: '#a8b4c4' }]
-      : [entry.group.strips[0] ?? { colour: '#a8b4c4' }]
+      ? [
+          entry.group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX },
+          entry.group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX },
+        ]
+      : [entry.group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX }]
     updateGroup(index, { twin, strips })
   }
 
@@ -176,19 +181,6 @@ export default function RunwaysPage(): JSX.Element {
 
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Strip width (px)
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={entry.group.stripWidthPx}
-                    onChange={(event) => handleStripWidthChange(index, event.target.value)}
-                    className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
                     Strip length (px)
                   </span>
                   <input
@@ -201,8 +193,9 @@ export default function RunwaysPage(): JSX.Element {
                 </label>
               </div>
               <p className="mt-2 text-xs text-muted-500">
-                No upper limit on width or length - a large value can visually overlap the compass ring or
-                letters, which is an intentional choice you're free to make, not something this page prevents.
+                No upper limit on strip width (set per strip below) or length - a large value can visually
+                overlap the compass ring or letters, which is an intentional choice you're free to make, not
+                something this page prevents.
               </p>
 
               <label className="mt-4 flex items-center gap-2">
@@ -227,17 +220,31 @@ export default function RunwaysPage(): JSX.Element {
 
               <div className="mt-4 flex flex-wrap gap-6">
                 {entry.group.strips.map((strip, stripIndex) => (
-                  <label key={stripIndex} className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={strip.colour}
-                      onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
-                      className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
-                    />
-                    <span className="text-xs text-muted-400">
-                      {entry.group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
-                    </span>
-                  </label>
+                  <div key={stripIndex} className="flex items-end gap-3">
+                    <label className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={strip.colour}
+                        onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
+                        className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
+                      />
+                      <span className="text-xs text-muted-400">
+                        {entry.group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
+                      </span>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                        {entry.group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={strip.widthPx}
+                        onChange={(event) => handleStripWidthChange(index, stripIndex, event.target.value)}
+                        className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                      />
+                    </label>
+                  </div>
                 ))}
               </div>
             </section>
