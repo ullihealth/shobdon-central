@@ -5,6 +5,11 @@ import type { RunwayGroup } from '../types/clubProfile'
 
 const MAX_GROUPS = 3
 
+// Matches Shobdon's seeded strip width - used both for brand-new groups
+// (so they render a visible, sensible-looking strip immediately) and as
+// the fallback if an admin clears the "Strip width" field entirely.
+const DEFAULT_STRIP_WIDTH_PX = 22
+
 function suggestHeadingFromLabel(label: string): number | null {
   const firstPart = label.split('/')[0]?.trim()
   if (!firstPart) return null
@@ -20,6 +25,7 @@ function createBlankGroup(): RunwayGroup {
     headingDegrees: 0,
     twin: false,
     strips: [{ colour: '#a8b4c4' }],
+    stripWidthPx: DEFAULT_STRIP_WIDTH_PX,
   }
 }
 
@@ -63,6 +69,16 @@ export default function RunwaysPage(): JSX.Element {
     persist(
       editableGroups.map((e, i) => (i === index ? { group: { ...e.group, headingDegrees }, headingTouched: true } : e))
     )
+  }
+
+  // If cleared or given a non-positive/non-numeric value, falls back to
+  // Shobdon's seeded default (22px) rather than a zero-width, invisible
+  // strip - chosen over a separate "sensible minimum" constant since 22px
+  // is already an established, meaningful default elsewhere in this system.
+  function handleStripWidthChange(index: number, rawValue: string) {
+    const parsed = Number(rawValue)
+    const stripWidthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_WIDTH_PX : parsed
+    updateGroup(index, { stripWidthPx })
   }
 
   function handleTwinChange(index: number, twin: boolean) {
@@ -120,7 +136,7 @@ export default function RunwaysPage(): JSX.Element {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Label</span>
                   <input
@@ -140,6 +156,19 @@ export default function RunwaysPage(): JSX.Element {
                     type="number"
                     value={entry.group.headingDegrees}
                     onChange={(event) => handleHeadingChange(index, Number(event.target.value))}
+                    className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Strip width (px)
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={entry.group.stripWidthPx}
+                    onChange={(event) => handleStripWidthChange(index, event.target.value)}
                     className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                   />
                 </label>

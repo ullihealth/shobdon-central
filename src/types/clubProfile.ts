@@ -8,6 +8,7 @@ export interface RunwayGroup {
   headingDegrees: number // precise magnetic heading for the first identifier, independently editable
   twin: boolean
   strips: RunwayStrip[] // length 1 if !twin, length 2 if twin
+  stripWidthPx: number // strip width in CompassPanel.tsx's internal 0-400 SVG coordinate space, shared by both strips in a twin group
 }
 
 // The Club Profile concept spans three pieces of per-airfield data: colour

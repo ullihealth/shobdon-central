@@ -68,21 +68,19 @@ const SOUTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 180)
 const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 
 // Shobdon's own seeded runway group keeps its exact hand-tuned literal pixel
-// cross-axis offsets (176/203/214 etc.) rather than the general derived
-// formula below - this is the one group where pixel-identical width/colour
-// rendering is a hard requirement. Its along-axis length, however, is
-// shared with every other group (see RUNWAY_STRIP_* below) so all runway
-// strips keep clear margin from the cardinal letters, not just non-Shobdon
-// ones.
+// cross-axis positions (centreline at 214 etc.) rather than the general
+// derived formula below - this is the one group where pixel-identical
+// colour/position rendering is a hard requirement. Strip WIDTH, however, is
+// now a per-group field (RunwayGroup.stripWidthPx) shared by every group
+// including Shobdon's - see the width formulas inside RunwayGroupGraphic
+// below. Along-axis length is likewise shared (see RUNWAY_STRIP_* below) so
+// all runway strips keep clear margin from the cardinal letters.
 const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 
-// Geometry for any OTHER (non-Shobdon) runway group: a clean, symmetric
-// derivation instead of hand-tuned literals - offset = half the gap plus
-// half a strip's width, either side of the group's own axis.
-const GENERAL_STRIP_WIDTH = 26
-const GENERAL_STRIP_GAP = 5
-const GENERAL_TWIN_OFFSET = GENERAL_STRIP_GAP / 2 + GENERAL_STRIP_WIDTH / 2
-const GENERAL_SINGLE_STRIP_WIDTH = GENERAL_STRIP_WIDTH * 2
+// Gap between the two strips of a twin group, in px - shared by Shobdon's
+// real gap (verified: 203 - 198 = 5, exactly matching the strip geometry
+// below at the seeded 22px width) and the general symmetric formula.
+const RUNWAY_STRIP_GAP = 5
 
 // Shortened from the strip's original 130px half-length (measured from the
 // centre) so strip ends - and the centreline, which extends 10px further -
@@ -105,25 +103,34 @@ function splitRunwayLabel(label: string): [string, string] {
 
 function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const [labelTop, labelBottom] = splitRunwayLabel(group.label)
+  const stripWidth = group.stripWidthPx
 
   if (group.id === SHOBDON_SEEDED_GROUP_ID) {
     const [grass, tarmac] = group.strips
+    // Centreline stays anchored to the tarmac strip's own centre (214) -
+    // matches the real-world detail that only the paved surface has a
+    // painted line - independent of width. At the seeded 22px width this
+    // reproduces today's exact literal positions (176/203/214) exactly.
+    const tarmacX = 214 - stripWidth / 2
+    const grassX = tarmacX - RUNWAY_STRIP_GAP - stripWidth
+    const thresholdLeft = grassX
+    const thresholdRight = tarmacX + stripWidth
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
         {/* Grass Strip (Left) */}
-        <rect x="176" y={RUNWAY_STRIP_TOP} width="22" height={RUNWAY_STRIP_HEIGHT} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x={grassX} y={RUNWAY_STRIP_TOP} width={stripWidth} height={RUNWAY_STRIP_HEIGHT} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
         {/* Tarmac Strip (Right) */}
-        <rect x="203" y={RUNWAY_STRIP_TOP} width="22" height={RUNWAY_STRIP_HEIGHT} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
+        <rect x={tarmacX} y={RUNWAY_STRIP_TOP} width={stripWidth} height={RUNWAY_STRIP_HEIGHT} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
         {/* Centreline (dashed) */}
         <line x1="214" y1={RUNWAY_CENTRELINE_TOP} x2="214" y2={RUNWAY_CENTRELINE_BOTTOM} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
         {/* Threshold Markers */}
-        <line x1="176" y1={RUNWAY_STRIP_TOP} x2="225" y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1="176" y1={RUNWAY_STRIP_BOTTOM} x2="225" y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />
+        <line x1={thresholdLeft} y1={RUNWAY_STRIP_TOP} x2={thresholdRight} y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
+        <line x1={thresholdLeft} y1={RUNWAY_STRIP_BOTTOM} x2={thresholdRight} y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />
         {/* Runway Numbers - opacity raised from 0.28 (effectively invisible
             against the disc background in practice) to 0.85, matching the
             visibility of other secondary compass labels (e.g. intermediate
             bearings). */}
-        <text x="187" y={RUNWAY_NUMBER_TOP_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
+        <text x={grassX + stripWidth / 2} y={RUNWAY_NUMBER_TOP_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
         <text x="214" y={RUNWAY_NUMBER_BOTTOM_Y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
       </g>
     )
@@ -131,14 +138,15 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
 
   if (group.twin) {
     const [stripA, stripB] = group.strips
-    const stripAX = 200 - GENERAL_TWIN_OFFSET - GENERAL_STRIP_WIDTH
-    const stripBX = 200 + GENERAL_TWIN_OFFSET
+    const twinOffset = RUNWAY_STRIP_GAP / 2 + stripWidth / 2
+    const stripAX = 200 - twinOffset - stripWidth
+    const stripBX = 200 + twinOffset
     const leftEdge = stripAX
-    const rightEdge = stripBX + GENERAL_STRIP_WIDTH
+    const rightEdge = stripBX + stripWidth
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        <rect x={stripAX} y={RUNWAY_STRIP_TOP} width={GENERAL_STRIP_WIDTH} height={RUNWAY_STRIP_HEIGHT} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
-        <rect x={stripBX} y={RUNWAY_STRIP_TOP} width={GENERAL_STRIP_WIDTH} height={RUNWAY_STRIP_HEIGHT} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
+        <rect x={stripAX} y={RUNWAY_STRIP_TOP} width={stripWidth} height={RUNWAY_STRIP_HEIGHT} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x={stripBX} y={RUNWAY_STRIP_TOP} width={stripWidth} height={RUNWAY_STRIP_HEIGHT} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
         <line x1="200" y1={RUNWAY_CENTRELINE_TOP} x2="200" y2={RUNWAY_CENTRELINE_BOTTOM} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
         <line x1={leftEdge} y1={RUNWAY_STRIP_TOP} x2={rightEdge} y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
         <line x1={leftEdge} y1={RUNWAY_STRIP_BOTTOM} x2={rightEdge} y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />
@@ -150,11 +158,12 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
 
   // Not twin: one full-width strip centred on the group's own axis.
   const [strip] = group.strips
-  const stripX = 200 - GENERAL_SINGLE_STRIP_WIDTH / 2
-  const edge = stripX + GENERAL_SINGLE_STRIP_WIDTH
+  const singleWidth = stripWidth * 2
+  const stripX = 200 - singleWidth / 2
+  const edge = stripX + singleWidth
   return (
     <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-      <rect x={stripX} y={RUNWAY_STRIP_TOP} width={GENERAL_SINGLE_STRIP_WIDTH} height={RUNWAY_STRIP_HEIGHT} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
+      <rect x={stripX} y={RUNWAY_STRIP_TOP} width={singleWidth} height={RUNWAY_STRIP_HEIGHT} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
       <line x1="200" y1={RUNWAY_CENTRELINE_TOP} x2="200" y2={RUNWAY_CENTRELINE_BOTTOM} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
       <line x1={stripX} y1={RUNWAY_STRIP_TOP} x2={edge} y2={RUNWAY_STRIP_TOP} stroke="white" strokeWidth="2" opacity="0.18" />
       <line x1={stripX} y1={RUNWAY_STRIP_BOTTOM} x2={edge} y2={RUNWAY_STRIP_BOTTOM} stroke="white" strokeWidth="2" opacity="0.18" />

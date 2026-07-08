@@ -17,6 +17,10 @@ export const DEFAULT_CLUB_PROFILE: ClubProfile = {
         { colour: '#4caf50' }, // grass
         { colour: '#a8b4c4' }, // tarmac
       ],
+      // Exact current literal width from CompassPanel.tsx's Shobdon-seeded
+      // geometry (was hardcoded width="22") - seeding this value keeps
+      // default rendering byte-identical now that width is per-group.
+      stripWidthPx: 22,
     },
   ],
 }
@@ -29,6 +33,7 @@ function isValidRunwayGroup(value: unknown): value is RunwayGroup {
     typeof group.label === 'string' &&
     typeof group.headingDegrees === 'number' &&
     typeof group.twin === 'boolean' &&
+    typeof group.stripWidthPx === 'number' &&
     Array.isArray(group.strips) &&
     group.strips.every(
       (strip) => typeof strip === 'object' && strip !== null && typeof (strip as Record<string, unknown>).colour === 'string'
