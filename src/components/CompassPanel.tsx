@@ -83,31 +83,23 @@ const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 const RUNWAY_STRIP_GAP = 5
 
 // Strip width and length (RunwayGroup.stripWidthPx/stripLengthPx) are both
-// admin-configurable, but rendering always clamps each to these ranges
-// regardless of what's stored - a render-time safety net, not just a UI
-// suggestion. The two interact: a wider strip's far corner reaches further
-// from centre than a narrower one at the same length, so the length
-// ceiling is only safe up to MAX_STRIP_WIDTH_PX too. Both bounds are
-// verified together (corner distance sqrt(widthOffset² + halfLength²) at
-// the maximum of each stays ~127px from centre) to keep every strip
-// corner, and the centreline tip (which extends 10px past the strip
-// ends), clear of the cardinal letters' estimated inner glyph edge
-// (~134px from centre, i.e. their 149.4px anchor radius minus roughly
-// half a 41px bold glyph's own height) with a real margin, not a
-// razor's-edge fit. MIN_STRIP_HALF_LENGTH keeps the two numeral positions
-// (each inset 20px from its own end) from crossing over each other on a
-// very short runway.
+// admin-configurable with no upper bound - deliberately no longer clamped
+// to any "safe distance from the cardinal letters" ceiling. Overlapping
+// the ring or letters at an extreme value is the admin's own visual
+// choice to make, not something to silently prevent. Only a small floor
+// remains, and it exists purely to stop a degenerate/broken render (a
+// zero or negative size, or the two numeral positions crossing over each
+// other on a near-zero-length strip) - not to protect anyone from a large
+// value.
 const MIN_STRIP_HALF_LENGTH = 30
-const MAX_STRIP_HALF_LENGTH = 118
 const MIN_STRIP_WIDTH_PX = 4
-const MAX_STRIP_WIDTH_PX = 30
 
 function clampStripHalfLength(rawHalfLength: number): number {
-  return Math.min(Math.max(rawHalfLength, MIN_STRIP_HALF_LENGTH), MAX_STRIP_HALF_LENGTH)
+  return Math.max(rawHalfLength, MIN_STRIP_HALF_LENGTH)
 }
 
 function clampStripWidth(rawWidth: number): number {
-  return Math.min(Math.max(rawWidth, MIN_STRIP_WIDTH_PX), MAX_STRIP_WIDTH_PX)
+  return Math.max(rawWidth, MIN_STRIP_WIDTH_PX)
 }
 
 // Threshold (checkerboard) markings: square size is a fraction of the
