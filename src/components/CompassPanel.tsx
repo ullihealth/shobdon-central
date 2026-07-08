@@ -108,6 +108,15 @@ function clampStripWidth(rawWidth: number): number {
 // sensibly whether the runway is wide or narrow.
 const THRESHOLD_MARKING_COLUMNS = 4
 
+// Identifier numeral inset from each strip end - unchanged "previous
+// position" when threshold markings are off. When they're on, the
+// checkerboard block (also THRESHOLD_MARKING_BLOCK_LENGTH long) would
+// otherwise sit directly under/against the numeral, so the numeral moves
+// further in to stay clear of it with a visible gap.
+const THRESHOLD_MARKING_BLOCK_LENGTH = 20
+const NUMBER_INSET_DEFAULT = 20
+const NUMBER_INSET_WITH_MARKINGS = THRESHOLD_MARKING_BLOCK_LENGTH + 20
+
 function ThresholdMarkingPattern({ patternId, squareSize }: { patternId: string; squareSize: number }): JSX.Element {
   return (
     <defs>
@@ -162,9 +171,14 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const stripHeight = halfLength * 2
   const centrelineTop = stripTop - 10
   const centrelineBottom = stripBottom + 10
-  const numberTopY = stripTop + 20
-  const numberBottomY = stripBottom - 20
+  // With markings on, the numeral sits clear of the 20px-long checkerboard
+  // block instead of right at its inner edge - previous (no-markings)
+  // position is unchanged.
+  const numberInset = group.hasThresholdMarkings ? NUMBER_INSET_WITH_MARKINGS : NUMBER_INSET_DEFAULT
+  const numberTopY = stripTop + numberInset
+  const numberBottomY = stripBottom - numberInset
   const patternId = `threshold-${group.id}`
+  const fontSize = group.identifierFontSizePx
 
   if (group.id === SHOBDON_SEEDED_GROUP_ID) {
     const [grass, tarmac] = group.strips
@@ -205,8 +219,12 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
             against the disc background in practice) to 0.85, matching the
             visibility of other secondary compass labels (e.g. intermediate
             bearings). */}
-        <text x={grassX + grassWidth / 2} y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
-        <text x="214" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
+        {group.showIdentifierLabels && (
+          <>
+            <text x={grassX + grassWidth / 2} y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
+            <text x="214" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+          </>
+        )}
       </g>
     )
   }
@@ -242,8 +260,12 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
         <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
         <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
         <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
-        <text x="200" y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
-        <text x="200" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
+        {group.showIdentifierLabels && (
+          <>
+            <text x="200" y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
+            <text x="200" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+          </>
+        )}
       </g>
     )
   }
@@ -264,8 +286,12 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
       <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
       <line x1={stripX} y1={stripTop} x2={edge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
       <line x1={stripX} y1={stripBottom} x2={edge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
-      <text x="200" y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelTop}</text>
-      <text x="200" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="14" fontWeight="900" opacity="0.85">{labelBottom}</text>
+      {group.showIdentifierLabels && (
+        <>
+          <text x="200" y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
+          <text x="200" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+        </>
+      )}
     </g>
   )
 }

@@ -10,6 +10,7 @@ const MAX_GROUPS = 3
 // and as the fallback if an admin clears the corresponding field entirely.
 const DEFAULT_STRIP_WIDTH_PX = 22
 const DEFAULT_STRIP_LENGTH_PX = 216
+const DEFAULT_IDENTIFIER_FONT_SIZE_PX = 14
 
 function suggestHeadingFromLabel(label: string): number | null {
   const firstPart = label.split('/')[0]?.trim()
@@ -28,6 +29,8 @@ function createBlankGroup(): RunwayGroup {
     strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX }],
     stripLengthPx: DEFAULT_STRIP_LENGTH_PX,
     hasThresholdMarkings: false,
+    showIdentifierLabels: true,
+    identifierFontSizePx: DEFAULT_IDENTIFIER_FONT_SIZE_PX,
   }
 }
 
@@ -95,6 +98,16 @@ export default function RunwaysPage(): JSX.Element {
     const parsed = Number(rawValue)
     const stripLengthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_LENGTH_PX : parsed
     updateGroup(index, { stripLengthPx })
+  }
+
+  // Same fallback pattern as strip length/width: cleared or non-positive/
+  // non-numeric falls back to Shobdon's seeded default (14px) rather than a
+  // zero/invisible or negative-size label.
+  function handleFontSizeChange(index: number, rawValue: string) {
+    const parsed = Number(rawValue)
+    const identifierFontSizePx =
+      rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_IDENTIFIER_FONT_SIZE_PX : parsed
+    updateGroup(index, { identifierFontSizePx })
   }
 
   function handleTwinChange(index: number, twin: boolean) {
@@ -216,6 +229,31 @@ export default function RunwaysPage(): JSX.Element {
                   className="h-4 w-4"
                 />
                 <span className="text-sm text-muted-300">Threshold markings (checkerboard block at each end)</span>
+              </label>
+
+              <label className="mt-3 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={entry.group.showIdentifierLabels}
+                  onChange={(event) => updateGroup(index, { showIdentifierLabels: event.target.checked })}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm text-muted-300">
+                  Direction labels (identifier numbers at both ends, e.g. "08"/"26")
+                </span>
+              </label>
+
+              <label className="mt-3 flex max-w-xs flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Direction label font size (px)
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={entry.group.identifierFontSizePx}
+                  onChange={(event) => handleFontSizeChange(index, event.target.value)}
+                  className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
               </label>
 
               <div className="mt-4 flex flex-wrap gap-6">

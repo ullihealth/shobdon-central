@@ -27,6 +27,11 @@ export const DEFAULT_CLUB_PROFILE: ClubProfile = {
       // byte-identical now that length is configurable too.
       stripLengthPx: 216,
       hasThresholdMarkings: false,
+      showIdentifierLabels: true,
+      // Exact current literal font size from CompassPanel.tsx's runway
+      // number <text> elements (was hardcoded fontSize="14") - seeding
+      // this keeps default rendering byte-identical now it's per-group.
+      identifierFontSizePx: 14,
     },
   ],
 }
@@ -41,6 +46,8 @@ function isValidRunwayGroup(value: unknown): value is RunwayGroup {
     typeof group.twin === 'boolean' &&
     typeof group.stripLengthPx === 'number' &&
     typeof group.hasThresholdMarkings === 'boolean' &&
+    typeof group.showIdentifierLabels === 'boolean' &&
+    typeof group.identifierFontSizePx === 'number' &&
     Array.isArray(group.strips) &&
     group.strips.every(
       (strip) =>
