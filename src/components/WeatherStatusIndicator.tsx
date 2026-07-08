@@ -3,7 +3,7 @@ import { INTERNET_WEATHER_PROVIDERS } from '../services/internetProviders'
 import type { WeatherProviderId } from '../types/weatherConfig'
 
 const STATUS_BY_PROVIDER: Record<Exclude<WeatherProviderId, 'internet'>, { emoji: string; label: string }> = {
-  atc: { emoji: '🟢', label: 'ATC LIVE' },
+  atc: { emoji: '🟢', label: 'ATC SHOBDON (LIVE)' },
   mock: { emoji: '🟠', label: 'MOCK' },
 }
 

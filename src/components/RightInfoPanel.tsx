@@ -2,7 +2,7 @@ const cards = [
   { title: 'Runway Status', value: '08/26 Open' },
   { title: 'Circuit Direction', value: 'Left-hand' },
   { title: 'Airfield Info', value: 'PPR only after 17:00' },
-  { title: 'Safety Notices', value: 'Bird activity near apron' }
+  { title: 'Safety Notices', value: '' }
 ]
 
 export default function RightInfoPanel(): JSX.Element {
