@@ -11,6 +11,13 @@ interface WeatherContextValue {
   loading: boolean
   activeProvider: WeatherProviderId
   config: WeatherConfig
+  // True when the admin deliberately selected a real source (atc/internet)
+  // but the fetch failed and silently substituted mock data - as opposed
+  // to Mock being the intentionally selected provider, where source
+  // 'mock' is expected and not a failure. Consumers use this to show
+  // "no live reading" instead of rendering the substituted mock numbers
+  // as if they were real.
+  liveDataUnavailable: boolean
 }
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 30
@@ -62,8 +69,10 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     }
   }, [config])
 
+  const liveDataUnavailable = config.activeProvider !== 'mock' && value.source === 'mock'
+
   return (
-    <WeatherContext.Provider value={{ ...value, activeProvider: config.activeProvider, config }}>
+    <WeatherContext.Provider value={{ ...value, activeProvider: config.activeProvider, config, liveDataUnavailable }}>
       {children}
     </WeatherContext.Provider>
   )

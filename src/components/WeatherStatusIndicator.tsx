@@ -8,10 +8,14 @@ const STATUS_BY_PROVIDER: Record<Exclude<WeatherProviderId, 'internet'>, { emoji
 }
 
 export default function WeatherStatusIndicator(): JSX.Element {
-  const { activeProvider, config } = useWeather()
+  const { activeProvider, config, liveDataUnavailable } = useWeather()
 
-  const { emoji, label } =
-    activeProvider === 'internet'
+  // liveDataUnavailable means the selected source's fetch failed and the
+  // numbers on screen are the substituted mock fixture, not real data -
+  // that must never be labelled as if it were the selected live source.
+  const { emoji, label } = liveDataUnavailable
+    ? { emoji: '🔴', label: 'NO LIVE READING' }
+    : activeProvider === 'internet'
       ? {
           emoji: '🔵',
           label: `INTERNET: ${INTERNET_WEATHER_PROVIDERS[config.internet.provider].label.toUpperCase()}`,

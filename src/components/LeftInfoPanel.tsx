@@ -2,15 +2,19 @@ import { useWeather } from '../context/WeatherContext'
 import { degreesToCardinal } from '../utils/windCalculations'
 
 export default function LeftInfoPanel(): JSX.Element {
-  const { weather } = useWeather()
+  const { weather, liveDataUnavailable } = useWeather()
 
+  // liveDataUnavailable: the selected source's fetch failed and weather
+  // is actually the substituted mock fixture - show N/A (matching
+  // Visibility's existing "not available" treatment) rather than
+  // presenting that fake data as if it were a real reading.
   const data = [
     {
       label: 'Wind',
-      value: weather ? `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt` : '—',
+      value: !weather || liveDataUnavailable ? 'N/A' : `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt`,
     },
-    { label: 'QNH', value: weather ? `${weather.qnh} hPa` : '—' },
-    { label: 'Temperature', value: weather ? `${weather.temperature}°C` : '—' },
+    { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
+    { label: 'Temperature', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
     { label: 'Visibility', value: 'N/A' },
     { label: 'Notices', value: '4 active' },
   ]

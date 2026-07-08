@@ -343,7 +343,7 @@ function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowP
 }
 
 export default function CompassPanel(): JSX.Element {
-  const { weather } = useWeather()
+  const { weather, liveDataUnavailable } = useWeather()
   const [clubProfile] = useState(() => loadClubProfile())
 
   const compassState = useMemo<CompassState | null>(() => {
@@ -582,27 +582,30 @@ export default function CompassPanel(): JSX.Element {
           </svg>
         </div>
 
-      {/* INSTRUMENT READOUT PANEL — fixed-width right-aligned labels, left-aligned values, no cards/borders/dividers */}
+      {/* INSTRUMENT READOUT PANEL — fixed-width right-aligned labels, left-aligned values, no cards/borders/dividers.
+          liveDataUnavailable: the selected source's fetch failed and compassState is actually
+          derived from the substituted mock fixture - show N/A rather than presenting that fake
+          data as if it were a real reading. */}
       <div className="grid grid-cols-[120px_1fr] items-baseline gap-x-4 gap-y-2.5">
-        <ReadoutRow label="Wind" value={`${compassState.windDirection}° / ${compassState.windSpeed} kt`} />
+        <ReadoutRow label="Wind" value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`} />
         <ReadoutRow
           label="Gust"
-          value={compassState.windGust ? `${compassState.windGust} kt` : '—'}
-          valueClassName={compassState.windGust ? 'text-amber-500' : 'text-slate-500'}
+          value={liveDataUnavailable ? 'N/A' : compassState.windGust ? `${compassState.windGust} kt` : '—'}
+          valueClassName={compassState.windGust && !liveDataUnavailable ? 'text-amber-500' : 'text-slate-500'}
         />
         <ReadoutRow
           label="Headwind"
-          value={`${compassState.headwind > 0 ? '+' : ''}${compassState.headwind.toFixed(1)} kt`}
-          valueClassName={headwindColour}
+          value={liveDataUnavailable ? 'N/A' : `${compassState.headwind > 0 ? '+' : ''}${compassState.headwind.toFixed(1)} kt`}
+          valueClassName={liveDataUnavailable ? 'text-slate-500' : headwindColour}
         />
         <ReadoutRow
           label="Crosswind"
-          value={`${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
-          valueClassName={crosswindColour}
+          value={liveDataUnavailable ? 'N/A' : `${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
+          valueClassName={liveDataUnavailable ? 'text-slate-500' : crosswindColour}
         />
-        <ReadoutRow label="Trend" value={`${trendSymbol} ${trendLabel}`} valueClassName={trendColour} />
-        <ReadoutRow label="Temp" value={`${compassState.temperature}°C`} />
-        <ReadoutRow label="QNH" value={`${compassState.qnh} hPa`} />
+        <ReadoutRow label="Trend" value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`} valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour} />
+        <ReadoutRow label="Temp" value={liveDataUnavailable ? 'N/A' : `${compassState.temperature}°C`} />
+        <ReadoutRow label="QNH" value={liveDataUnavailable ? 'N/A' : `${compassState.qnh} hPa`} />
       </div>
     </div>
   )
