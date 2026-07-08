@@ -82,20 +82,32 @@ const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 // below at the seeded 22px width) and the general symmetric formula.
 const RUNWAY_STRIP_GAP = 5
 
-// Strip length (RunwayGroup.stripLengthPx) is admin-configurable, but
-// rendering always clamps it to this range regardless of what's stored -
-// a render-time safety net, not just a UI suggestion. MAX matches the
-// half-length (RING_RADIUS * 0.6) already proven to keep strip ends -
-// and the centreline, which extends 10px further - clearly below the
-// cardinal letters' radius (149.4) instead of nearly touching them, so a
-// very long configured runway can never be rendered long enough to reach
-// the letters. MIN keeps the two numeral positions (each inset 20px from
-// its own end) from crossing over each other on a very short runway.
+// Strip width and length (RunwayGroup.stripWidthPx/stripLengthPx) are both
+// admin-configurable, but rendering always clamps each to these ranges
+// regardless of what's stored - a render-time safety net, not just a UI
+// suggestion. The two interact: a wider strip's far corner reaches further
+// from centre than a narrower one at the same length, so the length
+// ceiling is only safe up to MAX_STRIP_WIDTH_PX too. Both bounds are
+// verified together (corner distance sqrt(widthOffset² + halfLength²) at
+// the maximum of each stays ~127px from centre) to keep every strip
+// corner, and the centreline tip (which extends 10px past the strip
+// ends), clear of the cardinal letters' estimated inner glyph edge
+// (~134px from centre, i.e. their 149.4px anchor radius minus roughly
+// half a 41px bold glyph's own height) with a real margin, not a
+// razor's-edge fit. MIN_STRIP_HALF_LENGTH keeps the two numeral positions
+// (each inset 20px from its own end) from crossing over each other on a
+// very short runway.
 const MIN_STRIP_HALF_LENGTH = 30
-const MAX_STRIP_HALF_LENGTH = RING_RADIUS * 0.6
+const MAX_STRIP_HALF_LENGTH = 118
+const MIN_STRIP_WIDTH_PX = 4
+const MAX_STRIP_WIDTH_PX = 30
 
 function clampStripHalfLength(rawHalfLength: number): number {
   return Math.min(Math.max(rawHalfLength, MIN_STRIP_HALF_LENGTH), MAX_STRIP_HALF_LENGTH)
+}
+
+function clampStripWidth(rawWidth: number): number {
+  return Math.min(Math.max(rawWidth, MIN_STRIP_WIDTH_PX), MAX_STRIP_WIDTH_PX)
 }
 
 // Threshold (checkerboard) markings: square size is a fraction of the
@@ -151,7 +163,7 @@ function splitRunwayLabel(label: string): [string, string] {
 
 function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const [labelTop, labelBottom] = splitRunwayLabel(group.label)
-  const stripWidth = group.stripWidthPx
+  const stripWidth = clampStripWidth(group.stripWidthPx)
   const halfLength = clampStripHalfLength(group.stripLengthPx / 2)
   const stripTop = 200 - halfLength
   const stripBottom = 200 + halfLength

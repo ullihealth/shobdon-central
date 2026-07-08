@@ -181,6 +181,7 @@ export default function RunwaysPage(): JSX.Element {
                   <input
                     type="number"
                     min={1}
+                    max={30}
                     value={entry.group.stripWidthPx}
                     onChange={(event) => handleStripWidthChange(index, event.target.value)}
                     className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
@@ -194,12 +195,17 @@ export default function RunwaysPage(): JSX.Element {
                   <input
                     type="number"
                     min={1}
+                    max={236}
                     value={entry.group.stripLengthPx}
                     onChange={(event) => handleStripLengthChange(index, event.target.value)}
                     className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                   />
                 </label>
               </div>
+              <p className="mt-2 text-xs text-muted-500">
+                Width and length render capped at 30px / 236px respectively, however large a value is entered -
+                that ceiling keeps the strip clear of the compass's N/E/S/W letters.
+              </p>
 
               <label className="mt-4 flex items-center gap-2">
                 <input
