@@ -22,3 +22,8 @@ export const INVESTIGATION_LOG_URL = `${CAPTURE_WORKER_BASE}/investigate?key=${C
 // GET fetches the active theme's tokens (DashboardPage.tsx, on load); POST
 // sets them (/design's "Apply to Live Dashboard").
 export const THEME_URL = `${CAPTURE_WORKER_BASE}/theme?key=${CAPTURE_KEY}`
+
+// GET fetches the most recent parsed capture as clean JSON (atcProvider.ts) -
+// the same data shown on the human-facing "View Capture Logs" HTML page,
+// just structured for a browser fetch() to consume directly.
+export const LATEST_READING_URL = `${CAPTURE_WORKER_BASE}/latest?key=${CAPTURE_KEY}`

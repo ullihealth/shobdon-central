@@ -11,7 +11,12 @@ export async function fetchWeatherData(
   try {
     const result = await provider.fetch(config)
     return { data: result.data, source: result.live ? 'live' : 'mock' }
-  } catch {
+  } catch (error) {
+    // Falling back silently made a real provider failure indistinguishable
+    // from working-as-intended for a long time - logging the reason here
+    // costs nothing and is the fastest way to tell the two apart from
+    // devtools alone.
+    console.warn(`Weather provider "${config.activeProvider}" failed, falling back to mock:`, error)
     const fallback = await fetchMockWeather(config)
     return { data: fallback.data, source: 'mock' }
   }

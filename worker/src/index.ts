@@ -377,6 +377,49 @@ async function handlePost(request: Request, env: Env): Promise<Response> {
   })
 }
 
+// Clean JSON for the live dashboard - the same data already rendered as
+// HTML on the human-facing "View Capture Logs" page (GET /), just as a
+// small structured payload a browser fetch() can consume directly instead
+// of scraping the log page. Returns 404 + null body if there's no capture
+// yet, or if the latest one is an old-style browser-report capture with no
+// `parsed` field (nothing this endpoint can offer the dashboard).
+interface LatestReadingResponse {
+  receivedAt: string
+  capturedAt: string | null
+  parsed: Record<string, unknown>
+}
+
+async function handleGetLatestReading(env: Env): Promise<Response> {
+  const raw = await env.CAPTURES.get('latest')
+  if (!raw) {
+    return new Response(JSON.stringify(null), {
+      status: 404,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
+  }
+
+  const entry = JSON.parse(raw) as CaptureEntry
+  const payload = entry.payload as { capturedAt?: unknown; parsed?: unknown } | null
+
+  if (!payload || typeof payload !== 'object' || !payload.parsed || typeof payload.parsed !== 'object') {
+    return new Response(JSON.stringify(null), {
+      status: 404,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
+  }
+
+  const response: LatestReadingResponse = {
+    receivedAt: entry.receivedAt,
+    capturedAt: typeof payload.capturedAt === 'string' ? payload.capturedAt : null,
+    parsed: payload.parsed as Record<string, unknown>,
+  }
+
+  return new Response(JSON.stringify(response), {
+    status: 200,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  })
+}
+
 function renderEntry(entry: CaptureEntry): string {
   const payload = (entry.payload ?? {}) as { reportText?: unknown }
   const reportText = typeof payload.reportText === 'string' ? payload.reportText : JSON.stringify(entry.payload, null, 2)
@@ -463,6 +506,10 @@ export default {
 
     if (pathname === '/theme' && request.method === 'GET') {
       return handleGetTheme(env)
+    }
+
+    if (pathname === '/latest' && request.method === 'GET') {
+      return handleGetLatestReading(env)
     }
 
     if (request.method === 'POST') return handlePost(request, env)
