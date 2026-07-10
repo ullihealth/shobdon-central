@@ -16,7 +16,15 @@ export default function LeftInfoPanel(): JSX.Element {
     { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
     { label: 'Temperature', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
     { label: 'Visibility', value: 'N/A' },
-    { label: 'Notices', value: '4 active' },
+    {
+      label: 'Notices',
+      value:
+        !weather || liveDataUnavailable
+          ? 'N/A'
+          : weather.notams.length > 0
+            ? `${weather.notams.length} active`
+            : 'No active notices',
+    },
   ]
 
   return (

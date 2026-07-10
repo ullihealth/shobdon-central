@@ -29,6 +29,15 @@ function numberField(parsed: Record<string, unknown>, key: string): number | nul
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+// Unlike wind/temp/QNH, a missing or malformed notams field isn't a reason
+// to throw and blank the whole reading - it's normal for this to be an
+// empty array most of the time. Anything not cleanly a string[] falls back
+// to empty rather than surfacing garbage.
+function stringArrayField(parsed: Record<string, unknown>, key: string): string[] {
+  const value = parsed[key]
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : []
+}
+
 export const fetchAtcWeather: WeatherProviderFetcher = async () => {
   const response = await fetch(LATEST_READING_URL)
   if (response.status === 404) {
@@ -66,6 +75,8 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
     throw new Error('Latest capture is missing one or more required fields (wind direction/speed, temp, QNH)')
   }
 
+  const notams = stringArrayField(reading.parsed, 'notams')
+
   // wind_avg_kt is an averaging-period mean, not a gust reading - the
   // station doesn't expose a distinct gust field, so windGust is left
   // unset rather than mislabeling the average as a gust.
@@ -75,6 +86,7 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
     temperature,
     qnh,
     pressureTrend: 'steady',
+    notams,
   }
 
   return { data, live: true }

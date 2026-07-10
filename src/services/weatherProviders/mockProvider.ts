@@ -7,6 +7,7 @@ const MOCK_WEATHER = {
   temperature: 16,
   qnh: 1013,
   pressureTrend: 'rising' as const,
+  notams: [] as string[],
 }
 
 export const fetchMockWeather: WeatherProviderFetcher = async () => ({

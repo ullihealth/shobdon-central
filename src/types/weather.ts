@@ -7,6 +7,7 @@ export interface WeatherData {
   temperature: number // Celsius
   qnh: number // hPa
   pressureTrend: PressureTrend
+  notams: string[] // active NOTAM text(s); empty array means genuinely none, not "unknown"
 }
 
 // 'mock' means the station could not be reached or its response could not

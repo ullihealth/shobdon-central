@@ -58,6 +58,7 @@ export const fetchOpenMeteoWeather: WeatherProviderFetcher = async (config) => {
     temperature: Math.round(json.current.temperature_2m),
     qnh: Math.round(json.current.pressure_msl),
     pressureTrend: derivePressureTrend(json),
+    notams: [], // Open-Meteo has no NOTAM concept
   }
 
   return { data, live: true }
