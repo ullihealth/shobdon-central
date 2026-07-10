@@ -1,6 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
+
+interface CarouselSlotResolved {
+  slotNumber: number
+  mediaType: string
+  durationSeconds: number
+  mp4DurationSeconds: number | null
+  resolvedUrl: string | null
+}
 
 function renderMediaContent(item: MediaItem) {
   switch (item.type) {
@@ -21,6 +29,49 @@ function mediaTypeLabel(item: MediaItem, webcamUrl: string): string {
   return item.type === 'empty' ? 'Placeholder' : item.type
 }
 
+// One renderer per carousel slot mediaType - webcam and image are the
+// exact same iframe/img markup MediaPanel already used for the single-
+// item case (same className/attributes), just parameterised per slot
+// instead of hardcoded to one webcamUrl/item. mp4/pdf are the two
+// genuinely new cases for phase 1.
+function renderCarouselSlot(slot: CarouselSlotResolved): JSX.Element | null {
+  if (!slot.resolvedUrl) return null
+  switch (slot.mediaType) {
+    case 'webcam':
+      return (
+        <iframe
+          src={slot.resolvedUrl}
+          className="h-full w-full"
+          style={{ border: 0 }}
+          allow="autoplay"
+          allowFullScreen
+          title="Aeroclub webcam"
+        />
+      )
+    case 'image':
+      return <img src={slot.resolvedUrl} alt="" className="h-full w-full object-contain" />
+    case 'mp4':
+      // key forces the <video> to remount (and restart playback) every
+      // time the active slot changes back to this same mp4, rather than
+      // React reusing the DOM node and leaving it paused on a stale frame.
+      return (
+        <video
+          key={slot.resolvedUrl}
+          src={slot.resolvedUrl}
+          className="h-full w-full object-contain"
+          autoPlay
+          muted
+          loop
+          playsInline
+        />
+      )
+    case 'pdf':
+      return <iframe src={slot.resolvedUrl} className="h-full w-full bg-white" style={{ border: 0 }} title="Document" />
+    default:
+      return null
+  }
+}
+
 interface MediaPanelProps {
   item: MediaItem
 }
@@ -28,27 +79,60 @@ interface MediaPanelProps {
 export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
-  // loaded) falls back to item exactly as before. Was a synchronous
-  // loadClubProfile().webcamUrl (localStorage) read - now camera slot 1
-  // from the tenant-scoped public config endpoint (the single webcamUrl
-  // became a fixed 3-slot camera array in phase 0; slot 1 is the direct
-  // successor of the old webcamUrl). No auth here deliberately - this is
-  // the live public dashboard, unauthenticated for everyone, same as today.
+  // loaded) falls back to item exactly as before. This is the pre-
+  // carousel behaviour, kept completely unchanged as the fallback tier
+  // below: the carousel only takes over when it actually has at least
+  // one enabled slot; a not-yet-configured or fully-disabled carousel
+  // falls straight through to this, not a broken empty screen.
   const [webcamUrl, setWebcamUrl] = useState('')
+  const [carouselSlots, setCarouselSlots] = useState<CarouselSlotResolved[]>([])
+  const [activeIndex, setActiveIndex] = useState(0)
+  const timerRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
+        if (cancelled) return
         const slotOne = data?.cameraSlots?.find((slot: { slot: number; url: string }) => slot.slot === 1)
-        if (!cancelled && slotOne?.url) setWebcamUrl(slotOne.url)
+        if (slotOne?.url) setWebcamUrl(slotOne.url)
+        setCarouselSlots(Array.isArray(data?.carouselSlots) ? data.carouselSlots : [])
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [])
+
+  // Cycles through enabled carousel slots in order, each for its own
+  // duration (mp4DurationSeconds overrides durationSeconds for mp4),
+  // looping back to the first after the last - plain cut, no fade/swipe
+  // transition (explicitly out of phase-1 scope).
+  useEffect(() => {
+    window.clearTimeout(timerRef.current)
+    if (carouselSlots.length === 0) return
+
+    setActiveIndex(0)
+    let index = 0
+
+    const scheduleNext = () => {
+      const slot = carouselSlots[index]
+      const seconds =
+        slot.mediaType === 'mp4' && slot.mp4DurationSeconds ? slot.mp4DurationSeconds : slot.durationSeconds
+      timerRef.current = window.setTimeout(() => {
+        index = (index + 1) % carouselSlots.length
+        setActiveIndex(index)
+        scheduleNext()
+      }, Math.max(1, seconds) * 1000)
+    }
+    scheduleNext()
+
+    return () => window.clearTimeout(timerRef.current)
+  }, [carouselSlots])
+
+  const hasCarousel = carouselSlots.length > 0
+  const activeSlot = hasCarousel ? carouselSlots[activeIndex] : null
 
   return (
     <div
@@ -58,15 +142,18 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
         <div className="flex items-center justify-between border-b border-border px-4 py-2">
           <div className="text-sm font-semibold uppercase tracking-widest text-muted-400">Media</div>
           <div className="rounded-full bg-slate-800 px-3 py-1 text-xs uppercase tracking-widest text-muted-400">
-            {mediaTypeLabel(item, webcamUrl)}
+            {hasCarousel ? (activeSlot?.mediaType ?? '') : mediaTypeLabel(item, webcamUrl)}
           </div>
         </div>
         <div className="flex flex-1 items-center justify-center overflow-hidden p-6 text-center">
-          {webcamUrl ? (
+          {hasCarousel ? (
+            activeSlot && renderCarouselSlot(activeSlot)
+          ) : webcamUrl ? (
             <iframe
               src={webcamUrl}
               className="h-full w-full"
               style={{ border: 0 }}
+              allow="autoplay"
               allowFullScreen
               title="Aeroclub webcam"
             />

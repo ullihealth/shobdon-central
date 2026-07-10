@@ -13,6 +13,16 @@ binding = "DB"
 database_name = "shobdon-central"
 database_id = "31656f0d-3bf3-4c0f-96bb-39bf90c9e179"
 
+# Media library uploads (images/mp4/pdf) for the carousel feature -
+# key structure {tenant_slug}/library/{fileId}.{ext}. Public-read (r2.dev
+# URL enabled via `wrangler r2 bucket dev-url enable`), same posture as
+# the public dashboard itself - carousel content is dashboard content,
+# not gated behind auth for reads. Uploads/deletes go through
+# functions/api/tenant/media-library/* (owner/media role required).
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "shobdon-central-media"
+
 [vars]
 # BETTER_AUTH_URL / AUTH_TRUSTED_ORIGIN: placeholder pointing at the
 # default *.pages.dev domain - confirm/correct this in the Cloudflare
@@ -21,5 +31,10 @@ database_id = "31656f0d-3bf3-4c0f-96bb-39bf90c9e179"
 # `wrangler pages dev` testing.
 BETTER_AUTH_URL = "https://shobdon-central.pages.dev"
 AUTH_TRUSTED_ORIGIN = "https://shobdon-central.pages.dev"
+
+# Public r2.dev base URL for the MEDIA bucket above - used to construct
+# public file URLs for the dashboard (functions/api/public/[tenant]/
+# config.ts). Not a secret - it's already public by design.
+MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
 
 # AUTH_SECRET is set via: npx wrangler pages secret put AUTH_SECRET

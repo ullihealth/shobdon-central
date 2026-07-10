@@ -16,12 +16,22 @@ export default function LoginPage(): JSX.Element {
 
     const { error: signInError } = await authClient.signIn.email({ email, password })
 
-    setSubmitting(false)
     if (signInError) {
+      setSubmitting(false)
       setError(signInError.message ?? 'Sign in failed')
       return
     }
-    navigate('/config')
+
+    // media-role members have no owner-only pages to land on - /config
+    // would just show them "Not authorized" with no way forward, so send
+    // them straight to the one page they can actually use. Every other
+    // role (owner, and atc until its own landing page is designed) keeps
+    // the existing /config default, unchanged.
+    const me = await fetch('/api/tenant/me')
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null)
+    setSubmitting(false)
+    navigate(me?.role === 'media' ? '/media-manager' : '/config')
   }
 
   return (

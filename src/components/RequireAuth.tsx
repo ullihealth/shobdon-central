@@ -6,13 +6,15 @@ import type { MemberRole } from '../types/member'
 
 interface RequireAuthProps {
   children: ReactNode
-  // When set, requires the logged-in user's tenant role to match exactly
-  // (checked via GET /api/tenant/me) - not just "is a member of the
-  // tenant". A logged-in user with the wrong role gets a clear
-  // "not authorized" state, not a redirect to /login (they ARE
-  // authenticated - redirecting them back to a login form would be
-  // confusing and wrong) and not a broken/blank page.
-  requireRole?: MemberRole
+  // When set, requires the logged-in user's tenant role to be this exact
+  // role, or (when given an array) one of several allowed roles - e.g.
+  // /media-manager needs ['owner', 'media']. Checked via GET
+  // /api/tenant/me - not just "is a member of the tenant". A logged-in
+  // user with a disallowed role gets a clear "not authorized" state, not
+  // a redirect to /login (they ARE authenticated - redirecting them back
+  // to a login form would be confusing and wrong) and not a broken/blank
+  // page.
+  requireRole?: MemberRole | MemberRole[]
 }
 
 // Gate for the management pages - redirects to /login when there's no
@@ -49,7 +51,8 @@ export default function RequireAuth({ children, requireRole }: RequireAuthProps)
 
   if (requireRole) {
     if (roleCheck.loading) return null
-    if (roleCheck.role !== requireRole) {
+    const allowedRoles = Array.isArray(requireRole) ? requireRole : [requireRole]
+    if (!roleCheck.role || !allowedRoles.includes(roleCheck.role as MemberRole)) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 text-center shadow-xl shadow-slate-950/20">

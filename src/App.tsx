@@ -4,6 +4,7 @@ import ConfigPage from './pages/ConfigPage'
 import DashboardPage from './pages/DashboardPage'
 import DesignPage from './pages/DesignPage'
 import LoginPage from './pages/LoginPage'
+import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
 import RunwaysPage from './pages/RunwaysPage'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
@@ -48,6 +49,16 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireRole="owner">
               <MembersPage />
+            </RequireAuth>
+          }
+        />
+        {/* Owner AND media role - the one page besides the public
+            dashboard that isn't owner-exclusive. */}
+        <Route
+          path="/media-manager"
+          element={
+            <RequireAuth requireRole={['owner', 'media']}>
+              <MediaManagerPage />
             </RequireAuth>
           }
         />

@@ -100,20 +100,32 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
   return { membership, userId };
 }
 
-// Same as requireTenant, but additionally requires the 'owner' role -
-// used by every member-management endpoint (add/list/revoke/reset-
-// password) and by the /config, /design, /runways, /members pages'
-// server-side gate. Deliberately checks membership.role directly against
-// the literal string 'owner' rather than going through the organization
-// plugin's own role-string validation (its update-member-role endpoint
-// validates against a fixed default role set that doesn't include
-// 'atc') - this project writes/reads member.role with plain SQL
-// throughout, sidestepping that entirely.
-export async function requireOwner(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
+// Same as requireTenant, but additionally requires the caller's role to
+// be one of `allowed` - the general form used by every role-gated route
+// and page. Deliberately checks membership.role directly against plain
+// strings rather than going through the organization plugin's own
+// role-string validation (its update-member-role endpoint validates
+// against a fixed default role set that doesn't include 'atc'/'media') -
+// this project writes/reads member.role with plain SQL throughout,
+// sidestepping that entirely.
+export async function requireRoles(
+  request: Request,
+  env: { DB: D1Database },
+  allowed: string[]
+): Promise<RequireTenantResult> {
   const result = await requireTenant(request, env);
   if ("error" in result) return result;
-  if (result.membership.role !== "owner") {
-    return { error: jsonResponse({ error: "Owner role required" }, 403) };
+  if (!allowed.includes(result.membership.role)) {
+    return { error: jsonResponse({ error: `Role must be one of: ${allowed.join(", ")}` }, 403) };
   }
   return result;
+}
+
+// Thin wrapper over requireRoles(['owner']) - used by every existing
+// owner-only route (member-management, /config, /design, /runways).
+// Kept as its own named function so those call sites read clearly and
+// don't need to spell out the array every time; behavior is unchanged
+// from before requireRoles existed.
+export async function requireOwner(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
+  return requireRoles(request, env, ["owner"]);
 }

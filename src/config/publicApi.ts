@@ -17,3 +17,8 @@ export const PUBLIC_CONFIG_URL = `/api/public/${TENANT_SLUG}/config`
 // needed. Resolves its own tenant from the logged-in user's membership,
 // so no slug is passed here (unlike the public endpoint above).
 export const TENANT_CONFIG_URL = '/api/tenant/config'
+
+// Owner/media-role media-manager endpoints.
+export const MEDIA_LIBRARY_URL = '/api/tenant/media-library'
+export const MEDIA_LIBRARY_UPLOAD_URL = '/api/tenant/media-library/upload'
+export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
