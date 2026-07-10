@@ -50,6 +50,12 @@ export default function ConfigPage(): JSX.Element {
             >
               🛬 Runways
             </Link>
+            <Link
+              to="/members"
+              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+            >
+              👥 Members
+            </Link>
           </div>
 
           <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />

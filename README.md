@@ -42,3 +42,8 @@ What to do next
 
 Notes
 - This project is intentionally minimal and diagnostic. It does not attempt to bypass browser security; it only performs a short `no-cors` probe as a diagnostic check to help differentiate CORS vs network failures.
+
+Admin accounts and password resets
+- There is no self-service "forgot password" for any account, including the owner. BetterAuth's built-in reset flow requires an `emailAndPassword.sendResetPassword` callback that actually sends an email, and this project has no email-sending infrastructure configured (confirmed by inspecting `node_modules/better-auth/dist/api/routes/password.mjs` - the route throws `RESET_PASSWORD_DISABLED` without one).
+- For admin/atc accounts: the tenant owner can generate a new temporary password directly from `/members` ("Reset password" on that member's row) - no email involved.
+- For an owner's own forgotten password: there's no self-service path yet. Contact the developer (jeffthompson@europe.com) for a manual reset directly against the D1 database, the same way the original owner account was seeded.

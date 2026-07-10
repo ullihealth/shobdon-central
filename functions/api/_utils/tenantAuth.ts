@@ -79,3 +79,41 @@ export function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
+
+export type RequireTenantResult =
+  | { membership: TenantMembership; userId: string }
+  | { error: Response };
+
+// Shared "logged in AND a member of the target tenant" gate - originally
+// duplicated inline in tenant/config.ts; promoted here so the member-
+// management endpoints (list/add/revoke/reset-password) and the
+// lightweight tenant/me role-check endpoint can all reuse the exact same
+// check rather than re-implementing it.
+export async function requireTenant(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
+  const userId = await getSessionUserId(request);
+  if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) };
+
+  const orgSlug = new URL(request.url).searchParams.get("org");
+  const membership = await resolveTenantMembership(env.DB, userId, orgSlug);
+  if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
+
+  return { membership, userId };
+}
+
+// Same as requireTenant, but additionally requires the 'owner' role -
+// used by every member-management endpoint (add/list/revoke/reset-
+// password) and by the /config, /design, /runways, /members pages'
+// server-side gate. Deliberately checks membership.role directly against
+// the literal string 'owner' rather than going through the organization
+// plugin's own role-string validation (its update-member-role endpoint
+// validates against a fixed default role set that doesn't include
+// 'atc') - this project writes/reads member.role with plain SQL
+// throughout, sidestepping that entirely.
+export async function requireOwner(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
+  const result = await requireTenant(request, env);
+  if ("error" in result) return result;
+  if (result.membership.role !== "owner") {
+    return { error: jsonResponse({ error: "Owner role required" }, 403) };
+  }
+  return result;
+}

@@ -1,22 +1,15 @@
 // Authenticated CRUD for the management pages (/config, /design,
-// /runways once cutover happens). GET/PUT /api/tenant/config[?org=slug].
+// /runways). GET/PUT /api/tenant/config[?org=slug].
 //
-// Every request here must pass BOTH checks before touching data:
-//   1. is this user logged in at all (getSessionUserId)
-//   2. does this user actually belong to the tenant they're targeting
-//      (resolveTenantMembership, backed by the member table - not just
-//      "is ?org= a real organization")
-// Read shape matches functions/api/public/[tenant]/config.ts exactly, so
-// the eventual management-page cutover can reuse the same parsing code
-// as the public dashboard - this route just additionally requires and
-// enforces a session.
+// Owner-gated (requireOwner, not just requireTenant/membership): /config,
+// /design, and /runways are now owner-only pages (client-side gate in
+// RequireAuth.tsx), and the underlying write API needs to enforce the
+// same restriction server-side - a client-side-only gate would be
+// trivially bypassable by any authenticated admin/atc member hitting
+// this endpoint directly with their own valid session cookie. Read shape
+// matches functions/api/public/[tenant]/config.ts exactly.
 
-import {
-  getSessionUserId,
-  resolveTenantMembership,
-  jsonResponse,
-  type D1Database,
-} from "../_utils/tenantAuth";
+import { requireOwner, jsonResponse, type D1Database } from "../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -60,19 +53,8 @@ interface CameraSlotInput {
   url: string;
 }
 
-async function requireTenant(request: Request, env: Env) {
-  const userId = await getSessionUserId(request);
-  if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) } as const;
-
-  const orgSlug = new URL(request.url).searchParams.get("org");
-  const membership = await resolveTenantMembership(env.DB, userId, orgSlug);
-  if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) } as const;
-
-  return { membership } as const;
-}
-
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireTenant(request, env);
+  const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -108,7 +90,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 // always wrote the complete set) - minimises client-side changes at
 // cutover time. Only areas present in the body are touched.
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireTenant(request, env);
+  const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
