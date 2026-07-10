@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
-import { loadClubProfile } from '../services/clubProfileStore'
+import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
 import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
 import type { ArrowColour } from '../utils/windCalculations'
@@ -344,10 +344,31 @@ function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowP
 
 export default function CompassPanel(): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
-  const [clubProfile] = useState(() => loadClubProfile())
+  // Was a synchronous loadClubProfile() (localStorage) read - now an
+  // async fetch of the tenant-scoped public config endpoint, so
+  // runwayGroups starts empty for one render until it resolves (matches
+  // the same brief-loading-flash characteristic DashboardPage.tsx's
+  // theme fetch has always had). No auth here deliberately - this is
+  // the live public dashboard, which must keep working with zero login,
+  // same as every device viewing it today (PC2, clubhouse display,
+  // anyone with the link).
+  const [clubProfile, setClubProfile] = useState<{ runwayGroups: RunwayGroup[] }>({ runwayGroups: [] })
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.runwayGroups) setClubProfile({ runwayGroups: data.runwayGroups })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const compassState = useMemo<CompassState | null>(() => {
-    if (!weather) return null
+    if (!weather || clubProfile.runwayGroups.length === 0) return null
 
     const activeRunwayHeading = clubProfile.runwayGroups[0].headingDegrees
     const { headwind, crosswind } = calculateWindComponents(

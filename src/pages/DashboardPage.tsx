@@ -6,24 +6,28 @@ import LeftInfoPanel from '../components/LeftInfoPanel'
 import RightInfoPanel from '../components/RightInfoPanel'
 import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
 import { WeatherProvider } from '../context/WeatherContext'
-import { THEME_URL } from '../config/captureEndpoint'
+import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 
 export default function DashboardPage(): JSX.Element {
-  // Active theme, synced across every device via the Worker/KV. Absent a
-  // fetched override, the committed :root defaults apply naturally - no
-  // fallback object needed here, since :root already equals CURRENT_LIVE_THEME.
+  // Active theme, synced across every device via the tenant-scoped D1
+  // config (was the Worker's global theme KV key - see
+  // functions/api/public/[tenant]/config.ts). Absent a fetched override,
+  // the committed :root defaults apply naturally - no fallback object
+  // needed here, since :root already equals CURRENT_LIVE_THEME. No auth
+  // on this fetch deliberately - this is the live public dashboard,
+  // unauthenticated for everyone, same as today.
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
 
   useEffect(() => {
     let cancelled = false
 
-    fetch(THEME_URL)
+    fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
-      .then((tokens) => {
-        if (!cancelled && tokens) setThemeOverride(tokens as CSSProperties)
+      .then((data) => {
+        if (!cancelled && data?.theme) setThemeOverride(data.theme as CSSProperties)
       })
       .catch(() => {
-        // Worker unreachable - fall through to the committed :root defaults.
+        // Endpoint unreachable - fall through to the committed :root defaults.
       })
 
     return () => {

@@ -1,0 +1,25 @@
+# Cloudflare Pages Functions bindings (functions/ directory) - separate from
+# worker/wrangler.toml, which is the standalone capture-ingest Worker
+# (manual `wrangler deploy`, untouched by this file). This one is picked
+# up automatically by Cloudflare Pages on every git push, and by
+# `wrangler pages dev` locally, because pages_build_output_dir is set.
+name = "shobdon-central"
+compatibility_date = "2026-07-10"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "shobdon-central"
+database_id = "31656f0d-3bf3-4c0f-96bb-39bf90c9e179"
+
+[vars]
+# BETTER_AUTH_URL / AUTH_TRUSTED_ORIGIN: placeholder pointing at the
+# default *.pages.dev domain - confirm/correct this in the Cloudflare
+# dashboard (or override via `wrangler pages secret put`) once the
+# project's actual production domain is confirmed. Doesn't affect local
+# `wrangler pages dev` testing.
+BETTER_AUTH_URL = "https://shobdon-central.pages.dev"
+AUTH_TRUSTED_ORIGIN = "https://shobdon-central.pages.dev"
+
+# AUTH_SECRET is set via: npx wrangler pages secret put AUTH_SECRET

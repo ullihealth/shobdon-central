@@ -1,0 +1,6 @@
+# Local-only secrets for `wrangler pages dev` (AUTH_SECRET etc.) - never commit.
+.dev.vars
+.dev.vars.*
+
+# Wrangler local state/cache
+.wrangler/

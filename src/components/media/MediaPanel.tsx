@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MediaItem } from '../../types/media'
-import { loadClubProfile } from '../../services/clubProfileStore'
+import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 
 function renderMediaContent(item: MediaItem) {
   switch (item.type) {
@@ -27,10 +27,28 @@ interface MediaPanelProps {
 
 export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
-  // whenever it's set - empty string (no webcam configured) falls back to
-  // item exactly as before. Configurable via clubProfileStore.ts, not a
-  // code deploy.
-  const [webcamUrl] = useState(() => loadClubProfile().webcamUrl)
+  // whenever it's set - empty string (no webcam configured, or not yet
+  // loaded) falls back to item exactly as before. Was a synchronous
+  // loadClubProfile().webcamUrl (localStorage) read - now camera slot 1
+  // from the tenant-scoped public config endpoint (the single webcamUrl
+  // became a fixed 3-slot camera array in phase 0; slot 1 is the direct
+  // successor of the old webcamUrl). No auth here deliberately - this is
+  // the live public dashboard, unauthenticated for everyone, same as today.
+  const [webcamUrl, setWebcamUrl] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const slotOne = data?.cameraSlots?.find((slot: { slot: number; url: string }) => slot.slot === 1)
+        if (!cancelled && slotOne?.url) setWebcamUrl(slotOne.url)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div

@@ -361,6 +361,15 @@ async function handlePost(request: Request, env: Env): Promise<Response> {
     entry = { receivedAt: new Date().toISOString(), payload }
   }
 
+  // KNOWN FUTURE COLLISION (deliberately deferred, not fixed now): 'latest'
+  // and 'history' are single global KV keys, not tenant-scoped. That's
+  // fine while Shobdon is the only tenant, but the moment a second
+  // airfield's PC2 starts POSTing here, both tenants' captures would
+  // land in the same keys and overwrite/interleave. Fix when it's
+  // actually needed: prefix these keys with the tenant slug (e.g.
+  // 'latest:shobdon'), not before - this whole capture pipeline and its
+  // ?key= convention are explicitly out of scope for the phase-0
+  // multi-tenant auth work (D1 doesn't touch this file at all).
   const historyRaw = await env.CAPTURES.get('history')
   const history: CaptureEntry[] = historyRaw ? JSON.parse(historyRaw) : []
   history.unshift(entry)

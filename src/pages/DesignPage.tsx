@@ -8,7 +8,8 @@ import RightInfoPanel from '../components/RightInfoPanel'
 import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
 import { WeatherProvider } from '../context/WeatherContext'
 import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
-import { THEME_URL, REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
+import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
+import { TENANT_CONFIG_URL } from '../config/publicApi'
 import {
   CURRENT_LIVE_THEME,
   CURRENT_LIVE_THEME_ID,
@@ -202,10 +203,16 @@ export default function DesignPage(): JSX.Element {
 
     setApplyStatus('working')
     try {
-      const response = await fetch(THEME_URL, {
-        method: 'POST',
+      // Was a POST to the Worker's global theme KV key - now a PUT to the
+      // tenant-scoped, authenticated config endpoint (this page is gated
+      // behind login, so the session cookie is already present on this
+      // same-origin request). REFRESH_TRIGGER_URL is unrelated to where
+      // the theme is stored - it just tells PC2 to reload so its next
+      // page load re-fetches the now-updated public config - untouched.
+      const response = await fetch(TENANT_CONFIG_URL, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(activeTokens),
+        body: JSON.stringify({ theme: activeTokens }),
       })
       if (!response.ok) {
         setApplyStatus('error')
