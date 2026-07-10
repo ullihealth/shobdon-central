@@ -21,4 +21,10 @@ export interface RunwayGroup {
 // pass and keep living in their existing homes - only runwayGroups is new.
 export interface ClubProfile {
   runwayGroups: RunwayGroup[]
+  // Live webcam embed URL for MediaPanel (e.g. an rtsp.me embed page) -
+  // empty string means no webcam configured, MediaPanel falls back to its
+  // existing placeholder/currentMedia rendering. A club fact like this
+  // belongs here, not in config/media.ts (a single curated promo item) or
+  // designTemplateStore.ts (page theme colours).
+  webcamUrl: string
 }

@@ -33,6 +33,8 @@ export const DEFAULT_CLUB_PROFILE: ClubProfile = {
       identifierFontSizePx: 14,
     },
   ],
+  // Aeroclub's live webcam, embedded in MediaPanel.
+  webcamUrl: 'https://rtsp.me/embed/kesf3Ha8/',
 }
 
 function isValidRunwayGroup(value: unknown): value is RunwayGroup {
@@ -69,7 +71,14 @@ export function loadClubProfile(): ClubProfile {
       return DEFAULT_CLUB_PROFILE
     }
 
-    return { runwayGroups }
+    // webcamUrl is validated independently of runwayGroups, rather than
+    // invalidating the whole stored profile if it's missing (e.g. a
+    // profile saved before this field existed) - an admin's existing
+    // runway edits shouldn't get silently discarded just because a
+    // newer, unrelated field wasn't there yet.
+    const webcamUrl = typeof parsed?.webcamUrl === 'string' ? parsed.webcamUrl : DEFAULT_CLUB_PROFILE.webcamUrl
+
+    return { runwayGroups, webcamUrl }
   } catch {
     return DEFAULT_CLUB_PROFILE
   }

@@ -44,10 +44,14 @@ export default function RunwaysPage(): JSX.Element {
   const [editableGroups, setEditableGroups] = useState<EditableGroup[]>(() =>
     loadClubProfile().runwayGroups.map((group) => ({ group, headingTouched: true }))
   )
+  // This page has no webcamUrl UI - captured once at load so every save
+  // below carries it forward unchanged, rather than silently wiping it
+  // back to the default each time a runway is edited.
+  const [webcamUrl] = useState(() => loadClubProfile().webcamUrl)
 
   function persist(next: EditableGroup[]) {
     setEditableGroups(next)
-    saveClubProfile({ runwayGroups: next.map((entry) => entry.group) })
+    saveClubProfile({ runwayGroups: next.map((entry) => entry.group), webcamUrl })
   }
 
   function updateGroup(index: number, updates: Partial<RunwayGroup>) {
