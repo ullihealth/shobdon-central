@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { MemberRole, TenantMember } from '../types/member'
 
-const ADDABLE_ROLES: MemberRole[] = ['admin', 'atc']
+const ADDABLE_ROLES: MemberRole[] = ['admin', 'atc', 'media']
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -83,9 +83,9 @@ export default function MembersPage(): JSX.Element {
         </Link>
         <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">Members</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
-          Add or remove admin and ATC accounts for this tenant. Admin accounts will get access to the media
-          manager dashboard once it's built; ATC accounts to the ATC-control dashboard. Owner accounts aren't
-          managed here.
+          Add or remove admin, ATC, and media accounts for this tenant. None of the three has a dedicated
+          dashboard to access yet - they can log in, but currently see "Not authorized" everywhere until their
+          respective dashboards are built. Owner accounts aren't managed here.
         </p>
 
         {revealedPassword && (

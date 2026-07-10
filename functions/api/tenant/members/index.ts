@@ -29,16 +29,25 @@ interface MemberRow {
   name: string | null;
 }
 
-const ADDABLE_ROLES = ["admin", "atc"];
+const ADDABLE_ROLES = ["admin", "atc", "media"];
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
+  // u.developer = 0 filters the cross-tenant developer account out of
+  // this list - display-only, not a permissions change. The developer's
+  // actual owner-level access is completely unaffected: every auth check
+  // in this app (requireTenant/requireOwner in tenantAuth.ts) reads the
+  // member table directly with no such filter, so their real membership
+  // row still resolves normally on every request they make. This is the
+  // one place their row is deliberately hidden from a tenant owner's
+  // view of "who's on my team" - unconditional, including when the
+  // developer is themselves the one viewing (no special-case exception).
   const { results } = await env.DB
     .prepare(
-      "SELECT m.id AS id, m.role AS role, m.createdAt AS createdAt, u.email AS email, u.name AS name FROM member m JOIN user u ON u.id = m.userId WHERE m.organizationId = ? ORDER BY m.createdAt"
+      "SELECT m.id AS id, m.role AS role, m.createdAt AS createdAt, u.email AS email, u.name AS name FROM member m JOIN user u ON u.id = m.userId WHERE m.organizationId = ? AND u.developer = 0 ORDER BY m.createdAt"
     )
     .bind(organizationId)
     .all<MemberRow>();
