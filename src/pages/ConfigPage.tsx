@@ -1,16 +1,19 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
 import AtcDeveloperTools from '../components/config/AtcDeveloperTools'
 import InternetWeatherConfigSection from '../components/config/InternetWeatherConfigSection'
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
+import { authClient } from '../lib/auth/authClient'
 import { loadWeatherConfig, saveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
 export default function ConfigPage(): JSX.Element {
+  const navigate = useNavigate()
   const [config, setConfig] = useState<WeatherConfig>(() => loadWeatherConfig())
+  const [loggingOut, setLoggingOut] = useState(false)
 
   function updateConfig(next: WeatherConfig) {
     setConfig(next)
@@ -19,6 +22,12 @@ export default function ConfigPage(): JSX.Element {
 
   function handleSourceChange(activeProvider: WeatherProviderId) {
     updateConfig({ ...config, activeProvider })
+  }
+
+  async function handleLogout() {
+    setLoggingOut(true)
+    await authClient.signOut()
+    navigate('/login')
   }
 
   return (
@@ -74,6 +83,14 @@ export default function ConfigPage(): JSX.Element {
             >
               👤 My Account
             </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-status-bad hover:text-status-bad disabled:opacity-50"
+            >
+              {loggingOut ? 'Logging out…' : '🚪 Log out'}
+            </button>
           </div>
 
           <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />

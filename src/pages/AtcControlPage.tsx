@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
+import { authClient } from '../lib/auth/authClient'
 
 const AIRFIELD_INFO_MAX_LENGTH = 60
 const SAFETY_NOTICE_MAX_LENGTH = 40
@@ -83,6 +84,8 @@ function ToggleButton({
 }
 
 export default function AtcControlPage(): JSX.Element {
+  const navigate = useNavigate()
+  const [loggingOut, setLoggingOut] = useState(false)
   const [loading, setLoading] = useState(true)
   const [runwayEnds, setRunwayEnds] = useState<[string, string]>(['08', '26'])
   const [activeRunwayEnd, setActiveRunwayEnd] = useState('08')
@@ -195,6 +198,12 @@ export default function AtcControlPage(): JSX.Element {
     }
   }
 
+  async function handleLogout() {
+    setLoggingOut(true)
+    await authClient.signOut()
+    navigate('/login')
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
       <div className="mx-auto max-w-3xl px-5 pb-16 pt-8">
@@ -207,9 +216,19 @@ export default function AtcControlPage(): JSX.Element {
           <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
             ← Back to Dashboard
           </Link>
-          <Link to="/account" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-            👤 My Account
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/account" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
+              👤 My Account
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="text-sm font-semibold text-muted-400 transition hover:text-status-bad disabled:opacity-50"
+            >
+              {loggingOut ? 'Logging out…' : '🚪 Log out'}
+            </button>
+          </div>
         </div>
         <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
