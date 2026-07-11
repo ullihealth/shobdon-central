@@ -14,17 +14,3 @@ export interface RunwayGroup {
   stripLengthPx: number // full strip length (along the runway's own axis), shared by every strip in the group - CompassPanel.tsx's internal 0-400 SVG coordinate space
   identifierFontSizePx: number // font size for both identifier numbers, shared by every strip in the group that has its label shown
 }
-
-// The Club Profile concept spans three pieces of per-airfield data: colour
-// tokens (designTemplateStore.ts), media source (config/media.ts), and
-// runwayGroups (clubProfileStore.ts). The first two are unchanged by this
-// pass and keep living in their existing homes - only runwayGroups is new.
-export interface ClubProfile {
-  runwayGroups: RunwayGroup[]
-  // Live webcam embed URL for MediaPanel (e.g. an rtsp.me embed page) -
-  // empty string means no webcam configured, MediaPanel falls back to its
-  // existing placeholder/currentMedia rendering. A club fact like this
-  // belongs here, not in config/media.ts (a single curated promo item) or
-  // designTemplateStore.ts (page theme colours).
-  webcamUrl: string
-}
