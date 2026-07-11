@@ -1,4 +1,4 @@
-// Owner/atc-role: GET/PUT /api/tenant/ops-panel - the ATC-control page's
+// Owner/admin/atc-role: GET/PUT /api/tenant/ops-panel - the ATC-control page's
 // dynamic Ops Panel state (active runway end, circuit direction,
 // airfield info text, up to 4 manual safety notice rows, whether the
 // automated NOTAM feed is shown at all, and how often the live
@@ -48,7 +48,7 @@ const NOTAMS_INTERVAL_MIN_SECONDS = 2;
 const NOTAMS_INTERVAL_MAX_SECONDS = 30;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "atc"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "atc"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -79,7 +79,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "atc"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "atc"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

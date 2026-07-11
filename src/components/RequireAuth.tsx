@@ -53,6 +53,14 @@ export default function RequireAuth({ children, requireRole }: RequireAuthProps)
     if (roleCheck.loading) return null
     const allowedRoles = Array.isArray(requireRole) ? requireRole : [requireRole]
     if (!roleCheck.role || !allowedRoles.includes(roleCheck.role as MemberRole)) {
+      // Safety net for anyone landing here via a stale link/bookmark:
+      // roleCheck.role is already fetched above for the access check
+      // itself, so this reuses it rather than a second /api/tenant/me
+      // call - only shown when we actually know a real, recognized role
+      // to send them to, so this can't itself become a second dead end.
+      const ownLandingPage =
+        roleCheck.role === 'atc' ? '/atc-control' : roleCheck.role === 'media' ? '/media-manager' : roleCheck.role === 'owner' || roleCheck.role === 'admin' ? '/config' : null
+
       return (
         <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 text-center shadow-xl shadow-slate-950/20">
@@ -60,6 +68,14 @@ export default function RequireAuth({ children, requireRole }: RequireAuthProps)
             <p className="mb-6 text-sm text-muted-400">
               Your account doesn't have access to this page. If you think this is wrong, ask your tenant's owner.
             </p>
+            {ownLandingPage && (
+              <Link
+                to={ownLandingPage}
+                className="mb-3 block text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
+              >
+                → Go to your page
+              </Link>
+            )}
             <Link to="/" className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
               ← Back to dashboard
             </Link>

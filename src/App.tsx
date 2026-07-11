@@ -17,13 +17,16 @@ export default function App(): JSX.Element {
       <RemoteRefreshWatcher />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        {/* Owner-only: admin/atc members are cleanly denied (not a
-            blank/broken page) rather than redirected to /login - they
-            ARE logged in, just not permitted here. */}
+        {/* Owner+admin only: admin is a full alias of owner (original
+            design intent - e5aa79a incorrectly scoped it down to
+            media-manager-only, corrected here). atc/media members are
+            cleanly denied (not a blank/broken page) rather than
+            redirected to /login - they ARE logged in, just not
+            permitted here. */}
         <Route
           path="/config"
           element={
-            <RequireAuth requireRole="owner">
+            <RequireAuth requireRole={['owner', 'admin']}>
               <ConfigPage />
             </RequireAuth>
           }
@@ -32,7 +35,7 @@ export default function App(): JSX.Element {
         <Route
           path="/design"
           element={
-            <RequireAuth requireRole="owner">
+            <RequireAuth requireRole={['owner', 'admin']}>
               <DesignPage />
             </RequireAuth>
           }
@@ -40,7 +43,7 @@ export default function App(): JSX.Element {
         <Route
           path="/runways"
           element={
-            <RequireAuth requireRole="owner">
+            <RequireAuth requireRole={['owner', 'admin']}>
               <RunwaysPage />
             </RequireAuth>
           }
@@ -48,7 +51,7 @@ export default function App(): JSX.Element {
         <Route
           path="/members"
           element={
-            <RequireAuth requireRole="owner">
+            <RequireAuth requireRole={['owner', 'admin']}>
               <MembersPage />
             </RequireAuth>
           }
@@ -66,13 +69,14 @@ export default function App(): JSX.Element {
             </RequireAuth>
           }
         />
-        {/* Owner AND atc role - mirrors /media-manager's ['owner', 'media']
-            pattern exactly. NOT media - developer already has access via
-            existing owner-level auto-membership. */}
+        {/* Owner, admin, AND atc role - admin included for the same
+            full-owner-alias reason as /config above. NOT media -
+            developer already has access via existing owner-level
+            auto-membership. */}
         <Route
           path="/atc-control"
           element={
-            <RequireAuth requireRole={['owner', 'atc']}>
+            <RequireAuth requireRole={['owner', 'admin', 'atc']}>
               <AtcControlPage />
             </RequireAuth>
           }

@@ -193,8 +193,13 @@ export default function AtcControlPage(): JSX.Element {
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
       <div className="mx-auto max-w-3xl px-5 pb-16 pt-8">
-        <Link to="/config" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-          ← Back to Config
+        {/* "/" not "/config" - atc-role users (the only ones who normally
+            reach this page besides owner/admin) can't access /config, so
+            that link would just dead-end them a second time. Owner/admin
+            can always reach /config from "/" via the role-aware header
+            link (Header.tsx). */}
+        <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
+          ← Back to Dashboard
         </Link>
         <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">

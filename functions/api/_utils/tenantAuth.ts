@@ -121,11 +121,12 @@ export async function requireRoles(
   return result;
 }
 
-// Thin wrapper over requireRoles(['owner']) - used by every existing
-// owner-only route (member-management, /config, /design, /runways).
-// Kept as its own named function so those call sites read clearly and
-// don't need to spell out the array every time; behavior is unchanged
-// from before requireRoles existed.
+// Thin wrapper over requireRoles(['owner', 'admin']) - used by every
+// existing owner-only route (member-management, /config, /design,
+// /runways). 'admin' is a full alias of 'owner' (original design intent
+// - the e5aa79a deploy incorrectly scoped admin down to media-manager-
+// only access instead), so it's included here rather than in a separate
+// check - every route gated via requireOwner gets this automatically.
 export async function requireOwner(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
-  return requireRoles(request, env, ["owner"]);
+  return requireRoles(request, env, ["owner", "admin"]);
 }
