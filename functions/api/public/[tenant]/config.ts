@@ -1,5 +1,5 @@
 // Public, UNAUTHENTICATED read endpoint for the live kiosk dashboard.
-// GET /api/public/:tenant/config -> { runwayGroups, theme, cameraSlots, carouselSlots }
+// GET /api/public/:tenant/config -> { runwayGroups, theme, cameraSlots, carouselSlots, opsPanel }
 //
 // carouselSlots is resolved server-side (media library R2 URL, or the
 // referenced camera_slots URL for webcam) so the public dashboard never
@@ -64,6 +64,14 @@ interface CarouselSlotResolvedRow {
   resolvedUrl: string | null;
 }
 
+interface OpsPanelRow {
+  activeRunwayEnd: string;
+  circuitDirection: string;
+  airfieldInfoText: string;
+  safetyNoticesJson: string;
+  showAutoNotams: number;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -78,7 +86,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
   const org = await env.DB.prepare("SELECT id FROM organization WHERE slug = ?").bind(slug).first<{ id: string }>();
   if (!org) return jsonResponse({ error: "Unknown tenant" }, 404);
 
-  const [runwayRows, themeRow, cameraRows, carouselRows] = await Promise.all([
+  const [runwayRows, themeRow, cameraRows, carouselRows, opsPanelRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, label, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(org.id)
@@ -105,6 +113,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
       )
       .bind(org.id)
       .all<{ slotNumber: number; mediaType: string; durationSeconds: number; mp4DurationSeconds: number | null; r2Key: string | null; cameraUrl: string | null }>(),
+    env.DB
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams FROM ops_panel_state WHERE organizationId = ?")
+      .bind(org.id)
+      .first<OpsPanelRow>(),
   ]);
 
   const runwayGroups = runwayRows.results.map((row) => ({
@@ -135,5 +147,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
       row.mediaType === "webcam" ? row.cameraUrl : row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}` : null,
   }));
 
-  return jsonResponse({ runwayGroups, theme, cameraSlots, carouselSlots });
+  const opsPanel = opsPanelRow
+    ? {
+        activeRunwayEnd: opsPanelRow.activeRunwayEnd,
+        circuitDirection: opsPanelRow.circuitDirection,
+        airfieldInfoText: opsPanelRow.airfieldInfoText,
+        safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as string[],
+        showAutoNotams: !!opsPanelRow.showAutoNotams,
+      }
+    : null;
+
+  return jsonResponse({ runwayGroups, theme, cameraSlots, carouselSlots, opsPanel });
 };

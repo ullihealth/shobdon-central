@@ -43,13 +43,35 @@ export default function DashboardPage(): JSX.Element {
       >
         <div
           className="mx-auto h-full max-w-[1920px] p-10"
-          style={{ display: 'grid', gridTemplateRows: '7% 1fr', gap: '16px' }}
+          // minmax(0, 1fr), not bare 1fr - a bare 1fr row implicitly means
+          // minmax(auto, 1fr), which refuses to shrink below its content's
+          // own minimum height. At short browser-window heights that let
+          // this row overflow h-screen's fixed height, CompassPanel (a
+          // flex-shrink-0 child further down the tree) got silently
+          // clipped by the page's overflow-hidden with no scrollbar to
+          // reveal it - same root cause min-h-0 already fixes for flex
+          // elsewhere in this codebase (e.g. CentreDisplayPanel.tsx).
+          style={{ display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px' }}
         >
           {/* HEADER (10%) */}
           <Header rightSlot={<WeatherStatusIndicator />} />
 
-          {/* BODY (90%) - three columns left/center/right */}
-          <div style={{ display: 'grid', gridTemplateColumns: '23% 54% 23%', gap: '16px', height: '100%' }}>
+          {/* BODY (90%) - three columns left/center/right. gridTemplateRows
+              wasn't set at all here previously - an unset row defaults to
+              grid-auto-rows: auto, which has the exact same "won't shrink
+              below content" behaviour as a bare 1fr (confirmed by direct
+              measurement: fixing only the outer row above left this row
+              still stuck at a content-driven floor height). An explicit
+              minmax(0, 1fr) row makes it shrinkable too. */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '23% 54% 23%',
+              gridTemplateRows: 'minmax(0, 1fr)',
+              gap: '16px',
+              height: '100%',
+            }}
+          >
             <div className="h-full">
               <LeftInfoPanel />
             </div>

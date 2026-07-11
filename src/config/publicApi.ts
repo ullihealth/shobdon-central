@@ -22,3 +22,6 @@ export const TENANT_CONFIG_URL = '/api/tenant/config'
 export const MEDIA_LIBRARY_URL = '/api/tenant/media-library'
 export const MEDIA_LIBRARY_UPLOAD_URL = '/api/tenant/media-library/upload'
 export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
+
+// Owner/atc-role ATC-control endpoint.
+export const OPS_PANEL_URL = '/api/tenant/ops-panel'

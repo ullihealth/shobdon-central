@@ -22,16 +22,17 @@ export default function LoginPage(): JSX.Element {
       return
     }
 
-    // media-role members have no owner-only pages to land on - /config
-    // would just show them "Not authorized" with no way forward, so send
-    // them straight to the one page they can actually use. Every other
-    // role (owner, and atc until its own landing page is designed) keeps
-    // the existing /config default, unchanged.
+    // media/atc-role members have no owner-only pages to land on -
+    // /config would just show them "Not authorized" with no way forward,
+    // so send each straight to the one page they can actually use. Owner
+    // keeps the existing /config default, unchanged.
     const me = await fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null)
     setSubmitting(false)
-    navigate(me?.role === 'media' ? '/media-manager' : '/config')
+    const landingPage =
+      me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : '/config'
+    navigate(landingPage)
   }
 
   return (
