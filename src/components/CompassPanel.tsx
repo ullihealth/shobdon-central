@@ -412,18 +412,20 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
 }
 
 // Wind arrow tail feathers (fletching) - three chevron ticks near the
-// tail end (opposite the arrowhead, which points toward y=42; the
-// shaft's blunt tail cap sits at y=358). Each chevron's vertex (the
+// tail end (opposite the arrowhead, which points toward y=32; the
+// shaft's blunt tail cap sits at y=368). Each chevron's vertex (the
 // attachment point on the shaft) sits up the shaft toward the head, with
 // its two arms flaring outward and further down toward the tail - same
-// visual logic as real arrow fletching. Sized up and moved further up
-// the shaft from the first pass, which read as too small and clustered
-// right at the very tip: the nearest arm tip (last feather) now lands
-// 30px shy of the tail cap (358 - 30 = 328), not touching it, and the
-// flare itself is roughly double the previous size. Static geometry
-// inside the same rotating <g id="wind-arrow"> group the needle itself
-// lives in, so it rotates identically with no separate transform needed.
-const TAIL_FEATHER_VERTEX_YS = [288, 308, 328]
+// visual logic as real arrow fletching. The nearest arm tip (last
+// feather) lands 30px shy of the tail cap (368 - 30 = 338), not
+// touching it. These vertex positions are relative to the tail cap, so
+// when the needle's overall length changes (see the two polygons above),
+// these must shift by the same amount or the feathers end up stranded
+// mid-shaft instead of at the tail - shifted +10 here to track the tail
+// cap's own +10 extension (358 -> 368). Static geometry inside the same
+// rotating <g id="wind-arrow"> group the needle itself lives in, so it
+// rotates identically with no separate transform needed.
+const TAIL_FEATHER_VERTEX_YS = [298, 318, 338]
 const TAIL_FEATHER_ARM_DY = 18
 const TAIL_FEATHER_ARM_DX = 16
 
@@ -671,9 +673,9 @@ export default function CompassPanel(): JSX.Element {
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
               {/* Dark halo - keeps the needle legible over both runway strips */}
-              <polygon points="200,37 213,80 207,80 207,362 193,362 193,80 187,80" fill="rgba(3, 7, 18, 0.85)" />
+              <polygon points="200,27 213,80 207,80 207,372 193,372 193,80 187,80" fill="rgba(3, 7, 18, 0.85)" />
               {/* Full-length instrument needle: arrowhead + shaft through the centre to a plain tail, ~88% radius each way */}
-              <polygon points="200,42 208,84 202,84 202,358 198,358 198,84 192,84" className="arrow-head fill-current" />
+              <polygon points="200,32 208,84 202,84 202,368 198,368 198,84 192,84" className="arrow-head fill-current" />
               {/* Tail feathers (fletching) - dark halo strokes first for legibility, then the colour-matched foreground ticks on top, same layering as the needle itself. */}
               {TAIL_FEATHER_VERTEX_YS.map((vertexY) => (
                 <polyline
