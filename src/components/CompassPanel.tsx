@@ -104,15 +104,15 @@ function clampStripWidth(rawWidth: number): number {
 }
 
 // Threshold markings: a series of parallel white stripes at each strip's
-// threshold end, perpendicular to the runway's own length axis (each
-// stripe spans the strip's full width, stripes stack one after another
-// along the length) - replaces the earlier checkerboard tile pattern,
-// which was the wrong marking style. 5 stripes (the middle of the
-// requested 4-6 range) with a 1:1 stripe:gap ratio reads as a clean,
-// evenly-spaced bar set at any strip width, since each stripe's length
-// (across the strip) is the strip's own width - proportional by
-// construction, no separate scaling formula needed like the checkerboard
-// required.
+// threshold end, LONGITUDINAL - each stripe is a long thin bar running
+// PARALLEL to the runway's own length axis (the direction of travel),
+// laid side-by-side across the strip's width - matching real-world
+// threshold marking convention. (First pass had these perpendicular to
+// the length, like ladder rungs - backwards; corrected here to run
+// along the length instead, with multiple bars spanning the width.)
+// 5 stripes with a 1:1 stripe:gap ratio reads as a clean, evenly-spaced
+// bar set at any strip width, since each stripe's thickness is now
+// derived from the strip's own width - proportional by construction.
 const THRESHOLD_STRIPE_COUNT = 5
 
 // Fixed length (along the strip's own axis) of the whole marking block at
@@ -122,7 +122,8 @@ const THRESHOLD_STRIPE_COUNT = 5
 // made the block itself grow to match - a feedback loop that visibly
 // bloated the grid. Keeping it fixed and moving only the numeral fixes
 // that. Unchanged by the checkerboard -> stripe swap - same block, same
-// footprint, just a different fill pattern inside it.
+// footprint (now each stripe's own LENGTH, not its thickness), just a
+// different fill pattern inside it.
 const THRESHOLD_MARKING_BLOCK_LENGTH = 20
 
 // Visible clearance between the marking block's inner edge and the
@@ -134,47 +135,39 @@ const THRESHOLD_MARKING_LABEL_GAP = 8
 const NUMBER_INSET_DEFAULT = 20
 const NUMBER_INSET_WITH_MARKINGS = THRESHOLD_MARKING_BLOCK_LENGTH + THRESHOLD_MARKING_LABEL_GAP
 
-// N stripes + N equal gaps between/around them, so each stripe is exactly
-// as thick as the gap beside it (a clean 1:1 bar/space rhythm) and the
-// whole set fits precisely inside THRESHOLD_MARKING_BLOCK_LENGTH with no
-// partial stripe cut off at either end of the block.
-const THRESHOLD_STRIPE_THICKNESS = THRESHOLD_MARKING_BLOCK_LENGTH / (THRESHOLD_STRIPE_COUNT * 2)
-const THRESHOLD_STRIPE_STEP = THRESHOLD_STRIPE_THICKNESS * 2
-
-// One end's set of stripes, positioned so the outermost stripe sits flush
-// against the strip's very end (blockStart for the top block, or flush
-// against stripBottom when growingInward, matching the same "aligned to
-// the strip's own edge" principle established for the checkerboard fix -
-// still true here even though there's no repeating tile to misalign
-// anymore. shapeRendering="crispEdges" keeps bar edges sharp.
+// One end's set of longitudinal stripes - each spans the FULL block
+// length in one rect (no more stacking rows within the block, since a
+// stripe's long axis is now the strip's length, not its width), sized
+// N stripes + N equal gaps across the strip's own width so each stripe
+// is exactly as thick as the gap beside it (a clean 1:1 bar/space
+// rhythm), proportional to stripWidth by construction. blockY is the
+// block's own top edge - stripTop for the near end, stripBottom minus
+// the block length for the far end. shapeRendering="crispEdges" keeps
+// bar edges sharp.
 function ThresholdStripeSet({
   stripX,
   stripWidth,
-  blockStart,
-  growInward,
+  blockY,
 }: {
   stripX: number
   stripWidth: number
-  blockStart: number
-  growInward: boolean
+  blockY: number
 }): JSX.Element {
+  const thickness = stripWidth / (THRESHOLD_STRIPE_COUNT * 2)
+  const step = thickness * 2
   return (
     <>
-      {Array.from({ length: THRESHOLD_STRIPE_COUNT }, (_, i) => {
-        const offset = i * THRESHOLD_STRIPE_STEP
-        const y = growInward ? blockStart - THRESHOLD_STRIPE_THICKNESS - offset : blockStart + offset
-        return (
-          <rect
-            key={i}
-            x={stripX}
-            y={y}
-            width={stripWidth}
-            height={THRESHOLD_STRIPE_THICKNESS}
-            fill="white"
-            shapeRendering="crispEdges"
-          />
-        )
-      })}
+      {Array.from({ length: THRESHOLD_STRIPE_COUNT }, (_, i) => (
+        <rect
+          key={i}
+          x={stripX + i * step}
+          y={blockY}
+          width={thickness}
+          height={THRESHOLD_MARKING_BLOCK_LENGTH}
+          fill="white"
+          shapeRendering="crispEdges"
+        />
+      ))}
     </>
   )
 }
@@ -195,8 +188,8 @@ function ThresholdMarkingBlocks({
 }): JSX.Element {
   return (
     <>
-      <ThresholdStripeSet stripX={stripX} stripWidth={stripWidth} blockStart={stripTop} growInward={false} />
-      <ThresholdStripeSet stripX={stripX} stripWidth={stripWidth} blockStart={stripBottom} growInward />
+      <ThresholdStripeSet stripX={stripX} stripWidth={stripWidth} blockY={stripTop} />
+      <ThresholdStripeSet stripX={stripX} stripWidth={stripWidth} blockY={stripBottom - THRESHOLD_MARKING_BLOCK_LENGTH} />
     </>
   )
 }
@@ -296,10 +289,10 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
             own centre is always exactly 214 regardless of width, matching
             the historic literal position. */}
         {showsCenterline(grass) && (
-          <line x1={grassCentreX} y1={centrelineTop} x2={grassCentreX} y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+          <line x1={grassCentreX} y1={centrelineTop} x2={grassCentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
         {showsCenterline(tarmac) && (
-          <line x1="214" y1={centrelineTop} x2="214" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+          <line x1="214" y1={centrelineTop} x2="214" y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
         {/* Threshold Markers */}
         <line x1={thresholdLeft} y1={stripTop} x2={thresholdRight} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
@@ -359,10 +352,10 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
           <ThresholdMarkingBlocks stripX={stripBX} stripWidth={stripBWidth} stripTop={stripTop} stripBottom={stripBottom} />
         )}
         {showsCenterline(stripA) && (
-          <line x1={stripACentreX} y1={centrelineTop} x2={stripACentreX} y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+          <line x1={stripACentreX} y1={centrelineTop} x2={stripACentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
         {showsCenterline(stripB) && (
-          <line x1={stripBCentreX} y1={centrelineTop} x2={stripBCentreX} y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+          <line x1={stripBCentreX} y1={centrelineTop} x2={stripBCentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
         <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
         <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
@@ -398,7 +391,7 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
         <ThresholdMarkingBlocks stripX={stripX} stripWidth={width} stripTop={stripTop} stripBottom={stripBottom} />
       )}
       {showsCenterline(strip) && (
-        <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
       )}
       <line x1={stripX} y1={stripTop} x2={edge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
       <line x1={stripX} y1={stripBottom} x2={edge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
