@@ -7,9 +7,55 @@ import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 const AIRFIELD_INFO_MAX_LENGTH = 60
 const SAFETY_NOTICE_MAX_LENGTH = 40
 const SAFETY_NOTICE_ROWS = 4
+const NOTAMS_INTERVAL_MIN_SECONDS = 2
+const NOTAMS_INTERVAL_MAX_SECONDS = 30
+const NOTAMS_INTERVAL_DEFAULT_SECONDS = 5
 
 type CircuitDirection = 'left' | 'right'
+type NoticeSize = 'sm' | 'md' | 'lg'
 type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
+
+interface SafetyNotice {
+  text: string
+  size: NoticeSize
+}
+
+const NOTICE_SIZE_OPTIONS: { value: NoticeSize; label: string }[] = [
+  { value: 'sm', label: 'Sm' },
+  { value: 'md', label: 'Med' },
+  { value: 'lg', label: 'Lg' },
+]
+
+// Compact inline selector for the per-notice size - the existing
+// ToggleButton is sized for the page's big binary toggles (text-4xl,
+// py-8) and would be wrong here; this sits next to each row's character
+// counter, not as its own section.
+function SizeSelector({
+  value,
+  onChange,
+}: {
+  value: NoticeSize
+  onChange: (size: NoticeSize) => void
+}): JSX.Element {
+  return (
+    <div className="flex gap-1">
+      {NOTICE_SIZE_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={`rounded-md px-2 py-0.5 text-xs font-semibold uppercase tracking-wide transition ${
+            value === option.value
+              ? 'bg-accent-sky-500 text-white'
+              : 'bg-slate-800 text-muted-400 hover:bg-slate-700'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function ToggleButton({
   label,
@@ -41,8 +87,14 @@ export default function AtcControlPage(): JSX.Element {
   const [activeRunwayEnd, setActiveRunwayEnd] = useState('08')
   const [circuitDirection, setCircuitDirection] = useState<CircuitDirection>('left')
   const [airfieldInfoText, setAirfieldInfoText] = useState('')
-  const [safetyNotices, setSafetyNotices] = useState<string[]>(Array(SAFETY_NOTICE_ROWS).fill(''))
+  // Array.from, not .fill({...}) - .fill() would share ONE object
+  // reference across all 4 rows, so editing row 1 would silently edit
+  // every row.
+  const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>(
+    Array.from({ length: SAFETY_NOTICE_ROWS }, () => ({ text: '', size: 'md' }))
+  )
   const [showAutoNotams, setShowAutoNotams] = useState(true)
+  const [notamsIntervalSeconds, setNotamsIntervalSeconds] = useState(NOTAMS_INTERVAL_DEFAULT_SECONDS)
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
 
   useEffect(() => {
@@ -61,9 +113,12 @@ export default function AtcControlPage(): JSX.Element {
         setActiveRunwayEnd(opsPanel.activeRunwayEnd || (parts?.[0] ?? '08'))
         setCircuitDirection(opsPanel.circuitDirection === 'right' ? 'right' : 'left')
         setAirfieldInfoText(opsPanel.airfieldInfoText ?? '')
-        const notices: string[] = Array.isArray(opsPanel.safetyNotices) ? opsPanel.safetyNotices : []
-        setSafetyNotices(Array.from({ length: SAFETY_NOTICE_ROWS }, (_, i) => notices[i] ?? ''))
+        const notices: SafetyNotice[] = Array.isArray(opsPanel.safetyNotices) ? opsPanel.safetyNotices : []
+        setSafetyNotices(
+          Array.from({ length: SAFETY_NOTICE_ROWS }, (_, i) => notices[i] ?? { text: '', size: 'md' })
+        )
         setShowAutoNotams(opsPanel.showAutoNotams ?? true)
+        setNotamsIntervalSeconds(opsPanel.notamsCarouselIntervalSeconds ?? NOTAMS_INTERVAL_DEFAULT_SECONDS)
       }
       setLoading(false)
     })
@@ -74,7 +129,25 @@ export default function AtcControlPage(): JSX.Element {
   }
 
   function handleNoticeChange(index: number, value: string) {
-    setSafetyNotices((prev) => prev.map((n, i) => (i === index ? value.slice(0, SAFETY_NOTICE_MAX_LENGTH) : n)))
+    setSafetyNotices((prev) =>
+      prev.map((n, i) => (i === index ? { ...n, text: value.slice(0, SAFETY_NOTICE_MAX_LENGTH) } : n))
+    )
+  }
+
+  function handleNoticeSizeChange(index: number, size: NoticeSize) {
+    setSafetyNotices((prev) => prev.map((n, i) => (i === index ? { ...n, size } : n)))
+  }
+
+  function handleNotamsIntervalChange(event: ChangeEvent<HTMLInputElement>) {
+    const raw = event.target.value
+    if (raw === '') {
+      setNotamsIntervalSeconds(NOTAMS_INTERVAL_MIN_SECONDS)
+      return
+    }
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return
+    const clamped = Math.min(NOTAMS_INTERVAL_MAX_SECONDS, Math.max(NOTAMS_INTERVAL_MIN_SECONDS, Math.round(parsed)))
+    setNotamsIntervalSeconds(clamped)
   }
 
   // Deliberately not auto-saved on every toggle/keystroke - everything
@@ -101,8 +174,9 @@ export default function AtcControlPage(): JSX.Element {
           activeRunwayEnd,
           circuitDirection,
           airfieldInfoText,
-          safetyNotices: safetyNotices.filter((n) => n.trim().length > 0),
+          safetyNotices: safetyNotices.filter((n) => n.text.trim().length > 0),
           showAutoNotams,
+          notamsCarouselIntervalSeconds: notamsIntervalSeconds,
         }),
       })
       if (!response.ok) {
@@ -199,6 +273,24 @@ export default function AtcControlPage(): JSX.Element {
                 </div>
               </div>
 
+              <div className="mb-4">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Rotation Interval (seconds)
+                </div>
+                <p className="mb-2 text-xs text-muted-500">
+                  How often the live dashboard's Ops Panel flips between the runway/circuit/airfield view and the
+                  NOTAMS view. {NOTAMS_INTERVAL_MIN_SECONDS}-{NOTAMS_INTERVAL_MAX_SECONDS} seconds.
+                </p>
+                <input
+                  type="number"
+                  min={NOTAMS_INTERVAL_MIN_SECONDS}
+                  max={NOTAMS_INTERVAL_MAX_SECONDS}
+                  value={notamsIntervalSeconds}
+                  onChange={handleNotamsIntervalChange}
+                  className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+
               <div className="flex flex-col gap-3">
                 {safetyNotices.map((notice, index) => (
                   <div key={index}>
@@ -206,13 +298,16 @@ export default function AtcControlPage(): JSX.Element {
                       <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
                         Row {index + 1}
                       </span>
-                      <span className="text-xs text-muted-400">
-                        {notice.length}/{SAFETY_NOTICE_MAX_LENGTH}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
+                        <span className="text-xs text-muted-400">
+                          {notice.text.length}/{SAFETY_NOTICE_MAX_LENGTH}
+                        </span>
+                      </div>
                     </div>
                     <input
                       type="text"
-                      value={notice}
+                      value={notice.text}
                       onChange={(event) => handleNoticeChange(index, event.target.value)}
                       maxLength={SAFETY_NOTICE_MAX_LENGTH}
                       placeholder="e.g. Bird activity near threshold"

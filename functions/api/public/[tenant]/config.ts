@@ -70,6 +70,12 @@ interface OpsPanelRow {
   airfieldInfoText: string;
   safetyNoticesJson: string;
   showAutoNotams: number;
+  notamsCarouselIntervalSeconds: number;
+}
+
+interface SafetyNoticeResolved {
+  text: string;
+  size: "sm" | "md" | "lg";
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -114,7 +120,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
       .bind(org.id)
       .all<{ slotNumber: number; mediaType: string; durationSeconds: number; mp4DurationSeconds: number | null; r2Key: string | null; cameraUrl: string | null }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds FROM ops_panel_state WHERE organizationId = ?")
       .bind(org.id)
       .first<OpsPanelRow>(),
   ]);
@@ -152,8 +158,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
         activeRunwayEnd: opsPanelRow.activeRunwayEnd,
         circuitDirection: opsPanelRow.circuitDirection,
         airfieldInfoText: opsPanelRow.airfieldInfoText,
-        safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as string[],
+        safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as SafetyNoticeResolved[],
         showAutoNotams: !!opsPanelRow.showAutoNotams,
+        notamsCarouselIntervalSeconds: opsPanelRow.notamsCarouselIntervalSeconds,
       }
     : null;
 
