@@ -76,6 +76,7 @@ interface OpsPanelRow {
 interface SafetyNoticeResolved {
   text: string;
   size: "sm" | "md" | "lg";
+  enabled: boolean;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

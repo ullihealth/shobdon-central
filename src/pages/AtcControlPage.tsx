@@ -6,7 +6,7 @@ import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 
 const AIRFIELD_INFO_MAX_LENGTH = 60
 const SAFETY_NOTICE_MAX_LENGTH = 40
-const SAFETY_NOTICE_ROWS = 4
+const SAFETY_NOTICE_ROWS = 10
 const NOTAMS_INTERVAL_MIN_SECONDS = 2
 const NOTAMS_INTERVAL_MAX_SECONDS = 30
 const NOTAMS_INTERVAL_DEFAULT_SECONDS = 5
@@ -18,6 +18,7 @@ type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
 interface SafetyNotice {
   text: string
   size: NoticeSize
+  enabled: boolean
 }
 
 const NOTICE_SIZE_OPTIONS: { value: NoticeSize; label: string }[] = [
@@ -88,10 +89,10 @@ export default function AtcControlPage(): JSX.Element {
   const [circuitDirection, setCircuitDirection] = useState<CircuitDirection>('left')
   const [airfieldInfoText, setAirfieldInfoText] = useState('')
   // Array.from, not .fill({...}) - .fill() would share ONE object
-  // reference across all 4 rows, so editing row 1 would silently edit
+  // reference across all 10 rows, so editing row 1 would silently edit
   // every row.
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>(
-    Array.from({ length: SAFETY_NOTICE_ROWS }, () => ({ text: '', size: 'md' }))
+    Array.from({ length: SAFETY_NOTICE_ROWS }, () => ({ text: '', size: 'md', enabled: true }))
   )
   const [showAutoNotams, setShowAutoNotams] = useState(true)
   const [notamsIntervalSeconds, setNotamsIntervalSeconds] = useState(NOTAMS_INTERVAL_DEFAULT_SECONDS)
@@ -115,7 +116,7 @@ export default function AtcControlPage(): JSX.Element {
         setAirfieldInfoText(opsPanel.airfieldInfoText ?? '')
         const notices: SafetyNotice[] = Array.isArray(opsPanel.safetyNotices) ? opsPanel.safetyNotices : []
         setSafetyNotices(
-          Array.from({ length: SAFETY_NOTICE_ROWS }, (_, i) => notices[i] ?? { text: '', size: 'md' })
+          Array.from({ length: SAFETY_NOTICE_ROWS }, (_, i) => notices[i] ?? { text: '', size: 'md', enabled: true })
         )
         setShowAutoNotams(opsPanel.showAutoNotams ?? true)
         setNotamsIntervalSeconds(opsPanel.notamsCarouselIntervalSeconds ?? NOTAMS_INTERVAL_DEFAULT_SECONDS)
@@ -136,6 +137,10 @@ export default function AtcControlPage(): JSX.Element {
 
   function handleNoticeSizeChange(index: number, size: NoticeSize) {
     setSafetyNotices((prev) => prev.map((n, i) => (i === index ? { ...n, size } : n)))
+  }
+
+  function handleNoticeEnabledChange(index: number, enabled: boolean) {
+    setSafetyNotices((prev) => prev.map((n, i) => (i === index ? { ...n, enabled } : n)))
   }
 
   function handleNotamsIntervalChange(event: ChangeEvent<HTMLInputElement>) {
@@ -298,11 +303,22 @@ export default function AtcControlPage(): JSX.Element {
 
               <div className="flex flex-col gap-3">
                 {safetyNotices.map((notice, index) => (
-                  <div key={index}>
+                  <div key={index} className={notice.enabled ? undefined : 'opacity-50'}>
                     <div className="mb-1 flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                        Row {index + 1}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                          Row {index + 1}
+                        </span>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-400">
+                          <input
+                            type="checkbox"
+                            checked={notice.enabled}
+                            onChange={(event) => handleNoticeEnabledChange(index, event.target.checked)}
+                            className="h-3.5 w-3.5"
+                          />
+                          Enabled
+                        </label>
+                      </div>
                       <div className="flex items-center gap-3">
                         <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
                         <span className="text-xs text-muted-400">

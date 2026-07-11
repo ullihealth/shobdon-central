@@ -8,6 +8,34 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// navigator.clipboard.writeText can reject (permissions, non-secure
+// context) - silently no-op rather than showing a broken error state,
+// since the password text is still visible to select/copy by hand
+// either way.
+function CopyButton({ text }: { text: string }): JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // no-op, see comment above
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-sky-500"
+    >
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  )
+}
+
 export default function MembersPage(): JSX.Element {
   const [members, setMembers] = useState<TenantMember[]>([])
   const [loading, setLoading] = useState(true)
@@ -93,7 +121,10 @@ export default function MembersPage(): JSX.Element {
             <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
               Temporary password for {revealedPassword.email}
             </div>
-            <div className="mb-2 font-mono text-2xl text-white">{revealedPassword.password}</div>
+            <div className="mb-2 flex items-center gap-3">
+              <div className="font-mono text-2xl text-white">{revealedPassword.password}</div>
+              <CopyButton text={revealedPassword.password} />
+            </div>
             <p className="text-xs text-status-bad">
               Copy this now — it won't be shown again. Share it with them directly (not email/chat, if you can
               help it).

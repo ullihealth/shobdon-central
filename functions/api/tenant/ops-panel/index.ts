@@ -1,7 +1,8 @@
 // Owner/admin/atc-role: GET/PUT /api/tenant/ops-panel - the ATC-control page's
 // dynamic Ops Panel state (active runway end, circuit direction,
-// airfield info text, up to 4 manual safety notice rows, whether the
-// automated NOTAM feed is shown at all, and how often the live
+// airfield info text, up to 10 manual safety notice rows each with its
+// own size and enabled/disabled flag, whether the automated NOTAM feed
+// is shown at all, and how often the live
 // dashboard rotates between its normal and NOTAMS states). Deliberately
 // separate from tenant/config.ts (which stays requireOwner-only) so atc
 // members get exactly this one write surface, not the rest of /config's
@@ -29,6 +30,7 @@ interface OpsPanelRow {
 interface SafetyNoticeInput {
   text: string;
   size: "sm" | "md" | "lg";
+  enabled: boolean;
 }
 
 interface OpsPanelInput {
@@ -42,7 +44,7 @@ interface OpsPanelInput {
 
 const AIRFIELD_INFO_MAX_LENGTH = 60;
 const SAFETY_NOTICE_MAX_LENGTH = 40;
-const SAFETY_NOTICE_MAX_ROWS = 4;
+const SAFETY_NOTICE_MAX_ROWS = 10;
 const NOTICE_SIZES = ["sm", "md", "lg"];
 const NOTAMS_INTERVAL_MIN_SECONDS = 2;
 const NOTAMS_INTERVAL_MAX_SECONDS = 30;
@@ -104,10 +106,13 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       notice === null ||
       typeof notice.text !== "string" ||
       notice.text.length > SAFETY_NOTICE_MAX_LENGTH ||
-      !NOTICE_SIZES.includes(notice.size)
+      !NOTICE_SIZES.includes(notice.size) ||
+      typeof notice.enabled !== "boolean"
     ) {
       return jsonResponse(
-        { error: `each safety notice must be {text: string (max ${SAFETY_NOTICE_MAX_LENGTH} chars), size: 'sm'|'md'|'lg'}` },
+        {
+          error: `each safety notice must be {text: string (max ${SAFETY_NOTICE_MAX_LENGTH} chars), size: 'sm'|'md'|'lg', enabled: boolean}`,
+        },
         400
       );
     }
@@ -130,7 +135,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // public config's safetyNotices array free of placeholder empties that
   // would otherwise render as blank lines under the auto NOTAM text.
   const safetyNotices = body.safetyNotices
-    .map((n) => ({ text: n.text.trim(), size: n.size }))
+    .map((n) => ({ text: n.text.trim(), size: n.size, enabled: n.enabled }))
     .filter((n) => n.text.length > 0);
 
   const now = new Date().toISOString();

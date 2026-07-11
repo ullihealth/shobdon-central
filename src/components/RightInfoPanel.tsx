@@ -7,6 +7,7 @@ type NoticeSize = 'sm' | 'md' | 'lg'
 interface SafetyNotice {
   text: string
   size: NoticeSize
+  enabled: boolean
 }
 
 interface OpsPanelPublic {
@@ -137,18 +138,26 @@ export default function RightInfoPanel(): JSX.Element {
   // size, no per-notice size control exposed for them (that's only for
   // the manual rows, which already come as {text,size} from opsPanel).
   const autoNotams: SafetyNotice[] =
-    !weather || liveDataUnavailable || !showAutoNotams ? [] : weather.notams.map((text) => ({ text, size: 'md' as const }))
-  const manualNotices = opsPanel?.safetyNotices ?? []
+    !weather || liveDataUnavailable || !showAutoNotams
+      ? []
+      : weather.notams.map((text) => ({ text, size: 'md' as const, enabled: true }))
+  // enabled === false explicitly excludes a row from display entirely
+  // (not greyed out, not counted toward "+N more" - simply absent from
+  // the array NotamsPanel ever sees). !== false rather than === true so
+  // a missing/undefined field (shouldn't happen post-migration, but
+  // defensive against any stale/unexpected data) defaults to shown,
+  // matching the migration's own enabled=true default.
+  const manualNotices = (opsPanel?.safetyNotices ?? []).filter((n) => n.enabled !== false)
   const allNotices = [...autoNotams, ...manualNotices]
   // 'N/A' as a single block preserves the exact prior informational
   // behaviour (weather/mock-fallback uncertainty overrides even real
   // manual notices) while fitting State B's one-block-per-entry shape.
   const noticesForDisplay: SafetyNotice[] =
     !weather || liveDataUnavailable
-      ? [{ text: 'N/A', size: 'md' }]
+      ? [{ text: 'N/A', size: 'md', enabled: true }]
       : allNotices.length > 0
         ? allNotices
-        : [{ text: 'No active notices', size: 'md' }]
+        : [{ text: 'No active notices', size: 'md', enabled: true }]
 
   // Runway Status and Circuit Direction come from ops_panel_state (set
   // via /atc-control); Airfield Info is now a free-text field there too,
