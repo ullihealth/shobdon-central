@@ -5,6 +5,7 @@ import ChecklistPage from './pages/ChecklistPage'
 import ConfigPage from './pages/ConfigPage'
 import DashboardPage from './pages/DashboardPage'
 import DesignPage from './pages/DesignPage'
+import DeveloperToolsPage from './pages/DeveloperToolsPage'
 import LoginPage from './pages/LoginPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
@@ -90,6 +91,17 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth>
               <AccountPage />
+            </RequireAuth>
+          }
+        />
+        {/* isDeveloper-gated, NOT role-gated - the real developer account
+            also happens to hold 'owner' role at Shobdon, but every other
+            owner/admin must be denied here regardless of role. */}
+        <Route
+          path="/developertools"
+          element={
+            <RequireAuth requireDeveloper>
+              <DeveloperToolsPage />
             </RequireAuth>
           }
         />

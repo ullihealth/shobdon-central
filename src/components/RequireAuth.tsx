@@ -15,6 +15,13 @@ interface RequireAuthProps {
   // to a login form would be confusing and wrong) and not a broken/blank
   // page.
   requireRole?: MemberRole | MemberRole[]
+  // When true, requires the logged-in user's isDeveloper flag (also from
+  // /api/tenant/me) to be true - a separate, cross-tenant column, NOT a
+  // tenant role. /developertools uses this instead of requireRole
+  // specifically because the real developer account currently also
+  // holds 'owner' role at Shobdon, and a role-only check would let every
+  // other owner/admin in too.
+  requireDeveloper?: boolean
 }
 
 // Gate for the management pages - redirects to /login when there's no
@@ -23,43 +30,48 @@ interface RequireAuthProps {
 // working at the phase-0 login checkpoint - not a separate, hand-rolled
 // check. Deliberately NOT used on the public dashboard route ("/") -
 // that must stay unauthenticated for everyone.
-export default function RequireAuth({ children, requireRole }: RequireAuthProps): JSX.Element | null {
+export default function RequireAuth({ children, requireRole, requireDeveloper }: RequireAuthProps): JSX.Element | null {
   const { data: session, isPending } = authClient.useSession()
-  const [roleCheck, setRoleCheck] = useState<{ loading: boolean; role: string | null }>({
-    loading: !!requireRole,
+  const needsMeCheck = !!requireRole || !!requireDeveloper
+  const [meCheck, setMeCheck] = useState<{ loading: boolean; role: string | null; isDeveloper: boolean }>({
+    loading: needsMeCheck,
     role: null,
+    isDeveloper: false,
   })
 
   useEffect(() => {
-    if (!requireRole || !session) return
+    if (!needsMeCheck || !session) return
     let cancelled = false
     fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled) setRoleCheck({ loading: false, role: data?.role ?? null })
+        if (!cancelled) setMeCheck({ loading: false, role: data?.role ?? null, isDeveloper: !!data?.isDeveloper })
       })
       .catch(() => {
-        if (!cancelled) setRoleCheck({ loading: false, role: null })
+        if (!cancelled) setMeCheck({ loading: false, role: null, isDeveloper: false })
       })
     return () => {
       cancelled = true
     }
-  }, [requireRole, session])
+  }, [needsMeCheck, session])
 
   if (isPending) return null
   if (!session) return <Navigate to="/login" replace />
 
-  if (requireRole) {
-    if (roleCheck.loading) return null
-    const allowedRoles = Array.isArray(requireRole) ? requireRole : [requireRole]
-    if (!roleCheck.role || !allowedRoles.includes(roleCheck.role as MemberRole)) {
+  if (needsMeCheck) {
+    if (meCheck.loading) return null
+    const allowedRoles = requireRole ? (Array.isArray(requireRole) ? requireRole : [requireRole]) : null
+    const roleOk = !allowedRoles || (!!meCheck.role && allowedRoles.includes(meCheck.role as MemberRole))
+    const developerOk = !requireDeveloper || meCheck.isDeveloper
+
+    if (!roleOk || !developerOk) {
       // Safety net for anyone landing here via a stale link/bookmark:
-      // roleCheck.role is already fetched above for the access check
+      // meCheck.role is already fetched above for the access check
       // itself, so this reuses it rather than a second /api/tenant/me
       // call - only shown when we actually know a real, recognized role
       // to send them to, so this can't itself become a second dead end.
       const ownLandingPage =
-        roleCheck.role === 'atc' ? '/atc-control' : roleCheck.role === 'media' ? '/media-manager' : roleCheck.role === 'owner' || roleCheck.role === 'admin' ? '/config' : null
+        meCheck.role === 'atc' ? '/atc-control' : meCheck.role === 'media' ? '/media-manager' : meCheck.role === 'owner' || meCheck.role === 'admin' ? '/config' : null
 
       return (
         <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">

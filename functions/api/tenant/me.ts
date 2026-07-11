@@ -20,5 +20,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireTenant(request, env);
   if ("error" in result) return result.error;
 
-  return jsonResponse({ role: result.membership.role, organizationSlug: result.membership.slug });
+  // Cross-tenant developer flag (functions/api/tenant/members/index.ts
+  // already reads this same column to hide the developer's own row from
+  // the members list) - deliberately a separate column from role, not a
+  // tenant role itself, so it can gate /developertools independently of
+  // whatever tenant role the developer's account happens to hold.
+  const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(result.userId).first<{ developer: number }>();
+
+  return jsonResponse({
+    role: result.membership.role,
+    organizationSlug: result.membership.slug,
+    isDeveloper: !!userRow?.developer,
+  });
 };

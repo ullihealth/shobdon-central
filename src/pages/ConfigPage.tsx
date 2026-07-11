@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
-import AtcDeveloperTools from '../components/config/AtcDeveloperTools'
 import InternetWeatherConfigSection from '../components/config/InternetWeatherConfigSection'
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
 import { authClient } from '../lib/auth/authClient'
@@ -97,10 +96,7 @@ export default function ConfigPage(): JSX.Element {
 
           <div className="mt-10 border-t border-slate-800 pt-10">
             {config.activeProvider === 'atc' && (
-              <>
-                <AtcWeatherConfigSection config={config.atc} onChange={(atc) => updateConfig({ ...config, atc })} />
-                <AtcDeveloperTools />
-              </>
+              <AtcWeatherConfigSection config={config.atc} onChange={(atc) => updateConfig({ ...config, atc })} />
             )}
             {config.activeProvider === 'internet' && (
               <InternetWeatherConfigSection
