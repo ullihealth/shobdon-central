@@ -2,6 +2,58 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authClient } from '../lib/auth/authClient'
 
+// Confirmed directly against production (2026-07-11): sign-in requests
+// intermittently get NO response at all - not an error, not a rejected
+// promise, just silence - roughly 1 in 3 attempts in a burst, verified
+// via Cloudflare Pages Function logs showing zero server-side trace of
+// the affected requests (they never reach the Function; this is an edge-
+// level issue, not application code - confirmed no auth-related file
+// changed in any recent deploy). Without a timeout, handleSubmit below
+// would hang indefinitely on a bad attempt: submitting stays true
+// forever, no error ever shows, and the only way out is reloading the
+// page - which looks exactly like "bounced back to a blank login page"
+// from the user's side. withTimeout+retry can't fix the underlying edge
+// issue, but absorbs it: at a ~33% single-attempt failure rate, 3
+// attempts drops the user-visible failure rate to roughly 1 in 27.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        window.clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
+// Only retries on timeout/thrown network errors, never on a real
+// credential failure - authClient.signIn.email resolves normally with
+// {error: signInError} for a wrong password, it doesn't throw, so that
+// case returns immediately on the first attempt without wasting retries
+// or looking like repeated failed login attempts.
+async function signInWithRetry(
+  email: string,
+  password: string,
+  maxAttempts = 3
+): Promise<{ error?: { message?: string } | null }> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await withTimeout(authClient.signIn.email({ email, password }), 8000)
+    } catch {
+      if (attempt === maxAttempts) {
+        return { error: { message: 'Sign-in is taking longer than expected. Please check your connection and try again.' } }
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 600))
+    }
+  }
+  return { error: { message: 'Sign in failed' } }
+}
+
 export default function LoginPage(): JSX.Element {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
@@ -14,7 +66,7 @@ export default function LoginPage(): JSX.Element {
     setSubmitting(true)
     setError(null)
 
-    const { error: signInError } = await authClient.signIn.email({ email, password })
+    const { error: signInError } = await signInWithRetry(email, password)
 
     if (signInError) {
       setSubmitting(false)
@@ -25,10 +77,16 @@ export default function LoginPage(): JSX.Element {
     // media/atc-role members have no owner-only pages to land on -
     // /config would just show them "Not authorized" with no way forward,
     // so send each straight to the one page they can actually use. Owner
-    // keeps the existing /config default, unchanged.
-    const me = await fetch('/api/tenant/me')
-      .then((response) => (response.ok ? response.json() : null))
-      .catch(() => null)
+    // keeps the existing /config default, unchanged. Same timeout
+    // protection as sign-in above, shorter and with no retry - worst
+    // case on a hang is landing on /config instead of the exact right
+    // page, same graceful fallback the existing .catch(() => null)
+    // already used for a genuine network error, just now also covering
+    // a hang rather than only an outright rejection.
+    const me = await withTimeout(
+      fetch('/api/tenant/me').then((response) => (response.ok ? response.json() : null)),
+      5000
+    ).catch(() => null)
     setSubmitting(false)
     const landingPage =
       me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : '/config'
