@@ -203,9 +203,14 @@ export default function AtcControlPage(): JSX.Element {
             that link would just dead-end them a second time. Owner/admin
             can always reach /config from "/" via the role-aware header
             link (Header.tsx). */}
-        <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-          ← Back to Dashboard
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
+            ← Back to Dashboard
+          </Link>
+          <Link to="/account" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
+            👤 My Account
+          </Link>
+        </div>
         <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
           Edit the live Ops Panel. Nothing here reaches the dashboard until you click "Update Dashboard" below -

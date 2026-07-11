@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import AccountPage from './pages/AccountPage'
 import AtcControlPage from './pages/AtcControlPage'
 import ChecklistPage from './pages/ChecklistPage'
 import ConfigPage from './pages/ConfigPage'
@@ -78,6 +79,17 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireRole={['owner', 'admin', 'atc']}>
               <AtcControlPage />
+            </RequireAuth>
+          }
+        />
+        {/* Any logged-in role - no requireRole, so owner/admin/atc/media
+            all reach this the same way. Self-service password change and
+            logout aren't privileged actions, just a valid session. */}
+        <Route
+          path="/account"
+          element={
+            <RequireAuth>
+              <AccountPage />
             </RequireAuth>
           }
         />

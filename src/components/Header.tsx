@@ -1,6 +1,7 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { authClient } from '../lib/auth/authClient'
 
 interface HeaderProps {
   rightSlot?: ReactNode
@@ -9,8 +10,24 @@ interface HeaderProps {
 export default function Header({ rightSlot }: HeaderProps): JSX.Element {
   const [now, setNow] = useState(new Date())
   const location = useLocation()
+  const navigate = useNavigate()
   const isConfigPage = location.pathname === '/config'
   const isPublicDashboard = location.pathname === '/'
+  // Shown only when a real session exists - most viewers of the public
+  // dashboard ('/') aren't logged in at all, so this naturally stays
+  // hidden there for the common case, while still covering the shared-PC
+  // case where a staff member is logged in and viewing '/'. Absolutely
+  // positioned so it never disturbs the existing title/clock/rightSlot
+  // layout, which differs per page (rightSlot is empty on /config, a
+  // weather indicator on / and /design).
+  const { data: session } = authClient.useSession()
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  async function handleLogout() {
+    setLoggingOut(true)
+    await authClient.signOut()
+    navigate('/login')
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 1000)
@@ -76,6 +93,17 @@ export default function Header({ rightSlot }: HeaderProps): JSX.Element {
 
       {/* Right - optional slot (e.g. weather status indicator on the dashboard) */}
       {rightSlot}
+
+      {session && (
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="absolute right-4 top-1.5 text-xs font-semibold text-muted-300 transition hover:text-status-bad disabled:opacity-50"
+        >
+          {loggingOut ? 'Logging out…' : 'Log out'}
+        </button>
+      )}
     </div>
   )
 }

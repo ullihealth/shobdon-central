@@ -212,9 +212,14 @@ export default function MediaManagerPage(): JSX.Element {
             would just dead-end them a second time. Owner/admin can
             always reach /config from "/" via the role-aware header link
             (Header.tsx). */}
-        <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-          ← Back to Dashboard
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
+            ← Back to Dashboard
+          </Link>
+          <Link to="/account" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
+            👤 My Account
+          </Link>
+        </div>
         <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">Media Manager</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
           Upload images, MP4 clips, and PDFs to the media library, then assign them to any of the 12 carousel
