@@ -250,8 +250,14 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const stripTop = 200 - halfLength
   const stripBottom = 200 + halfLength
   const stripHeight = halfLength * 2
-  const centrelineTop = stripTop - 10
-  const centrelineBottom = stripBottom + 10
+  // Was stripTop - 10 / stripBottom + 10 - a deliberate 10px overshoot
+  // past each end cap that went unnoticed while the centreline was
+  // nearly invisible (opacity 0.18); now that it's bright white and
+  // fully opaque, the overshoot showed up as dash fragments poking out
+  // past the strip's own boundary. Constrained to the strip's actual
+  // rendered length - starts and ends exactly at its own edges.
+  const centrelineTop = stripTop
+  const centrelineBottom = stripBottom
   const fontSize = group.identifierFontSizePx
 
   if (group.id === SHOBDON_SEEDED_GROUP_ID) {
