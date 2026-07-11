@@ -8,7 +8,7 @@ interface RequireAuthProps {
   children: ReactNode
   // When set, requires the logged-in user's tenant role to be this exact
   // role, or (when given an array) one of several allowed roles - e.g.
-  // /media-manager needs ['owner', 'media']. Checked via GET
+  // /media-manager needs ['owner', 'admin', 'media']. Checked via GET
   // /api/tenant/me - not just "is a member of the tenant". A logged-in
   // user with a disallowed role gets a clear "not authorized" state, not
   // a redirect to /login (they ARE authenticated - redirecting them back

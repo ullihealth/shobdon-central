@@ -1,4 +1,4 @@
-// Owner/media-role: DELETE /api/tenant/media-library/:id
+// Owner/admin/media-role: DELETE /api/tenant/media-library/:id
 //
 // Deletion protection: before touching R2 or the media_library row,
 // check whether any carousel_slots row for this tenant still references
@@ -23,7 +23,7 @@ interface Env {
 }
 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

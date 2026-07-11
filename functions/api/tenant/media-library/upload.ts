@@ -1,4 +1,4 @@
-// Owner/media-role: POST /api/tenant/media-library/upload
+// Owner/admin/media-role: POST /api/tenant/media-library/upload
 //   ?filename=<name>&mediaType=image|mp4|pdf&mp4DurationSeconds=<n optional>
 // Body: raw file bytes (not multipart - a Pages Function streaming
 // straight to R2 via request.body avoids buffering the whole file in
@@ -39,7 +39,7 @@ function extensionFor(filename: string, mediaType: string): string {
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
   if ("error" in result) return result.error;
   const { organizationId, slug } = result.membership;
 

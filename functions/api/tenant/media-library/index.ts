@@ -1,4 +1,4 @@
-// Owner/media-role: list the tenant's uploaded media library files plus
+// Owner/admin/media-role: list the tenant's uploaded media library files plus
 // running usage vs. the 100MB cap. Upload/delete are separate routes
 // (upload.ts, [id].ts) - this one is read-only.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
@@ -25,7 +25,7 @@ interface MediaLibraryRow {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

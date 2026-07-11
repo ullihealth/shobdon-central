@@ -1,7 +1,11 @@
-// Owner/media-role: GET/PUT /api/tenant/carousel - the 12 carousel
+// Owner/admin/media-role: GET/PUT /api/tenant/carousel - the 12 carousel
 // slots. Assigning a slot to a library file (mediaLibraryId) or a
 // webcam (cameraSlotNumber, referencing the existing camera_slots
 // table) is metadata-only - no file is touched, moved, or re-uploaded.
+// admin was always documented as having media-manager access (see
+// src/types/member.ts's original role comment) but was missed when
+// this route was actually built - discovered via a real admin-role
+// account (test@mail.com) hitting a dead end after login.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -45,7 +49,7 @@ function defaultSlots(): CarouselSlotRow[] {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -79,7 +83,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 // same partial-update convention as tenant/config.ts's runwayGroups/
 // cameraSlots handling.
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

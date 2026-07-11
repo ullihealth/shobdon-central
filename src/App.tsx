@@ -53,12 +53,15 @@ export default function App(): JSX.Element {
             </RequireAuth>
           }
         />
-        {/* Owner AND media role - the one page besides the public
-            dashboard that isn't owner-exclusive. */}
+        {/* Owner, admin, AND media role. admin was always documented
+            (src/types/member.ts) as having media-manager access, but was
+            missed here when this route was first built - a real admin-
+            role account hit a "Not authorized" dead end after login as
+            a result. */}
         <Route
           path="/media-manager"
           element={
-            <RequireAuth requireRole={['owner', 'media']}>
+            <RequireAuth requireRole={['owner', 'admin', 'media']}>
               <MediaManagerPage />
             </RequireAuth>
           }

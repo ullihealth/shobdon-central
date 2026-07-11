@@ -74,22 +74,28 @@ export default function LoginPage(): JSX.Element {
       return
     }
 
-    // media/atc-role members have no owner-only pages to land on -
+    // admin/media/atc-role members have no owner-only pages to land on -
     // /config would just show them "Not authorized" with no way forward,
-    // so send each straight to the one page they can actually use. Owner
-    // keeps the existing /config default, unchanged. Same timeout
-    // protection as sign-in above, shorter and with no retry - worst
-    // case on a hang is landing on /config instead of the exact right
-    // page, same graceful fallback the existing .catch(() => null)
-    // already used for a genuine network error, just now also covering
-    // a hang rather than only an outright rejection.
+    // so send each straight to a page they can actually use (admin and
+    // media both land on /media-manager - admin was always documented,
+    // see src/types/member.ts, as having that same access). Owner keeps
+    // the existing /config default, unchanged. Same timeout protection
+    // as sign-in above, shorter and with no retry - worst case on a hang
+    // is landing on /config instead of the exact right page, same
+    // graceful fallback the existing .catch(() => null) already used for
+    // a genuine network error, just now also covering a hang rather than
+    // only an outright rejection.
     const me = await withTimeout(
       fetch('/api/tenant/me').then((response) => (response.ok ? response.json() : null)),
       5000
     ).catch(() => null)
     setSubmitting(false)
     const landingPage =
-      me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : '/config'
+      me?.role === 'media' || me?.role === 'admin'
+        ? '/media-manager'
+        : me?.role === 'atc'
+          ? '/atc-control'
+          : '/config'
     navigate(landingPage)
   }
 
