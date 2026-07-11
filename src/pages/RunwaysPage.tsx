@@ -29,7 +29,7 @@ function createBlankGroup(): RunwayGroup {
     label: '',
     headingDegrees: 0,
     twin: false,
-    strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true }],
+    strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }],
     stripLengthPx: DEFAULT_STRIP_LENGTH_PX,
     identifierFontSizePx: DEFAULT_IDENTIFIER_FONT_SIZE_PX,
   }
@@ -139,10 +139,10 @@ export default function RunwaysPage(): JSX.Element {
     const entry = editableGroups[index]
     const strips = twin
       ? [
-          entry.group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true },
-          entry.group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true },
+          entry.group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
+          entry.group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
         ]
-      : [entry.group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true }]
+      : [entry.group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }]
     updateGroup(index, { twin, strips })
   }
 
@@ -163,6 +163,15 @@ export default function RunwaysPage(): JSX.Element {
   function handleStripLabelChange(groupIndex: number, stripIndex: number, showIdentifierLabel: boolean) {
     const entry = editableGroups[groupIndex]
     const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, showIdentifierLabel } : strip))
+    updateGroup(groupIndex, { strips })
+  }
+
+  // Dashed centreline, independent per strip - e.g. only the paved
+  // surface has one painted, matching real-world practice - same pattern
+  // as threshold markings/direction labels above.
+  function handleStripCenterlineChange(groupIndex: number, stripIndex: number, showCenterline: boolean) {
+    const entry = editableGroups[groupIndex]
+    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, showCenterline } : strip))
     updateGroup(groupIndex, { strips })
   }
 
@@ -359,6 +368,15 @@ export default function RunwaysPage(): JSX.Element {
                           className="h-4 w-4"
                         />
                         <span className="text-sm text-muted-300">Direction labels (both ends)</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={strip.showCenterline}
+                          onChange={(event) => handleStripCenterlineChange(index, stripIndex, event.target.checked)}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm text-muted-300">Dashed centreline</span>
                       </label>
                     </div>
                   ))}

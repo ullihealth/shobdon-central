@@ -103,14 +103,18 @@ function clampStripWidth(rawWidth: number): number {
   return Math.max(rawWidth, MIN_STRIP_WIDTH_PX)
 }
 
-// Threshold (checkerboard) markings: the square is a fixed pixel size,
-// deliberately NOT derived from the strip's own width - a wider strip just
-// tiles more squares across itself (via the SVG pattern's own repeat),
-// rather than each square growing along with the strip. 5.5px reproduces
-// the pattern's original visual size at Shobdon's seeded 22px-wide strips
-// (22 / the old 4-column-derived formula), so nothing changes there by
-// switching to a fixed constant.
-const THRESHOLD_MARKING_SQUARE_SIZE_PX = 5.5
+// Threshold (checkerboard) markings: square size is now derived from the
+// strip's own width (width / 4), not a fixed pixel constant - guarantees
+// exactly 4 whole columns tile across ANY strip width, so there's never a
+// cut-off partial square at either side edge. 4 columns matches the
+// pattern's original visual density at Shobdon's seeded 22px-wide strips
+// (22 / the old fixed 5.5px size = 4), so Shobdon's own rendering doesn't
+// shift by switching to this formula.
+const THRESHOLD_MARKING_COLUMNS = 4
+
+function thresholdSquareSize(stripWidth: number): number {
+  return stripWidth / THRESHOLD_MARKING_COLUMNS
+}
 
 // Fixed length (along the strip's own axis) of the checkerboard block at
 // each end - independent of strip width AND of wherever the identifier
@@ -130,14 +134,39 @@ const THRESHOLD_MARKING_LABEL_GAP = 8
 const NUMBER_INSET_DEFAULT = 20
 const NUMBER_INSET_WITH_MARKINGS = THRESHOLD_MARKING_BLOCK_LENGTH + THRESHOLD_MARKING_LABEL_GAP
 
-function ThresholdMarkingPattern({ patternId }: { patternId: string }): JSX.Element {
-  const size = THRESHOLD_MARKING_SQUARE_SIZE_PX
+// x/y anchor the pattern's own tile grid to the strip's top-left corner
+// (patternUnits="userSpaceOnUse" tiles from the SVG's absolute origin by
+// default, not from wherever the strip itself happens to sit) - without
+// this, squares landed at an arbitrary offset relative to the strip,
+// which is what actually made the previous checkerboard look rough/
+// misaligned rather than a clean grid starting exactly at each edge.
+// shapeRendering="crispEdges" turns off anti-aliasing on the tile
+// boundaries themselves, for genuinely sharp (not slightly blurred)
+// square edges.
+function ThresholdMarkingPattern({
+  patternId,
+  squareSize,
+  originX,
+  originY,
+}: {
+  patternId: string
+  squareSize: number
+  originX: number
+  originY: number
+}): JSX.Element {
   return (
     <defs>
-      <pattern id={patternId} patternUnits="userSpaceOnUse" width={size * 2} height={size * 2}>
-        <rect width={size * 2} height={size * 2} fill="white" />
-        <rect width={size} height={size} fill="#1e293b" />
-        <rect x={size} y={size} width={size} height={size} fill="#1e293b" />
+      <pattern
+        id={patternId}
+        patternUnits="userSpaceOnUse"
+        width={squareSize * 2}
+        height={squareSize * 2}
+        x={originX}
+        y={originY}
+      >
+        <rect width={squareSize * 2} height={squareSize * 2} fill="white" shapeRendering="crispEdges" />
+        <rect width={squareSize} height={squareSize} fill="#1e293b" shapeRendering="crispEdges" />
+        <rect x={squareSize} y={squareSize} width={squareSize} height={squareSize} fill="#1e293b" shapeRendering="crispEdges" />
       </pattern>
     </defs>
   )
@@ -180,6 +209,43 @@ function splitRunwayLabel(label: string): [string, string] {
   return [first, second]
 }
 
+// Real-world runway signage convention: the numeral at each end is
+// oriented for someone approaching FROM that end, so the two ends read
+// 180° apart from each other, not both facing the same way. The group's
+// own rotate(headingDegrees) transform already orients everything for the
+// "top" end (labelTop); this only adds an EXTRA local 180° spin around
+// the far-end numeral's own (x, y) - it stays in exactly the same screen
+// position, just flipped in place, independent of whatever heading the
+// group itself is rotated to.
+function RunwayIdentifierText({
+  x,
+  y,
+  text,
+  fontSize,
+  rotate180,
+}: {
+  x: number
+  y: number
+  text: string
+  fontSize: number
+  rotate180?: boolean
+}): JSX.Element {
+  const textEl = (
+    <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">
+      {text}
+    </text>
+  )
+  return rotate180 ? <g transform={`rotate(180 ${x} ${y})`}>{textEl}</g> : textEl
+}
+
+// enabled/showCenterline !== false rather than === true so a missing/
+// undefined field (shouldn't happen post-migration, but defensive
+// against any stale/unexpected data) defaults to shown - matching the
+// migration's own per-strip default.
+function showsCenterline(strip: RunwayStrip | undefined): boolean {
+  return strip?.showCenterline !== false
+}
+
 function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const [labelTop, labelBottom] = splitRunwayLabel(group.label)
   const halfLength = clampStripHalfLength(group.stripLengthPx / 2)
@@ -209,10 +275,15 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
     const grassNumberBottomY = stripBottom - grassInset
     const tarmacNumberTopY = stripTop + tarmacInset
     const tarmacNumberBottomY = stripBottom - tarmacInset
+    const grassCentreX = grassX + grassWidth / 2
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        {grass?.hasThresholdMarkings && <ThresholdMarkingPattern patternId={`${patternId}-grass`} />}
-        {tarmac?.hasThresholdMarkings && <ThresholdMarkingPattern patternId={`${patternId}-tarmac`} />}
+        {grass?.hasThresholdMarkings && (
+          <ThresholdMarkingPattern patternId={`${patternId}-grass`} squareSize={thresholdSquareSize(grassWidth)} originX={grassX} originY={stripTop} />
+        )}
+        {tarmac?.hasThresholdMarkings && (
+          <ThresholdMarkingPattern patternId={`${patternId}-tarmac`} squareSize={thresholdSquareSize(tarmacWidth)} originX={tarmacX} originY={stripTop} />
+        )}
         {/* Grass Strip (Left) */}
         <rect x={grassX} y={stripTop} width={grassWidth} height={stripHeight} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
         {/* Tarmac Strip (Right) */}
@@ -223,24 +294,34 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
         {tarmac?.hasThresholdMarkings && (
           <ThresholdMarkingBlocks patternId={`${patternId}-tarmac`} stripX={tarmacX} stripWidth={tarmacWidth} stripTop={stripTop} stripBottom={stripBottom} />
         )}
-        {/* Centreline (dashed) */}
-        <line x1="214" y1={centrelineTop} x2="214" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        {/* Centreline (dashed) - independently toggled per strip; tarmac's
+            own centre is always exactly 214 regardless of width, matching
+            the historic literal position. */}
+        {showsCenterline(grass) && (
+          <line x1={grassCentreX} y1={centrelineTop} x2={grassCentreX} y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        )}
+        {showsCenterline(tarmac) && (
+          <line x1="214" y1={centrelineTop} x2="214" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        )}
         {/* Threshold Markers */}
         <line x1={thresholdLeft} y1={stripTop} x2={thresholdRight} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
         <line x1={thresholdLeft} y1={stripBottom} x2={thresholdRight} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
         {/* Runway Numbers - each strip shows its own pair independently,
             positioned over its own centre, opacity 0.85 to match other
-            secondary compass labels (e.g. intermediate bearings). */}
+            secondary compass labels (e.g. intermediate bearings). The
+            bottom/far-end numeral gets an extra local 180° spin - real-
+            world signage convention, each end reads upright to someone
+            approaching FROM that end. */}
         {grass?.showIdentifierLabel && (
           <>
-            <text x={grassX + grassWidth / 2} y={grassNumberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
-            <text x={grassX + grassWidth / 2} y={grassNumberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+            <RunwayIdentifierText x={grassCentreX} y={grassNumberTopY} text={labelTop} fontSize={fontSize} />
+            <RunwayIdentifierText x={grassCentreX} y={grassNumberBottomY} text={labelBottom} fontSize={fontSize} rotate180 />
           </>
         )}
         {tarmac?.showIdentifierLabel && (
           <>
-            <text x="214" y={tarmacNumberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
-            <text x="214" y={tarmacNumberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+            <RunwayIdentifierText x={214} y={tarmacNumberTopY} text={labelTop} fontSize={fontSize} />
+            <RunwayIdentifierText x={214} y={tarmacNumberBottomY} text={labelBottom} fontSize={fontSize} rotate180 />
           </>
         )}
       </g>
@@ -269,8 +350,12 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
     const stripBNumberBottomY = stripBottom - stripBInset
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        {stripA?.hasThresholdMarkings && <ThresholdMarkingPattern patternId={`${patternId}-a`} />}
-        {stripB?.hasThresholdMarkings && <ThresholdMarkingPattern patternId={`${patternId}-b`} />}
+        {stripA?.hasThresholdMarkings && (
+          <ThresholdMarkingPattern patternId={`${patternId}-a`} squareSize={thresholdSquareSize(stripAWidth)} originX={stripAX} originY={stripTop} />
+        )}
+        {stripB?.hasThresholdMarkings && (
+          <ThresholdMarkingPattern patternId={`${patternId}-b`} squareSize={thresholdSquareSize(stripBWidth)} originX={stripBX} originY={stripTop} />
+        )}
         <rect x={stripAX} y={stripTop} width={stripAWidth} height={stripHeight} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
         <rect x={stripBX} y={stripTop} width={stripBWidth} height={stripHeight} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
         {stripA?.hasThresholdMarkings && (
@@ -279,19 +364,24 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
         {stripB?.hasThresholdMarkings && (
           <ThresholdMarkingBlocks patternId={`${patternId}-b`} stripX={stripBX} stripWidth={stripBWidth} stripTop={stripTop} stripBottom={stripBottom} />
         )}
-        <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        {showsCenterline(stripA) && (
+          <line x1={stripACentreX} y1={centrelineTop} x2={stripACentreX} y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        )}
+        {showsCenterline(stripB) && (
+          <line x1={stripBCentreX} y1={centrelineTop} x2={stripBCentreX} y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+        )}
         <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
         <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
         {stripA?.showIdentifierLabel && (
           <>
-            <text x={stripACentreX} y={stripANumberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
-            <text x={stripACentreX} y={stripANumberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+            <RunwayIdentifierText x={stripACentreX} y={stripANumberTopY} text={labelTop} fontSize={fontSize} />
+            <RunwayIdentifierText x={stripACentreX} y={stripANumberBottomY} text={labelBottom} fontSize={fontSize} rotate180 />
           </>
         )}
         {stripB?.showIdentifierLabel && (
           <>
-            <text x={stripBCentreX} y={stripBNumberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
-            <text x={stripBCentreX} y={stripBNumberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberTopY} text={labelTop} fontSize={fontSize} />
+            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberBottomY} text={labelBottom} fontSize={fontSize} rotate180 />
           </>
         )}
       </g>
@@ -309,22 +399,43 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const numberBottomY = stripBottom - inset
   return (
     <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-      {strip?.hasThresholdMarkings && <ThresholdMarkingPattern patternId={patternId} />}
+      {strip?.hasThresholdMarkings && (
+        <ThresholdMarkingPattern patternId={patternId} squareSize={thresholdSquareSize(width)} originX={stripX} originY={stripTop} />
+      )}
       <rect x={stripX} y={stripTop} width={width} height={stripHeight} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
       {strip?.hasThresholdMarkings && (
         <ThresholdMarkingBlocks patternId={patternId} stripX={stripX} stripWidth={width} stripTop={stripTop} stripBottom={stripBottom} />
       )}
-      <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+      {showsCenterline(strip) && (
+        <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="white" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18" />
+      )}
       <line x1={stripX} y1={stripTop} x2={edge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
       <line x1={stripX} y1={stripBottom} x2={edge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
       {strip?.showIdentifierLabel && (
         <>
-          <text x="200" y={numberTopY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelTop}</text>
-          <text x="200" y={numberBottomY} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">{labelBottom}</text>
+          <RunwayIdentifierText x={200} y={numberTopY} text={labelTop} fontSize={fontSize} />
+          <RunwayIdentifierText x={200} y={numberBottomY} text={labelBottom} fontSize={fontSize} rotate180 />
         </>
       )}
     </g>
   )
+}
+
+// Wind arrow tail feathers (fletching) - three short chevron ticks near
+// the tail end (opposite the arrowhead, which points toward y=42; the
+// shaft's blunt tail cap sits at y=358). Each chevron's vertex sits up
+// the shaft (toward the head) with its two arms flaring outward and
+// further down toward the tail - the same visual logic as real arrow
+// fletching, and the reference style requested. Static geometry inside
+// the same rotating <g id="wind-arrow"> group the needle itself lives in,
+// so it rotates identically with no separate transform needed.
+const TAIL_FEATHER_VERTEX_YS = [322, 336, 350]
+const TAIL_FEATHER_ARM_DY = 8
+const TAIL_FEATHER_ARM_DX = 10
+
+function tailFeatherPoints(vertexY: number): string {
+  const armY = vertexY + TAIL_FEATHER_ARM_DY
+  return `${200 - TAIL_FEATHER_ARM_DX},${armY} 200,${vertexY} ${200 + TAIL_FEATHER_ARM_DX},${armY}`
 }
 
 interface ReadoutRowProps {
@@ -569,6 +680,29 @@ export default function CompassPanel(): JSX.Element {
               <polygon points="200,37 213,80 207,80 207,362 193,362 193,80 187,80" fill="rgba(3, 7, 18, 0.85)" />
               {/* Full-length instrument needle: arrowhead + shaft through the centre to a plain tail, ~88% radius each way */}
               <polygon points="200,42 208,84 202,84 202,358 198,358 198,84 192,84" className="arrow-head fill-current" />
+              {/* Tail feathers (fletching) - dark halo strokes first for legibility, then the colour-matched foreground ticks on top, same layering as the needle itself. */}
+              {TAIL_FEATHER_VERTEX_YS.map((vertexY) => (
+                <polyline
+                  key={`tail-feather-halo-${vertexY}`}
+                  points={tailFeatherPoints(vertexY)}
+                  fill="none"
+                  stroke="rgba(3, 7, 18, 0.85)"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
+              {TAIL_FEATHER_VERTEX_YS.map((vertexY) => (
+                <polyline
+                  key={`tail-feather-${vertexY}`}
+                  points={tailFeatherPoints(vertexY)}
+                  className="arrow-head stroke-current"
+                  fill="none"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
             </g>
 
             {/* Centre annotation — avionics instrument tag, static, always on top of the rotating arrow */}
