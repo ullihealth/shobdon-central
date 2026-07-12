@@ -7,7 +7,6 @@ import type { MemberRole } from '../../types/member'
 export interface SidebarItem {
   to: string
   label: string
-  icon: string
   allowedRoles?: MemberRole[]
   requireDeveloper?: boolean
 }
@@ -25,29 +24,29 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
     id: 'settings',
     label: 'Settings',
-    items: [{ to: '/config', label: 'Weather Config', icon: '⚙️', allowedRoles: ['owner', 'admin'] }],
+    items: [{ to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'] }],
   },
   {
     id: 'content',
     label: 'Content',
     items: [
-      { to: '/design', label: 'Dashboard Design', icon: '🎨', allowedRoles: ['owner', 'admin'] },
-      { to: '/runways', label: 'Runways', icon: '🛬', allowedRoles: ['owner', 'admin'] },
-      { to: '/media-manager', label: 'Media Manager', icon: '🎞️', allowedRoles: ['owner', 'admin', 'media'] },
+      { to: '/design', label: 'Dashboard Design', allowedRoles: ['owner', 'admin'] },
+      { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
+      { to: '/media-manager', label: 'Media Manager', allowedRoles: ['owner', 'admin', 'media'] },
     ],
   },
   {
     id: 'operations',
     label: 'Operations',
-    items: [{ to: '/atc-control', label: 'ATC Control', icon: '🛫', allowedRoles: ['owner', 'admin', 'atc'] }],
+    items: [{ to: '/atc-control', label: 'ATC Control', allowedRoles: ['owner', 'admin', 'atc'] }],
   },
   {
     id: 'people',
     label: 'People',
-    items: [{ to: '/members', label: 'Members', icon: '👥', allowedRoles: ['owner', 'admin'] }],
+    items: [{ to: '/members', label: 'Members', allowedRoles: ['owner', 'admin'] }],
   },
 ]
 
 // Rendered below a divider, outside any group - isDeveloper is orthogonal
 // to the role/group system, so it doesn't belong inside one.
-export const STANDALONE_ITEMS: SidebarItem[] = [{ to: '/developertools', label: 'Developer Tools', icon: '🛠️', requireDeveloper: true }]
+export const STANDALONE_ITEMS: SidebarItem[] = [{ to: '/developertools', label: 'Developer Tools', requireDeveloper: true }]

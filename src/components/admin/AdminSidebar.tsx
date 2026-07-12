@@ -114,12 +114,11 @@ export default function AdminSidebar(): JSX.Element {
                     <Link
                       key={item.to}
                       to={item.to}
-                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                      className={`block rounded-lg px-3 py-2 text-base font-semibold transition ${
                         active ? 'bg-accent-sky-500/15 text-accent-sky-400' : 'text-slate-300 hover:bg-slate-900/80 hover:text-white'
                       }`}
                     >
-                      <span className="text-base">{item.icon}</span>
-                      <span>{item.label}</span>
+                      {item.label}
                     </Link>
                   )
                 })}

@@ -23,21 +23,19 @@ export default function SidebarUserMenu({ activePath }: SidebarUserMenuProps): J
     <div className="border-t border-slate-800 px-3 py-4">
       <Link
         to="/account"
-        className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+        className={`block rounded-lg px-3 py-2 text-base font-semibold transition ${
           activePath === '/account' ? 'bg-accent-sky-500/15 text-accent-sky-400' : 'text-muted-400 hover:bg-slate-900/80 hover:text-white'
         }`}
       >
-        <span className="text-base">👤</span>
-        <span>My Account</span>
+        My Account
       </Link>
       <button
         type="button"
         onClick={handleLogout}
         disabled={loggingOut}
-        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-semibold text-muted-400 transition hover:bg-slate-900/80 hover:text-status-bad disabled:opacity-50"
+        className="block w-full rounded-lg px-3 py-2 text-left text-base font-semibold text-muted-400 transition hover:bg-slate-900/80 hover:text-status-bad disabled:opacity-50"
       >
-        <span className="text-base">🚪</span>
-        <span>{loggingOut ? 'Logging out…' : 'Log out'}</span>
+        {loggingOut ? 'Logging out…' : 'Log out'}
       </button>
     </div>
   )
