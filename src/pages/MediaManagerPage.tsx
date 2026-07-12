@@ -804,6 +804,7 @@ export default function MediaManagerPage(): JSX.Element {
             initialRecipe={editingSlideFile?.slideRecipe ?? null}
             onClose={closeSlideEditor}
             onSaved={handleSlideSaved}
+            onLibraryChanged={loadLibrary}
           />
         </Suspense>
       )}

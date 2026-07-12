@@ -14,10 +14,26 @@ export interface SlideRecipe {
   canvasWidth: number
   canvasHeight: number
   background: SlideBackground
+  // Layered images (e.g. a headshot on top of a background photo) -
+  // rendered in array order, between the background and the text boxes
+  // (see SlideEditor.tsx: objects are added to the Fabric canvas in the
+  // same order they appear here, and Fabric's own stacking is add-order,
+  // so this array's order IS the z-order - no separate z-index field).
+  images: SlideImageElement[]
   textBoxes: SlideTextBox[]
 }
 
 export type SlideBackground = { type: 'color'; color: string } | { type: 'image'; mediaLibraryId: string }
+
+export interface SlideImageElement {
+  id: string
+  mediaLibraryId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+}
 
 export interface SlideTextBox {
   id: string

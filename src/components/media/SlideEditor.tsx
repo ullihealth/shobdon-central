@@ -1,37 +1,93 @@
 // The slide composer: a Fabric.js canvas editor for building a custom
-// slide (solid-colour or existing-image background + positioned/
-// resized/rotated text boxes), then flattening it to a single static
-// PNG uploaded through the existing, unmodified media-library upload
-// endpoint. Only ever loaded via React.lazy() from MediaManagerPage.tsx -
-// this file (and the fabric/@fontsource weight it pulls in) never
-// reaches the public dashboard bundle.
+// slide (solid-colour/existing-image/freshly-uploaded background,
+// layered images, and positioned/resized/rotated text boxes), then
+// flattening it to a single static PNG uploaded through the existing,
+// unmodified media-library upload endpoint. Only ever loaded via
+// React.lazy() from MediaManagerPage.tsx - this file (and the fabric/
+// @fontsource weight it pulls in) never reaches the public dashboard
+// bundle.
 //
 // The canvas's INTERNAL resolution always stays at the full 1920x1080
 // (CANVAS_WIDTH/HEIGHT) - only its on-screen CSS display size is
 // shrunk (via setDimensions(..., {cssOnly:true})), so editing renders
 // crisp (downscaled from full-res) and export is always a trivial
 // multiplier:1 toBlob() call, with no zoom/multiplier interaction to
-// get wrong.
-import { useEffect, useRef, useState } from 'react'
+// get wrong. DISPLAY_WIDTH is deliberately modest (not "as large as
+// looks nice") so the controls sidebar is never pushed off-screen on a
+// typical browser window - see the modal's flex layout below.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { Canvas, Textbox, FabricImage } from 'fabric'
 import type { MediaLibraryFile } from '../../types/mediaLibrary'
-import type { SlideBackground, SlideFontFamily, SlideRecipe, SlideTextBox } from '../../types/slideRecipe'
+import type { SlideBackground, SlideFontFamily, SlideImageElement, SlideRecipe, SlideTextBox } from '../../types/slideRecipe'
 import { SLIDE_FONT_CSS_STACK, SLIDE_FONT_OPTIONS, ensureSlideFontsLoaded } from './slideFonts'
 import { MEDIA_LIBRARY_UPLOAD_URL, mediaLibraryImageProxyUrl, mediaLibraryRecipeUrl } from '../../config/publicApi'
 
 const CANVAS_WIDTH = 1920
 const CANVAS_HEIGHT = 1080
-const DISPLAY_WIDTH = 860
+const DISPLAY_WIDTH = 640
 const DISPLAY_HEIGHT = (CANVAS_HEIGHT / CANVAS_WIDTH) * DISPLAY_WIDTH
+const NEW_IMAGE_MAX_DIMENSION = 480
 
 type SlideTextboxObject = Textbox & { slideBoxId: string; slideFontKey: SlideFontFamily }
+type SlideImageObject = FabricImage & { slideImageId: string; slideImageLibraryId: string }
 
 function isSlideTextbox(obj: unknown): obj is SlideTextboxObject {
   return obj instanceof Textbox
 }
 
+// Background images are FabricImage too, but are never selectable
+// (see applyBackground below), so checking for the slideImageId tag -
+// only ever set on genuine layered image elements - is enough to tell
+// them apart without needing a direct reference comparison.
+function isSlideImageElement(obj: unknown): obj is SlideImageObject {
+  return obj instanceof FabricImage && typeof (obj as { slideImageId?: unknown }).slideImageId === 'string'
+}
+
 function defaultBackground(): SlideBackground {
   return { type: 'color', color: '#0a0de1' }
+}
+
+function sanitizeSlideName(raw: string): string {
+  return raw
+    .trim()
+    .replace(/[/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 100)
+}
+
+function uniqueSlideFilename(baseName: string, existingFilenames: Set<string>): string {
+  const candidate = `${baseName}.png`
+  if (!existingFilenames.has(candidate)) return candidate
+  let attempt = 2
+  while (existingFilenames.has(`${baseName} (${attempt}).png`)) attempt += 1
+  return `${baseName} (${attempt}).png`
+}
+
+// Shared by "upload new" backgrounds and "+ Add Image" uploads - goes
+// through the SAME, unmodified media-library upload endpoint any
+// normal photo upload uses, so the result is an ordinary library file
+// (subject to the existing quota, reachable via the normal library/
+// delete flow afterward) with no special-casing.
+async function uploadImageFile(file: File): Promise<MediaLibraryFile> {
+  const params = new URLSearchParams({ filename: file.name, mediaType: 'image' })
+  const response = await fetch(`${MEDIA_LIBRARY_UPLOAD_URL}?${params.toString()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'image/jpeg' },
+    body: file,
+  })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error ?? 'Upload failed')
+  return {
+    id: data.id,
+    filename: data.filename,
+    mediaType: 'image',
+    sizeBytes: data.sizeBytes,
+    mp4DurationSeconds: null,
+    uploadedAt: data.uploadedAt,
+    url: null,
+    slideRecipe: null,
+  }
 }
 
 function addTextBoxToCanvas(canvas: Canvas, box: SlideTextBox): SlideTextboxObject {
@@ -52,14 +108,37 @@ function addTextBoxToCanvas(canvas: Canvas, box: SlideTextBox): SlideTextboxObje
   return obj
 }
 
+// Loads an existing SlideImageElement (re-edit case) at its saved
+// position/size/rotation. Uses the SAME same-origin proxy endpoint as
+// the background-image loader (mediaLibraryImageProxyUrl) - the public
+// R2 bucket sends no CORS headers, so anything drawn into this canvas
+// that later gets flattened via toBlob() MUST be loaded through that
+// proxy, never the public pub-*.r2.dev URL directly, or the canvas
+// gets tainted and export throws.
+async function addImageElementToCanvas(canvas: Canvas, element: SlideImageElement): Promise<SlideImageObject> {
+  const img = (await FabricImage.fromURL(mediaLibraryImageProxyUrl(element.mediaLibraryId), {
+    crossOrigin: 'anonymous',
+  })) as SlideImageObject
+  img.slideImageId = element.id
+  img.slideImageLibraryId = element.mediaLibraryId
+  img.set({
+    left: element.x,
+    top: element.y,
+    angle: element.rotation,
+    scaleX: element.width / (img.width || 1),
+    scaleY: element.height / (img.height || 1),
+  })
+  canvas.add(img)
+  return img
+}
+
 // "Cover" positioning only, per the current scope - no independent
 // crop/pan UI for backgrounds in this pass (matches the rest of the
 // app's carousel-slot fitMode='fill' behaviour).
 async function applyBackground(
   canvas: Canvas,
   background: SlideBackground,
-  bgObjectRef: React.MutableRefObject<FabricImage | null>,
-  files: MediaLibraryFile[]
+  bgObjectRef: React.MutableRefObject<FabricImage | null>
 ): Promise<void> {
   if (bgObjectRef.current) {
     canvas.remove(bgObjectRef.current)
@@ -72,15 +151,8 @@ async function applyBackground(
     return
   }
 
-  const file = files.find((f) => f.id === background.mediaLibraryId)
-  if (!file) {
-    canvas.backgroundColor = '#000000'
-    canvas.requestRenderAll()
-    return
-  }
-
   canvas.backgroundColor = '#000000'
-  const img = await FabricImage.fromURL(mediaLibraryImageProxyUrl(file.id), { crossOrigin: 'anonymous' })
+  const img = await FabricImage.fromURL(mediaLibraryImageProxyUrl(background.mediaLibraryId), { crossOrigin: 'anonymous' })
   const scale = Math.max(CANVAS_WIDTH / (img.width || 1), CANVAS_HEIGHT / (img.height || 1))
   img.set({
     left: CANVAS_WIDTH / 2,
@@ -98,7 +170,7 @@ async function applyBackground(
   canvas.requestRenderAll()
 }
 
-interface SelectedProps {
+interface TextSelectionProps {
   text: string
   fontFamily: SlideFontFamily
   fontSize: number
@@ -108,29 +180,58 @@ interface SelectedProps {
   italic: boolean
 }
 
+type SelectedState = ({ kind: 'text' } & TextSelectionProps) | { kind: 'image'; id: string }
+
 interface SlideEditorProps {
   files: MediaLibraryFile[]
   initialRecipe: SlideRecipe | null
   onClose: () => void
   onSaved: () => void
+  // Called immediately after any upload that happens WITHIN the editor
+  // (a new background, or a new "+ Add Image" source) - refreshes the
+  // parent's media library list so the new file is visible there too,
+  // independent of whether the slide itself ever gets saved.
+  onLibraryChanged: () => void
 }
 
-export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: SlideEditorProps): JSX.Element {
+export default function SlideEditor({ files, initialRecipe, onClose, onSaved, onLibraryChanged }: SlideEditorProps): JSX.Element {
   const canvasElRef = useRef<HTMLCanvasElement>(null)
   const fabricRef = useRef<Canvas | null>(null)
   const bgObjectRef = useRef<FabricImage | null>(null)
 
   const [background, setBackground] = useState<SlideBackground>(initialRecipe?.background ?? defaultBackground())
-  const [selected, setSelected] = useState<SelectedProps | null>(null)
+  const [backgroundMode, setBackgroundMode] = useState<'color' | 'image' | 'upload'>(initialRecipe?.background.type ?? 'color')
+  const [backgroundUploadBusy, setBackgroundUploadBusy] = useState(false)
+  const [backgroundUploadError, setBackgroundUploadError] = useState<string | null>(null)
+
+  const [addingImage, setAddingImage] = useState(false)
+  const [addImageMode, setAddImageMode] = useState<'existing' | 'upload'>('existing')
+  const [addImageExistingId, setAddImageExistingId] = useState('')
+  const [addImageBusy, setAddImageBusy] = useState(false)
+  const [addImageError, setAddImageError] = useState<string | null>(null)
+
+  const [selected, setSelected] = useState<SelectedState | null>(null)
+  const [slideName, setSlideName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const imageFiles = files.filter((f) => f.mediaType === 'image')
+  // Files uploaded during THIS editing session (background or "+ Add
+  // Image" uploads) - merged with the files prop so they're usable
+  // immediately, without waiting for the parent's next fetch to land.
+  const [extraFiles, setExtraFiles] = useState<MediaLibraryFile[]>([])
+  const allFiles = useMemo(() => {
+    const knownIds = new Set(files.map((f) => f.id))
+    return [...files, ...extraFiles.filter((f) => !knownIds.has(f.id))]
+  }, [files, extraFiles])
+  const imageFiles = useMemo(() => allFiles.filter((f) => f.mediaType === 'image'), [allFiles])
 
   // Canvas lifecycle - created once on mount, disposed on unmount.
-  // Initial text boxes are seeded here (not in a separate effect) so
-  // they exist before the very first render, avoiding a flash of an
-  // empty canvas for the re-edit case.
+  // Initial images/text boxes are seeded here (not in a separate
+  // effect) so they exist before the very first render, avoiding a
+  // flash of an empty canvas for the re-edit case. Images load async
+  // (FabricImage.fromURL), text boxes are synchronous - images are
+  // added first so newly-added text boxes naturally stack on top,
+  // matching the "images and text boxes layer in the order added" rule.
   useEffect(() => {
     if (!canvasElRef.current) return
     const canvas = new Canvas(canvasElRef.current, {
@@ -141,15 +242,29 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     canvas.setDimensions({ width: DISPLAY_WIDTH, height: DISPLAY_HEIGHT }, { cssOnly: true })
     fabricRef.current = canvas
 
-    for (const box of initialRecipe?.textBoxes ?? []) {
-      addTextBoxToCanvas(canvas, box)
-    }
-    canvas.requestRenderAll()
+    let cancelled = false
+    void (async () => {
+      for (const element of initialRecipe?.images ?? []) {
+        if (cancelled) return
+        try {
+          await addImageElementToCanvas(canvas, element)
+        } catch {
+          // A referenced file may have been deleted since this recipe
+          // was saved - skip it rather than aborting the whole load.
+        }
+      }
+      if (cancelled) return
+      for (const box of initialRecipe?.textBoxes ?? []) {
+        addTextBoxToCanvas(canvas, box)
+      }
+      canvas.requestRenderAll()
+    })()
 
     const syncSelection = () => {
       const obj = canvas.getActiveObject()
       if (isSlideTextbox(obj)) {
         setSelected({
+          kind: 'text',
           text: obj.text ?? '',
           fontFamily: obj.slideFontKey,
           fontSize: obj.fontSize ?? 48,
@@ -158,6 +273,8 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
           bold: obj.fontWeight === 'bold' || obj.fontWeight === 700,
           italic: obj.fontStyle === 'italic',
         })
+      } else if (isSlideImageElement(obj)) {
+        setSelected({ kind: 'image', id: obj.slideImageId })
       } else {
         setSelected(null)
       }
@@ -168,9 +285,9 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     canvas.on('text:changed', syncSelection)
     canvas.on('object:modified', syncSelection)
 
-    // Delete/Backspace removes the selected text box - but not while
-    // actively typing inside one (Fabric's own text-editing mode
-    // handles Backspace itself; without this guard, deleting a
+    // Delete/Backspace removes the selected object - but not while
+    // actively typing inside a text box (Fabric's own text-editing
+    // mode handles Backspace itself; without this guard, deleting a
     // character would delete the whole box instead).
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' && event.key !== 'Backspace') return
@@ -184,21 +301,22 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     window.addEventListener('keydown', handleKeyDown)
 
     return () => {
+      cancelled = true
       window.removeEventListener('keydown', handleKeyDown)
       canvas.dispose()
       fabricRef.current = null
     }
     // Deliberately empty deps - the canvas is created exactly once;
-    // background/file changes are applied imperatively in the effect
-    // below rather than by recreating the canvas.
+    // background changes are applied imperatively in the effect below
+    // rather than by recreating the canvas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     const canvas = fabricRef.current
     if (!canvas) return
-    applyBackground(canvas, background, bgObjectRef, files)
-  }, [background, files])
+    applyBackground(canvas, background, bgObjectRef)
+  }, [background])
 
   function handleAddTextBox() {
     const canvas = fabricRef.current
@@ -219,6 +337,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     canvas.setActiveObject(obj)
     canvas.requestRenderAll()
     setSelected({
+      kind: 'text',
       text: box.text,
       fontFamily: box.fontFamily,
       fontSize: box.fontSize,
@@ -229,7 +348,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     })
   }
 
-  function updateSelected(patch: Partial<SelectedProps>) {
+  function updateSelectedText(patch: Partial<TextSelectionProps>) {
     const canvas = fabricRef.current
     const obj = canvas?.getActiveObject()
     if (!canvas || !isSlideTextbox(obj)) return
@@ -245,7 +364,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     if (patch.bold !== undefined) obj.set('fontWeight', patch.bold ? 'bold' : 'normal')
     if (patch.italic !== undefined) obj.set('fontStyle', patch.italic ? 'italic' : 'normal')
     canvas.requestRenderAll()
-    setSelected((prev) => (prev ? { ...prev, ...patch } : prev))
+    setSelected((prev) => (prev && prev.kind === 'text' ? { ...prev, ...patch } : prev))
   }
 
   function handleDeleteSelected() {
@@ -258,8 +377,93 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
     setSelected(null)
   }
 
+  // Places a new image element (from either "+ Add Image" flow) centred
+  // on the canvas, scaled down to fit within NEW_IMAGE_MAX_DIMENSION on
+  // its longer side so it never lands larger than the slide itself.
+  async function placeNewImageElement(mediaLibraryId: string) {
+    const canvas = fabricRef.current
+    if (!canvas) return
+    const img = (await FabricImage.fromURL(mediaLibraryImageProxyUrl(mediaLibraryId), {
+      crossOrigin: 'anonymous',
+    })) as SlideImageObject
+    const naturalWidth = img.width || 1
+    const naturalHeight = img.height || 1
+    const scale = Math.min(1, NEW_IMAGE_MAX_DIMENSION / Math.max(naturalWidth, naturalHeight))
+    const width = naturalWidth * scale
+    const height = naturalHeight * scale
+    const elementId = crypto.randomUUID()
+    img.slideImageId = elementId
+    img.slideImageLibraryId = mediaLibraryId
+    img.set({
+      left: CANVAS_WIDTH / 2 - width / 2,
+      top: CANVAS_HEIGHT / 2 - height / 2,
+      scaleX: scale,
+      scaleY: scale,
+      angle: 0,
+    })
+    canvas.add(img)
+    canvas.setActiveObject(img)
+    canvas.requestRenderAll()
+    setSelected({ kind: 'image', id: elementId })
+    setAddingImage(false)
+  }
+
+  function handleAddExistingImage() {
+    if (!addImageExistingId) return
+    void placeNewImageElement(addImageExistingId)
+  }
+
+  async function handleAddImageFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setAddImageBusy(true)
+    setAddImageError(null)
+    try {
+      const uploaded = await uploadImageFile(file)
+      setExtraFiles((prev) => [...prev, uploaded])
+      onLibraryChanged()
+      await placeNewImageElement(uploaded.id)
+    } catch (err) {
+      setAddImageError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setAddImageBusy(false)
+    }
+  }
+
+  async function handleBackgroundFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setBackgroundUploadBusy(true)
+    setBackgroundUploadError(null)
+    try {
+      const uploaded = await uploadImageFile(file)
+      setExtraFiles((prev) => [...prev, uploaded])
+      onLibraryChanged()
+      setBackground({ type: 'image', mediaLibraryId: uploaded.id })
+      setBackgroundMode('image')
+    } catch (err) {
+      setBackgroundUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setBackgroundUploadBusy(false)
+    }
+  }
+
   function buildRecipe(): SlideRecipe {
     const canvas = fabricRef.current!
+    const images: SlideImageElement[] = canvas
+      .getObjects()
+      .filter(isSlideImageElement)
+      .map((obj) => ({
+        id: obj.slideImageId,
+        mediaLibraryId: obj.slideImageLibraryId,
+        x: Math.round(obj.left ?? 0),
+        y: Math.round(obj.top ?? 0),
+        width: Math.round((obj.width ?? 0) * (obj.scaleX ?? 1)),
+        height: Math.round((obj.height ?? 0) * (obj.scaleY ?? 1)),
+        rotation: Math.round(obj.angle ?? 0),
+      }))
     const textBoxes: SlideTextBox[] = canvas
       .getObjects()
       .filter(isSlideTextbox)
@@ -277,7 +481,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
         bold: obj.fontWeight === 'bold' || obj.fontWeight === 700,
         italic: obj.fontStyle === 'italic',
       }))
-    return { canvasWidth: CANVAS_WIDTH, canvasHeight: CANVAS_HEIGHT, background, textBoxes }
+    return { canvasWidth: CANVAS_WIDTH, canvasHeight: CANVAS_HEIGHT, background, images, textBoxes }
   }
 
   async function handleSave() {
@@ -300,7 +504,11 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
       const blob = await canvas.toBlob({ format: 'png', multiplier: 1 })
       if (!blob) throw new Error('Could not export the slide as an image')
 
-      const filename = `Slide ${new Date().toISOString().slice(0, 19).replace('T', ' ')}.png`
+      const timestampName = `Slide ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`
+      const baseName = sanitizeSlideName(slideName) || timestampName
+      const existingFilenames = new Set(allFiles.map((f) => f.filename))
+      const filename = uniqueSlideFilename(baseName, existingFilenames)
+
       const uploadResponse = await fetch(
         `${MEDIA_LIBRARY_UPLOAD_URL}?${new URLSearchParams({ filename, mediaType: 'image' })}`,
         { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob }
@@ -335,7 +543,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-2xl">
+      <div className="flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h2 className="text-lg font-bold uppercase tracking-wide text-primary">
             {initialRecipe ? 'Edit Slide' : 'Create Slide'}
@@ -346,7 +554,9 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
         </div>
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6 md:flex-row">
-          {/* Canvas */}
+          {/* Canvas - fixed, deliberately modest display size so the
+              sidebar to its right is always visible without scrolling
+              the modal on a typical browser window. */}
           <div className="flex flex-shrink-0 flex-col items-center gap-2">
             <div
               className="overflow-hidden rounded-lg border border-border shadow-lg"
@@ -354,7 +564,10 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
             >
               <canvas ref={canvasElRef} />
             </div>
-            <p className="text-xs text-muted-500">Double-click a text box to edit its wording directly on the canvas.</p>
+            <p className="max-w-[640px] text-xs text-muted-500">
+              Double-click a text box to edit its wording directly on the canvas. Drag any element to move it, its
+              corners to resize, its top handle to rotate.
+            </p>
           </div>
 
           {/* Controls */}
@@ -362,35 +575,45 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
             {/* Background */}
             <section>
               <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">Background</div>
-              <div className="mb-2 flex gap-4">
+              <div className="mb-2 flex flex-wrap gap-4">
                 <label className="flex items-center gap-1.5 text-sm text-muted-300">
                   <input
                     type="radio"
-                    checked={background.type === 'color'}
-                    onChange={() => setBackground(defaultBackground())}
+                    checked={backgroundMode === 'color'}
+                    onChange={() => {
+                      setBackgroundMode('color')
+                      if (background.type !== 'color') setBackground(defaultBackground())
+                    }}
                   />
                   Solid colour
                 </label>
                 <label className="flex items-center gap-1.5 text-sm text-muted-300">
                   <input
                     type="radio"
-                    checked={background.type === 'image'}
-                    onChange={() =>
-                      setBackground({ type: 'image', mediaLibraryId: imageFiles[0]?.id ?? '' })
-                    }
+                    checked={backgroundMode === 'image'}
+                    onChange={() => {
+                      setBackgroundMode('image')
+                      if (background.type !== 'image') setBackground({ type: 'image', mediaLibraryId: imageFiles[0]?.id ?? '' })
+                    }}
                     disabled={imageFiles.length === 0}
                   />
                   Existing image
                 </label>
+                <label className="flex items-center gap-1.5 text-sm text-muted-300">
+                  <input type="radio" checked={backgroundMode === 'upload'} onChange={() => setBackgroundMode('upload')} />
+                  Upload new image
+                </label>
               </div>
-              {background.type === 'color' ? (
+
+              {backgroundMode === 'color' && background.type === 'color' && (
                 <input
                   type="color"
                   value={background.color}
                   onChange={(event) => setBackground({ type: 'color', color: event.target.value })}
                   className="h-9 w-20 cursor-pointer rounded border border-slate-700 bg-slate-900/80"
                 />
-              ) : (
+              )}
+              {backgroundMode === 'image' && background.type === 'image' && (
                 <select
                   value={background.mediaLibraryId}
                   onChange={(event) => setBackground({ type: 'image', mediaLibraryId: event.target.value })}
@@ -402,6 +625,104 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                     </option>
                   ))}
                 </select>
+              )}
+              {backgroundMode === 'upload' && (
+                <div className="flex flex-col gap-1.5">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBackgroundFileChange}
+                    disabled={backgroundUploadBusy}
+                    className="text-sm text-muted-300"
+                  />
+                  {backgroundUploadBusy && <p className="text-xs text-muted-400">Uploading…</p>}
+                  {backgroundUploadError && <p className="text-xs font-semibold text-status-bad">{backgroundUploadError}</p>}
+                </div>
+              )}
+            </section>
+
+            {/* Images */}
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-bold uppercase tracking-widest text-accent-sky-400">Images</div>
+                <button
+                  type="button"
+                  onClick={() => setAddingImage((prev) => !prev)}
+                  className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500"
+                >
+                  + Add Image
+                </button>
+              </div>
+
+              {addingImage && (
+                <div className="mb-3 flex flex-col gap-2 rounded-xl border border-dashed border-slate-700 p-3">
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-1.5 text-sm text-muted-300">
+                      <input
+                        type="radio"
+                        checked={addImageMode === 'existing'}
+                        onChange={() => setAddImageMode('existing')}
+                        disabled={imageFiles.length === 0}
+                      />
+                      Existing image
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm text-muted-300">
+                      <input type="radio" checked={addImageMode === 'upload'} onChange={() => setAddImageMode('upload')} />
+                      Upload new
+                    </label>
+                  </div>
+                  {addImageMode === 'existing' ? (
+                    <div className="flex gap-2">
+                      <select
+                        value={addImageExistingId}
+                        onChange={(event) => setAddImageExistingId(event.target.value)}
+                        className="flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                      >
+                        <option value="">— choose an image —</option>
+                        {imageFiles.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.filename}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleAddExistingImage}
+                        disabled={!addImageExistingId}
+                        className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-50"
+                      >
+                        Add to Canvas
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAddImageFileChange}
+                      disabled={addImageBusy}
+                      className="text-sm text-muted-300"
+                    />
+                  )}
+                  {addImageBusy && <p className="text-xs text-muted-400">Uploading…</p>}
+                  {addImageError && <p className="text-xs font-semibold text-status-bad">{addImageError}</p>}
+                </div>
+              )}
+
+              {selected?.kind === 'image' ? (
+                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-accent-sky-500/40 bg-slate-950/40 p-3">
+                  <p className="text-sm text-muted-300">
+                    Image selected - drag to move, drag a corner to resize, use the top handle to rotate.
+                  </p>
+                  <button type="button" onClick={handleDeleteSelected} className="self-start text-xs font-semibold text-status-bad">
+                    Delete this image
+                  </button>
+                </div>
+              ) : (
+                !addingImage && (
+                  <p className="text-sm text-muted-500">
+                    Click "+ Add Image" to place a photo on the slide (e.g. a headshot over the background).
+                  </p>
+                )
               )}
             </section>
 
@@ -418,13 +739,13 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                 </button>
               </div>
 
-              {selected ? (
+              {selected?.kind === 'text' ? (
                 <div className="flex flex-col gap-3 rounded-xl border border-dashed border-accent-sky-500/40 bg-slate-950/40 p-3">
                   <label className="flex flex-col gap-1.5">
                     <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Text</span>
                     <textarea
                       value={selected.text}
-                      onChange={(event) => updateSelected({ text: event.target.value })}
+                      onChange={(event) => updateSelectedText({ text: event.target.value })}
                       rows={2}
                       className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                     />
@@ -434,7 +755,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                     <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Font</span>
                     <select
                       value={selected.fontFamily}
-                      onChange={(event) => updateSelected({ fontFamily: event.target.value as SlideFontFamily })}
+                      onChange={(event) => updateSelectedText({ fontFamily: event.target.value as SlideFontFamily })}
                       className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                     >
                       {SLIDE_FONT_OPTIONS.map((opt) => (
@@ -453,7 +774,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                         min={8}
                         max={300}
                         value={selected.fontSize}
-                        onChange={(event) => updateSelected({ fontSize: Number(event.target.value) || 48 })}
+                        onChange={(event) => updateSelectedText({ fontSize: Number(event.target.value) || 48 })}
                         className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                       />
                     </label>
@@ -462,7 +783,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                       <input
                         type="color"
                         value={selected.color}
-                        onChange={(event) => updateSelected({ color: event.target.value })}
+                        onChange={(event) => updateSelectedText({ color: event.target.value })}
                         className="h-9 w-full cursor-pointer rounded border border-slate-700 bg-slate-900/80"
                       />
                     </label>
@@ -473,7 +794,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                       <button
                         key={align}
                         type="button"
-                        onClick={() => updateSelected({ align })}
+                        onClick={() => updateSelectedText({ align })}
                         className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest ${
                           selected.align === align
                             ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
@@ -485,7 +806,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                     ))}
                     <button
                       type="button"
-                      onClick={() => updateSelected({ bold: !selected.bold })}
+                      onClick={() => updateSelectedText({ bold: !selected.bold })}
                       className={`rounded-lg border px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
                         selected.bold
                           ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
@@ -496,7 +817,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
                     </button>
                     <button
                       type="button"
-                      onClick={() => updateSelected({ italic: !selected.italic })}
+                      onClick={() => updateSelectedText({ italic: !selected.italic })}
                       className={`rounded-lg border px-3 py-1.5 text-xs italic uppercase tracking-widest ${
                         selected.italic
                           ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
@@ -518,30 +839,42 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved }: 
               ) : (
                 <p className="text-sm text-muted-500">
                   Click "+ Add Text Box", or select an existing one on the canvas, to edit its font/size/colour/
-                  alignment here. Drag its corners to resize, drag its edges to rotate.
+                  alignment here.
                 </p>
               )}
             </section>
 
             {error && <p className="text-sm font-semibold text-status-bad">{error}</p>}
 
-            <div className="mt-auto flex gap-3 border-t border-border pt-4">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save Slide'}
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={saving}
-                className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-2 text-sm font-semibold text-muted-400 hover:border-sky-500 disabled:opacity-50"
-              >
-                Cancel
-              </button>
+            <div className="mt-auto flex flex-col gap-3 border-t border-border pt-4">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Slide name</span>
+                <input
+                  type="text"
+                  value={slideName}
+                  onChange={(event) => setSlideName(event.target.value)}
+                  placeholder="e.g. Trial Flights Promo"
+                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save Slide'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={saving}
+                  className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-2 text-sm font-semibold text-muted-400 hover:border-sky-500 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
