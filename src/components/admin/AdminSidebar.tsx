@@ -73,7 +73,13 @@ export default function AdminSidebar(): JSX.Element {
   const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper))
 
   return (
-    <aside className="flex w-64 flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
+    <aside className="sticky top-0 flex h-screen w-64 flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
+      {/* Without sticky+h-screen, this flex-row's default align-items:
+          stretch makes <aside> match <main>'s content height - on pages
+          taller than one viewport (e.g. ATC Control), that stretched the
+          whole sidebar past the fold and pushed SidebarUserMenu off-screen
+          entirely. h-screen locks it to one viewport; sticky keeps it
+          pinned while <main> scrolls independently. */}
       <div className="px-5 pb-4 pt-6">
         <Link to="/" className="text-lg font-black uppercase tracking-wide text-primary transition hover:text-accent-sky-400">
           Shobdon Airfield
