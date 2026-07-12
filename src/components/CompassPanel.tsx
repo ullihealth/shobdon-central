@@ -127,8 +127,14 @@ const THRESHOLD_STRIPE_COUNT = 5
 const THRESHOLD_MARKING_BLOCK_LENGTH = 20
 
 // Visible clearance between the marking block's inner edge and the
-// identifier numeral, when that strip's markings are on.
-const THRESHOLD_MARKING_LABEL_GAP = 8
+// identifier numeral, when that strip's markings are on. Was 8 - too
+// tight once the stripes became solid white rects (vs. the old
+// checkerboard's lighter texture), so the numeral's own glyph height
+// routinely overlapped the block instead of clearing it. More than
+// doubled so the gap comfortably outlasts a typical digit's rendered
+// height at the font sizes actually in use (14-20px), not just its
+// anchor point.
+const THRESHOLD_MARKING_LABEL_GAP = 18
 
 // Identifier numeral inset from each strip end - unchanged "previous
 // position" when that strip's threshold markings are off.
