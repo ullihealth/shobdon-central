@@ -23,5 +23,13 @@ export const MEDIA_LIBRARY_URL = '/api/tenant/media-library'
 export const MEDIA_LIBRARY_UPLOAD_URL = '/api/tenant/media-library/upload'
 export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
 
+// Slide composer - see SlideEditor.tsx. Recipe attach is a separate PUT
+// from the upload itself (upload.ts stays completely untouched); the
+// image proxy is same-origin so an existing library image can be loaded
+// into a <canvas> as a background without tainting it (the public R2
+// bucket sends no CORS headers).
+export const mediaLibraryRecipeUrl = (fileId: string): string => `/api/tenant/media-library/${fileId}/recipe`
+export const mediaLibraryImageProxyUrl = (fileId: string): string => `/api/tenant/media-library/${fileId}/image`
+
 // Owner/atc-role ATC-control endpoint.
 export const OPS_PANEL_URL = '/api/tenant/ops-panel'

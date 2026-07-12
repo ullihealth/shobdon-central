@@ -1,10 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { CarouselSlot, CropRect, MediaLibraryFile } from '../types/mediaLibrary'
 import { CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_UPLOAD_URL, MEDIA_LIBRARY_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { authClient } from '../lib/auth/authClient'
 import MediaSlotRenderer, { type MediaSlotVisual } from '../components/media/MediaSlotRenderer'
+
+// Dynamic import - this is what keeps fabric.js and the self-hosted
+// slide fonts (~90KB+ gzipped combined) out of every bundle except the
+// one fetched when a media-manager user actually clicks "Create Slide"/
+// "Edit Slide". The public dashboard route never renders this page at
+// all, and even here on /media-manager the chunk isn't fetched until
+// the editor is actually opened.
+const SlideEditor = lazy(() => import('../components/media/SlideEditor'))
 
 interface CameraOption {
   slot: number
@@ -384,6 +392,12 @@ export default function MediaManagerPage(): JSX.Element {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [editingSlotNumber, setEditingSlotNumber] = useState<number | null>(null)
+  // null = closed; a MediaLibraryFile (with a recipe) = re-editing that
+  // slide; an empty-shell value would be wrong here - "create new" is
+  // represented by the boolean below instead, since there's no existing
+  // file/recipe to point at yet.
+  const [editingSlideFile, setEditingSlideFile] = useState<MediaLibraryFile | null>(null)
+  const [creatingSlide, setCreatingSlide] = useState(false)
   const pendingSavesRef = useRef<Map<number, CarouselSlot>>(new Map())
   const saveTimerRef = useRef<number | undefined>(undefined)
 
@@ -454,6 +468,25 @@ export default function MediaManagerPage(): JSX.Element {
     } finally {
       setUploading(false)
     }
+  }
+
+  // Saving a slide (whether "Create Slide" or "Edit Slide") always
+  // produces a NEW file/library entry - v1 scope deliberately does not
+  // overwrite the file being re-edited in place (see SlideEditor.tsx's
+  // header comment and this session's plan). Reloading from the server
+  // guarantees the list reflects exactly what's actually stored,
+  // including the parsed slideRecipe. Deliberately does NOT close the
+  // editor itself - SlideEditor closes on full success, but keeps
+  // itself open (with the new file already safely saved and this
+  // reload already run) if only the recipe-attach step failed, so its
+  // warning message is actually visible before the user dismisses it.
+  function handleSlideSaved() {
+    loadLibrary()
+  }
+
+  function closeSlideEditor() {
+    setCreatingSlide(false)
+    setEditingSlideFile(null)
   }
 
   async function handleDeleteFile(file: MediaLibraryFile) {
@@ -568,16 +601,25 @@ export default function MediaManagerPage(): JSX.Element {
                 />
               </div>
 
-              <label className="mb-4 inline-block cursor-pointer rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400">
-                {uploading ? 'Uploading…' : '+ Upload file'}
-                <input
-                  type="file"
-                  accept="image/*,video/mp4,application/pdf"
-                  onChange={handleUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
+              <div className="mb-4 flex flex-wrap gap-3">
+                <label className="inline-block cursor-pointer rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400">
+                  {uploading ? 'Uploading…' : '+ Upload file'}
+                  <input
+                    type="file"
+                    accept="image/*,video/mp4,application/pdf"
+                    onChange={handleUpload}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCreatingSlide(true)}
+                  className="rounded-lg border border-accent-sky-500/60 bg-slate-900/40 px-4 py-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400 transition hover:border-accent-sky-400"
+                >
+                  ✨ Create Slide
+                </button>
+              </div>
               {uploadError && <p className="mb-4 text-sm font-semibold text-status-bad">{uploadError}</p>}
               {deleteError && <p className="mb-4 text-sm font-semibold text-status-bad">{deleteError}</p>}
 
@@ -602,13 +644,24 @@ export default function MediaManagerPage(): JSX.Element {
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFile(file)}
-                        className="text-xs font-semibold text-status-bad"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {file.slideRecipe && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingSlideFile(file)}
+                            className="text-xs font-semibold text-accent-sky-400"
+                          >
+                            ✏️ Edit Slide
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFile(file)}
+                          className="text-xs font-semibold text-status-bad"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -737,6 +790,23 @@ export default function MediaManagerPage(): JSX.Element {
           </>
         )}
       </div>
+
+      {(creatingSlide || editingSlideFile) && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+              <p className="text-sm font-semibold text-muted-300">Loading slide editor…</p>
+            </div>
+          }
+        >
+          <SlideEditor
+            files={files}
+            initialRecipe={editingSlideFile?.slideRecipe ?? null}
+            onClose={closeSlideEditor}
+            onSaved={handleSlideSaved}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

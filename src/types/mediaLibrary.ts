@@ -1,3 +1,5 @@
+import type { SlideRecipe } from './slideRecipe'
+
 export interface MediaLibraryFile {
   id: string
   filename: string
@@ -6,6 +8,10 @@ export interface MediaLibraryFile {
   mp4DurationSeconds: number | null
   uploadedAt: string
   url: string | null
+  // Non-null only for a flattened PNG created by the /media-manager
+  // slide composer - lets the library list offer "Edit Slide" instead
+  // of (or alongside) Delete. Null for every normal upload.
+  slideRecipe: SlideRecipe | null
 }
 
 // Percentage sub-rect of the source image/video to display - x/y are the

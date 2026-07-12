@@ -22,6 +22,7 @@ interface MediaLibraryRow {
   sizeBytes: number;
   mp4DurationSeconds: number | null;
   uploadedAt: string;
+  slideRecipeJson: string | null;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -31,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const { results } = await env.DB
     .prepare(
-      "SELECT id, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt FROM media_library WHERE organizationId = ? ORDER BY uploadedAt DESC"
+      "SELECT id, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, slideRecipeJson FROM media_library WHERE organizationId = ? ORDER BY uploadedAt DESC"
     )
     .bind(organizationId)
     .all<MediaLibraryRow>();
@@ -41,9 +42,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Resolve each file's real public URL server-side (same MEDIA_PUBLIC_BASE_URL +
   // r2Key pattern the public config endpoint uses) so the media manager can render
   // actual thumbnails instead of icon-only placeholders.
-  const files = results.map(({ r2Key, ...file }) => ({
+  const files = results.map(({ r2Key, slideRecipeJson, ...file }) => ({
     ...file,
     url: env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${r2Key}` : null,
+    // Parsed here (not left as a raw string) so the frontend never needs
+    // its own JSON.parse/try-catch for this - null for every normal
+    // upload, only non-null for a composer-generated slide.
+    slideRecipe: slideRecipeJson ? JSON.parse(slideRecipeJson) : null,
   }));
 
   return jsonResponse({ files, totalBytes, capBytes: MEDIA_QUOTA_BYTES });
