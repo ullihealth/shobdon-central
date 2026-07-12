@@ -25,11 +25,6 @@ function renderMediaContent(item: MediaItem) {
   }
 }
 
-function mediaTypeLabel(item: MediaItem, webcamUrl: string): string {
-  if (webcamUrl) return 'webcam'
-  return item.type === 'empty' ? 'Placeholder' : item.type
-}
-
 // One renderer per carousel slot mediaType - webcam and image are the
 // exact same iframe/img markup MediaPanel already used for the single-
 // item case (same className/attributes), just parameterised per slot
@@ -141,10 +136,8 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
   const hasCarousel = carouselSlots.length > 0
   const activeSlot = hasCarousel ? carouselSlots[activeIndex] : null
 
-  // The header bar (Media / type badge) is the only framing that should
-  // stay - the p-6 below it was adding unwanted dark padding around
-  // actual media content (image/mp4/webcam/pdf), which should fill the
-  // box edge-to-edge. Only the empty-state placeholder text keeps its
+  // Actual media content (image/mp4/webcam/pdf) fills the panel
+  // edge-to-edge. Only the empty-state placeholder text keeps its
   // padding, since it's centred text, not a media element.
   const isEdgeToEdgeContent = hasCarousel ? !!activeSlot : !!webcamUrl || item.type === 'image'
 
@@ -152,31 +145,23 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
     <div
       className="aspect-video h-full max-h-full max-w-full overflow-hidden rounded-xl border border-border bg-slate-950/90 shadow-lg shadow-slate-950/30"
     >
-      <div className="flex h-full flex-col rounded-lg border border-dashed border-border bg-slate-900/60">
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
-          <div className="text-sm font-semibold uppercase tracking-widest text-muted-400">Media</div>
-          <div className="rounded-full bg-slate-800 px-3 py-1 text-xs uppercase tracking-widest text-muted-400">
-            {hasCarousel ? (activeSlot?.mediaType ?? '') : mediaTypeLabel(item, webcamUrl)}
-          </div>
-        </div>
-        <div
-          className={`flex flex-1 items-center justify-center overflow-hidden text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
-        >
-          {hasCarousel ? (
-            activeSlot && renderCarouselSlot(activeSlot)
-          ) : webcamUrl ? (
-            <iframe
-              src={webcamUrl}
-              className="h-full w-full"
-              style={{ border: 0 }}
-              allow="autoplay"
-              allowFullScreen
-              title="Aeroclub webcam"
-            />
-          ) : (
-            renderMediaContent(item)
-          )}
-        </div>
+      <div
+        className={`flex h-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-slate-900/60 text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
+      >
+        {hasCarousel ? (
+          activeSlot && renderCarouselSlot(activeSlot)
+        ) : webcamUrl ? (
+          <iframe
+            src={webcamUrl}
+            className="h-full w-full"
+            style={{ border: 0 }}
+            allow="autoplay"
+            allowFullScreen
+            title="Aeroclub webcam"
+          />
+        ) : (
+          renderMediaContent(item)
+        )}
       </div>
     </div>
   )
