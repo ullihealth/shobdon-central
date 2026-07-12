@@ -27,7 +27,7 @@ export default function SidebarGroup({ group, activePath, collapsed, onToggle }:
               <Link
                 key={item.to}
                 to={item.to}
-                className={`block rounded-lg px-3 py-2 text-base font-semibold transition ${
+                className={`block rounded-lg py-2 pl-[17px] pr-3 text-sm font-semibold transition ${
                   active ? 'bg-accent-sky-500/15 text-accent-sky-400' : 'text-slate-300 hover:bg-slate-900/80 hover:text-white'
                 }`}
               >
