@@ -1,18 +1,14 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import Header from '../components/Header'
+import { Link } from 'react-router-dom'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
 import InternetWeatherConfigSection from '../components/config/InternetWeatherConfigSection'
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
-import { authClient } from '../lib/auth/authClient'
 import { loadWeatherConfig, saveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
 export default function ConfigPage(): JSX.Element {
-  const navigate = useNavigate()
   const [config, setConfig] = useState<WeatherConfig>(() => loadWeatherConfig())
-  const [loggingOut, setLoggingOut] = useState(false)
 
   function updateConfig(next: WeatherConfig) {
     setConfig(next)
@@ -23,89 +19,34 @@ export default function ConfigPage(): JSX.Element {
     updateConfig({ ...config, activeProvider })
   }
 
-  async function handleLogout() {
-    setLoggingOut(true)
-    await authClient.signOut()
-    navigate('/login')
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
-      {/* Header uses the same wide container as the dashboard so the absolutely-centred
-          clock has room and never overlaps the title. */}
-      <div className="mx-auto h-24 max-w-[1920px] px-10 pt-6">
-        <Header />
-      </div>
+    <div className="mx-auto max-w-3xl px-6 pb-10 pt-10">
+      <div className="rounded-3xl border border-slate-700 bg-slate-950/85 p-10 shadow-xl shadow-slate-950/20">
+        {/* Not part of the sidebar - /checklist is a public, non-role-gated
+            route (no RequireAuth), so it doesn't belong in the authenticated
+            admin nav. Kept reachable here as page content instead. */}
+        <div className="mb-8">
+          <Link
+            to="/checklist"
+            className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
+          >
+            📋 ATC Visit Checklist
+          </Link>
+        </div>
 
-      <div className="mx-auto max-w-3xl px-6 pb-10">
-        <div className="mt-6 rounded-3xl border border-slate-700 bg-slate-950/85 p-10 shadow-xl shadow-slate-950/20">
-          <div className="mb-8 flex flex-wrap gap-3">
-            <Link
-              to="/checklist"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              📋 ATC Visit Checklist
-            </Link>
-            <Link
-              to="/design"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              🎨 Dashboard Design
-            </Link>
-            <Link
-              to="/runways"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              🛬 Runways
-            </Link>
-            <Link
-              to="/members"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              👥 Members
-            </Link>
-            <Link
-              to="/media-manager"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              🎞️ Media Manager
-            </Link>
-            <Link
-              to="/atc-control"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              🛫 ATC Control
-            </Link>
-            <Link
-              to="/account"
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-sky-500 hover:text-white"
-            >
-              👤 My Account
-            </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="inline-block rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-status-bad hover:text-status-bad disabled:opacity-50"
-            >
-              {loggingOut ? 'Logging out…' : '🚪 Log out'}
-            </button>
-          </div>
+        <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />
 
-          <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />
-
-          <div className="mt-10 border-t border-slate-800 pt-10">
-            {config.activeProvider === 'atc' && (
-              <AtcWeatherConfigSection config={config.atc} onChange={(atc) => updateConfig({ ...config, atc })} />
-            )}
-            {config.activeProvider === 'internet' && (
-              <InternetWeatherConfigSection
-                config={config.internet}
-                onChange={(internet) => updateConfig({ ...config, internet })}
-              />
-            )}
-            {config.activeProvider === 'mock' && <MockWeatherConfigSection />}
-          </div>
+        <div className="mt-10 border-t border-slate-800 pt-10">
+          {config.activeProvider === 'atc' && (
+            <AtcWeatherConfigSection config={config.atc} onChange={(atc) => updateConfig({ ...config, atc })} />
+          )}
+          {config.activeProvider === 'internet' && (
+            <InternetWeatherConfigSection
+              config={config.internet}
+              onChange={(internet) => updateConfig({ ...config, internet })}
+            />
+          )}
+          {config.activeProvider === 'mock' && <MockWeatherConfigSection />}
         </div>
       </div>
     </div>

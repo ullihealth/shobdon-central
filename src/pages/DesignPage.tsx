@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
 import Header from '../components/Header'
 import LeftInfoPanel from '../components/LeftInfoPanel'
 import CentreDisplayPanel from '../components/CentreDisplayPanel'
@@ -273,187 +272,182 @@ export default function DesignPage(): JSX.Element {
   const previewStyle = Object.fromEntries(DESIGN_TOKEN_KEYS.map((key) => [key, activeTokens[key]])) as CSSProperties
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
-      <div className="mx-auto max-w-6xl px-6 py-8">
-        <Link to="/config" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-          ← Back to Config
-        </Link>
-        <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">Dashboard Design</h1>
-        <p className="mb-6 max-w-2xl text-sm text-muted-400">
-          Experiment freely - the preview below only reacts to the colours you pick here, and nothing is saved
-          until you choose to. When you're ready, use "Apply to Live Dashboard" further down to push a theme to
-          every device that loads the real dashboard.
-        </p>
+    <div className="mx-auto max-w-6xl px-6 py-8">
+      <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Dashboard Design</h1>
+      <p className="mb-6 max-w-2xl text-sm text-muted-400">
+        Experiment freely - the preview below only reacts to the colours you pick here, and nothing is saved
+        until you choose to. When you're ready, use "Apply to Live Dashboard" further down to push a theme to
+        every device that loads the real dashboard.
+      </p>
 
-        {/* LIVE PREVIEW - isolated: CSS variable overrides only ever apply to this wrapper.
-            Rendered at the dashboard's real 1920x1080 reference size (matching
-            DashboardPage.tsx's own max-w-[1920px]/7%-1fr/23-54-23 layout exactly), then
-            scaled down as one unit via transform - not squeezed into a shorter box - so
-            every element, including the compass, stays proportionally correct instead
-            of being clipped. */}
+      {/* LIVE PREVIEW - isolated: CSS variable overrides only ever apply to this wrapper.
+          Rendered at the dashboard's real 1920x1080 reference size (matching
+          DashboardPage.tsx's own max-w-[1920px]/7%-1fr/23-54-23 layout exactly), then
+          scaled down as one unit via transform - not squeezed into a shorter box - so
+          every element, including the compass, stays proportionally correct instead
+          of being clipped. */}
+      <div
+        className="mb-8 overflow-hidden rounded-2xl border border-border"
+        style={{ width: PREVIEW_DISPLAY_WIDTH, height: PREVIEW_DISPLAY_HEIGHT, ...previewStyle }}
+      >
         <div
-          className="mb-8 overflow-hidden rounded-2xl border border-border"
-          style={{ width: PREVIEW_DISPLAY_WIDTH, height: PREVIEW_DISPLAY_HEIGHT, ...previewStyle }}
+          style={{
+            width: PREVIEW_REFERENCE_WIDTH,
+            height: PREVIEW_REFERENCE_HEIGHT,
+            transform: `scale(${PREVIEW_SCALE})`,
+            transformOrigin: 'top left',
+          }}
         >
-          <div
-            style={{
-              width: PREVIEW_REFERENCE_WIDTH,
-              height: PREVIEW_REFERENCE_HEIGHT,
-              transform: `scale(${PREVIEW_SCALE})`,
-              transformOrigin: 'top left',
-            }}
-          >
-            <WeatherProvider forcedConfig={MOCK_CONFIG}>
-              <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
-                <div className="grid h-full grid-rows-[7%_1fr] gap-4">
-                  <Header rightSlot={<WeatherStatusIndicator />} />
-                  <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
-                    <LeftInfoPanel />
-                    <CentreDisplayPanel />
-                    <RightInfoPanel />
-                  </div>
+          <WeatherProvider forcedConfig={MOCK_CONFIG}>
+            <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
+              <div className="grid h-full grid-rows-[7%_1fr] gap-4">
+                <Header rightSlot={<WeatherStatusIndicator />} />
+                <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
+                  <LeftInfoPanel />
+                  <CentreDisplayPanel />
+                  <RightInfoPanel />
                 </div>
               </div>
-            </WeatherProvider>
-          </div>
+            </div>
+          </WeatherProvider>
         </div>
+      </div>
 
-        {/* COLOUR PICKERS - shown before Templates/Apply so the workflow reads
-            top-to-bottom: pick colours first, then save/apply them below. */}
-        <div className="mb-8 flex flex-col gap-6">
-          {TOKEN_GROUPS.map((group) => (
-            <section key={group.title} className="rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{group.title}</div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-                {group.keys.map((key) => (
-                  <label key={key} className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={rgbaToHex(activeTokens[key])}
-                      onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                      className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
-                    />
-                    <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-
-        {/* TEMPLATES */}
-        <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-          <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Templates</div>
-
-          <ul className="mb-4 flex flex-col gap-2">
-            {allTemplates.map((template) => (
-              <li
-                key={template.id}
-                className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 ${
-                  selectedId === template.id ? 'border-accent-sky-500' : 'border-border'
-                }`}
-              >
-                {renamingId === template.id ? (
+      {/* COLOUR PICKERS - shown before Templates/Apply so the workflow reads
+          top-to-bottom: pick colours first, then save/apply them below. */}
+      <div className="mb-8 flex flex-col gap-6">
+        {TOKEN_GROUPS.map((group) => (
+          <section key={group.title} className="rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{group.title}</div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+              {group.keys.map((key) => (
+                <label key={key} className="flex items-center gap-3">
                   <input
-                    value={renameInput}
-                    onChange={(event) => setRenameInput(event.target.value)}
-                    onKeyDown={(event) => event.key === 'Enter' && handleConfirmRename()}
-                    className="rounded border border-border bg-slate-900 px-2 py-1 text-sm text-primary"
-                    autoFocus
+                    type="color"
+                    value={rgbaToHex(activeTokens[key])}
+                    onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
+                    className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
                   />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectTemplate(template)}
-                    className="text-left text-sm font-semibold text-primary"
-                  >
-                    {template.name}
+                  <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {/* TEMPLATES */}
+      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+        <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Templates</div>
+
+        <ul className="mb-4 flex flex-col gap-2">
+          {allTemplates.map((template) => (
+            <li
+              key={template.id}
+              className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 ${
+                selectedId === template.id ? 'border-accent-sky-500' : 'border-border'
+              }`}
+            >
+              {renamingId === template.id ? (
+                <input
+                  value={renameInput}
+                  onChange={(event) => setRenameInput(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && handleConfirmRename()}
+                  className="rounded border border-border bg-slate-900 px-2 py-1 text-sm text-primary"
+                  autoFocus
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTemplate(template)}
+                  className="text-left text-sm font-semibold text-primary"
+                >
+                  {template.name}
+                </button>
+              )}
+
+              <div className="flex shrink-0 gap-3 text-xs">
+                {renamingId === template.id ? (
+                  <button type="button" onClick={handleConfirmRename} className="text-accent-sky-400">
+                    Save
                   </button>
-                )}
-
-                <div className="flex shrink-0 gap-3 text-xs">
-                  {renamingId === template.id ? (
-                    <button type="button" onClick={handleConfirmRename} className="text-accent-sky-400">
-                      Save
-                    </button>
-                  ) : (
-                    <>
-                      {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
-                        <button type="button" onClick={() => handleStartRename(template)} className="text-muted-400 hover:text-primary">
-                          Rename
-                        </button>
-                      )}
-                      <button type="button" onClick={() => handleDuplicate(template)} className="text-muted-400 hover:text-primary">
-                        Duplicate
+                ) : (
+                  <>
+                    {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
+                      <button type="button" onClick={() => handleStartRename(template)} className="text-muted-400 hover:text-primary">
+                        Rename
                       </button>
-                      {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
-                        <button type="button" onClick={() => handleDelete(template.id)} className="text-status-bad">
-                          Delete
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+                    )}
+                    <button type="button" onClick={() => handleDuplicate(template)} className="text-muted-400 hover:text-primary">
+                      Duplicate
+                    </button>
+                    {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
+                      <button type="button" onClick={() => handleDelete(template.id)} className="text-status-bad">
+                        Delete
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
 
-          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
-            <input
-              value={nameInput}
-              onChange={(event) => setNameInput(event.target.value)}
-              placeholder="New template name"
-              className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
-            />
-            <button
-              type="button"
-              onClick={handleSaveAsTemplate}
-              className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
-            >
-              Save as template
-            </button>
-            <button
-              type="button"
-              onClick={handleExport}
-              className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
-            >
-              Export JSON
-            </button>
-            <label className="cursor-pointer rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white">
-              Import JSON
-              <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
-            </label>
-          </div>
-          {importError && <p className="mt-3 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
-        </section>
-
-        {/* APPLY TO LIVE DASHBOARD - deliberately separate from the Templates
-            section above: this affects the shared, physically-visible
-            display on every device, not just this browser's local template
-            list, so it gets its own confirm-gated action and its own
-            status feedback rather than being folded into "Save as template". */}
-        <section className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
-          <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Dashboard</div>
-          <p className="mb-4 text-sm text-muted-400">
-            Pushes the colours currently shown above to every device that loads the real dashboard - PC2, the
-            clubhouse display, home browsers - within about 15 seconds.
-          </p>
+        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+          <input
+            value={nameInput}
+            onChange={(event) => setNameInput(event.target.value)}
+            placeholder="New template name"
+            className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+          />
           <button
             type="button"
-            onClick={handleApplyToLiveDashboard}
-            disabled={applyStatus === 'working'}
-            className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={handleSaveAsTemplate}
+            className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
           >
-            {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Dashboard'}
+            Save as template
           </button>
-          {applyStatus === 'success' && (
-            <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
-          )}
-          {applyStatus === 'error' && (
-            <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the theme - check connectivity and try again.</p>
-          )}
-        </section>
-      </div>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
+          >
+            Export JSON
+          </button>
+          <label className="cursor-pointer rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white">
+            Import JSON
+            <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
+          </label>
+        </div>
+        {importError && <p className="mt-3 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
+      </section>
+
+      {/* APPLY TO LIVE DASHBOARD - deliberately separate from the Templates
+          section above: this affects the shared, physically-visible
+          display on every device, not just this browser's local template
+          list, so it gets its own confirm-gated action and its own
+          status feedback rather than being folded into "Save as template". */}
+      <section className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
+        <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Dashboard</div>
+        <p className="mb-4 text-sm text-muted-400">
+          Pushes the colours currently shown above to every device that loads the real dashboard - PC2, the
+          clubhouse display, home browsers - within about 15 seconds.
+        </p>
+        <button
+          type="button"
+          onClick={handleApplyToLiveDashboard}
+          disabled={applyStatus === 'working'}
+          className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Dashboard'}
+        </button>
+        {applyStatus === 'success' && (
+          <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
+        )}
+        {applyStatus === 'error' && (
+          <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the theme - check connectivity and try again.</p>
+        )}
+      </section>
     </div>
   )
 }

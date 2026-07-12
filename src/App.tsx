@@ -12,6 +12,7 @@ import MembersPage from './pages/MembersPage'
 import RunwaysPage from './pages/RunwaysPage'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
+import AdminLayout from './components/admin/AdminLayout'
 
 export default function App(): JSX.Element {
   return (
@@ -19,92 +20,100 @@ export default function App(): JSX.Element {
       <RemoteRefreshWatcher />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        {/* Owner+admin only: admin is a full alias of owner (original
-            design intent - e5aa79a incorrectly scoped it down to
-            media-manager-only, corrected here). atc/media members are
-            cleanly denied (not a blank/broken page) rather than
-            redirected to /login - they ARE logged in, just not
-            permitted here. */}
-        <Route
-          path="/config"
-          element={
-            <RequireAuth requireRole={['owner', 'admin']}>
-              <ConfigPage />
-            </RequireAuth>
-          }
-        />
         <Route path="/checklist" element={<ChecklistPage />} />
-        <Route
-          path="/design"
-          element={
-            <RequireAuth requireRole={['owner', 'admin']}>
-              <DesignPage />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/runways"
-          element={
-            <RequireAuth requireRole={['owner', 'admin']}>
-              <RunwaysPage />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/members"
-          element={
-            <RequireAuth requireRole={['owner', 'admin']}>
-              <MembersPage />
-            </RequireAuth>
-          }
-        />
-        {/* Owner, admin, AND media role. admin was always documented
-            (src/types/member.ts) as having media-manager access, but was
-            missed here when this route was first built - a real admin-
-            role account hit a "Not authorized" dead end after login as
-            a result. */}
-        <Route
-          path="/media-manager"
-          element={
-            <RequireAuth requireRole={['owner', 'admin', 'media']}>
-              <MediaManagerPage />
-            </RequireAuth>
-          }
-        />
-        {/* Owner, admin, AND atc role - admin included for the same
-            full-owner-alias reason as /config above. NOT media -
-            developer already has access via existing owner-level
-            auto-membership. */}
-        <Route
-          path="/atc-control"
-          element={
-            <RequireAuth requireRole={['owner', 'admin', 'atc']}>
-              <AtcControlPage />
-            </RequireAuth>
-          }
-        />
-        {/* Any logged-in role - no requireRole, so owner/admin/atc/media
-            all reach this the same way. Self-service password change and
-            logout aren't privileged actions, just a valid session. */}
-        <Route
-          path="/account"
-          element={
-            <RequireAuth>
-              <AccountPage />
-            </RequireAuth>
-          }
-        />
-        {/* isDeveloper-gated, NOT role-gated - the real developer account
-            also happens to hold 'owner' role at Shobdon, but every other
-            owner/admin must be denied here regardless of role. */}
-        <Route
-          path="/developertools"
-          element={
-            <RequireAuth requireDeveloper>
-              <DeveloperToolsPage />
-            </RequireAuth>
-          }
-        />
+        {/* Shared sidebar shell (AdminLayout.tsx) for every authenticated
+            admin page - a React Router layout route rendering <Outlet/>.
+            Per-route access gating below is completely unchanged: each
+            child route still wraps its page in RequireAuth with its own
+            requireRole/requireDeveloper, exactly as before this layout
+            route was introduced. */}
+        <Route element={<AdminLayout />}>
+          {/* Owner+admin only: admin is a full alias of owner (original
+              design intent - e5aa79a incorrectly scoped it down to
+              media-manager-only, corrected here). atc/media members are
+              cleanly denied (not a blank/broken page) rather than
+              redirected to /login - they ARE logged in, just not
+              permitted here. */}
+          <Route
+            path="/config"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <ConfigPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/design"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <DesignPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/runways"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <RunwaysPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/members"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <MembersPage />
+              </RequireAuth>
+            }
+          />
+          {/* Owner, admin, AND media role. admin was always documented
+              (src/types/member.ts) as having media-manager access, but was
+              missed here when this route was first built - a real admin-
+              role account hit a "Not authorized" dead end after login as
+              a result. */}
+          <Route
+            path="/media-manager"
+            element={
+              <RequireAuth requireRole={['owner', 'admin', 'media']}>
+                <MediaManagerPage />
+              </RequireAuth>
+            }
+          />
+          {/* Owner, admin, AND atc role - admin included for the same
+              full-owner-alias reason as /config above. NOT media -
+              developer already has access via existing owner-level
+              auto-membership. */}
+          <Route
+            path="/atc-control"
+            element={
+              <RequireAuth requireRole={['owner', 'admin', 'atc']}>
+                <AtcControlPage />
+              </RequireAuth>
+            }
+          />
+          {/* Any logged-in role - no requireRole, so owner/admin/atc/media
+              all reach this the same way. Self-service password change and
+              logout aren't privileged actions, just a valid session. */}
+          <Route
+            path="/account"
+            element={
+              <RequireAuth>
+                <AccountPage />
+              </RequireAuth>
+            }
+          />
+          {/* isDeveloper-gated, NOT role-gated - the real developer account
+              also happens to hold 'owner' role at Shobdon, but every other
+              owner/admin must be denied here regardless of role. */}
+          <Route
+            path="/developertools"
+            element={
+              <RequireAuth requireDeveloper>
+                <DeveloperToolsPage />
+              </RequireAuth>
+            }
+          />
+        </Route>
         {/* Public live dashboard - no auth, must work for PC2, the
             clubhouse display, and anyone with the link, unchanged. */}
         <Route path="/" element={<DashboardPage />} />

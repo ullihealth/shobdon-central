@@ -1,9 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
 import type { CarouselSlot, CropRect, MediaLibraryFile } from '../types/mediaLibrary'
 import { CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_UPLOAD_URL, MEDIA_LIBRARY_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
-import { authClient } from '../lib/auth/authClient'
 import MediaSlotRenderer, { type MediaSlotVisual } from '../components/media/MediaSlotRenderer'
 
 // Dynamic import - this is what keeps fabric.js and the self-hosted
@@ -380,8 +378,6 @@ function SlotAppearanceEditor({
 }
 
 export default function MediaManagerPage(): JSX.Element {
-  const navigate = useNavigate()
-  const [loggingOut, setLoggingOut] = useState(false)
   const [files, setFiles] = useState<MediaLibraryFile[]>([])
   const [totalBytes, setTotalBytes] = useState(0)
   const [capBytes, setCapBytes] = useState(100 * 1024 * 1024)
@@ -543,39 +539,10 @@ export default function MediaManagerPage(): JSX.Element {
 
   const assignedFile = (slot: CarouselSlot) => files.find((f) => f.id === slot.mediaLibraryId)
 
-  async function handleLogout() {
-    setLoggingOut(true)
-    await authClient.signOut()
-    navigate('/login')
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
-      <div className="mx-auto max-w-4xl px-5 pb-16 pt-8">
-        {/* "/" not "/config" - media-role users (who can reach this page
-            alongside owner/admin) can't access /config, so that link
-            would just dead-end them a second time. Owner/admin can
-            always reach /config from "/" via the role-aware header link
-            (Header.tsx). */}
-        <div className="flex items-center justify-between">
-          <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-            ← Back to Dashboard
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link to="/account" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-              👤 My Account
-            </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="text-sm font-semibold text-muted-400 transition hover:text-status-bad disabled:opacity-50"
-            >
-              {loggingOut ? 'Logging out…' : '🚪 Log out'}
-            </button>
-          </div>
-        </div>
-        <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">Media Manager</h1>
+    <>
+      <div className="mx-auto max-w-4xl px-5 pb-16 pt-10">
+        <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Media Manager</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
           Upload images, MP4 clips, and PDFs to the media library, then assign them to any of the 12 carousel
           slots. Slots cycle in order on the live dashboard, each for its own duration - plain cuts between
@@ -808,6 +775,6 @@ export default function MediaManagerPage(): JSX.Element {
           />
         </Suspense>
       )}
-    </div>
+    </>
   )
 }

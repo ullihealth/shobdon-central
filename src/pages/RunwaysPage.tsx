@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 import { TENANT_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup } from '../types/clubProfile'
@@ -198,231 +197,226 @@ export default function RunwaysPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
-      <div className="mx-auto max-w-2xl px-5 pb-16 pt-8">
-        <Link to="/config" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-          ← Back to Config
-        </Link>
-        <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">Runways</h1>
-        <p className="mb-8 max-w-2xl text-sm text-muted-400">
-          The physical facts about this airfield's runway(s) — identifiers, precise magnetic heading, and
-          surface colours. These drive both the compass graphic and the headwind/crosswind maths, so accuracy
-          matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
-        </p>
+    <div className="mx-auto max-w-2xl px-5 pb-16 pt-10">
+      <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Runways</h1>
+      <p className="mb-8 max-w-2xl text-sm text-muted-400">
+        The physical facts about this airfield's runway(s) — identifiers, precise magnetic heading, and
+        surface colours. These drive both the compass graphic and the headwind/crosswind maths, so accuracy
+        matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
+      </p>
 
-        {loading ? (
-          <p className="text-sm text-muted-400">Loading…</p>
-        ) : (
-          <div className="flex flex-col gap-6">
-            {groups.map((group, index) => (
-              <section key={group.id} className="rounded-2xl border border-border bg-panel p-6">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                    Runway {index + 1}
-                  </div>
-                  {groups.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveGroup(index)}
-                      className="text-xs font-semibold text-status-bad"
-                    >
-                      Remove
-                    </button>
-                  )}
+      {loading ? (
+        <p className="text-sm text-muted-400">Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {groups.map((group, index) => (
+            <section key={group.id} className="rounded-2xl border border-border bg-panel p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+                  Runway {index + 1}
                 </div>
+                {groups.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveGroup(index)}
+                    className="text-xs font-semibold text-status-bad"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
 
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Precise heading (degrees)
+                </span>
+                <input
+                  type="number"
+                  value={group.headingDegrees}
+                  onChange={(event) => handleHeadingChange(index, Number(event.target.value))}
+                  className="w-40 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </label>
+
+              {/* Each identifier is bound to a specific physical end via
+                  its own field, not a shared string's implicit
+                  ordering - the label names the exact heading value
+                  that end corresponds to, taken directly from the
+                  field above, so there's no separate convention to
+                  remember. */}
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Precise heading (degrees)
+                    Identifier for the {group.headingDegrees}° end
                   </span>
                   <input
-                    type="number"
-                    value={group.headingDegrees}
-                    onChange={(event) => handleHeadingChange(index, Number(event.target.value))}
-                    className="w-40 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                  />
-                </label>
-
-                {/* Each identifier is bound to a specific physical end via
-                    its own field, not a shared string's implicit
-                    ordering - the label names the exact heading value
-                    that end corresponds to, taken directly from the
-                    field above, so there's no separate convention to
-                    remember. */}
-                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                      Identifier for the {group.headingDegrees}° end
-                    </span>
-                    <input
-                      type="text"
-                      value={group.endAIdentifier}
-                      onChange={(event) => handleEndAIdentifierChange(index, event.target.value)}
-                      placeholder="e.g. 08"
-                      maxLength={2}
-                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                      Identifier for the {reciprocalHeading(group.headingDegrees)}° (opposite) end
-                    </span>
-                    <input
-                      type="text"
-                      value={group.endBIdentifier}
-                      onChange={(event) => handleEndBIdentifierChange(index, event.target.value)}
-                      placeholder="e.g. 26"
-                      maxLength={2}
-                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                    />
-                  </label>
-                </div>
-
-                <label className="mt-4 flex flex-col gap-1.5 sm:max-w-xs">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Strip length (px)
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={group.stripLengthPx}
-                    onChange={(event) => handleStripLengthChange(index, event.target.value)}
+                    type="text"
+                    value={group.endAIdentifier}
+                    onChange={(event) => handleEndAIdentifierChange(index, event.target.value)}
+                    placeholder="e.g. 08"
+                    maxLength={2}
                     className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                   />
                 </label>
-                <p className="mt-2 text-xs text-muted-500">
-                  No upper limit on strip width (set per strip below) or length - a large value can visually
-                  overlap the compass ring or letters, which is an intentional choice you're free to make, not
-                  something this page prevents.
-                </p>
-
-                <label className="mt-4 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={group.twin}
-                    onChange={(event) => handleTwinChange(index, event.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-sm text-muted-300">Twin runway (two parallel strips, e.g. grass + tarmac)</span>
-                </label>
-
-                <label className="mt-3 flex max-w-xs flex-col gap-1.5">
+                <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Direction label font size (px)
+                    Identifier for the {reciprocalHeading(group.headingDegrees)}° (opposite) end
                   </span>
                   <input
-                    type="number"
-                    min={1}
-                    value={group.identifierFontSizePx}
-                    onChange={(event) => handleFontSizeChange(index, event.target.value)}
-                    className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                    type="text"
+                    value={group.endBIdentifier}
+                    onChange={(event) => handleEndBIdentifierChange(index, event.target.value)}
+                    placeholder="e.g. 26"
+                    maxLength={2}
+                    className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                   />
                 </label>
-                <p className="mt-1 text-xs text-muted-500">
-                  Shared font size for whichever strips below have their direction labels switched on. Threshold
-                  markings and direction labels are each set independently per strip - e.g. tarmac markings on,
-                  grass off.
-                </p>
+              </div>
 
-                <div className="mt-4 flex flex-wrap gap-6">
-                  {group.strips.map((strip, stripIndex) => (
-                    <div key={stripIndex} className="flex flex-col gap-3">
-                      <div className="flex items-end gap-3">
-                        <label className="flex items-center gap-3">
-                          <input
-                            type="color"
-                            value={strip.colour}
-                            onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
-                            className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
-                          />
-                          <span className="text-xs text-muted-400">
-                            {group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
-                          </span>
-                        </label>
-                        <label className="flex flex-col gap-1.5">
-                          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                            {group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
-                          </span>
-                          <input
-                            type="number"
-                            min={1}
-                            value={strip.widthPx}
-                            onChange={(event) => handleStripWidthChange(index, stripIndex, event.target.value)}
-                            className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                          />
-                        </label>
-                      </div>
-                      <label className="flex items-center gap-2">
+              <label className="mt-4 flex flex-col gap-1.5 sm:max-w-xs">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Strip length (px)
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={group.stripLengthPx}
+                  onChange={(event) => handleStripLengthChange(index, event.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </label>
+              <p className="mt-2 text-xs text-muted-500">
+                No upper limit on strip width (set per strip below) or length - a large value can visually
+                overlap the compass ring or letters, which is an intentional choice you're free to make, not
+                something this page prevents.
+              </p>
+
+              <label className="mt-4 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={group.twin}
+                  onChange={(event) => handleTwinChange(index, event.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm text-muted-300">Twin runway (two parallel strips, e.g. grass + tarmac)</span>
+              </label>
+
+              <label className="mt-3 flex max-w-xs flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Direction label font size (px)
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={group.identifierFontSizePx}
+                  onChange={(event) => handleFontSizeChange(index, event.target.value)}
+                  className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </label>
+              <p className="mt-1 text-xs text-muted-500">
+                Shared font size for whichever strips below have their direction labels switched on. Threshold
+                markings and direction labels are each set independently per strip - e.g. tarmac markings on,
+                grass off.
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-6">
+                {group.strips.map((strip, stripIndex) => (
+                  <div key={stripIndex} className="flex flex-col gap-3">
+                    <div className="flex items-end gap-3">
+                      <label className="flex items-center gap-3">
                         <input
-                          type="checkbox"
-                          checked={strip.hasThresholdMarkings}
-                          onChange={(event) => handleStripMarkingsChange(index, stripIndex, event.target.checked)}
-                          className="h-4 w-4"
+                          type="color"
+                          value={strip.colour}
+                          onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
+                          className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
                         />
-                        <span className="text-sm text-muted-300">Threshold markings (checkerboard)</span>
+                        <span className="text-xs text-muted-400">
+                          {group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
+                        </span>
                       </label>
-                      <label className="flex items-center gap-2">
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                          {group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
+                        </span>
                         <input
-                          type="checkbox"
-                          checked={strip.showIdentifierLabel}
-                          onChange={(event) => handleStripLabelChange(index, stripIndex, event.target.checked)}
-                          className="h-4 w-4"
+                          type="number"
+                          min={1}
+                          value={strip.widthPx}
+                          onChange={(event) => handleStripWidthChange(index, stripIndex, event.target.value)}
+                          className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                         />
-                        <span className="text-sm text-muted-300">Direction labels (both ends)</span>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={strip.showCenterline}
-                          onChange={(event) => handleStripCenterlineChange(index, stripIndex, event.target.checked)}
-                          className="h-4 w-4"
-                        />
-                        <span className="text-sm text-muted-300">Dashed centreline</span>
                       </label>
                     </div>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={strip.hasThresholdMarkings}
+                        onChange={(event) => handleStripMarkingsChange(index, stripIndex, event.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm text-muted-300">Threshold markings (checkerboard)</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={strip.showIdentifierLabel}
+                        onChange={(event) => handleStripLabelChange(index, stripIndex, event.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm text-muted-300">Direction labels (both ends)</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={strip.showCenterline}
+                        onChange={(event) => handleStripCenterlineChange(index, stripIndex, event.target.checked)}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm text-muted-300">Dashed centreline</span>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
-        {!loading && groups.length < MAX_GROUPS && (
+      {!loading && groups.length < MAX_GROUPS && (
+        <button
+          type="button"
+          onClick={handleAddGroup}
+          className="mt-6 rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
+        >
+          + Add another runway
+        </button>
+      )}
+
+      {!loading && (
+        <section className="mt-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
+          <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+            Update Dashboard
+          </div>
+          <p className="mb-4 text-sm text-muted-400">
+            Pushes the runway configuration above to every device that loads the real dashboard - PC2, the
+            clubhouse display, home browsers - within about 15 seconds.
+          </p>
           <button
             type="button"
-            onClick={handleAddGroup}
-            className="mt-6 rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
+            onClick={handleUpdateDashboard}
+            disabled={applyStatus === 'working'}
+            className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            + Add another runway
+            {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
           </button>
-        )}
-
-        {!loading && (
-          <section className="mt-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
-            <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-              Update Dashboard
-            </div>
-            <p className="mb-4 text-sm text-muted-400">
-              Pushes the runway configuration above to every device that loads the real dashboard - PC2, the
-              clubhouse display, home browsers - within about 15 seconds.
-            </p>
-            <button
-              type="button"
-              onClick={handleUpdateDashboard}
-              disabled={applyStatus === 'working'}
-              className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
-            </button>
-            {applyStatus === 'success' && (
-              <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
-            )}
-            {applyStatus === 'error' && (
-              <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the changes - check connectivity and try again.</p>
-            )}
-          </section>
-        )}
-      </div>
+          {applyStatus === 'success' && (
+            <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
+          )}
+          {applyStatus === 'error' && (
+            <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the changes - check connectivity and try again.</p>
+          )}
+        </section>
+      )}
     </div>
   )
 }

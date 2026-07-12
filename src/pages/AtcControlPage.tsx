@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
 import { OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
-import { authClient } from '../lib/auth/authClient'
 
 const AIRFIELD_INFO_MAX_LENGTH = 60
 const SAFETY_NOTICE_MAX_LENGTH = 40
@@ -84,8 +82,6 @@ function ToggleButton({
 }
 
 export default function AtcControlPage(): JSX.Element {
-  const navigate = useNavigate()
-  const [loggingOut, setLoggingOut] = useState(false)
   const [loading, setLoading] = useState(true)
   const [runwayEnds, setRunwayEnds] = useState<[string, string]>(['08', '26'])
   const [activeRunwayEnd, setActiveRunwayEnd] = useState('08')
@@ -198,198 +194,167 @@ export default function AtcControlPage(): JSX.Element {
     }
   }
 
-  async function handleLogout() {
-    setLoggingOut(true)
-    await authClient.signOut()
-    navigate('/login')
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
-      <div className="mx-auto max-w-3xl px-5 pb-16 pt-8">
-        {/* "/" not "/config" - atc-role users (the only ones who normally
-            reach this page besides owner/admin) can't access /config, so
-            that link would just dead-end them a second time. Owner/admin
-            can always reach /config from "/" via the role-aware header
-            link (Header.tsx). */}
-        <div className="flex items-center justify-between">
-          <Link to="/" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-            ← Back to Dashboard
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link to="/account" className="text-sm font-semibold text-muted-400 hover:text-accent-sky-400">
-              👤 My Account
-            </Link>
+    <div className="mx-auto max-w-3xl px-5 pb-16 pt-10">
+      <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
+      <p className="mb-8 max-w-2xl text-sm text-muted-400">
+        Edit the live Ops Panel. Nothing here reaches the dashboard until you click "Update Dashboard" below -
+        toggle and type freely, changes are only staged locally until then.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-muted-400">Loading…</p>
+      ) : (
+        <>
+          {/* ── Runway in use ────────────────────────────────────────── */}
+          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+              Runway In Use
+            </div>
+            <div className="flex gap-4">
+              <ToggleButton
+                label={runwayEnds[0]}
+                active={activeRunwayEnd === runwayEnds[0]}
+                onClick={() => setActiveRunwayEnd(runwayEnds[0])}
+              />
+              <ToggleButton
+                label={runwayEnds[1]}
+                active={activeRunwayEnd === runwayEnds[1]}
+                onClick={() => setActiveRunwayEnd(runwayEnds[1])}
+              />
+            </div>
+          </section>
+
+          {/* ── Circuit direction ───────────────────────────────────── */}
+          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+              Circuit Direction
+            </div>
+            <div className="flex gap-4">
+              <ToggleButton label="Left" active={circuitDirection === 'left'} onClick={() => setCircuitDirection('left')} />
+              <ToggleButton label="Right" active={circuitDirection === 'right'} onClick={() => setCircuitDirection('right')} />
+            </div>
+          </section>
+
+          {/* ── Airfield info ────────────────────────────────────────── */}
+          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Airfield Info</div>
+              <div className="text-xs text-muted-400">
+                {airfieldInfoText.length}/{AIRFIELD_INFO_MAX_LENGTH}
+              </div>
+            </div>
+            <input
+              type="text"
+              value={airfieldInfoText}
+              onChange={handleAirfieldInfoChange}
+              maxLength={AIRFIELD_INFO_MAX_LENGTH}
+              placeholder="e.g. PPR only after 17:00"
+              className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </section>
+
+          {/* ── Safety notices ───────────────────────────────────────── */}
+          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+              Safety Notices
+            </div>
+            <p className="mb-4 text-xs text-muted-500">
+              Appended below the automatic NOTAM feed on the live dashboard - leave a row blank to omit it.
+            </p>
+
+            <div className="mb-4">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Automated NOTAM Feed
+              </div>
+              <div className="flex gap-4">
+                <ToggleButton label="On" active={showAutoNotams} onClick={() => setShowAutoNotams(true)} />
+                <ToggleButton label="Off" active={!showAutoNotams} onClick={() => setShowAutoNotams(false)} />
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Rotation Interval (seconds)
+              </div>
+              <p className="mb-2 text-xs text-muted-500">
+                How often the live dashboard's Ops Panel flips between the runway/circuit/airfield view and the
+                NOTAMS view. {NOTAMS_INTERVAL_MIN_SECONDS}-{NOTAMS_INTERVAL_MAX_SECONDS} seconds.
+              </p>
+              <input
+                type="number"
+                min={NOTAMS_INTERVAL_MIN_SECONDS}
+                max={NOTAMS_INTERVAL_MAX_SECONDS}
+                value={notamsIntervalSeconds}
+                onChange={handleNotamsIntervalChange}
+                className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {safetyNotices.map((notice, index) => (
+                <div key={index} className={notice.enabled ? undefined : 'opacity-50'}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                        Row {index + 1}
+                      </span>
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-400">
+                        <input
+                          type="checkbox"
+                          checked={notice.enabled}
+                          onChange={(event) => handleNoticeEnabledChange(index, event.target.checked)}
+                          className="h-3.5 w-3.5"
+                        />
+                        Enabled
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
+                      <span className="text-xs text-muted-400">
+                        {notice.text.length}/{SAFETY_NOTICE_MAX_LENGTH}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={notice.text}
+                    onChange={(event) => handleNoticeChange(index, event.target.value)}
+                    maxLength={SAFETY_NOTICE_MAX_LENGTH}
+                    placeholder="e.g. Bird activity near threshold"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* ── Update dashboard ─────────────────────────────────────── */}
+          <section className="rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+              Update Dashboard
+            </div>
+            <p className="mb-4 text-xs text-muted-500">
+              Publishes the staged changes above to the live dashboard - every device that loads it picks them up
+              within about 15 seconds.
+            </p>
             <button
               type="button"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="text-sm font-semibold text-muted-400 transition hover:text-status-bad disabled:opacity-50"
+              onClick={handleUpdateDashboard}
+              disabled={applyStatus === 'working'}
+              className="rounded-lg bg-accent-sky-500 px-6 py-3 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
             >
-              {loggingOut ? 'Logging out…' : '🚪 Log out'}
+              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
             </button>
-          </div>
-        </div>
-        <h1 className="mb-2 mt-3 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
-        <p className="mb-8 max-w-2xl text-sm text-muted-400">
-          Edit the live Ops Panel. Nothing here reaches the dashboard until you click "Update Dashboard" below -
-          toggle and type freely, changes are only staged locally until then.
-        </p>
-
-        {loading ? (
-          <p className="text-sm text-muted-400">Loading…</p>
-        ) : (
-          <>
-            {/* ── Runway in use ────────────────────────────────────────── */}
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                Runway In Use
-              </div>
-              <div className="flex gap-4">
-                <ToggleButton
-                  label={runwayEnds[0]}
-                  active={activeRunwayEnd === runwayEnds[0]}
-                  onClick={() => setActiveRunwayEnd(runwayEnds[0])}
-                />
-                <ToggleButton
-                  label={runwayEnds[1]}
-                  active={activeRunwayEnd === runwayEnds[1]}
-                  onClick={() => setActiveRunwayEnd(runwayEnds[1])}
-                />
-              </div>
-            </section>
-
-            {/* ── Circuit direction ───────────────────────────────────── */}
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                Circuit Direction
-              </div>
-              <div className="flex gap-4">
-                <ToggleButton label="Left" active={circuitDirection === 'left'} onClick={() => setCircuitDirection('left')} />
-                <ToggleButton label="Right" active={circuitDirection === 'right'} onClick={() => setCircuitDirection('right')} />
-              </div>
-            </section>
-
-            {/* ── Airfield info ────────────────────────────────────────── */}
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Airfield Info</div>
-                <div className="text-xs text-muted-400">
-                  {airfieldInfoText.length}/{AIRFIELD_INFO_MAX_LENGTH}
-                </div>
-              </div>
-              <input
-                type="text"
-                value={airfieldInfoText}
-                onChange={handleAirfieldInfoChange}
-                maxLength={AIRFIELD_INFO_MAX_LENGTH}
-                placeholder="e.g. PPR only after 17:00"
-                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-              />
-            </section>
-
-            {/* ── Safety notices ───────────────────────────────────────── */}
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                Safety Notices
-              </div>
-              <p className="mb-4 text-xs text-muted-500">
-                Appended below the automatic NOTAM feed on the live dashboard - leave a row blank to omit it.
-              </p>
-
-              <div className="mb-4">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  Automated NOTAM Feed
-                </div>
-                <div className="flex gap-4">
-                  <ToggleButton label="On" active={showAutoNotams} onClick={() => setShowAutoNotams(true)} />
-                  <ToggleButton label="Off" active={!showAutoNotams} onClick={() => setShowAutoNotams(false)} />
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  Rotation Interval (seconds)
-                </div>
-                <p className="mb-2 text-xs text-muted-500">
-                  How often the live dashboard's Ops Panel flips between the runway/circuit/airfield view and the
-                  NOTAMS view. {NOTAMS_INTERVAL_MIN_SECONDS}-{NOTAMS_INTERVAL_MAX_SECONDS} seconds.
-                </p>
-                <input
-                  type="number"
-                  min={NOTAMS_INTERVAL_MIN_SECONDS}
-                  max={NOTAMS_INTERVAL_MAX_SECONDS}
-                  value={notamsIntervalSeconds}
-                  onChange={handleNotamsIntervalChange}
-                  className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {safetyNotices.map((notice, index) => (
-                  <div key={index} className={notice.enabled ? undefined : 'opacity-50'}>
-                    <div className="mb-1 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                          Row {index + 1}
-                        </span>
-                        <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-400">
-                          <input
-                            type="checkbox"
-                            checked={notice.enabled}
-                            onChange={(event) => handleNoticeEnabledChange(index, event.target.checked)}
-                            className="h-3.5 w-3.5"
-                          />
-                          Enabled
-                        </label>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
-                        <span className="text-xs text-muted-400">
-                          {notice.text.length}/{SAFETY_NOTICE_MAX_LENGTH}
-                        </span>
-                      </div>
-                    </div>
-                    <input
-                      type="text"
-                      value={notice.text}
-                      onChange={(event) => handleNoticeChange(index, event.target.value)}
-                      maxLength={SAFETY_NOTICE_MAX_LENGTH}
-                      placeholder="e.g. Bird activity near threshold"
-                      className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* ── Update dashboard ─────────────────────────────────────── */}
-            <section className="rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                Update Dashboard
-              </div>
-              <p className="mb-4 text-xs text-muted-500">
-                Publishes the staged changes above to the live dashboard - every device that loads it picks them up
-                within about 15 seconds.
-              </p>
-              <button
-                type="button"
-                onClick={handleUpdateDashboard}
-                disabled={applyStatus === 'working'}
-                className="rounded-lg bg-accent-sky-500 px-6 py-3 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-              >
-                {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
-              </button>
-              {applyStatus === 'success' && (
-                <p className="mt-3 text-sm font-semibold text-status-good">Published - live dashboard will update shortly.</p>
-              )}
-              {applyStatus === 'error' && (
-                <p className="mt-3 text-sm font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
-              )}
-            </section>
-          </>
-        )}
-      </div>
+            {applyStatus === 'success' && (
+              <p className="mt-3 text-sm font-semibold text-status-good">Published - live dashboard will update shortly.</p>
+            )}
+            {applyStatus === 'error' && (
+              <p className="mt-3 text-sm font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
+            )}
+          </section>
+        </>
+      )}
     </div>
   )
 }
