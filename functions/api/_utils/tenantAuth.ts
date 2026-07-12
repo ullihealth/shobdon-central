@@ -130,3 +130,22 @@ export async function requireRoles(
 export async function requireOwner(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
   return requireRoles(request, env, ["owner", "admin"]);
 }
+
+// Cross-tenant developer flag (u.developer, same column functions/api/
+// tenant/me.ts and members/index.ts already read) - NOT a tenant role,
+// so this is deliberately separate from requireOwner/requireRoles. The
+// real developer account also holds 'owner' role at Shobdon today, but
+// a role-only check would let every other owner/admin through too -
+// this is the server-side enforcement matching RequireAuth.tsx's
+// client-side requireDeveloper gate, since a client-only check is
+// trivially bypassable by any authenticated member hitting the route
+// directly with their own session cookie.
+export async function requireDeveloper(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
+  const result = await requireTenant(request, env);
+  if ("error" in result) return result;
+  const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(result.userId).first<{ developer: number }>();
+  if (!userRow?.developer) {
+    return { error: jsonResponse({ error: "Developer access required" }, 403) };
+  }
+  return result;
+}

@@ -72,6 +72,7 @@ interface OpsPanelRow {
   safetyNoticesJson: string;
   showAutoNotams: number;
   notamsCarouselIntervalSeconds: number;
+  reverseCompassNeedle: number;
 }
 
 interface SafetyNoticeResolved {
@@ -122,7 +123,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
       .bind(org.id)
       .all<{ slotNumber: number; mediaType: string; durationSeconds: number; mp4DurationSeconds: number | null; r2Key: string | null; cameraUrl: string | null }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle FROM ops_panel_state WHERE organizationId = ?")
       .bind(org.id)
       .first<OpsPanelRow>(),
   ]);
@@ -164,6 +165,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
         safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as SafetyNoticeResolved[],
         showAutoNotams: !!opsPanelRow.showAutoNotams,
         notamsCarouselIntervalSeconds: opsPanelRow.notamsCarouselIntervalSeconds,
+        reverseCompassNeedle: !!opsPanelRow.reverseCompassNeedle,
       }
     : null;
 

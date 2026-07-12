@@ -469,14 +469,27 @@ export default function CompassPanel(): JSX.Element {
   // the live public dashboard, which must keep working with zero login,
   // same as every device viewing it today (PC2, clubhouse display,
   // anyone with the link).
-  const [clubProfile, setClubProfile] = useState<{ runwayGroups: RunwayGroup[] }>({ runwayGroups: [] })
+  // reverseCompassNeedle: developer-only safety-net override (see
+  // /developertools), applied ONLY to the arrow's visual rotation below
+  // - never to compassState.windDirection, headwind, or crosswind, which
+  // stay driven purely by calculateWindComponents() on the raw reported
+  // wind direction, completely independent of this flag.
+  const [clubProfile, setClubProfile] = useState<{ runwayGroups: RunwayGroup[]; reverseCompassNeedle: boolean }>({
+    runwayGroups: [],
+    reverseCompassNeedle: false,
+  })
 
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled && data?.runwayGroups) setClubProfile({ runwayGroups: data.runwayGroups })
+        if (!cancelled && data?.runwayGroups) {
+          setClubProfile({
+            runwayGroups: data.runwayGroups,
+            reverseCompassNeedle: !!data?.opsPanel?.reverseCompassNeedle,
+          })
+        }
       })
       .catch(() => {})
     return () => {
@@ -675,11 +688,14 @@ export default function CompassPanel(): JSX.Element {
             style={{ pointerEvents: 'none' }}
             preserveAspectRatio="xMidYMid meet"
           >
-            {/* Rotating wind arrow — long, thin needle; always on its own layer above the runway */}
+            {/* Rotating wind arrow — long, thin needle; always on its own layer above the runway.
+                reverseCompassNeedle (developer-only, /developertools) adds/removes 180° here ONLY -
+                compassState.windDirection itself (used for the centre label, readout panel, and the
+                headwind/crosswind maths above) is never touched by this flag. */}
             <g
               id="wind-arrow"
               className={`wind-arrow ${arrowColourClass}`}
-              transform={`rotate(${compassState.windDirection} 200 200)`}
+              transform={`rotate(${compassState.windDirection + (clubProfile.reverseCompassNeedle ? 180 : 0)} 200 200)`}
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
               {/* Dark halo - keeps the needle legible over both runway strips */}
