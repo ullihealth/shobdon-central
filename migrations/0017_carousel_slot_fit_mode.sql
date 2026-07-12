@@ -1,0 +1,15 @@
+-- Per-carousel-slot fit mode: 'fill' (object-fit: cover, crops to fill
+-- the box) or 'contain' (object-fit: contain, always shows the whole
+-- image/video, letterboxed if the aspect ratio doesn't match).
+--
+-- Default is 'contain', NOT 'fill' - deliberately different from what
+-- was requested ("default 'fill' so existing slots show zero visual
+-- change"). The request's own premise about "current behaviour" turned
+-- out to be incorrect: MediaPanel.tsx's carousel image/mp4 renderers
+-- already hardcode object-contain today (confirmed by reading the code
+-- and by checking production's one real enabled slot, slotNumber 2,
+-- image). 'fill' would have been a real, uninvited crop applied to that
+-- slot's actual content. 'contain' is the value that actually satisfies
+-- "zero visual change to existing slots" - the stricter, higher-priority
+-- of the two requirements when they conflict.
+ALTER TABLE carousel_slots ADD COLUMN fitMode TEXT NOT NULL DEFAULT 'contain';

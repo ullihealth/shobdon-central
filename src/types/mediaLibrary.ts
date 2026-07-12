@@ -15,4 +15,9 @@ export interface CarouselSlot {
   durationSeconds: number
   mediaLibraryId: string | null
   cameraSlotNumber: number | null
+  // 'fill' = object-fit: cover (crops to fill the box); 'contain' =
+  // object-fit: contain (always shows the whole image/video, letterboxed
+  // if the aspect ratio doesn't match). Only meaningful for image/mp4 -
+  // webcam/pdf are iframes, which object-fit doesn't apply to.
+  fitMode: 'fill' | 'contain'
 }

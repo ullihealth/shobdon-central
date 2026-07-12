@@ -388,6 +388,24 @@ export default function MediaManagerPage(): JSX.Element {
                           />
                         )}
                       </label>
+
+                      {(slot.mediaType === 'image' || slot.mediaType === 'mp4') && (
+                        <label className="mt-3 flex flex-col gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                            Fit mode
+                          </span>
+                          <select
+                            value={slot.fitMode}
+                            onChange={(event) =>
+                              saveSlot({ ...slot, fitMode: event.target.value as CarouselSlot['fitMode'] })
+                            }
+                            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                          >
+                            <option value="contain">Fit (show whole image, letterboxed if needed)</option>
+                            <option value="fill">Fill (crop to fill the box)</option>
+                          </select>
+                        </label>
+                      )}
                     </div>
                   )
                 })}

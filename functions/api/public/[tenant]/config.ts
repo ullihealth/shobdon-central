@@ -63,6 +63,7 @@ interface CarouselSlotResolvedRow {
   durationSeconds: number;
   mp4DurationSeconds: number | null;
   resolvedUrl: string | null;
+  fitMode: string;
 }
 
 interface OpsPanelRow {
@@ -111,6 +112,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
            cs.slotNumber AS slotNumber,
            cs.mediaType AS mediaType,
            cs.durationSeconds AS durationSeconds,
+           cs.fitMode AS fitMode,
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            cam.url AS cameraUrl
@@ -121,7 +123,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
          ORDER BY cs.slotNumber`
       )
       .bind(org.id)
-      .all<{ slotNumber: number; mediaType: string; durationSeconds: number; mp4DurationSeconds: number | null; r2Key: string | null; cameraUrl: string | null }>(),
+      .all<{ slotNumber: number; mediaType: string; durationSeconds: number; fitMode: string; mp4DurationSeconds: number | null; r2Key: string | null; cameraUrl: string | null }>(),
     env.DB
       .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle FROM ops_panel_state WHERE organizationId = ?")
       .bind(org.id)
@@ -153,6 +155,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
     mediaType: row.mediaType,
     durationSeconds: row.durationSeconds,
     mp4DurationSeconds: row.mp4DurationSeconds,
+    fitMode: row.fitMode,
     resolvedUrl:
       row.mediaType === "webcam" ? row.cameraUrl : row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}` : null,
   }));

@@ -24,6 +24,7 @@ interface CarouselSlotRow {
   durationSeconds: number;
   mediaLibraryId: string | null;
   cameraSlotNumber: number | null;
+  fitMode: string;
 }
 
 interface CarouselSlotInput {
@@ -33,9 +34,11 @@ interface CarouselSlotInput {
   durationSeconds: number;
   mediaLibraryId?: string | null;
   cameraSlotNumber?: number | null;
+  fitMode?: "fill" | "contain";
 }
 
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam"];
+const VALID_FIT_MODES = ["fill", "contain"];
 
 function defaultSlots(): CarouselSlotRow[] {
   return Array.from({ length: 12 }, (_, i) => ({
@@ -45,6 +48,7 @@ function defaultSlots(): CarouselSlotRow[] {
     durationSeconds: 10,
     mediaLibraryId: null,
     cameraSlotNumber: null,
+    fitMode: "contain",
   }));
 }
 
@@ -55,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const { results } = await env.DB
     .prepare(
-      "SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber"
+      "SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, fitMode FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber"
     )
     .bind(organizationId)
     .all<CarouselSlotRow>();
@@ -74,6 +78,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       durationSeconds: row.durationSeconds,
       mediaLibraryId: row.mediaLibraryId,
       cameraSlotNumber: row.cameraSlotNumber,
+      fitMode: row.fitMode,
     })),
   });
 };
@@ -100,6 +105,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     if (!Number.isFinite(slot.durationSeconds) || slot.durationSeconds <= 0) {
       return jsonResponse({ error: "durationSeconds must be a positive number" }, 400);
     }
+    if (slot.fitMode !== undefined && !VALID_FIT_MODES.includes(slot.fitMode)) {
+      return jsonResponse({ error: `fitMode must be one of: ${VALID_FIT_MODES.join(", ")}` }, 400);
+    }
 
     if (slot.mediaType === "webcam") {
       if (!slot.cameraSlotNumber || slot.cameraSlotNumber < 1 || slot.cameraSlotNumber > 3) {
@@ -124,17 +132,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     // than trusting the client not to send stale values for the other.
     const mediaLibraryId = slot.mediaType === "webcam" ? null : slot.mediaLibraryId ?? null;
     const cameraSlotNumber = slot.mediaType === "webcam" ? slot.cameraSlotNumber ?? null : null;
+    const fitMode = slot.fitMode ?? "contain";
 
     await env.DB
       .prepare(
-        `INSERT INTO carousel_slots (organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO carousel_slots (organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, fitMode, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
            durationSeconds = excluded.durationSeconds,
            mediaLibraryId = excluded.mediaLibraryId,
            cameraSlotNumber = excluded.cameraSlotNumber,
+           fitMode = excluded.fitMode,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -145,6 +155,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         slot.durationSeconds,
         mediaLibraryId,
         cameraSlotNumber,
+        fitMode,
         now
       )
       .run();

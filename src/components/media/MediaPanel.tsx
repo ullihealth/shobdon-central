@@ -8,6 +8,7 @@ interface CarouselSlotResolved {
   durationSeconds: number
   mp4DurationSeconds: number | null
   resolvedUrl: string | null
+  fitMode: string
 }
 
 function renderMediaContent(item: MediaItem) {
@@ -49,7 +50,13 @@ function renderCarouselSlot(slot: CarouselSlotResolved): JSX.Element | null {
         />
       )
     case 'image':
-      return <img src={slot.resolvedUrl} alt="" className="h-full w-full object-contain" />
+      return (
+        <img
+          src={slot.resolvedUrl}
+          alt=""
+          className={`h-full w-full ${slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'}`}
+        />
+      )
     case 'mp4':
       // key forces the <video> to remount (and restart playback) every
       // time the active slot changes back to this same mp4, rather than
@@ -58,7 +65,7 @@ function renderCarouselSlot(slot: CarouselSlotResolved): JSX.Element | null {
         <video
           key={slot.resolvedUrl}
           src={slot.resolvedUrl}
-          className="h-full w-full object-contain"
+          className={`h-full w-full ${slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'}`}
           autoPlay
           muted
           loop
@@ -135,13 +142,11 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
   const activeSlot = hasCarousel ? carouselSlots[activeIndex] : null
 
   // The header bar (Media / type badge) is the only framing that should
-  // stay - the p-6 below it was shrinking the webcam iframe well inside
-  // its already-small allocated box, on top of (and independent from)
-  // any letterboxing rtsp.me's own embed player does internally. Scoped
-  // to the webcam case only, exactly as requested - image/mp4/pdf
-  // carousel slots and the empty-state placeholder text keep their
-  // existing padding unchanged.
-  const isEdgeToEdgeContent = hasCarousel ? activeSlot?.mediaType === 'webcam' : !!webcamUrl
+  // stay - the p-6 below it was adding unwanted dark padding around
+  // actual media content (image/mp4/webcam/pdf), which should fill the
+  // box edge-to-edge. Only the empty-state placeholder text keeps its
+  // padding, since it's centred text, not a media element.
+  const isEdgeToEdgeContent = hasCarousel ? !!activeSlot : !!webcamUrl || item.type === 'image'
 
   return (
     <div
