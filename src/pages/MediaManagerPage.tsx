@@ -126,6 +126,41 @@ const IDENTITY_APPEARANCE: Pick<
   bannerFontSize: 'md',
 }
 
+const ZOOM_MIN = 100
+const ZOOM_MAX = 300
+
+// The 4 independent X/Y/Width/Height crop sliders this replaced were
+// unusable for non-technical users: each started at an edge-case value
+// (0%/0%/100%/100%), so any small nudge combined with cover-fit
+// rendering produced a jarring, unpredictable resize rather than a
+// smooth change. Zoom + pan is the standard, intuitive mental model
+// (100% = whole image visible, higher = zoomed in; position = where the
+// zoomed view sits) - and it maps cleanly onto the SAME underlying
+// cropRect the schema and MediaSlotRenderer already use, so nothing
+// downstream of "what gets saved" needs to change. Zoom always crops a
+// square-in-source-percentage window (width === height) since these
+// controls don't offer independent aspect adjustment - only the crop
+// tool that generated arbitrary rects did, and that's exactly what
+// made it unpredictable.
+function cropToZoomPan(crop: CropRect): { zoom: number; hPan: number; vPan: number } {
+  const width = crop.width || 100
+  const height = crop.height || 100
+  const zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, 10000 / width)))
+  const marginX = 100 - width
+  const marginY = 100 - height
+  const hPan = marginX > 0.01 ? Math.round((crop.x / marginX) * 200 - 100) : 0
+  const vPan = marginY > 0.01 ? Math.round((crop.y / marginY) * 200 - 100) : 0
+  return { zoom, hPan: Math.min(100, Math.max(-100, hPan)), vPan: Math.min(100, Math.max(-100, vPan)) }
+}
+
+function zoomPanToCrop(zoom: number, hPan: number, vPan: number): CropRect {
+  const size = 10000 / Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom))
+  const margin = 100 - size
+  const x = (margin * (Math.min(100, Math.max(-100, hPan)) + 100)) / 200
+  const y = (margin * (Math.min(100, Math.max(-100, vPan)) + 100)) / 200
+  return { x, y, width: size, height: size }
+}
+
 function RangeField({
   label,
   min,
@@ -154,6 +189,62 @@ function RangeField({
   )
 }
 
+// Zoom/pan control: a slider for coarse adjustment plus +/- steppers for
+// fine 1%-at-a-time nudges, both driving the same value - exactly the
+// dual-input pattern requested, factored out since zoom/hPan/vPan all
+// need it identically.
+function SteppedRangeField({
+  label,
+  min,
+  max,
+  value,
+  suffix = '%',
+  onChange,
+}: {
+  label: string
+  min: number
+  max: number
+  value: number
+  suffix?: string
+  onChange: (value: number) => void
+}): JSX.Element {
+  const clamp = (n: number) => Math.min(max, Math.max(min, n))
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+        {label}: {value}
+        {suffix}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(clamp(value - 1))}
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-900/80 text-sm font-bold text-white hover:border-sky-500"
+          aria-label={`Decrease ${label}`}
+        >
+          −
+        </button>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          value={value}
+          onChange={(event) => onChange(clamp(Number(event.target.value)))}
+          className="w-full accent-accent-sky-500"
+        />
+        <button
+          type="button"
+          onClick={() => onChange(clamp(value + 1))}
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-900/80 text-sm font-bold text-white hover:border-sky-500"
+          aria-label={`Increase ${label}`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // One combined edit panel per slot: a live preview (rendered with the
 // exact same MediaSlotRenderer component the public dashboard uses) plus
 // crop/rotate/brightness/banner controls, all reflected in that same
@@ -169,8 +260,9 @@ function SlotAppearanceEditor({
   visual: MediaSlotVisual
   onChange: (patch: Partial<CarouselSlot>) => void
 }): JSX.Element {
-  const crop = slot.cropRect
-  const updateCrop = (patch: Partial<CropRect>) => onChange({ cropRect: { ...crop, ...patch } })
+  const { zoom, hPan, vPan } = cropToZoomPan(slot.cropRect)
+  const updateZoomPan = (nextZoom: number, nextHPan: number, nextVPan: number) =>
+    onChange({ cropRect: zoomPanToCrop(nextZoom, nextHPan, nextVPan) })
   const hasBanner = slot.bannerText.trim().length > 0
 
   return (
@@ -190,23 +282,31 @@ function SlotAppearanceEditor({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <RangeField label={`Crop X: ${crop.x}%`} min={0} max={99} value={crop.x} onChange={(v) => updateCrop({ x: v })} />
-        <RangeField label={`Crop Y: ${crop.y}%`} min={0} max={99} value={crop.y} onChange={(v) => updateCrop({ y: v })} />
-        <RangeField
-          label={`Crop width: ${crop.width}%`}
-          min={5}
-          max={100}
-          value={crop.width}
-          onChange={(v) => updateCrop({ width: v })}
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3">
+        <SteppedRangeField
+          label="Zoom"
+          min={ZOOM_MIN}
+          max={ZOOM_MAX}
+          value={zoom}
+          onChange={(v) => updateZoomPan(v, hPan, vPan)}
         />
-        <RangeField
-          label={`Crop height: ${crop.height}%`}
-          min={5}
+        <SteppedRangeField
+          label="Horizontal position"
+          min={-100}
           max={100}
-          value={crop.height}
-          onChange={(v) => updateCrop({ height: v })}
+          value={hPan}
+          onChange={(v) => updateZoomPan(zoom, v, vPan)}
         />
+        <SteppedRangeField
+          label="Vertical position"
+          min={-100}
+          max={100}
+          value={vPan}
+          onChange={(v) => updateZoomPan(zoom, hPan, v)}
+        />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
         <RangeField
           label={`Rotation: ${slot.rotationDegrees}°`}
           min={-180}
@@ -253,6 +353,8 @@ function SlotAppearanceEditor({
               <option value="sm">Small</option>
               <option value="md">Medium</option>
               <option value="lg">Large</option>
+              <option value="xl">Extra large</option>
+              <option value="xxl">Huge</option>
             </select>
           </label>
         </div>

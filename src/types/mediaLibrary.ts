@@ -37,9 +37,11 @@ export interface CarouselSlot {
   rotationDegrees: number
   brightnessPercent: number
   // Optional footer banner strip - only rendered when bannerText is
-  // non-empty. bannerFontSize reuses the exact sm/md/lg convention
-  // established for NOTAMS notices (RightInfoPanel.tsx's SIZE_CLASSES).
+  // non-empty. bannerFontSize uses its own banner-specific size scale
+  // (MediaSlotRenderer.tsx's BANNER_SIZE_CLASSES), not NOTAMS' -
+  // NOTAMS' scale was tuned for a narrow side-panel card and reads as
+  // tiny on a full-width dashboard banner.
   bannerText: string
   bannerOpacity: number
-  bannerFontSize: 'sm' | 'md' | 'lg'
+  bannerFontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 }

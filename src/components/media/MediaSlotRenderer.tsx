@@ -16,16 +16,31 @@ export interface MediaSlotVisual {
   brightnessPercent: number
   bannerText: string
   bannerOpacity: number
-  bannerFontSize: 'sm' | 'md' | 'lg'
+  bannerFontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 }
 
-// Reuses the exact sm/md/lg -> Tailwind text-size convention established
-// for NOTAMS notices (RightInfoPanel.tsx's SIZE_CLASSES) - same three
-// classes, same rationale (md matches a sensible legacy default).
-const BANNER_SIZE_CLASSES: Record<'sm' | 'md' | 'lg', string> = {
-  sm: 'text-base',
-  md: 'text-lg',
-  lg: 'text-xl',
+// Deliberately NOT reusing NOTAMS' sm/md/lg -> text-base/lg/xl scale
+// (RightInfoPanel.tsx's SIZE_CLASSES) - that scale was tuned for a
+// narrow side-panel card, and even its 'lg' (20px) reads as tiny
+// against a ~975px-wide full-bleed banner on a large dashboard. This is
+// a separate, banner-specific scale, roughly 1.5-2x NOTAMS' pixel
+// sizes at each tier, with two extra tiers ('xl'/'xxl') for genuinely
+// large captions. BANNER_HEIGHT_CLASSES grows alongside it so larger
+// text never clips the strip.
+const BANNER_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl' | 'xxl', string> = {
+  sm: 'text-lg', // 18px
+  md: 'text-2xl', // 24px
+  lg: 'text-3xl', // 30px
+  xl: 'text-4xl', // 36px
+  xxl: 'text-5xl', // 48px
+}
+
+const BANNER_HEIGHT_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl' | 'xxl', string> = {
+  sm: 'h-10', // 40px
+  md: 'h-12', // 48px
+  lg: 'h-14', // 56px
+  xl: 'h-16', // 64px
+  xxl: 'h-20', // 80px
 }
 
 // Crop is expressed as a percentage sub-rect of the source [x,y,w,h].
@@ -64,12 +79,12 @@ function BannerOverlay({
 }: {
   text: string
   opacity: number
-  fontSize: 'sm' | 'md' | 'lg'
+  fontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 }): JSX.Element | null {
   if (!text.trim()) return null
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 flex h-10 items-center justify-center px-4 text-center font-semibold text-white ${BANNER_SIZE_CLASSES[fontSize]}`}
+      className={`absolute inset-x-0 bottom-0 flex items-center justify-center px-4 text-center font-semibold text-white ${BANNER_HEIGHT_CLASSES[fontSize]} ${BANNER_SIZE_CLASSES[fontSize]}`}
       style={{ backgroundColor: `rgba(0, 0, 0, ${Math.max(0, Math.min(100, opacity)) / 100})` }}
     >
       <span className="truncate">{text}</span>

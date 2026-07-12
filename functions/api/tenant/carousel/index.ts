@@ -56,12 +56,12 @@ interface CarouselSlotInput {
   brightnessPercent?: number;
   bannerText?: string;
   bannerOpacity?: number;
-  bannerFontSize?: "sm" | "md" | "lg";
+  bannerFontSize?: "sm" | "md" | "lg" | "xl" | "xxl";
 }
 
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam"];
 const VALID_FIT_MODES = ["fill", "contain"];
-const VALID_BANNER_SIZES = ["sm", "md", "lg"];
+const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
 
 function defaultSlots(): CarouselSlotRow[] {
   return Array.from({ length: 12 }, (_, i) => ({
