@@ -15,18 +15,21 @@ const DEFAULT_IDENTIFIER_FONT_SIZE_PX = 14
 
 type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
 
-function suggestHeadingFromLabel(label: string): number | null {
-  const firstPart = label.split('/')[0]?.trim()
-  if (!firstPart) return null
-  const numeric = Number(firstPart)
-  if (Number.isNaN(numeric)) return null
-  return numeric * 10
+// The end opposite endAIdentifier's heading - shown in that field's own
+// label so it's self-evidently "the other end", grounded in a number the
+// admin can check against the real runway, not an implicit position
+// convention (which is exactly what made the old single "label" text
+// field ambiguous: nothing in the UI said which half of "08/26" applied
+// to which physical end).
+function reciprocalHeading(headingDegrees: number): number {
+  return ((headingDegrees % 360) + 360 + 180) % 360
 }
 
 function createBlankGroup(): RunwayGroup {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    label: '',
+    endAIdentifier: '',
+    endBIdentifier: '',
     headingDegrees: 0,
     twin: false,
     strips: [{ colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }],
@@ -35,17 +38,9 @@ function createBlankGroup(): RunwayGroup {
   }
 }
 
-interface EditableGroup {
-  group: RunwayGroup
-  // Tracks whether the admin has manually set headingDegrees for this group.
-  // Until then, editing the label auto-suggests a heading; afterward, the
-  // label and heading are fully independent, per spec.
-  headingTouched: boolean
-}
-
 export default function RunwaysPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
-  const [editableGroups, setEditableGroups] = useState<EditableGroup[]>([])
+  const [groups, setGroups] = useState<RunwayGroup[]>([])
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
 
   // Real D1-backed read (functions/api/tenant/config.ts, the same route
@@ -59,8 +54,7 @@ export default function RunwaysPage(): JSX.Element {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return
-        const runwayGroups: RunwayGroup[] = Array.isArray(data?.runwayGroups) ? data.runwayGroups : []
-        setEditableGroups(runwayGroups.map((group) => ({ group, headingTouched: true })))
+        setGroups(Array.isArray(data?.runwayGroups) ? data.runwayGroups : [])
       })
       .catch(() => {})
       .finally(() => {
@@ -76,29 +70,19 @@ export default function RunwaysPage(): JSX.Element {
   // is clicked. Was saveClubProfile() on every keystroke (immediate, but
   // to localStorage only, which nothing else ever read).
   function updateGroup(index: number, updates: Partial<RunwayGroup>) {
-    setEditableGroups((prev) =>
-      prev.map((entry, i) => (i === index ? { ...entry, group: { ...entry.group, ...updates } } : entry))
-    )
+    setGroups((prev) => prev.map((group, i) => (i === index ? { ...group, ...updates } : group)))
   }
 
-  function handleLabelChange(index: number, label: string) {
-    setEditableGroups((prev) =>
-      prev.map((entry, i) => {
-        if (i !== index) return entry
-        const updates: Partial<RunwayGroup> = { label }
-        if (!entry.headingTouched) {
-          const suggested = suggestHeadingFromLabel(label)
-          if (suggested !== null) updates.headingDegrees = suggested
-        }
-        return { group: { ...entry.group, ...updates }, headingTouched: entry.headingTouched }
-      })
-    )
+  function handleEndAIdentifierChange(index: number, endAIdentifier: string) {
+    updateGroup(index, { endAIdentifier })
+  }
+
+  function handleEndBIdentifierChange(index: number, endBIdentifier: string) {
+    updateGroup(index, { endBIdentifier })
   }
 
   function handleHeadingChange(index: number, headingDegrees: number) {
-    setEditableGroups((prev) =>
-      prev.map((entry, i) => (i === index ? { group: { ...entry.group, headingDegrees }, headingTouched: true } : entry))
-    )
+    updateGroup(index, { headingDegrees })
   }
 
   // Each strip's own width, independent of any other strip in the same
@@ -109,8 +93,7 @@ export default function RunwaysPage(): JSX.Element {
   function handleStripWidthChange(groupIndex: number, stripIndex: number, rawValue: string) {
     const parsed = Number(rawValue)
     const widthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_WIDTH_PX : parsed
-    const entry = editableGroups[groupIndex]
-    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, widthPx } : strip))
+    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, widthPx } : strip))
     updateGroup(groupIndex, { strips })
   }
 
@@ -136,33 +119,30 @@ export default function RunwaysPage(): JSX.Element {
   }
 
   function handleTwinChange(index: number, twin: boolean) {
-    const entry = editableGroups[index]
+    const group = groups[index]
     const strips = twin
       ? [
-          entry.group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
-          entry.group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
+          group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
+          group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
         ]
-      : [entry.group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }]
+      : [group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }]
     updateGroup(index, { twin, strips })
   }
 
   function handleStripColourChange(groupIndex: number, stripIndex: number, colour: string) {
-    const entry = editableGroups[groupIndex]
-    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, colour } : strip))
+    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, colour } : strip))
     updateGroup(groupIndex, { strips })
   }
 
   // Threshold markings (checkerboard) and direction labels are both
   // independent per physical strip - e.g. tarmac markings on, grass off.
   function handleStripMarkingsChange(groupIndex: number, stripIndex: number, hasThresholdMarkings: boolean) {
-    const entry = editableGroups[groupIndex]
-    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, hasThresholdMarkings } : strip))
+    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, hasThresholdMarkings } : strip))
     updateGroup(groupIndex, { strips })
   }
 
   function handleStripLabelChange(groupIndex: number, stripIndex: number, showIdentifierLabel: boolean) {
-    const entry = editableGroups[groupIndex]
-    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, showIdentifierLabel } : strip))
+    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, showIdentifierLabel } : strip))
     updateGroup(groupIndex, { strips })
   }
 
@@ -170,19 +150,18 @@ export default function RunwaysPage(): JSX.Element {
   // surface has one painted, matching real-world practice - same pattern
   // as threshold markings/direction labels above.
   function handleStripCenterlineChange(groupIndex: number, stripIndex: number, showCenterline: boolean) {
-    const entry = editableGroups[groupIndex]
-    const strips = entry.group.strips.map((strip, i) => (i === stripIndex ? { ...strip, showCenterline } : strip))
+    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, showCenterline } : strip))
     updateGroup(groupIndex, { strips })
   }
 
   function handleAddGroup() {
-    if (editableGroups.length >= MAX_GROUPS) return
-    setEditableGroups((prev) => [...prev, { group: createBlankGroup(), headingTouched: false }])
+    if (groups.length >= MAX_GROUPS) return
+    setGroups((prev) => [...prev, createBlankGroup()])
   }
 
   function handleRemoveGroup(index: number) {
-    if (editableGroups.length <= 1) return
-    setEditableGroups((prev) => prev.filter((_, i) => i !== index))
+    if (groups.length <= 1) return
+    setGroups((prev) => prev.filter((_, i) => i !== index))
   }
 
   // Same PUT-then-refresh-trigger flow as /design's
@@ -205,7 +184,7 @@ export default function RunwaysPage(): JSX.Element {
       const response = await fetch(TENANT_CONFIG_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runwayGroups: editableGroups.map((entry) => entry.group) }),
+        body: JSON.stringify({ runwayGroups: groups }),
       })
       if (!response.ok) {
         setApplyStatus('error')
@@ -235,13 +214,13 @@ export default function RunwaysPage(): JSX.Element {
           <p className="text-sm text-muted-400">Loading…</p>
         ) : (
           <div className="flex flex-col gap-6">
-            {editableGroups.map((entry, index) => (
-              <section key={entry.group.id} className="rounded-2xl border border-border bg-panel p-6">
+            {groups.map((group, index) => (
+              <section key={group.id} className="rounded-2xl border border-border bg-panel p-6">
                 <div className="mb-4 flex items-center justify-between">
                   <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">
                     Runway {index + 1}
                   </div>
-                  {editableGroups.length > 1 && (
+                  {groups.length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveGroup(index)}
@@ -252,43 +231,65 @@ export default function RunwaysPage(): JSX.Element {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Precise heading (degrees)
+                  </span>
+                  <input
+                    type="number"
+                    value={group.headingDegrees}
+                    onChange={(event) => handleHeadingChange(index, Number(event.target.value))}
+                    className="w-40 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  />
+                </label>
+
+                {/* Each identifier is bound to a specific physical end via
+                    its own field, not a shared string's implicit
+                    ordering - the label names the exact heading value
+                    that end corresponds to, taken directly from the
+                    field above, so there's no separate convention to
+                    remember. */}
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Label</span>
+                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                      Identifier for the {group.headingDegrees}° end
+                    </span>
                     <input
                       type="text"
-                      value={entry.group.label}
-                      onChange={(event) => handleLabelChange(index, event.target.value)}
-                      placeholder="e.g. 08/26"
+                      value={group.endAIdentifier}
+                      onChange={(event) => handleEndAIdentifierChange(index, event.target.value)}
+                      placeholder="e.g. 08"
+                      maxLength={2}
                       className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                     />
                   </label>
-
                   <label className="flex flex-col gap-1.5">
                     <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                      Precise heading (degrees)
+                      Identifier for the {reciprocalHeading(group.headingDegrees)}° (opposite) end
                     </span>
                     <input
-                      type="number"
-                      value={entry.group.headingDegrees}
-                      onChange={(event) => handleHeadingChange(index, Number(event.target.value))}
-                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                      Strip length (px)
-                    </span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={entry.group.stripLengthPx}
-                      onChange={(event) => handleStripLengthChange(index, event.target.value)}
+                      type="text"
+                      value={group.endBIdentifier}
+                      onChange={(event) => handleEndBIdentifierChange(index, event.target.value)}
+                      placeholder="e.g. 26"
+                      maxLength={2}
                       className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                     />
                   </label>
                 </div>
+
+                <label className="mt-4 flex flex-col gap-1.5 sm:max-w-xs">
+                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Strip length (px)
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={group.stripLengthPx}
+                    onChange={(event) => handleStripLengthChange(index, event.target.value)}
+                    className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  />
+                </label>
                 <p className="mt-2 text-xs text-muted-500">
                   No upper limit on strip width (set per strip below) or length - a large value can visually
                   overlap the compass ring or letters, which is an intentional choice you're free to make, not
@@ -298,7 +299,7 @@ export default function RunwaysPage(): JSX.Element {
                 <label className="mt-4 flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={entry.group.twin}
+                    checked={group.twin}
                     onChange={(event) => handleTwinChange(index, event.target.checked)}
                     className="h-4 w-4"
                   />
@@ -312,7 +313,7 @@ export default function RunwaysPage(): JSX.Element {
                   <input
                     type="number"
                     min={1}
-                    value={entry.group.identifierFontSizePx}
+                    value={group.identifierFontSizePx}
                     onChange={(event) => handleFontSizeChange(index, event.target.value)}
                     className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                   />
@@ -324,7 +325,7 @@ export default function RunwaysPage(): JSX.Element {
                 </p>
 
                 <div className="mt-4 flex flex-wrap gap-6">
-                  {entry.group.strips.map((strip, stripIndex) => (
+                  {group.strips.map((strip, stripIndex) => (
                     <div key={stripIndex} className="flex flex-col gap-3">
                       <div className="flex items-end gap-3">
                         <label className="flex items-center gap-3">
@@ -335,12 +336,12 @@ export default function RunwaysPage(): JSX.Element {
                             className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
                           />
                           <span className="text-xs text-muted-400">
-                            {entry.group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
+                            {group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
                           </span>
                         </label>
                         <label className="flex flex-col gap-1.5">
                           <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                            {entry.group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
+                            {group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
                           </span>
                           <input
                             type="number"
@@ -386,7 +387,7 @@ export default function RunwaysPage(): JSX.Element {
           </div>
         )}
 
-        {!loading && editableGroups.length < MAX_GROUPS && (
+        {!loading && groups.length < MAX_GROUPS && (
           <button
             type="button"
             onClick={handleAddGroup}

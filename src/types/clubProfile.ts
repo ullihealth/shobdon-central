@@ -8,8 +8,15 @@ export interface RunwayStrip {
 
 export interface RunwayGroup {
   id: string
-  label: string // e.g. "08/26" - admin-typed text, no slash-math or auto-reciprocal
-  headingDegrees: number // precise magnetic heading for the first identifier, independently editable
+  // Replaces the old single slash-separated `label` string (e.g.
+  // "08/26") - each identifier is now explicitly bound to a physical
+  // end, not an implicit string position. endAIdentifier is the end at
+  // compass bearing = headingDegrees; endBIdentifier is the reciprocal
+  // end (headingDegrees + 180). Admin-typed text, no slash-math or
+  // auto-reciprocal.
+  endAIdentifier: string
+  endBIdentifier: string
+  headingDegrees: number // precise magnetic heading for endAIdentifier's end, independently editable
   twin: boolean
   strips: RunwayStrip[] // length 1 if !twin, length 2 if twin
   stripLengthPx: number // full strip length (along the runway's own axis), shared by every strip in the group - CompassPanel.tsx's internal 0-400 SVG coordinate space

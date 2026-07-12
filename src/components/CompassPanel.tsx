@@ -208,11 +208,6 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
   return strip?.hasThresholdMarkings ? NUMBER_INSET_WITH_MARKINGS : NUMBER_INSET_DEFAULT
 }
 
-function splitRunwayLabel(label: string): [string, string] {
-  const [first = '', second = ''] = label.split('/').map((part) => part.trim())
-  return [first, second]
-}
-
 // Real-world runway signage convention: the numeral at each end is
 // oriented for someone approaching FROM that end, so the two ends read
 // 180° apart from each other, not both facing the same way. Whichever
@@ -251,7 +246,16 @@ function showsCenterline(strip: RunwayStrip | undefined): boolean {
 }
 
 function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
-  const [labelTop, labelBottom] = splitRunwayLabel(group.label)
+  // endAIdentifier is always the end at compass bearing = headingDegrees
+  // (previously "labelTop" - the physical position, not the string, is
+  // what determines which end this is); endBIdentifier is the reciprocal
+  // end (previously "labelBottom"). Kept the labelTop/labelBottom names
+  // below since every position variable in this function (stripTop,
+  // NumberTopY, etc.) already means "the physical top before rotation" -
+  // renaming just these two would make the position pairing less obvious,
+  // not more.
+  const labelTop = group.endAIdentifier
+  const labelBottom = group.endBIdentifier
   const halfLength = clampStripHalfLength(group.stripLengthPx / 2)
   const stripTop = 200 - halfLength
   const stripBottom = 200 + halfLength

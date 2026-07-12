@@ -41,7 +41,8 @@ interface Env {
 
 interface RunwayGroupRow {
   id: string;
-  label: string;
+  endAIdentifier: string;
+  endBIdentifier: string;
   headingDegrees: number;
   twin: number;
   stripLengthPx: number;
@@ -95,7 +96,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
 
   const [runwayRows, themeRow, cameraRows, carouselRows, opsPanelRow] = await Promise.all([
     env.DB
-      .prepare("SELECT id, label, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
+      .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(org.id)
       .all<RunwayGroupRow>(),
     env.DB.prepare("SELECT tokensJson FROM club_theme WHERE organizationId = ?").bind(org.id).first<{ tokensJson: string }>(),
@@ -128,7 +129,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
 
   const runwayGroups = runwayRows.results.map((row) => ({
     id: row.id,
-    label: row.label,
+    endAIdentifier: row.endAIdentifier,
+    endBIdentifier: row.endBIdentifier,
     headingDegrees: row.headingDegrees,
     twin: !!row.twin,
     stripLengthPx: row.stripLengthPx,

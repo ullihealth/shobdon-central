@@ -22,7 +22,8 @@ interface Env {
 
 interface RunwayGroupRow {
   id: string;
-  label: string;
+  endAIdentifier: string;
+  endBIdentifier: string;
   headingDegrees: number;
   twin: number;
   stripLengthPx: number;
@@ -39,7 +40,8 @@ interface CameraSlotRow {
 
 interface RunwayGroupInput {
   id: string;
-  label: string;
+  endAIdentifier: string;
+  endBIdentifier: string;
   headingDegrees: number;
   twin: boolean;
   stripLengthPx: number;
@@ -60,7 +62,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const [runwayRows, themeRow, cameraRows] = await Promise.all([
     env.DB
-      .prepare("SELECT id, label, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
+      .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
       .all<RunwayGroupRow>(),
     env.DB.prepare("SELECT tokensJson FROM club_theme WHERE organizationId = ?").bind(organizationId).first<{ tokensJson: string }>(),
@@ -73,7 +75,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return jsonResponse({
     runwayGroups: runwayRows.results.map((row) => ({
       id: row.id,
-      label: row.label,
+      endAIdentifier: row.endAIdentifier,
+      endBIdentifier: row.endBIdentifier,
       headingDegrees: row.headingDegrees,
       twin: !!row.twin,
       stripLengthPx: row.stripLengthPx,
@@ -108,12 +111,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     for (const [index, group] of body.runwayGroups.entries()) {
       await env.DB
         .prepare(
-          "INSERT INTO runway_groups (id, organizationId, label, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          // label is still written (as `endA/endB`) purely to satisfy the
+          // column's existing NOT NULL constraint - nothing reads it
+          // anymore (see migration 0015). Not worth an ALTER TABLE DROP
+          // COLUMN / table-recreate for an inert column.
+          "INSERT INTO runway_groups (id, organizationId, label, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(
           group.id,
           organizationId,
-          group.label,
+          `${group.endAIdentifier}/${group.endBIdentifier}`,
+          group.endAIdentifier,
+          group.endBIdentifier,
           group.headingDegrees,
           group.twin ? 1 : 0,
           group.stripLengthPx,

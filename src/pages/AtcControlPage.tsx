@@ -106,15 +106,15 @@ export default function AtcControlPage(): JSX.Element {
       fetch(OPS_PANEL_URL).then((response) => (response.ok ? response.json() : null)),
       fetch(PUBLIC_CONFIG_URL).then((response) => (response.ok ? response.json() : null)),
     ]).then(([opsPanel, publicConfig]) => {
-      // runwayGroups[0].label is admin-typed free text (e.g. "08/26"),
-      // not a fixed enum - split it to get the two real toggle options
+      // endAIdentifier/endBIdentifier are admin-typed free text (e.g.
+      // "08"/"26"), not a fixed enum - read the two real toggle options
       // rather than assuming which identifiers this tenant actually uses.
-      const label: string | undefined = publicConfig?.runwayGroups?.[0]?.label
-      const parts = label?.split('/').map((s: string) => s.trim()).filter(Boolean)
-      if (parts && parts.length === 2) setRunwayEnds([parts[0], parts[1]])
+      const endA: string | undefined = publicConfig?.runwayGroups?.[0]?.endAIdentifier
+      const endB: string | undefined = publicConfig?.runwayGroups?.[0]?.endBIdentifier
+      if (endA && endB) setRunwayEnds([endA, endB])
 
       if (opsPanel) {
-        setActiveRunwayEnd(opsPanel.activeRunwayEnd || (parts?.[0] ?? '08'))
+        setActiveRunwayEnd(opsPanel.activeRunwayEnd || (endA ?? '08'))
         setCircuitDirection(opsPanel.circuitDirection === 'right' ? 'right' : 'left')
         setAirfieldInfoText(opsPanel.airfieldInfoText ?? '')
         const notices: SafetyNotice[] = Array.isArray(opsPanel.safetyNotices) ? opsPanel.safetyNotices : []
