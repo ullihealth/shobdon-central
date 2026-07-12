@@ -64,6 +64,12 @@ interface CarouselSlotResolvedRow {
   mp4DurationSeconds: number | null;
   resolvedUrl: string | null;
   fitMode: string;
+  cropRect: { x: number; y: number; width: number; height: number };
+  rotationDegrees: number;
+  brightnessPercent: number;
+  bannerText: string;
+  bannerOpacity: number;
+  bannerFontSize: string;
 }
 
 interface OpsPanelRow {
@@ -113,6 +119,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
            cs.mediaType AS mediaType,
            cs.durationSeconds AS durationSeconds,
            cs.fitMode AS fitMode,
+           cs.cropX AS cropX,
+           cs.cropY AS cropY,
+           cs.cropWidth AS cropWidth,
+           cs.cropHeight AS cropHeight,
+           cs.rotationDegrees AS rotationDegrees,
+           cs.brightnessPercent AS brightnessPercent,
+           cs.bannerText AS bannerText,
+           cs.bannerOpacity AS bannerOpacity,
+           cs.bannerFontSize AS bannerFontSize,
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            cam.url AS cameraUrl
@@ -123,7 +138,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
          ORDER BY cs.slotNumber`
       )
       .bind(org.id)
-      .all<{ slotNumber: number; mediaType: string; durationSeconds: number; fitMode: string; mp4DurationSeconds: number | null; r2Key: string | null; cameraUrl: string | null }>(),
+      .all<{
+        slotNumber: number;
+        mediaType: string;
+        durationSeconds: number;
+        fitMode: string;
+        cropX: number;
+        cropY: number;
+        cropWidth: number;
+        cropHeight: number;
+        rotationDegrees: number;
+        brightnessPercent: number;
+        bannerText: string;
+        bannerOpacity: number;
+        bannerFontSize: string;
+        mp4DurationSeconds: number | null;
+        r2Key: string | null;
+        cameraUrl: string | null;
+      }>(),
     env.DB
       .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle FROM ops_panel_state WHERE organizationId = ?")
       .bind(org.id)
@@ -156,6 +188,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
     durationSeconds: row.durationSeconds,
     mp4DurationSeconds: row.mp4DurationSeconds,
     fitMode: row.fitMode,
+    cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
+    rotationDegrees: row.rotationDegrees,
+    brightnessPercent: row.brightnessPercent,
+    bannerText: row.bannerText,
+    bannerOpacity: row.bannerOpacity,
+    bannerFontSize: row.bannerFontSize,
     resolvedUrl:
       row.mediaType === "webcam" ? row.cameraUrl : row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}` : null,
   }));

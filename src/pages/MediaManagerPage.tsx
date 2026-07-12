@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
+import type { CarouselSlot, CropRect, MediaLibraryFile } from '../types/mediaLibrary'
 import { CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_UPLOAD_URL, MEDIA_LIBRARY_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { authClient } from '../lib/auth/authClient'
+import MediaSlotRenderer, { type MediaSlotVisual } from '../components/media/MediaSlotRenderer'
 
 interface CameraOption {
   slot: number
@@ -85,6 +86,189 @@ function sourceValueFor(slot: CarouselSlot): string {
   return ''
 }
 
+// Builds the exact same shape MediaSlotRenderer consumes on the live
+// dashboard (MediaPanel.tsx) - the editor preview calls the identical
+// component with identical props, so it's a genuine preview, not a
+// lookalike. resolvedUrl is computed client-side here from the already-
+// loaded library/webcam lists rather than round-tripping through the
+// public config endpoint, since the assigned file may not be saved yet.
+function resolveSlotVisual(
+  slot: CarouselSlot,
+  files: MediaLibraryFile[],
+  cameraOptions: CameraOption[]
+): MediaSlotVisual {
+  const resolvedUrl =
+    slot.mediaType === 'webcam'
+      ? cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.url ?? null
+      : files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null
+  return {
+    mediaType: slot.mediaType,
+    resolvedUrl,
+    fitMode: slot.fitMode,
+    cropRect: slot.cropRect,
+    rotationDegrees: slot.rotationDegrees,
+    brightnessPercent: slot.brightnessPercent,
+    bannerText: slot.bannerText,
+    bannerOpacity: slot.bannerOpacity,
+    bannerFontSize: slot.bannerFontSize,
+  }
+}
+
+const IDENTITY_APPEARANCE: Pick<
+  CarouselSlot,
+  'cropRect' | 'rotationDegrees' | 'brightnessPercent' | 'bannerText' | 'bannerOpacity' | 'bannerFontSize'
+> = {
+  cropRect: { x: 0, y: 0, width: 100, height: 100 },
+  rotationDegrees: 0,
+  brightnessPercent: 100,
+  bannerText: '',
+  bannerOpacity: 70,
+  bannerFontSize: 'md',
+}
+
+function RangeField({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string
+  min: number
+  max: number
+  value: number
+  onChange: (value: number) => void
+}): JSX.Element {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-accent-sky-500"
+      />
+    </label>
+  )
+}
+
+// One combined edit panel per slot: a live preview (rendered with the
+// exact same MediaSlotRenderer component the public dashboard uses) plus
+// crop/rotate/brightness/banner controls, all reflected in that same
+// preview instantly - every control writes through the parent's saveSlot
+// (synchronous local state update, debounced network write), so there's
+// no separate "draft" state to reconcile before saving.
+function SlotAppearanceEditor({
+  slot,
+  visual,
+  onChange,
+}: {
+  slot: CarouselSlot
+  visual: MediaSlotVisual
+  onChange: (patch: Partial<CarouselSlot>) => void
+}): JSX.Element {
+  const crop = slot.cropRect
+  const updateCrop = (patch: Partial<CropRect>) => onChange({ cropRect: { ...crop, ...patch } })
+  const hasBanner = slot.bannerText.trim().length > 0
+
+  return (
+    <div className="mt-3 rounded-xl border border-dashed border-accent-sky-500/40 bg-slate-950/40 p-3">
+      {/* Same outer/inner wrapper classes as MediaPanel.tsx's live dashboard
+          box (aspect-video 16:9, identical border/background/rounding) -
+          only the rendering component inside (MediaSlotRenderer) is what
+          must match exactly, but matching the frame too makes this a
+          visually honest preview, not just a technically-accurate one. */}
+      <div className="mb-3 aspect-video w-full overflow-hidden rounded-xl border border-border bg-slate-950/90 shadow-lg shadow-slate-950/30">
+        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-slate-900/60">
+          {visual.resolvedUrl ? (
+            <MediaSlotRenderer slot={visual} />
+          ) : (
+            <span className="px-4 text-center text-xs text-muted-500">Assign a source above to preview</span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <RangeField label={`Crop X: ${crop.x}%`} min={0} max={99} value={crop.x} onChange={(v) => updateCrop({ x: v })} />
+        <RangeField label={`Crop Y: ${crop.y}%`} min={0} max={99} value={crop.y} onChange={(v) => updateCrop({ y: v })} />
+        <RangeField
+          label={`Crop width: ${crop.width}%`}
+          min={5}
+          max={100}
+          value={crop.width}
+          onChange={(v) => updateCrop({ width: v })}
+        />
+        <RangeField
+          label={`Crop height: ${crop.height}%`}
+          min={5}
+          max={100}
+          value={crop.height}
+          onChange={(v) => updateCrop({ height: v })}
+        />
+        <RangeField
+          label={`Rotation: ${slot.rotationDegrees}°`}
+          min={-180}
+          max={180}
+          value={slot.rotationDegrees}
+          onChange={(v) => onChange({ rotationDegrees: v })}
+        />
+        <RangeField
+          label={`Brightness: ${slot.brightnessPercent}%`}
+          min={20}
+          max={200}
+          value={slot.brightnessPercent}
+          onChange={(v) => onChange({ brightnessPercent: v })}
+        />
+      </div>
+
+      <label className="mt-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Banner text (optional)</span>
+        <input
+          type="text"
+          value={slot.bannerText}
+          onChange={(event) => onChange({ bannerText: event.target.value })}
+          placeholder="e.g. Duty Instructor"
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+      </label>
+
+      {hasBanner && (
+        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+          <RangeField
+            label={`Banner opacity: ${slot.bannerOpacity}%`}
+            min={0}
+            max={100}
+            value={slot.bannerOpacity}
+            onChange={(v) => onChange({ bannerOpacity: v })}
+          />
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Banner size</span>
+            <select
+              value={slot.bannerFontSize}
+              onChange={(event) => onChange({ bannerFontSize: event.target.value as CarouselSlot['bannerFontSize'] })}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            >
+              <option value="sm">Small</option>
+              <option value="md">Medium</option>
+              <option value="lg">Large</option>
+            </select>
+          </label>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => onChange(IDENTITY_APPEARANCE)}
+        className="mt-3 text-xs font-semibold text-muted-400 hover:text-status-bad"
+      >
+        Reset appearance to defaults
+      </button>
+    </div>
+  )
+}
+
 export default function MediaManagerPage(): JSX.Element {
   const navigate = useNavigate()
   const [loggingOut, setLoggingOut] = useState(false)
@@ -97,6 +281,9 @@ export default function MediaManagerPage(): JSX.Element {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [editingSlotNumber, setEditingSlotNumber] = useState<number | null>(null)
+  const pendingSavesRef = useRef<Map<number, CarouselSlot>>(new Map())
+  const saveTimerRef = useRef<number | undefined>(undefined)
 
   function loadLibrary() {
     return fetch(MEDIA_LIBRARY_URL)
@@ -180,13 +367,27 @@ export default function MediaManagerPage(): JSX.Element {
     await loadLibrary()
   }
 
-  async function saveSlot(updated: CarouselSlot) {
+  // Local state (hence the live preview) updates synchronously on every
+  // call; the network PUT is batched and debounced so dragging a crop/
+  // rotation/brightness slider doesn't fire a request per pixel - all
+  // slots edited within the debounce window are flushed together in one
+  // request, keyed by slotNumber so rapid edits to the same slot collapse
+  // to their latest value rather than being sent (and potentially
+  // resolved out of order) individually.
+  function saveSlot(updated: CarouselSlot) {
     setSlots((prev) => prev.map((s) => (s.slotNumber === updated.slotNumber ? updated : s)))
-    await fetch(CAROUSEL_SLOTS_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slots: [updated] }),
-    })
+    pendingSavesRef.current.set(updated.slotNumber, updated)
+    window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = window.setTimeout(() => {
+      const toSave = Array.from(pendingSavesRef.current.values())
+      pendingSavesRef.current.clear()
+      if (toSave.length === 0) return
+      fetch(CAROUSEL_SLOTS_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slots: toSave }),
+      })
+    }, 300)
   }
 
   function handleSourceChange(slot: CarouselSlot, value: string) {
@@ -405,6 +606,26 @@ export default function MediaManagerPage(): JSX.Element {
                             <option value="fill">Fill (crop to fill the box)</option>
                           </select>
                         </label>
+                      )}
+
+                      {(slot.mediaType === 'image' || slot.mediaType === 'mp4') && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingSlotNumber((prev) => (prev === slot.slotNumber ? null : slot.slotNumber))
+                          }
+                          className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 transition hover:border-sky-500"
+                        >
+                          {editingSlotNumber === slot.slotNumber ? '▾ Close appearance editor' : '🎨 Edit appearance'}
+                        </button>
+                      )}
+
+                      {editingSlotNumber === slot.slotNumber && (
+                        <SlotAppearanceEditor
+                          slot={slot}
+                          visual={resolveSlotVisual(slot, files, cameraOptions)}
+                          onChange={(patch) => saveSlot({ ...slot, ...patch })}
+                        />
                       )}
                     </div>
                   )

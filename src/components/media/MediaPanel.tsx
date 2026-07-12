@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
+import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
 
-interface CarouselSlotResolved {
+interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
-  mediaType: string
   durationSeconds: number
   mp4DurationSeconds: number | null
-  resolvedUrl: string | null
-  fitMode: string
 }
 
 function renderMediaContent(item: MediaItem) {
@@ -22,55 +20,6 @@ function renderMediaContent(item: MediaItem) {
           <div className="text-sm text-muted-400">Images, webcam, alerts, or slideshow content</div>
         </div>
       )
-  }
-}
-
-// One renderer per carousel slot mediaType - webcam and image are the
-// exact same iframe/img markup MediaPanel already used for the single-
-// item case (same className/attributes), just parameterised per slot
-// instead of hardcoded to one webcamUrl/item. mp4/pdf are the two
-// genuinely new cases for phase 1.
-function renderCarouselSlot(slot: CarouselSlotResolved): JSX.Element | null {
-  if (!slot.resolvedUrl) return null
-  switch (slot.mediaType) {
-    case 'webcam':
-      return (
-        <iframe
-          src={slot.resolvedUrl}
-          className="h-full w-full"
-          style={{ border: 0 }}
-          allow="autoplay"
-          allowFullScreen
-          title="Aeroclub webcam"
-        />
-      )
-    case 'image':
-      return (
-        <img
-          src={slot.resolvedUrl}
-          alt=""
-          className={`h-full w-full ${slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'}`}
-        />
-      )
-    case 'mp4':
-      // key forces the <video> to remount (and restart playback) every
-      // time the active slot changes back to this same mp4, rather than
-      // React reusing the DOM node and leaving it paused on a stale frame.
-      return (
-        <video
-          key={slot.resolvedUrl}
-          src={slot.resolvedUrl}
-          className={`h-full w-full ${slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'}`}
-          autoPlay
-          muted
-          loop
-          playsInline
-        />
-      )
-    case 'pdf':
-      return <iframe src={slot.resolvedUrl} className="h-full w-full bg-white" style={{ border: 0 }} title="Document" />
-    default:
-      return null
   }
 }
 
@@ -149,7 +98,7 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
         className={`flex h-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-slate-900/60 text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
       >
         {hasCarousel ? (
-          activeSlot && renderCarouselSlot(activeSlot)
+          activeSlot && <MediaSlotRenderer slot={activeSlot} />
         ) : webcamUrl ? (
           <iframe
             src={webcamUrl}
