@@ -21,13 +21,19 @@ import { Canvas, Textbox, FabricImage } from 'fabric'
 import type { MediaLibraryFile } from '../../types/mediaLibrary'
 import type { SlideBackground, SlideFontFamily, SlideImageElement, SlideRecipe, SlideTextBox } from '../../types/slideRecipe'
 import { SLIDE_FONT_CSS_STACK, SLIDE_FONT_OPTIONS, ensureSlideFontsLoaded } from './slideFonts'
-import { MEDIA_LIBRARY_UPLOAD_URL, mediaLibraryImageProxyUrl, mediaLibraryRecipeUrl } from '../../config/publicApi'
+import {
+  MEDIA_LIBRARY_UPLOAD_URL,
+  mediaLibraryImageProxyUrl,
+  mediaLibraryRecipeUrl,
+  mediaLibraryReplaceUrl,
+} from '../../config/publicApi'
 
 const CANVAS_WIDTH = 1920
 const CANVAS_HEIGHT = 1080
 const DISPLAY_WIDTH = 640
 const DISPLAY_HEIGHT = (CANVAS_HEIGHT / CANVAS_WIDTH) * DISPLAY_WIDTH
 const NEW_IMAGE_MAX_DIMENSION = 480
+const TOAST_DURATION_MS = 3500
 
 type SlideTextboxObject = Textbox & { slideBoxId: string; slideFontKey: SlideFontFamily }
 type SlideImageObject = FabricImage & { slideImageId: string; slideImageLibraryId: string }
@@ -184,7 +190,10 @@ type SelectedState = ({ kind: 'text' } & TextSelectionProps) | { kind: 'image'; 
 
 interface SlideEditorProps {
   files: MediaLibraryFile[]
-  initialRecipe: SlideRecipe | null
+  // null = creating a brand new slide; non-null = re-editing this
+  // existing library file (its slideRecipe, if any, seeds the canvas,
+  // and its id is what "Save Slide" updates in place).
+  editingFile: MediaLibraryFile | null
   onClose: () => void
   onSaved: () => void
   // Called immediately after any upload that happens WITHIN the editor
@@ -194,10 +203,35 @@ interface SlideEditorProps {
   onLibraryChanged: () => void
 }
 
-export default function SlideEditor({ files, initialRecipe, onClose, onSaved, onLibraryChanged }: SlideEditorProps): JSX.Element {
+// A brief, non-blocking tip that overlays the modal rather than living
+// in document flow - selecting an image has no persistent on-screen
+// controls of its own (unlike a text box, which gets a full font/size/
+// colour panel), so without this the ONLY way to know drag/resize/
+// rotate is even possible was a message that pushed the whole sidebar
+// down every time selection changed. Auto-dismisses; the same object
+// can still be deleted after it fades via the header row's Delete
+// button (always present, just enabled/disabled by selection) or the
+// keyboard Delete/Backspace shortcut.
+function SelectionToast({ message }: { message: string | null }): JSX.Element | null {
+  if (!message) return null
+  return (
+    <div
+      className="pointer-events-none absolute right-6 top-20 z-10 max-w-xs rounded-lg border border-accent-sky-500/50 bg-slate-950/95 px-4 py-3 text-sm text-slate-200 shadow-xl"
+      role="status"
+    >
+      {message}
+    </div>
+  )
+}
+
+export default function SlideEditor({ files, editingFile, onClose, onSaved, onLibraryChanged }: SlideEditorProps): JSX.Element {
+  const initialRecipe = editingFile?.slideRecipe ?? null
+  const editingFileId = editingFile?.id ?? null
+
   const canvasElRef = useRef<HTMLCanvasElement>(null)
   const fabricRef = useRef<Canvas | null>(null)
   const bgObjectRef = useRef<FabricImage | null>(null)
+  const toastTimerRef = useRef<number | undefined>(undefined)
 
   const [background, setBackground] = useState<SlideBackground>(initialRecipe?.background ?? defaultBackground())
   const [backgroundMode, setBackgroundMode] = useState<'color' | 'image' | 'upload'>(initialRecipe?.background.type ?? 'color')
@@ -211,6 +245,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
   const [addImageError, setAddImageError] = useState<string | null>(null)
 
   const [selected, setSelected] = useState<SelectedState | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [slideName, setSlideName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -224,6 +259,12 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
     return [...files, ...extraFiles.filter((f) => !knownIds.has(f.id))]
   }, [files, extraFiles])
   const imageFiles = useMemo(() => allFiles.filter((f) => f.mediaType === 'image'), [allFiles])
+
+  function showToast(message: string) {
+    setToast(message)
+    window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => setToast(null), TOAST_DURATION_MS)
+  }
 
   // Canvas lifecycle - created once on mount, disposed on unmount.
   // Initial images/text boxes are seeded here (not in a separate
@@ -275,8 +316,11 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
         })
       } else if (isSlideImageElement(obj)) {
         setSelected({ kind: 'image', id: obj.slideImageId })
+        showToast('Image selected - drag to move, drag a corner to resize, use the top handle to rotate.')
       } else {
         setSelected(null)
+        setToast(null)
+        window.clearTimeout(toastTimerRef.current)
       }
     }
     canvas.on('selection:created', syncSelection)
@@ -302,6 +346,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
 
     return () => {
       cancelled = true
+      window.clearTimeout(toastTimerRef.current)
       window.removeEventListener('keydown', handleKeyDown)
       canvas.dispose()
       fabricRef.current = null
@@ -375,6 +420,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
     canvas.discardActiveObject()
     canvas.requestRenderAll()
     setSelected(null)
+    setToast(null)
   }
 
   // Places a new image element (from either "+ Add Image" flow) centred
@@ -405,6 +451,7 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
     canvas.setActiveObject(img)
     canvas.requestRenderAll()
     setSelected({ kind: 'image', id: elementId })
+    showToast('Image added - drag to move, drag a corner to resize, use the top handle to rotate.')
     setAddingImage(false)
   }
 
@@ -484,7 +531,16 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
     return { canvasWidth: CANVAS_WIDTH, canvasHeight: CANVAS_HEIGHT, background, images, textBoxes }
   }
 
-  async function handleSave() {
+  // saveAsNew=false is the primary "Save Slide" action: when editing an
+  // existing slide, it updates that SAME file in place (PUT .../replace
+  // - same id, same r2Key, new bytes, delta-based quota check); when
+  // creating a brand new slide (editingFileId is null), there's nothing
+  // to update in place, so it falls through to the same "create a new
+  // file" path saveAsNew=true always uses. saveAsNew=true ("Save as
+  // New", only offered while editing) always creates a fresh file via
+  // the unmodified upload endpoint, exactly as every slide save worked
+  // before this pass.
+  async function performSave(saveAsNew: boolean) {
     const canvas = fabricRef.current
     if (!canvas) return
     setSaving(true)
@@ -504,30 +560,46 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
       const blob = await canvas.toBlob({ format: 'png', multiplier: 1 })
       if (!blob) throw new Error('Could not export the slide as an image')
 
-      const timestampName = `Slide ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`
-      const baseName = sanitizeSlideName(slideName) || timestampName
-      const existingFilenames = new Set(allFiles.map((f) => f.filename))
-      const filename = uniqueSlideFilename(baseName, existingFilenames)
+      const useInPlace = !saveAsNew && editingFileId !== null
+      let targetId: string
 
-      const uploadResponse = await fetch(
-        `${MEDIA_LIBRARY_UPLOAD_URL}?${new URLSearchParams({ filename, mediaType: 'image' })}`,
-        { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob }
-      )
-      const uploaded = await uploadResponse.json()
-      if (!uploadResponse.ok) throw new Error(uploaded.error ?? 'Upload failed')
+      if (useInPlace) {
+        const replaceResponse = await fetch(mediaLibraryReplaceUrl(editingFileId!), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'image/png' },
+          body: blob,
+        })
+        const replaced = await replaceResponse.json()
+        if (!replaceResponse.ok) throw new Error(replaced.error ?? 'Update failed')
+        targetId = editingFileId!
+      } else {
+        const timestampName = `Slide ${new Date().toISOString().slice(0, 19).replace('T', ' ')}`
+        const baseName = sanitizeSlideName(slideName) || timestampName
+        const existingFilenames = new Set(allFiles.map((f) => f.filename))
+        const filename = uniqueSlideFilename(baseName, existingFilenames)
 
-      const recipeResponse = await fetch(mediaLibraryRecipeUrl(uploaded.id), {
+        const uploadResponse = await fetch(
+          `${MEDIA_LIBRARY_UPLOAD_URL}?${new URLSearchParams({ filename, mediaType: 'image' })}`,
+          { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob }
+        )
+        const uploaded = await uploadResponse.json()
+        if (!uploadResponse.ok) throw new Error(uploaded.error ?? 'Upload failed')
+        targetId = uploaded.id
+      }
+
+      const recipeResponse = await fetch(mediaLibraryRecipeUrl(targetId), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recipe }),
       })
-      // The image itself is already uploaded and perfectly usable either
-      // way - onSaved() (which reloads the library) always runs so it
-      // shows up. Only the modal's auto-close is gated on the recipe
-      // attach too: if it failed, the user should see why "Edit Slide"
-      // won't be available for this one, so the modal stays open with
-      // the image already safely saved rather than silently vanishing
-      // past a warning they'd never get to read.
+      // The image itself is already saved (in place or as a new file)
+      // and perfectly usable either way - onSaved() (which reloads the
+      // library) always runs so it shows up. Only the modal's auto-
+      // close is gated on the recipe attach too: if it failed, the
+      // user should see why "Edit Slide" won't be available for this
+      // one, so the modal stays open with the image already safely
+      // saved rather than silently vanishing past a warning they'd
+      // never get to read.
       onSaved()
       if (!recipeResponse.ok) {
         setError('Slide image saved, but its editable layout could not be attached - it will still work as a normal photo, but "Edit Slide" won\'t be available for it. Close this dialog whenever you\'re ready.')
@@ -543,15 +615,17 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-2xl">
+      <div className="relative flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-border bg-panel shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h2 className="text-lg font-bold uppercase tracking-wide text-primary">
-            {initialRecipe ? 'Edit Slide' : 'Create Slide'}
+            {editingFile ? 'Edit Slide' : 'Create Slide'}
           </h2>
           <button type="button" onClick={onClose} className="text-sm font-semibold text-muted-400 hover:text-status-bad">
             ✕ Close
           </button>
         </div>
+
+        <SelectionToast message={toast} />
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6 md:flex-row">
           {/* Canvas - fixed, deliberately modest display size so the
@@ -641,207 +715,220 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
               )}
             </section>
 
-            {/* Images */}
+            {/* Images - header row (Add/Delete) is a fixed height
+                regardless of state; the content area below has a
+                reserved min-height so opening the "+ Add Image" form
+                doesn't shift anything else in the sidebar or resize
+                the modal. The old inline "Image selected" message is
+                gone entirely - replaced by the SelectionToast above. */}
             <section>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="text-xs font-bold uppercase tracking-widest text-accent-sky-400">Images</div>
-                <button
-                  type="button"
-                  onClick={() => setAddingImage((prev) => !prev)}
-                  className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500"
-                >
-                  + Add Image
-                </button>
-              </div>
-
-              {addingImage && (
-                <div className="mb-3 flex flex-col gap-2 rounded-xl border border-dashed border-slate-700 p-3">
-                  <div className="flex flex-wrap gap-4">
-                    <label className="flex items-center gap-1.5 text-sm text-muted-300">
-                      <input
-                        type="radio"
-                        checked={addImageMode === 'existing'}
-                        onChange={() => setAddImageMode('existing')}
-                        disabled={imageFiles.length === 0}
-                      />
-                      Existing image
-                    </label>
-                    <label className="flex items-center gap-1.5 text-sm text-muted-300">
-                      <input type="radio" checked={addImageMode === 'upload'} onChange={() => setAddImageMode('upload')} />
-                      Upload new
-                    </label>
-                  </div>
-                  {addImageMode === 'existing' ? (
-                    <div className="flex gap-2">
-                      <select
-                        value={addImageExistingId}
-                        onChange={(event) => setAddImageExistingId(event.target.value)}
-                        className="flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                      >
-                        <option value="">— choose an image —</option>
-                        {imageFiles.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.filename}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={handleAddExistingImage}
-                        disabled={!addImageExistingId}
-                        className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-50"
-                      >
-                        Add to Canvas
-                      </button>
-                    </div>
-                  ) : (
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAddImageFileChange}
-                      disabled={addImageBusy}
-                      className="text-sm text-muted-300"
-                    />
-                  )}
-                  {addImageBusy && <p className="text-xs text-muted-400">Uploading…</p>}
-                  {addImageError && <p className="text-xs font-semibold text-status-bad">{addImageError}</p>}
-                </div>
-              )}
-
-              {selected?.kind === 'image' ? (
-                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-accent-sky-500/40 bg-slate-950/40 p-3">
-                  <p className="text-sm text-muted-300">
-                    Image selected - drag to move, drag a corner to resize, use the top handle to rotate.
-                  </p>
-                  <button type="button" onClick={handleDeleteSelected} className="self-start text-xs font-semibold text-status-bad">
-                    Delete this image
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelected}
+                    disabled={selected?.kind !== 'image'}
+                    className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-status-bad hover:border-status-bad disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddingImage((prev) => !prev)}
+                    className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500"
+                  >
+                    + Add Image
                   </button>
                 </div>
-              ) : (
-                !addingImage && (
+              </div>
+
+              <div className="min-h-[104px]">
+                {addingImage ? (
+                  <div className="flex flex-col gap-2 rounded-xl border border-dashed border-slate-700 p-3">
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-1.5 text-sm text-muted-300">
+                        <input
+                          type="radio"
+                          checked={addImageMode === 'existing'}
+                          onChange={() => setAddImageMode('existing')}
+                          disabled={imageFiles.length === 0}
+                        />
+                        Existing image
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm text-muted-300">
+                        <input type="radio" checked={addImageMode === 'upload'} onChange={() => setAddImageMode('upload')} />
+                        Upload new
+                      </label>
+                    </div>
+                    {addImageMode === 'existing' ? (
+                      <div className="flex gap-2">
+                        <select
+                          value={addImageExistingId}
+                          onChange={(event) => setAddImageExistingId(event.target.value)}
+                          className="flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        >
+                          <option value="">— choose an image —</option>
+                          {imageFiles.map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.filename}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={handleAddExistingImage}
+                          disabled={!addImageExistingId}
+                          className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-50"
+                        >
+                          Add to Canvas
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAddImageFileChange}
+                        disabled={addImageBusy}
+                        className="text-sm text-muted-300"
+                      />
+                    )}
+                    {addImageBusy && <p className="text-xs text-muted-400">Uploading…</p>}
+                    {addImageError && <p className="text-xs font-semibold text-status-bad">{addImageError}</p>}
+                  </div>
+                ) : (
                   <p className="text-sm text-muted-500">
                     Click "+ Add Image" to place a photo on the slide (e.g. a headshot over the background).
                   </p>
-                )
-              )}
+                )}
+              </div>
             </section>
 
-            {/* Text boxes */}
+            {/* Text boxes - same fixed-header/reserved-height treatment
+                as Images above. The full font/size/colour/align panel
+                stays inline (unlike the image case, it holds controls
+                the user needs to keep interacting with, so it can't be
+                a transient toast) - the min-height on its container is
+                what stops it from resizing the modal on selection. */}
             <section>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="text-xs font-bold uppercase tracking-widest text-accent-sky-400">Text Boxes</div>
-                <button
-                  type="button"
-                  onClick={handleAddTextBox}
-                  className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500"
-                >
-                  + Add Text Box
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelected}
+                    disabled={selected?.kind !== 'text'}
+                    className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-status-bad hover:border-status-bad disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddTextBox}
+                    className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500"
+                  >
+                    + Add Text Box
+                  </button>
+                </div>
               </div>
 
-              {selected?.kind === 'text' ? (
-                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-accent-sky-500/40 bg-slate-950/40 p-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Text</span>
-                    <textarea
-                      value={selected.text}
-                      onChange={(event) => updateSelectedText({ text: event.target.value })}
-                      rows={2}
-                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Font</span>
-                    <select
-                      value={selected.fontFamily}
-                      onChange={(event) => updateSelectedText({ fontFamily: event.target.value as SlideFontFamily })}
-                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                    >
-                      {SLIDE_FONT_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
+              <div className="min-h-[310px]">
+                {selected?.kind === 'text' ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-dashed border-accent-sky-500/40 bg-slate-950/40 p-3">
                     <label className="flex flex-col gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Size (px)</span>
-                      <input
-                        type="number"
-                        min={8}
-                        max={300}
-                        value={selected.fontSize}
-                        onChange={(event) => updateSelectedText({ fontSize: Number(event.target.value) || 48 })}
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Text</span>
+                      <textarea
+                        value={selected.text}
+                        onChange={(event) => updateSelectedText({ text: event.target.value })}
+                        rows={2}
                         className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                       />
                     </label>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Colour</span>
-                      <input
-                        type="color"
-                        value={selected.color}
-                        onChange={(event) => updateSelectedText({ color: event.target.value })}
-                        className="h-9 w-full cursor-pointer rounded border border-slate-700 bg-slate-900/80"
-                      />
-                    </label>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(['left', 'center', 'right'] as const).map((align) => (
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Font</span>
+                      <select
+                        value={selected.fontFamily}
+                        onChange={(event) => updateSelectedText({ fontFamily: event.target.value as SlideFontFamily })}
+                        className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                      >
+                        {SLIDE_FONT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Size (px)</span>
+                        <input
+                          type="number"
+                          min={8}
+                          max={300}
+                          value={selected.fontSize}
+                          onChange={(event) => updateSelectedText({ fontSize: Number(event.target.value) || 48 })}
+                          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Colour</span>
+                        <input
+                          type="color"
+                          value={selected.color}
+                          onChange={(event) => updateSelectedText({ color: event.target.value })}
+                          className="h-9 w-full cursor-pointer rounded border border-slate-700 bg-slate-900/80"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(['left', 'center', 'right'] as const).map((align) => (
+                        <button
+                          key={align}
+                          type="button"
+                          onClick={() => updateSelectedText({ align })}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest ${
+                            selected.align === align
+                              ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
+                              : 'border-slate-700 bg-slate-900/40 text-muted-400'
+                          }`}
+                        >
+                          {align}
+                        </button>
+                      ))}
                       <button
-                        key={align}
                         type="button"
-                        onClick={() => updateSelectedText({ align })}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest ${
-                          selected.align === align
+                        onClick={() => updateSelectedText({ bold: !selected.bold })}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
+                          selected.bold
                             ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
                             : 'border-slate-700 bg-slate-900/40 text-muted-400'
                         }`}
                       >
-                        {align}
+                        B
                       </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => updateSelectedText({ bold: !selected.bold })}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
-                        selected.bold
-                          ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
-                          : 'border-slate-700 bg-slate-900/40 text-muted-400'
-                      }`}
-                    >
-                      B
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateSelectedText({ italic: !selected.italic })}
-                      className={`rounded-lg border px-3 py-1.5 text-xs italic uppercase tracking-widest ${
-                        selected.italic
-                          ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
-                          : 'border-slate-700 bg-slate-900/40 text-muted-400'
-                      }`}
-                    >
-                      I
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedText({ italic: !selected.italic })}
+                        className={`rounded-lg border px-3 py-1.5 text-xs italic uppercase tracking-widest ${
+                          selected.italic
+                            ? 'border-sky-500 bg-sky-500/20 text-accent-sky-400'
+                            : 'border-slate-700 bg-slate-900/40 text-muted-400'
+                        }`}
+                      >
+                        I
+                      </button>
+                    </div>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleDeleteSelected}
-                    className="self-start text-xs font-semibold text-status-bad"
-                  >
-                    Delete this text box
-                  </button>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-500">
-                  Click "+ Add Text Box", or select an existing one on the canvas, to edit its font/size/colour/
-                  alignment here.
-                </p>
-              )}
+                ) : (
+                  <p className="text-sm text-muted-500">
+                    Click "+ Add Text Box", or select an existing one on the canvas, to edit its font/size/colour/
+                    alignment here.
+                  </p>
+                )}
+              </div>
             </section>
 
             {error && <p className="text-sm font-semibold text-status-bad">{error}</p>}
@@ -856,16 +943,31 @@ export default function SlideEditor({ files, initialRecipe, onClose, onSaved, on
                   placeholder="e.g. Trial Flights Promo"
                   className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
+                {editingFileId && (
+                  <span className="text-xs text-muted-500">
+                    Only used by "Save as New" below - "Save Slide" updates "{editingFile?.filename}" in place.
+                  </span>
+                )}
               </label>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={handleSave}
+                  onClick={() => performSave(false)}
                   disabled={saving}
                   className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
                 >
                   {saving ? 'Saving…' : 'Save Slide'}
                 </button>
+                {editingFileId && (
+                  <button
+                    type="button"
+                    onClick={() => performSave(true)}
+                    disabled={saving}
+                    className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-2 text-sm font-semibold text-accent-sky-400 hover:border-sky-500 disabled:opacity-50"
+                  >
+                    Save as New
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClose}

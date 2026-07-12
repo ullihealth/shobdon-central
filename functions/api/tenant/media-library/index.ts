@@ -41,10 +41,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Resolve each file's real public URL server-side (same MEDIA_PUBLIC_BASE_URL +
   // r2Key pattern the public config endpoint uses) so the media manager can render
-  // actual thumbnails instead of icon-only placeholders.
+  // actual thumbnails instead of icon-only placeholders. The ?v= cache-buster
+  // matches the public config endpoint's - needed now that a slide can be
+  // edited in place (same r2Key, new bytes) - see [id]/replace.ts.
   const files = results.map(({ r2Key, slideRecipeJson, ...file }) => ({
     ...file,
-    url: env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${r2Key}` : null,
+    url: env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${r2Key}?v=${encodeURIComponent(file.uploadedAt)}` : null,
     // Parsed here (not left as a raw string) so the frontend never needs
     // its own JSON.parse/try-catch for this - null for every normal
     // upload, only non-null for a composer-generated slide.

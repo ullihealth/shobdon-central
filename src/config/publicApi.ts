@@ -30,6 +30,10 @@ export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
 // bucket sends no CORS headers).
 export const mediaLibraryRecipeUrl = (fileId: string): string => `/api/tenant/media-library/${fileId}/recipe`
 export const mediaLibraryImageProxyUrl = (fileId: string): string => `/api/tenant/media-library/${fileId}/image`
+// True in-place update (same id, same r2Key, new bytes) - used by the
+// primary "Save Slide" action when editing an existing slide. "Save as
+// New" instead uses MEDIA_LIBRARY_UPLOAD_URL above, unchanged.
+export const mediaLibraryReplaceUrl = (fileId: string): string => `/api/tenant/media-library/${fileId}/replace`
 
 // Owner/atc-role ATC-control endpoint.
 export const OPS_PANEL_URL = '/api/tenant/ops-panel'

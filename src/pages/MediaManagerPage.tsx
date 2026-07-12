@@ -470,16 +470,16 @@ export default function MediaManagerPage(): JSX.Element {
     }
   }
 
-  // Saving a slide (whether "Create Slide" or "Edit Slide") always
-  // produces a NEW file/library entry - v1 scope deliberately does not
-  // overwrite the file being re-edited in place (see SlideEditor.tsx's
-  // header comment and this session's plan). Reloading from the server
-  // guarantees the list reflects exactly what's actually stored,
-  // including the parsed slideRecipe. Deliberately does NOT close the
-  // editor itself - SlideEditor closes on full success, but keeps
-  // itself open (with the new file already safely saved and this
-  // reload already run) if only the recipe-attach step failed, so its
-  // warning message is actually visible before the user dismisses it.
+  // "Save Slide" on an existing slide updates that file in place;
+  // "Save as New" (or the initial "Create Slide") always creates a
+  // fresh library entry - see SlideEditor.tsx's performSave(). Either
+  // way, reloading from the server guarantees the list reflects
+  // exactly what's actually stored, including the parsed slideRecipe.
+  // Deliberately does NOT close the editor itself - SlideEditor closes
+  // on full success, but keeps itself open (with the save already safely
+  // done and this reload already run) if only the recipe-attach step
+  // failed, so its warning message is actually visible before the user
+  // dismisses it.
   function handleSlideSaved() {
     loadLibrary()
   }
@@ -801,7 +801,7 @@ export default function MediaManagerPage(): JSX.Element {
         >
           <SlideEditor
             files={files}
-            initialRecipe={editingSlideFile?.slideRecipe ?? null}
+            editingFile={editingSlideFile}
             onClose={closeSlideEditor}
             onSaved={handleSlideSaved}
             onLibraryChanged={loadLibrary}

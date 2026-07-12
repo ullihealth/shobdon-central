@@ -130,6 +130,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
            cs.bannerFontSize AS bannerFontSize,
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
+           ml.uploadedAt AS mediaUploadedAt,
            cam.url AS cameraUrl
          FROM carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
@@ -154,6 +155,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
         bannerFontSize: string;
         mp4DurationSeconds: number | null;
         r2Key: string | null;
+        mediaUploadedAt: string | null;
         cameraUrl: string | null;
       }>(),
     env.DB
@@ -194,8 +196,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
     bannerText: row.bannerText,
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
+    // The ?v= cache-buster matters now that a slide can be edited IN
+    // PLACE (same r2Key, new bytes) - without it, a browser or the R2
+    // public bucket's own edge caching could keep serving the pre-edit
+    // image indefinitely even though the underlying object has
+    // genuinely changed. mediaUploadedAt changes on every in-place
+    // edit (see [id]/replace.ts), so appending it forces a fresh fetch
+    // exactly when the content actually changed, and never otherwise.
     resolvedUrl:
-      row.mediaType === "webcam" ? row.cameraUrl : row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}` : null,
+      row.mediaType === "webcam"
+        ? row.cameraUrl
+        : row.r2Key && mediaBaseUrl
+          ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
+          : null,
   }));
 
   const opsPanel = opsPanelRow
