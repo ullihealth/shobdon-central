@@ -43,33 +43,51 @@ const BANNER_HEIGHT_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl' | 'xxl', string> =
   xxl: 'h-20', // 80px
 }
 
-// Crop is expressed as a percentage sub-rect of the source [x,y,w,h].
-// To show only that slice, the underlying image/video is rendered at a
-// scale of (100/w)% x (100/h)% inside an overflow:hidden viewport, and
-// shifted so the crop's top-left corner lands at the viewport's origin.
-// Deliberate scope decision: the cropped slice always fills the crop
-// viewport via object-fit:cover (never letterboxed) - fitMode's
-// contain/fill distinction still applies to how that filled slice sits
-// in the outer 16:9 box, but a manually-chosen crop rectangle is always
-// presented "cover"-style within its own viewport, matching standard
-// photo-crop-tool UX (once you've drawn a crop box, its contents fill
-// the frame).
-function cropTransformStyle(crop: CropRect): React.CSSProperties {
-  const w = Math.max(1, crop.width)
-  const h = Math.max(1, crop.height)
-  return {
-    position: 'absolute',
-    left: `${(-100 * crop.x) / w}%`,
-    top: `${(-100 * crop.y) / h}%`,
-    width: `${10000 / w}%`,
-    height: `${10000 / h}%`,
-  }
-}
-
 const IDENTITY_CROP: CropRect = { x: 0, y: 0, width: 100, height: 100 }
 
-function isIdentityCrop(crop: CropRect): boolean {
-  return crop.x === 0 && crop.y === 0 && crop.width === 100 && crop.height === 100
+// Applied directly to the img/video element itself, ON TOP of its own
+// normal object-fit:{fitMode} rendering - NOT via a separate wrapper
+// that swaps to a different object-fit strategy. This is what makes
+// zoom continuous: at the identity crop (100/100, x=y=0) this resolves
+// to `scale(1) translate(0%, 0%)`, a true no-op that's pixel-identical
+// to fitMode's own unmodified rendering (whether that's letterboxed
+// 'contain' or filled 'cover'). As the crop's width/height shrink
+// (zoom increases), the ALREADY-fitted image scales up smoothly from
+// wherever fitMode left it - so a 'contain'-fitted image that starts
+// letterboxed will progressively grow into and past its own letterbox
+// bars as zoom increases, with no jump at any point, until eventually
+// it fills the box and keeps zooming further. (A prior version forced
+// object-fit:cover the instant ANY crop was non-identity, which caused
+// a hard jump from "letterboxed" to "fully cropped" between 100% and
+// 101% zoom - this replaces that with a single continuous formula.)
+//
+// Pan (crop.x/crop.y) is converted to a translate that's proportional
+// to how much scale "room" exists - so pan has zero effect at 100%
+// zoom (scale=1) and smoothly gains effect as zoom increases, matching
+// the same "no discontinuity" requirement.
+function zoomPanTransformStyle(crop: CropRect): React.CSSProperties {
+  const width = crop.width > 0 ? crop.width : 100
+  const height = crop.height > 0 ? crop.height : 100
+  const scale = 100 / Math.max(1, Math.min(width, height))
+  if (scale === 1) return {}
+
+  const marginX = 100 - width
+  const marginY = 100 - height
+  const fracX = marginX > 0.001 ? crop.x / marginX : 0.5
+  const fracY = marginY > 0.001 ? crop.y / marginY : 0.5
+  const panX = (fracX - 0.5) * 2 // -1 (leftmost) .. 0 (centered) .. 1 (rightmost)
+  const panY = (fracY - 0.5) * 2
+
+  // translate() percentages resolve against the element's own
+  // (unscaled) box and are applied before scale() amplifies them (CSS
+  // transform functions compose right-to-left) - so dividing by scale
+  // here means the FINAL visual displacement is exactly
+  // panX * (scale-1) * 50%, i.e. it exactly reaches the available
+  // margin at panX = ±1 and is 0 at panX = 0, for any scale.
+  const txPercent = (-panX * (scale - 1) * 50) / scale
+  const tyPercent = (-panY * (scale - 1) * 50) / scale
+
+  return { transform: `scale(${scale}) translate(${txPercent}%, ${tyPercent}%)` }
 }
 
 function BannerOverlay({
@@ -99,18 +117,19 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
   if (!slot.resolvedUrl && slot.mediaType !== 'webcam') return null
 
   const crop = slot.cropRect ?? IDENTITY_CROP
-  const hasCrop = !isIdentityCrop(crop) && (slot.mediaType === 'image' || slot.mediaType === 'mp4')
   const hasRotation = slot.rotationDegrees % 360 !== 0
   const filterStyle: React.CSSProperties =
     slot.brightnessPercent !== 100 ? { filter: `brightness(${slot.brightnessPercent}%)` } : {}
 
-  // When a crop is active, the image/video is rendered at wrapper scale
-  // (see cropTransformStyle) and MUST use object-fit:cover there, always
-  // - the wrapper is a scaled virtual "full canvas", not the final box,
-  // so letting fitMode's contain/fill apply at that inner layer would
-  // letterbox the wrong thing. fitMode only governs how content sits in
-  // the outer 16:9 box, which only matters when there's no crop.
-  const objectFitClass = hasCrop ? 'object-cover' : slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'
+  // Crop/zoom only make visual sense for raster content (image/mp4);
+  // webcam/pdf still render (with brightness/banner still applicable),
+  // just without the zoom transform, since an iframe's embedded page
+  // content isn't a "source image" with pixels to zoom into.
+  const supportsCropRotate = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+  const objectFitClass = slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'
+  const mediaStyle: React.CSSProperties = supportsCropRotate
+    ? { ...filterStyle, ...zoomPanTransformStyle(crop) }
+    : filterStyle
 
   let content: JSX.Element | null = null
   switch (slot.mediaType) {
@@ -120,7 +139,7 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
         <iframe
           src={slot.resolvedUrl}
           className="h-full w-full"
-          style={{ border: 0, ...filterStyle }}
+          style={{ border: 0, ...mediaStyle }}
           allow="autoplay"
           allowFullScreen
           title="Aeroclub webcam"
@@ -129,12 +148,7 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
       break
     case 'image':
       content = (
-        <img
-          src={slot.resolvedUrl ?? undefined}
-          alt=""
-          className={`h-full w-full ${objectFitClass}`}
-          style={filterStyle}
-        />
+        <img src={slot.resolvedUrl ?? undefined} alt="" className={`h-full w-full ${objectFitClass}`} style={mediaStyle} />
       )
       break
     case 'mp4':
@@ -143,7 +157,7 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
           key={slot.resolvedUrl}
           src={slot.resolvedUrl ?? undefined}
           className={`h-full w-full ${objectFitClass}`}
-          style={filterStyle}
+          style={mediaStyle}
           autoPlay
           muted
           loop
@@ -157,7 +171,7 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
         <iframe
           src={slot.resolvedUrl}
           className="h-full w-full bg-white"
-          style={{ border: 0, ...filterStyle }}
+          style={{ border: 0, ...mediaStyle }}
           title="Document"
         />
       )
@@ -166,32 +180,16 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
       return null
   }
 
-  // Crop/rotate only make visual sense for raster content (image/mp4);
-  // webcam/pdf still render (with brightness/banner still applicable),
-  // just without the crop-viewport/rotation wrapper divs, since an
-  // iframe's embedded page content isn't a "source image" with pixels
-  // to crop into - wrapping it wouldn't do anything a plain box doesn't
-  // already do, so it's skipped rather than added as dead markup.
-  const supportsCropRotate = slot.mediaType === 'image' || slot.mediaType === 'mp4'
-
-  const inner = hasCrop ? (
-    <div className="relative h-full w-full overflow-hidden">
-      <div style={cropTransformStyle(crop)}>{content}</div>
-    </div>
-  ) : (
-    content
-  )
-
   const rotated =
     supportsCropRotate && hasRotation ? (
       <div
         className="relative h-full w-full overflow-hidden"
         style={{ transform: `rotate(${slot.rotationDegrees}deg)` }}
       >
-        {inner}
+        {content}
       </div>
     ) : (
-      inner
+      content
     )
 
   return (

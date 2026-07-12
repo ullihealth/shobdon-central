@@ -354,7 +354,7 @@ function SlotAppearanceEditor({
               <option value="md">Medium</option>
               <option value="lg">Large</option>
               <option value="xl">Extra large</option>
-              <option value="xxl">Huge</option>
+              <option value="xxl">Max</option>
             </select>
           </label>
         </div>
