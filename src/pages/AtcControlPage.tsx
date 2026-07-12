@@ -57,27 +57,34 @@ function SizeSelector({
   )
 }
 
-function ToggleButton({
-  label,
-  active,
-  onClick,
+// Compact pill/segmented-control toggle - replaces the old full-width,
+// oversized ToggleButton (text-4xl, py-8 cards) for Runway/Circuit/NOTAM
+// on-off, so these three quick binary choices no longer each consume a
+// full-width section of their own.
+function SegmentedToggle<T extends string>({
+  options,
+  value,
+  onChange,
 }: {
-  label: string
-  active: boolean
-  onClick: () => void
+  options: { value: T; label: string }[]
+  value: T
+  onChange: (value: T) => void
 }): JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex-1 rounded-2xl border-2 px-6 py-8 text-4xl font-black uppercase tracking-wide transition ${
-        active
-          ? 'border-accent-sky-500 bg-accent-sky-500/20 text-white'
-          : 'border-slate-700 bg-slate-900/60 text-muted-400 hover:border-slate-500'
-      }`}
-    >
-      {label}
-    </button>
+    <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900/60 p-1">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={`rounded-md px-5 py-1.5 text-sm font-bold uppercase tracking-wide transition ${
+            value === option.value ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-white'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -195,9 +202,9 @@ export default function AtcControlPage(): JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-5 pb-16 pt-10">
+    <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
       <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
-      <p className="mb-8 max-w-2xl text-sm text-muted-400">
+      <p className="mb-6 max-w-2xl text-sm text-muted-400">
         Edit the live Ops Panel. Nothing here reaches the dashboard until you click "Update Dashboard" below -
         toggle and type freely, changes are only staged locally until then.
       </p>
@@ -206,38 +213,64 @@ export default function AtcControlPage(): JSX.Element {
         <p className="text-sm text-muted-400">Loading…</p>
       ) : (
         <>
-          {/* ── Runway in use ────────────────────────────────────────── */}
-          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-            <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-              Runway In Use
+          {/* ── Update dashboard - sticky near the top, not buried at the
+              bottom of a long page ─────────────────────────────────── */}
+          <div className="sticky top-4 z-20 mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-accent-sky-500/40 bg-slate-950/95 px-5 py-3 shadow-lg shadow-slate-950/40 backdrop-blur">
+            <div>
+              <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Update Dashboard</div>
+              <p className="text-xs text-muted-500">
+                Publishes the staged changes below to the live dashboard - every device that loads it picks them up
+                within about 15 seconds.
+              </p>
+              {applyStatus === 'success' && (
+                <p className="mt-1 text-xs font-semibold text-status-good">Published - live dashboard will update shortly.</p>
+              )}
+              {applyStatus === 'error' && (
+                <p className="mt-1 text-xs font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
+              )}
             </div>
-            <div className="flex gap-4">
-              <ToggleButton
-                label={runwayEnds[0]}
-                active={activeRunwayEnd === runwayEnds[0]}
-                onClick={() => setActiveRunwayEnd(runwayEnds[0])}
-              />
-              <ToggleButton
-                label={runwayEnds[1]}
-                active={activeRunwayEnd === runwayEnds[1]}
-                onClick={() => setActiveRunwayEnd(runwayEnds[1])}
-              />
-            </div>
-          </section>
+            <button
+              type="button"
+              onClick={handleUpdateDashboard}
+              disabled={applyStatus === 'working'}
+              className="flex-shrink-0 rounded-lg bg-accent-sky-500 px-6 py-2.5 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+            >
+              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
+            </button>
+          </div>
 
-          {/* ── Circuit direction ───────────────────────────────────── */}
-          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-            <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-              Circuit Direction
+          {/* ── Runway in use + Circuit direction, side by side ──────── */}
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <div className="rounded-xl border border-border bg-panel px-5 py-4">
+              <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
+                Runway In Use
+              </div>
+              <SegmentedToggle
+                options={[
+                  { value: runwayEnds[0], label: runwayEnds[0] },
+                  { value: runwayEnds[1], label: runwayEnds[1] },
+                ]}
+                value={activeRunwayEnd}
+                onChange={setActiveRunwayEnd}
+              />
             </div>
-            <div className="flex gap-4">
-              <ToggleButton label="Left" active={circuitDirection === 'left'} onClick={() => setCircuitDirection('left')} />
-              <ToggleButton label="Right" active={circuitDirection === 'right'} onClick={() => setCircuitDirection('right')} />
+            <div className="rounded-xl border border-border bg-panel px-5 py-4">
+              <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
+                Circuit Direction
+              </div>
+              <SegmentedToggle
+                options={[
+                  { value: 'left', label: 'Left' },
+                  { value: 'right', label: 'Right' },
+                ]}
+                value={circuitDirection}
+                onChange={setCircuitDirection}
+              />
             </div>
-          </section>
+          </div>
 
           {/* ── Airfield info ────────────────────────────────────────── */}
-          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+          <section className="mb-6 rounded-2xl border border-border bg-panel p-6">
             <div className="mb-4 flex items-center justify-between">
               <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Airfield Info</div>
               <div className="text-xs text-muted-400">
@@ -255,7 +288,7 @@ export default function AtcControlPage(): JSX.Element {
           </section>
 
           {/* ── Safety notices ───────────────────────────────────────── */}
-          <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+          <section className="rounded-2xl border border-border bg-panel p-6">
             <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
               Safety Notices
             </div>
@@ -264,94 +297,67 @@ export default function AtcControlPage(): JSX.Element {
             </p>
 
             <div className="mb-4">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-400">
-                Automated NOTAM Feed
+              <div className="flex flex-wrap items-end gap-6">
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Automated NOTAM Feed
+                  </div>
+                  <SegmentedToggle
+                    options={[
+                      { value: 'on', label: 'On' },
+                      { value: 'off', label: 'Off' },
+                    ]}
+                    value={showAutoNotams ? 'on' : 'off'}
+                    onChange={(v) => setShowAutoNotams(v === 'on')}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Rotation Interval (sec)
+                  </div>
+                  <input
+                    type="number"
+                    min={NOTAMS_INTERVAL_MIN_SECONDS}
+                    max={NOTAMS_INTERVAL_MAX_SECONDS}
+                    value={notamsIntervalSeconds}
+                    onChange={handleNotamsIntervalChange}
+                    className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  />
+                </div>
               </div>
-              <div className="flex gap-4">
-                <ToggleButton label="On" active={showAutoNotams} onClick={() => setShowAutoNotams(true)} />
-                <ToggleButton label="Off" active={!showAutoNotams} onClick={() => setShowAutoNotams(false)} />
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-400">
-                Rotation Interval (seconds)
-              </div>
-              <p className="mb-2 text-xs text-muted-500">
+              <p className="mt-2 text-xs text-muted-500">
                 How often the live dashboard's Ops Panel flips between the runway/circuit/airfield view and the
                 NOTAMS view. {NOTAMS_INTERVAL_MIN_SECONDS}-{NOTAMS_INTERVAL_MAX_SECONDS} seconds.
               </p>
-              <input
-                type="number"
-                min={NOTAMS_INTERVAL_MIN_SECONDS}
-                max={NOTAMS_INTERVAL_MAX_SECONDS}
-                value={notamsIntervalSeconds}
-                onChange={handleNotamsIntervalChange}
-                className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-              />
             </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
               {safetyNotices.map((notice, index) => (
-                <div key={index} className={notice.enabled ? undefined : 'opacity-50'}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                        Row {index + 1}
-                      </span>
-                      <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-400">
-                        <input
-                          type="checkbox"
-                          checked={notice.enabled}
-                          onChange={(event) => handleNoticeEnabledChange(index, event.target.checked)}
-                          className="h-3.5 w-3.5"
-                        />
-                        Enabled
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
-                      <span className="text-xs text-muted-400">
-                        {notice.text.length}/{SAFETY_NOTICE_MAX_LENGTH}
-                      </span>
-                    </div>
-                  </div>
+                <div key={index} className={`flex items-center gap-2 ${notice.enabled ? '' : 'opacity-50'}`}>
+                  <span className="w-4 flex-shrink-0 text-right text-xs text-muted-500">{index + 1}</span>
+                  <input
+                    type="checkbox"
+                    checked={notice.enabled}
+                    onChange={(event) => handleNoticeEnabledChange(index, event.target.checked)}
+                    className="h-3.5 w-3.5 flex-shrink-0"
+                    aria-label={`Row ${index + 1} enabled`}
+                    title="Enabled"
+                  />
+                  <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
                   <input
                     type="text"
                     value={notice.text}
                     onChange={(event) => handleNoticeChange(index, event.target.value)}
                     maxLength={SAFETY_NOTICE_MAX_LENGTH}
                     placeholder="e.g. Bird activity near threshold"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
                   />
+                  <span className="w-10 flex-shrink-0 text-right text-xs text-muted-400">
+                    {notice.text.length}/{SAFETY_NOTICE_MAX_LENGTH}
+                  </span>
                 </div>
               ))}
             </div>
-          </section>
-
-          {/* ── Update dashboard ─────────────────────────────────────── */}
-          <section className="rounded-2xl border border-border bg-panel p-6">
-            <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-              Update Dashboard
-            </div>
-            <p className="mb-4 text-xs text-muted-500">
-              Publishes the staged changes above to the live dashboard - every device that loads it picks them up
-              within about 15 seconds.
-            </p>
-            <button
-              type="button"
-              onClick={handleUpdateDashboard}
-              disabled={applyStatus === 'working'}
-              className="rounded-lg bg-accent-sky-500 px-6 py-3 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-            >
-              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
-            </button>
-            {applyStatus === 'success' && (
-              <p className="mt-3 text-sm font-semibold text-status-good">Published - live dashboard will update shortly.</p>
-            )}
-            {applyStatus === 'error' && (
-              <p className="mt-3 text-sm font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
-            )}
           </section>
         </>
       )}
