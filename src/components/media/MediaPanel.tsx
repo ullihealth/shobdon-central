@@ -134,6 +134,15 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
   const hasCarousel = carouselSlots.length > 0
   const activeSlot = hasCarousel ? carouselSlots[activeIndex] : null
 
+  // The header bar (Media / type badge) is the only framing that should
+  // stay - the p-6 below it was shrinking the webcam iframe well inside
+  // its already-small allocated box, on top of (and independent from)
+  // any letterboxing rtsp.me's own embed player does internally. Scoped
+  // to the webcam case only, exactly as requested - image/mp4/pdf
+  // carousel slots and the empty-state placeholder text keep their
+  // existing padding unchanged.
+  const isEdgeToEdgeContent = hasCarousel ? activeSlot?.mediaType === 'webcam' : !!webcamUrl
+
   return (
     <div
       className="aspect-video h-full max-h-full max-w-full overflow-hidden rounded-xl border border-border bg-slate-950/90 shadow-lg shadow-slate-950/30"
@@ -145,7 +154,9 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
             {hasCarousel ? (activeSlot?.mediaType ?? '') : mediaTypeLabel(item, webcamUrl)}
           </div>
         </div>
-        <div className="flex flex-1 items-center justify-center overflow-hidden p-6 text-center">
+        <div
+          className={`flex flex-1 items-center justify-center overflow-hidden text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
+        >
           {hasCarousel ? (
             activeSlot && renderCarouselSlot(activeSlot)
           ) : webcamUrl ? (
