@@ -8,8 +8,7 @@ export default function LeftInfoPanel(): JSX.Element {
   const { forecast: visibilityForecast } = useVisibilityForecast()
 
   // liveDataUnavailable: the selected source's fetch failed and weather
-  // is actually the substituted mock fixture - show N/A (matching
-  // Visibility's existing "not available" treatment) rather than
+  // is actually the substituted mock fixture - show N/A rather than
   // presenting that fake data as if it were a real reading.
   const data = [
     {
@@ -18,7 +17,6 @@ export default function LeftInfoPanel(): JSX.Element {
     },
     { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
     { label: 'Temperature', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
-    { label: 'Visibility', value: 'N/A' },
     {
       // Only ever meaningful from Shobdon's own station (dewpoint has no
       // internet/mock equivalent) - N/A whenever that's not genuinely the
@@ -42,11 +40,11 @@ export default function LeftInfoPanel(): JSX.Element {
   return (
     <div className="h-full rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">
       <div className="mb-5 text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">Weather Summary</div>
-      <div className="grid gap-4">
+      <div className="grid gap-2">
         {data.map((item) => (
-          <div key={item.label} className="rounded-3xl border border-border bg-card p-5">
+          <div key={item.label} className="rounded-3xl border border-border bg-card p-3">
             <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{item.label}</div>
-            <div className="mt-3 text-3xl font-semibold text-primary">{item.value}</div>
+            <div className="mt-1 text-3xl font-semibold text-primary">{item.value}</div>
           </div>
         ))}
       </div>
