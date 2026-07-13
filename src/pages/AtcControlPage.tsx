@@ -103,6 +103,15 @@ export default function AtcControlPage(): JSX.Element {
   const [showAutoNotams, setShowAutoNotams] = useState(true)
   const [notamsIntervalSeconds, setNotamsIntervalSeconds] = useState(NOTAMS_INTERVAL_DEFAULT_SECONDS)
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
+  // Purely a local editing convenience, never sent to the backend and
+  // never loaded from it - functions/api/tenant/ops-panel/index.ts only
+  // stores/reads the RESULTING activeRunwayEnd/circuitDirection values,
+  // with no concept of how they were arrived at, and the public Ops
+  // Panel display has no use for "was auto-link on" either. Always
+  // starts ON each time this page loads, independent of whatever was
+  // last published - default ON matches today's expected behaviour out
+  // of the box.
+  const [autoLinkRunwayCircuit, setAutoLinkRunwayCircuit] = useState(true)
 
   useEffect(() => {
     Promise.all([
@@ -130,6 +139,35 @@ export default function AtcControlPage(): JSX.Element {
       setLoading(false)
     })
   }, [])
+
+  // Matched by POSITION (runwayEnds[0]/[1], i.e. endAIdentifier/
+  // endBIdentifier) rather than hardcoded literal '08'/'26' strings -
+  // those are admin-typed free text, not a fixed enum (see runwayEnds'
+  // own loading comment above), so a literal-string match would silently
+  // do nothing for any tenant whose runway isn't numbered exactly that
+  // way, or worse, match the wrong physical end for a tenant that
+  // happens to also use 08/26 but with the opposite real circuit
+  // convention. runwayEnds[0] <-> left, runwayEnds[1] <-> right
+  // reproduces the requested 26->Left/08->Right behaviour for Shobdon's
+  // actual real config (endAIdentifier '26', endBIdentifier '08') while
+  // staying correct for any other tenant's own two ends.
+  //
+  // Only auto-fires when Auto-link is ON - this is what makes the link
+  // avoidable rather than unconditional: with it OFF these two setters
+  // never touch each other, so "unusual" combinations (e.g. 08 + Left)
+  // can be manually set and held.
+  function handleRunwayEndChange(end: string) {
+    setActiveRunwayEnd(end)
+    if (!autoLinkRunwayCircuit) return
+    if (end === runwayEnds[0]) setCircuitDirection('left')
+    else if (end === runwayEnds[1]) setCircuitDirection('right')
+  }
+
+  function handleCircuitDirectionChange(direction: CircuitDirection) {
+    setCircuitDirection(direction)
+    if (!autoLinkRunwayCircuit) return
+    setActiveRunwayEnd(direction === 'left' ? runwayEnds[0] : runwayEnds[1])
+  }
 
   function handleAirfieldInfoChange(event: ChangeEvent<HTMLInputElement>) {
     setAirfieldInfoText(event.target.value.slice(0, AIRFIELD_INFO_MAX_LENGTH))
@@ -243,6 +281,22 @@ export default function AtcControlPage(): JSX.Element {
       ) : (
         <>
           {/* ── Runway in use + Circuit direction + Airfield info, one row ─ */}
+          <label className="mb-2 flex w-fit items-center gap-2">
+            <input
+              type="checkbox"
+              checked={autoLinkRunwayCircuit}
+              onChange={(event) => setAutoLinkRunwayCircuit(event.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+              Auto-link runway &amp; circuit
+            </span>
+          </label>
+          <p className="mb-3 max-w-md text-xs text-muted-500">
+            {autoLinkRunwayCircuit
+              ? 'Selecting a runway end sets the matching circuit direction, and vice versa.'
+              : 'Runway and circuit now behave independently - any combination can be set manually.'}
+          </p>
           <div className="mb-6 grid grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
               <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
@@ -254,7 +308,7 @@ export default function AtcControlPage(): JSX.Element {
                   { value: runwayEnds[1], label: runwayEnds[1] },
                 ]}
                 value={activeRunwayEnd}
-                onChange={setActiveRunwayEnd}
+                onChange={handleRunwayEndChange}
               />
             </div>
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
@@ -267,7 +321,7 @@ export default function AtcControlPage(): JSX.Element {
                   { value: 'right', label: 'Right' },
                 ]}
                 value={circuitDirection}
-                onChange={setCircuitDirection}
+                onChange={handleCircuitDirectionChange}
               />
             </div>
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
