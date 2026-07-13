@@ -22,15 +22,6 @@ export interface SidebarGroupConfig {
 // or a new group object) - nothing else in the sidebar needs to change.
 export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
-    id: 'settings',
-    label: 'Settings',
-    items: [
-      { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'] },
-      { to: '/design', label: 'Dashboard Design', allowedRoles: ['owner', 'admin'] },
-      { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
-    ],
-  },
-  {
     id: 'content',
     label: 'Content',
     items: [{ to: '/media-manager', label: 'Media Manager', allowedRoles: ['owner', 'admin', 'media'] }],
@@ -44,6 +35,15 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     id: 'people',
     label: 'People',
     items: [{ to: '/members', label: 'Members', allowedRoles: ['owner', 'admin'] }],
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    items: [
+      { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'] },
+      { to: '/design', label: 'Dashboard Design', allowedRoles: ['owner', 'admin'] },
+      { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
+    ],
   },
 ]
 
