@@ -160,15 +160,21 @@ export default function RightInfoPanel(): JSX.Element {
         : [{ text: 'No active notices', size: 'md', enabled: true }]
 
   // Runway Status and Circuit Direction come from ops_panel_state (set
-  // via /atc-control); Airfield Info is now a free-text field there too,
-  // not a fixed club fact. A null opsPanel (no /atc-control usage yet on
+  // via /atc-control); a null opsPanel (no /atc-control usage yet on
   // this tenant) falls back to the same static defaults this file used
   // to hardcode, rather than showing blank cards. NOTAMS is no longer a
   // 4th entry here - it's State B's own full panel below.
+  //
+  // Airfield Info is a free-text field an admin may leave unset - unlike
+  // the two fields above, there's no sensible non-empty default to fall
+  // back to, so this card is only included when there's a genuine
+  // non-empty value to show, rather than displaying a hardcoded string
+  // that would look like real data but isn't.
+  const airfieldInfoText = opsPanel?.airfieldInfoText.trim()
   const cards = [
     { title: 'Runway Status', value: opsPanel ? `${opsPanel.activeRunwayEnd} Open` : '08/26 Open' },
     { title: 'Circuit Direction', value: circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left') },
-    { title: 'Airfield Info', value: opsPanel?.airfieldInfoText || 'PPR only after 17:00' },
+    ...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : []),
   ]
 
   return (
