@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 import { TENANT_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup } from '../types/clubProfile'
+import RunwayStripPreview from '../components/RunwayStripPreview'
 
 const MAX_GROUPS = 3
 
@@ -41,6 +42,10 @@ export default function RunwaysPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [groups, setGroups] = useState<RunwayGroup[]>([])
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
+  // Which runway's form/preview is currently shown - the dropdown
+  // selector replaces the old "stack every runway's full form vertically"
+  // layout, so only one group is ever rendered for editing at a time.
+  const [selectedIndex, setSelectedIndex] = useState(0)
 
   // Real D1-backed read (functions/api/tenant/config.ts, the same route
   // /design already uses) - was a synchronous loadClubProfile()
@@ -68,20 +73,20 @@ export default function RunwaysPage(): JSX.Element {
   // pattern - nothing reaches the shared backend until "Update Dashboard"
   // is clicked. Was saveClubProfile() on every keystroke (immediate, but
   // to localStorage only, which nothing else ever read).
-  function updateGroup(index: number, updates: Partial<RunwayGroup>) {
-    setGroups((prev) => prev.map((group, i) => (i === index ? { ...group, ...updates } : group)))
+  function updateSelectedGroup(updates: Partial<RunwayGroup>) {
+    setGroups((prev) => prev.map((group, i) => (i === selectedIndex ? { ...group, ...updates } : group)))
   }
 
-  function handleEndAIdentifierChange(index: number, endAIdentifier: string) {
-    updateGroup(index, { endAIdentifier })
+  function handleEndAIdentifierChange(endAIdentifier: string) {
+    updateSelectedGroup({ endAIdentifier })
   }
 
-  function handleEndBIdentifierChange(index: number, endBIdentifier: string) {
-    updateGroup(index, { endBIdentifier })
+  function handleEndBIdentifierChange(endBIdentifier: string) {
+    updateSelectedGroup({ endBIdentifier })
   }
 
-  function handleHeadingChange(index: number, headingDegrees: number) {
-    updateGroup(index, { headingDegrees })
+  function handleHeadingChange(headingDegrees: number) {
+    updateSelectedGroup({ headingDegrees })
   }
 
   // Each strip's own width, independent of any other strip in the same
@@ -89,78 +94,84 @@ export default function RunwaysPage(): JSX.Element {
   // fallback pattern as before: cleared or non-positive/non-numeric falls
   // back to Shobdon's seeded default (22px) rather than a zero-width,
   // invisible strip.
-  function handleStripWidthChange(groupIndex: number, stripIndex: number, rawValue: string) {
+  function handleStripWidthChange(stripIndex: number, rawValue: string) {
     const parsed = Number(rawValue)
     const widthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_WIDTH_PX : parsed
-    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, widthPx } : strip))
-    updateGroup(groupIndex, { strips })
+    const strips = selectedGroup.strips.map((strip, i) => (i === stripIndex ? { ...strip, widthPx } : strip))
+    updateSelectedGroup({ strips })
   }
 
   // Same fallback pattern as width: cleared or non-positive/non-numeric
   // falls back to Shobdon's seeded default (216px) rather than a
-  // zero/negative-length, degenerate strip. CompassPanel.tsx additionally
-  // clamps whatever is actually stored to a safe render-time range, so an
-  // extreme value here still can't reach the cardinal letters.
-  function handleStripLengthChange(index: number, rawValue: string) {
+  // zero/negative-length, degenerate strip. CompassPanel.tsx (and this
+  // page's own preview) additionally clamps whatever is actually stored
+  // to a safe render-time range, so an extreme value here still can't
+  // reach the cardinal letters.
+  function handleStripLengthChange(rawValue: string) {
     const parsed = Number(rawValue)
     const stripLengthPx = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_STRIP_LENGTH_PX : parsed
-    updateGroup(index, { stripLengthPx })
+    updateSelectedGroup({ stripLengthPx })
   }
 
   // Same fallback pattern as strip length/width: cleared or non-positive/
   // non-numeric falls back to Shobdon's seeded default (14px) rather than a
   // zero/invisible or negative-size label.
-  function handleFontSizeChange(index: number, rawValue: string) {
+  function handleFontSizeChange(rawValue: string) {
     const parsed = Number(rawValue)
     const identifierFontSizePx =
       rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_IDENTIFIER_FONT_SIZE_PX : parsed
-    updateGroup(index, { identifierFontSizePx })
+    updateSelectedGroup({ identifierFontSizePx })
   }
 
-  function handleTwinChange(index: number, twin: boolean) {
-    const group = groups[index]
+  function handleTwinChange(twin: boolean) {
+    const group = selectedGroup
     const strips = twin
       ? [
           group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
           group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
         ]
       : [group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }]
-    updateGroup(index, { twin, strips })
+    updateSelectedGroup({ twin, strips })
   }
 
-  function handleStripColourChange(groupIndex: number, stripIndex: number, colour: string) {
-    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, colour } : strip))
-    updateGroup(groupIndex, { strips })
+  function handleStripColourChange(stripIndex: number, colour: string) {
+    const strips = selectedGroup.strips.map((strip, i) => (i === stripIndex ? { ...strip, colour } : strip))
+    updateSelectedGroup({ strips })
   }
 
   // Threshold markings (checkerboard) and direction labels are both
   // independent per physical strip - e.g. tarmac markings on, grass off.
-  function handleStripMarkingsChange(groupIndex: number, stripIndex: number, hasThresholdMarkings: boolean) {
-    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, hasThresholdMarkings } : strip))
-    updateGroup(groupIndex, { strips })
+  function handleStripMarkingsChange(stripIndex: number, hasThresholdMarkings: boolean) {
+    const strips = selectedGroup.strips.map((strip, i) => (i === stripIndex ? { ...strip, hasThresholdMarkings } : strip))
+    updateSelectedGroup({ strips })
   }
 
-  function handleStripLabelChange(groupIndex: number, stripIndex: number, showIdentifierLabel: boolean) {
-    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, showIdentifierLabel } : strip))
-    updateGroup(groupIndex, { strips })
+  function handleStripLabelChange(stripIndex: number, showIdentifierLabel: boolean) {
+    const strips = selectedGroup.strips.map((strip, i) => (i === stripIndex ? { ...strip, showIdentifierLabel } : strip))
+    updateSelectedGroup({ strips })
   }
 
   // Dashed centreline, independent per strip - e.g. only the paved
   // surface has one painted, matching real-world practice - same pattern
   // as threshold markings/direction labels above.
-  function handleStripCenterlineChange(groupIndex: number, stripIndex: number, showCenterline: boolean) {
-    const strips = groups[groupIndex].strips.map((strip, i) => (i === stripIndex ? { ...strip, showCenterline } : strip))
-    updateGroup(groupIndex, { strips })
+  function handleStripCenterlineChange(stripIndex: number, showCenterline: boolean) {
+    const strips = selectedGroup.strips.map((strip, i) => (i === stripIndex ? { ...strip, showCenterline } : strip))
+    updateSelectedGroup({ strips })
   }
 
+  // Selects the new runway immediately so it's what the form/preview show
+  // next, rather than leaving the admin on whichever runway they were
+  // already looking at.
   function handleAddGroup() {
     if (groups.length >= MAX_GROUPS) return
     setGroups((prev) => [...prev, createBlankGroup()])
+    setSelectedIndex(groups.length)
   }
 
-  function handleRemoveGroup(index: number) {
+  function handleRemoveGroup() {
     if (groups.length <= 1) return
-    setGroups((prev) => prev.filter((_, i) => i !== index))
+    setGroups((prev) => prev.filter((_, i) => i !== selectedIndex))
+    setSelectedIndex((prev) => Math.max(0, Math.min(prev, groups.length - 2)))
   }
 
   // Same PUT-then-refresh-trigger flow as /design's
@@ -196,96 +207,134 @@ export default function RunwaysPage(): JSX.Element {
     }
   }
 
+  const selectedGroup = groups[selectedIndex] ?? groups[0]
+
   return (
-    <div className="mx-auto max-w-2xl px-5 pb-16 pt-10">
-      <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Runways</h1>
-      <p className="mb-8 max-w-2xl text-sm text-muted-400">
-        The physical facts about this airfield's runway(s) — identifiers, precise magnetic heading, and
-        surface colours. These drive both the compass graphic and the headwind/crosswind maths, so accuracy
-        matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
-      </p>
+    <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
+      {/* ── Heading + sticky Update Dashboard, side by side - same
+          principle as the ATC Control redesign: the publish action stays
+          reachable near the top, not buried below a long scrolling form. */}
+      <div className="mb-6 grid grid-cols-2 items-start gap-6">
+        <div>
+          <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Runways</h1>
+          <p className="max-w-2xl text-sm text-muted-400">
+            The physical facts about this airfield's runway(s) — identifiers, precise magnetic heading, and
+            surface colours. These drive both the compass graphic and the headwind/crosswind maths, so accuracy
+            matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
+          </p>
+        </div>
+
+        {!loading && (
+          <div className="sticky top-4 z-20 rounded-xl border border-accent-sky-500/40 bg-slate-950/95 px-5 py-3 shadow-lg shadow-slate-950/40 backdrop-blur">
+            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Update Dashboard</div>
+            <p className="mb-2 text-xs text-muted-500">
+              Publishes the staged runway configuration below to the live dashboard - every device that loads it
+              picks it up within about 15 seconds.
+            </p>
+            {applyStatus === 'success' && (
+              <p className="mb-2 text-xs font-semibold text-status-good">Published - live dashboard will update shortly.</p>
+            )}
+            {applyStatus === 'error' && (
+              <p className="mb-2 text-xs font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
+            )}
+            <button
+              type="button"
+              onClick={handleUpdateDashboard}
+              disabled={applyStatus === 'working'}
+              className="rounded-lg bg-accent-sky-500 px-6 py-2.5 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+            >
+              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <p className="text-sm text-muted-400">Loading…</p>
       ) : (
-        <div className="flex flex-col gap-6">
-          {groups.map((group, index) => (
-            <section key={group.id} className="rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                  Runway {index + 1}
-                </div>
-                {groups.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveGroup(index)}
-                    className="text-xs font-semibold text-status-bad"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
+        <>
+          {/* ── Runway selector + Add another runway ────────────────── */}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Editing</span>
+              <select
+                value={selectedIndex}
+                onChange={(event) => setSelectedIndex(Number(event.target.value))}
+                className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              >
+                {groups.map((group, index) => (
+                  <option key={group.id} value={index}>
+                    Runway {index + 1} ({group.endAIdentifier || '?'}/{group.endBIdentifier || '?'})
+                  </option>
+                ))}
+              </select>
+            </label>
+            {groups.length > 1 && (
+              <button type="button" onClick={handleRemoveGroup} className="text-xs font-semibold text-status-bad">
+                Remove this runway
+              </button>
+            )}
+            {groups.length < MAX_GROUPS && (
+              <button
+                type="button"
+                onClick={handleAddGroup}
+                className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
+              >
+                + Add another runway
+              </button>
+            )}
+          </div>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  Precise heading (degrees)
-                </span>
+          {/* ── Form (left) + live preview (right) ──────────────────── */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+            <section className="rounded-2xl border border-border bg-panel p-6">
+              {/* Label-left/input-right for the four short, fixed-width
+                  fields - was stacked-label-above-full-width-input, which
+                  wasted a lot of horizontal space for values that are
+                  never more than a few characters. */}
+              <div className="grid grid-cols-[minmax(0,auto)_1fr] items-center gap-x-4 gap-y-3 sm:grid-cols-[220px_auto]">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Precise heading (degrees)</span>
                 <input
                   type="number"
-                  value={group.headingDegrees}
-                  onChange={(event) => handleHeadingChange(index, Number(event.target.value))}
-                  className="w-40 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  value={selectedGroup.headingDegrees}
+                  onChange={(event) => handleHeadingChange(Number(event.target.value))}
+                  className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
-              </label>
 
-              {/* Each identifier is bound to a specific physical end via
-                  its own field, not a shared string's implicit
-                  ordering - the label names the exact heading value
-                  that end corresponds to, taken directly from the
-                  field above, so there's no separate convention to
-                  remember. */}
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Identifier for the {group.headingDegrees}° end
-                  </span>
-                  <input
-                    type="text"
-                    value={group.endAIdentifier}
-                    onChange={(event) => handleEndAIdentifierChange(index, event.target.value)}
-                    placeholder="e.g. 08"
-                    maxLength={2}
-                    className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Identifier for the {reciprocalHeading(group.headingDegrees)}° (opposite) end
-                  </span>
-                  <input
-                    type="text"
-                    value={group.endBIdentifier}
-                    onChange={(event) => handleEndBIdentifierChange(index, event.target.value)}
-                    placeholder="e.g. 26"
-                    maxLength={2}
-                    className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                  />
-                </label>
-              </div>
-
-              <label className="mt-4 flex flex-col gap-1.5 sm:max-w-xs">
                 <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  Strip length (px)
+                  Identifier for the {selectedGroup.headingDegrees}° end
                 </span>
+                <input
+                  type="text"
+                  value={selectedGroup.endAIdentifier}
+                  onChange={(event) => handleEndAIdentifierChange(event.target.value)}
+                  placeholder="e.g. 08"
+                  maxLength={2}
+                  className="w-20 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Identifier for the {reciprocalHeading(selectedGroup.headingDegrees)}° (opposite) end
+                </span>
+                <input
+                  type="text"
+                  value={selectedGroup.endBIdentifier}
+                  onChange={(event) => handleEndBIdentifierChange(event.target.value)}
+                  placeholder="e.g. 26"
+                  maxLength={2}
+                  className="w-20 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Strip length (px)</span>
                 <input
                   type="number"
                   min={1}
-                  value={group.stripLengthPx}
-                  onChange={(event) => handleStripLengthChange(index, event.target.value)}
-                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  value={selectedGroup.stripLengthPx}
+                  onChange={(event) => handleStripLengthChange(event.target.value)}
+                  className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
-              </label>
-              <p className="mt-2 text-xs text-muted-500">
+              </div>
+              <p className="mt-3 text-xs text-muted-500">
                 No upper limit on strip width (set per strip below) or length - a large value can visually
                 overlap the compass ring or letters, which is an intentional choice you're free to make, not
                 something this page prevents.
@@ -294,8 +343,8 @@ export default function RunwaysPage(): JSX.Element {
               <label className="mt-4 flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={group.twin}
-                  onChange={(event) => handleTwinChange(index, event.target.checked)}
+                  checked={selectedGroup.twin}
+                  onChange={(event) => handleTwinChange(event.target.checked)}
                   className="h-4 w-4"
                 />
                 <span className="text-sm text-muted-300">Twin runway (two parallel strips, e.g. grass + tarmac)</span>
@@ -308,8 +357,8 @@ export default function RunwaysPage(): JSX.Element {
                 <input
                   type="number"
                   min={1}
-                  value={group.identifierFontSizePx}
-                  onChange={(event) => handleFontSizeChange(index, event.target.value)}
+                  value={selectedGroup.identifierFontSizePx}
+                  onChange={(event) => handleFontSizeChange(event.target.value)}
                   className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
               </label>
@@ -320,29 +369,29 @@ export default function RunwaysPage(): JSX.Element {
               </p>
 
               <div className="mt-4 flex flex-wrap gap-6">
-                {group.strips.map((strip, stripIndex) => (
+                {selectedGroup.strips.map((strip, stripIndex) => (
                   <div key={stripIndex} className="flex flex-col gap-3">
                     <div className="flex items-end gap-3">
                       <label className="flex items-center gap-3">
                         <input
                           type="color"
                           value={strip.colour}
-                          onChange={(event) => handleStripColourChange(index, stripIndex, event.target.value)}
+                          onChange={(event) => handleStripColourChange(stripIndex, event.target.value)}
                           className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
                         />
                         <span className="text-xs text-muted-400">
-                          {group.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
+                          {selectedGroup.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
                         </span>
                       </label>
                       <label className="flex flex-col gap-1.5">
                         <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                          {group.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
+                          {selectedGroup.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
                         </span>
                         <input
                           type="number"
                           min={1}
                           value={strip.widthPx}
-                          onChange={(event) => handleStripWidthChange(index, stripIndex, event.target.value)}
+                          onChange={(event) => handleStripWidthChange(stripIndex, event.target.value)}
                           className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                         />
                       </label>
@@ -351,7 +400,7 @@ export default function RunwaysPage(): JSX.Element {
                       <input
                         type="checkbox"
                         checked={strip.hasThresholdMarkings}
-                        onChange={(event) => handleStripMarkingsChange(index, stripIndex, event.target.checked)}
+                        onChange={(event) => handleStripMarkingsChange(stripIndex, event.target.checked)}
                         className="h-4 w-4"
                       />
                       <span className="text-sm text-muted-300">Threshold markings (checkerboard)</span>
@@ -360,7 +409,7 @@ export default function RunwaysPage(): JSX.Element {
                       <input
                         type="checkbox"
                         checked={strip.showIdentifierLabel}
-                        onChange={(event) => handleStripLabelChange(index, stripIndex, event.target.checked)}
+                        onChange={(event) => handleStripLabelChange(stripIndex, event.target.checked)}
                         className="h-4 w-4"
                       />
                       <span className="text-sm text-muted-300">Direction labels (both ends)</span>
@@ -369,7 +418,7 @@ export default function RunwaysPage(): JSX.Element {
                       <input
                         type="checkbox"
                         checked={strip.showCenterline}
-                        onChange={(event) => handleStripCenterlineChange(index, stripIndex, event.target.checked)}
+                        onChange={(event) => handleStripCenterlineChange(stripIndex, event.target.checked)}
                         className="h-4 w-4"
                       />
                       <span className="text-sm text-muted-300">Dashed centreline</span>
@@ -378,44 +427,22 @@ export default function RunwaysPage(): JSX.Element {
                 ))}
               </div>
             </section>
-          ))}
-        </div>
-      )}
 
-      {!loading && groups.length < MAX_GROUPS && (
-        <button
-          type="button"
-          onClick={handleAddGroup}
-          className="mt-6 rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
-        >
-          + Add another runway
-        </button>
-      )}
-
-      {!loading && (
-        <section className="mt-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
-          <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-            Update Dashboard
+            {/* Live preview - updates on every keystroke/toggle above,
+                entirely from the staged (unsaved) selectedGroup value.
+                RunwayStripPreview shares no code with CompassPanel.tsx -
+                see that component's own header comment for why. */}
+            <div className="rounded-2xl border border-border bg-panel p-6">
+              <div className="mb-3 text-xs font-bold uppercase tracking-widest text-muted-400">Live Preview</div>
+              <div className="aspect-square w-full">
+                <RunwayStripPreview group={selectedGroup} />
+              </div>
+              <p className="mt-3 text-xs text-muted-500">
+                Reflects the staged values on the left as you edit - nothing here has been published yet.
+              </p>
+            </div>
           </div>
-          <p className="mb-4 text-sm text-muted-400">
-            Pushes the runway configuration above to every device that loads the real dashboard - PC2, the
-            clubhouse display, home browsers - within about 15 seconds.
-          </p>
-          <button
-            type="button"
-            onClick={handleUpdateDashboard}
-            disabled={applyStatus === 'working'}
-            className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
-          </button>
-          {applyStatus === 'success' && (
-            <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
-          )}
-          {applyStatus === 'error' && (
-            <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the changes - check connectivity and try again.</p>
-          )}
-        </section>
+        </>
       )}
     </div>
   )
