@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { CarouselSlot, CropRect, MediaFolder, MediaLibraryFile } from '../types/mediaLibrary'
 import {
   CAROUSEL_SLOTS_URL,
@@ -728,7 +728,16 @@ function CarouselSlotEditor({
 }
 
 function folderRowClass(selected: boolean): string {
-  return `flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+  // gap-5 (was gap-2) - the row's own flex gap is what actually separates
+  // the name from the trailing count/delete group in every row type
+  // (All files, Uncategorized, and real folders all share this), so
+  // bumping it once here covers "extra breathing room between folder
+  // name and item-count" everywhere rather than patching each row.
+  // pr-4 (was part of a uniform px-3) - explicit pl-3/pr-4 rather than
+  // px-3 + a separate pr-* override, since two Tailwind utilities that
+  // both set padding-right race on stylesheet order, not className
+  // order - keeping it to one declared value per side avoids that.
+  return `flex cursor-pointer items-center justify-between gap-5 rounded-lg border py-2 pl-3 pr-4 text-sm transition ${
     selected
       ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
       : 'border-transparent text-muted-300 hover:bg-slate-800/60'
@@ -741,13 +750,16 @@ function folderRowClass(selected: boolean): string {
 // violate React's rules of hooks (a varying number of hook calls across
 // renders as folders are added/removed).
 //
-// Clicking the folder NAME itself now starts renaming - the exact same
-// click-to-edit trigger as a filename in the library list, not a
-// separate ✎ button - per explicit instruction to match the filename
-// pattern exactly rather than the button-triggered compromise this used
-// initially. The name span stops propagation on click so it doesn't
-// also fire the row's onSelect; browsing into a folder still works by
-// clicking anywhere else in the row (the file count, the row's padding).
+// Click behaviour matches standard file-manager convention: a single
+// click on an unselected folder's name selects it (same as clicking
+// anywhere else in the row); a click on a folder name that's ALREADY
+// selected enters rename instead. A bare "click the name to rename"
+// trigger (this component's previous behaviour) made it impossible to
+// ever just select a folder by clicking its name - nearly every click
+// landed on the name and triggered rename instead of switching the file
+// list. The name span still stops propagation so it can decide between
+// the two actions itself rather than also letting onSelect fire from
+// the row's own onClick.
 function FolderRow({
   folder,
   selected,
@@ -762,6 +774,15 @@ function FolderRow({
   onDelete: () => void
 }): JSX.Element {
   const edit = useInlineEdit(folder.name, onRename)
+
+  function handleNameClick(event: ReactMouseEvent | ReactKeyboardEvent) {
+    event.stopPropagation()
+    if (selected) {
+      edit.startEditing()
+    } else {
+      onSelect()
+    }
+  }
 
   return (
     <div className={`group ${folderRowClass(selected)}`} onClick={onSelect}>
@@ -790,23 +811,17 @@ function FolderRow({
         <span
           role="button"
           tabIndex={0}
-          onClick={(event) => {
-            event.stopPropagation()
-            edit.startEditing()
-          }}
+          onClick={handleNameClick}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.stopPropagation()
-              edit.startEditing()
-            }
+            if (event.key === 'Enter') handleNameClick(event)
           }}
-          title="Click to rename"
-          className="min-w-0 flex-1 cursor-text truncate decoration-dotted hover:underline"
+          title={selected ? 'Click to rename' : undefined}
+          className={`min-w-0 flex-1 truncate ${selected ? 'cursor-text decoration-dotted hover:underline' : 'cursor-pointer'}`}
         >
           {folder.name}
         </span>
       )}
-      <span className="flex flex-shrink-0 items-center gap-1.5">
+      <span className="flex flex-shrink-0 items-center gap-3">
         <span className="text-xs text-muted-500">{folder.fileCount}</span>
         <button
           type="button"
@@ -814,7 +829,7 @@ function FolderRow({
             event.stopPropagation()
             onDelete()
           }}
-          className="text-xs text-muted-500 opacity-0 hover:text-status-bad group-hover:opacity-100"
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-lg font-bold leading-none text-muted-500 opacity-0 hover:bg-slate-800 hover:text-status-bad group-hover:opacity-100"
           aria-label={`Delete ${folder.name}`}
         >
           ×
