@@ -214,7 +214,7 @@ export default function AtcControlPage(): JSX.Element {
         </div>
 
         {!loading && (
-          <div className="sticky top-4 z-20 rounded-xl border border-accent-sky-500/40 bg-slate-950/95 px-5 py-3 shadow-lg shadow-slate-950/40 backdrop-blur">
+          <div className="sticky top-4 z-20 ml-auto w-80 rounded-xl border border-accent-sky-500/40 bg-slate-950/95 px-5 py-3 shadow-lg shadow-slate-950/40 backdrop-blur">
             <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Update Dashboard</div>
             <p className="mb-2 text-xs text-muted-500">
               Publishes the staged changes below to the live dashboard - every device that loads it picks them up
