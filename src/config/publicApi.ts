@@ -22,6 +22,9 @@ export const TENANT_CONFIG_URL = '/api/tenant/config'
 export const MEDIA_LIBRARY_URL = '/api/tenant/media-library'
 export const MEDIA_LIBRARY_UPLOAD_URL = '/api/tenant/media-library/upload'
 export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
+// Lightweight, flat (no nesting) per-tenant folders for the media
+// library - functions/api/tenant/media-folders/*.
+export const MEDIA_FOLDERS_URL = '/api/tenant/media-folders'
 
 // Slide composer - see SlideEditor.tsx. Recipe attach is a separate PUT
 // from the upload itself (upload.ts stays completely untouched); the

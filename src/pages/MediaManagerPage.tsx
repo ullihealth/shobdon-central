@@ -1,7 +1,14 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import type { CarouselSlot, CropRect, MediaLibraryFile } from '../types/mediaLibrary'
-import { CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_UPLOAD_URL, MEDIA_LIBRARY_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+import type { CarouselSlot, CropRect, MediaFolder, MediaLibraryFile } from '../types/mediaLibrary'
+import {
+  CAROUSEL_SLOTS_URL,
+  MEDIA_FOLDERS_URL,
+  MEDIA_LIBRARY_UPLOAD_URL,
+  MEDIA_LIBRARY_URL,
+  PUBLIC_CONFIG_URL,
+  mediaLibraryImageProxyUrl,
+} from '../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from '../components/media/MediaSlotRenderer'
 
 // Dynamic import - this is what keeps fabric.js and the self-hosted
@@ -53,6 +60,51 @@ function FileThumbnail({ file }: { file: MediaLibraryFile }): JSX.Element {
     <div className={boxClass}>
       <span className="text-2xl">{file.mediaType === 'pdf' ? '📄' : file.mediaType === 'mp4' ? '🎬' : '🖼️'}</span>
     </div>
+  )
+}
+
+// Hovering a filename shows a larger real thumbnail in a floating card -
+// reuses the SAME same-origin image-proxy endpoint the slide composer
+// already relies on for CORS-safe canvas loading (mediaLibraryImageProxyUrl,
+// GET /api/tenant/media-library/:id/image), not a new mechanism. PDFs
+// show a plain glyph with no fetch at all, same as the inline thumbnail.
+//
+// The <img>/<video> is only mounted while actually hovering (plain
+// onMouseEnter/Leave state), NOT always-rendered-but-CSS-hidden via
+// group-hover - a CSS-only hidden approach still fetches every visible
+// row's proxy image on initial render regardless of whether it's ever
+// hovered, which defeats the point of an on-demand preview and floods
+// the network tab (and, for any file whose R2 object doesn't resolve,
+// the console) for a library that's just sitting there being scrolled
+// past. Mounting on demand means the request only fires on a real hover.
+//
+// Positioned via plain absolute (no portal, no new dependency) - safe
+// as long as no ancestor sets overflow-hidden, which the Media Library
+// section's containers deliberately don't.
+function FilenameWithHoverPreview({ file }: { file: MediaLibraryFile }): JSX.Element {
+  const [hovering, setHovering] = useState(false)
+  return (
+    <span className="relative inline-block" onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      <span className="text-sm font-semibold text-white">{file.filename}</span>
+      {hovering && (
+        <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-lg border border-border bg-slate-950 p-2 shadow-xl shadow-slate-950/50">
+          {file.mediaType === 'image' && (
+            <img src={mediaLibraryImageProxyUrl(file.id)} alt="" className="h-40 w-full rounded bg-slate-900 object-contain" />
+          )}
+          {file.mediaType === 'mp4' && (
+            <video
+              src={mediaLibraryImageProxyUrl(file.id)}
+              muted
+              preload="metadata"
+              className="h-40 w-full rounded bg-slate-900 object-contain"
+            />
+          )}
+          {file.mediaType === 'pdf' && (
+            <span className="flex h-40 w-full items-center justify-center rounded bg-slate-900 text-6xl">📄</span>
+          )}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -568,10 +620,142 @@ function CarouselSlotEditor({
   )
 }
 
+// Lightweight, flat (no nesting) folder list WITHIN the media-manager
+// page - distinct from the app's main admin sidebar. "All files" and
+// "Uncategorized" are always present and not deletable/renamable -
+// "Uncategorized" is virtual (folderId IS NULL on media_library), it
+// never has a real media_folders row. Folder-creation is a small local
+// text input rather than window.prompt(), matching the "inline prompt"
+// ask; rename still uses window.prompt() since it's a rarer action with
+// no specific UI called for it.
+function FolderSidebar({
+  folders,
+  totalFileCount,
+  uncategorizedCount,
+  selectedFolderId,
+  onSelect,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+}: {
+  folders: MediaFolder[]
+  totalFileCount: number
+  uncategorizedCount: number
+  selectedFolderId: string | null | 'all'
+  onSelect: (id: string | null | 'all') => void
+  onCreateFolder: (name: string) => void
+  onRenameFolder: (folder: MediaFolder) => void
+  onDeleteFolder: (folder: MediaFolder) => void
+}): JSX.Element {
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  function submitNewFolder() {
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    onCreateFolder(trimmed)
+    setNewName('')
+    setCreating(false)
+  }
+
+  function cancelNewFolder() {
+    setNewName('')
+    setCreating(false)
+  }
+
+  const rowClass = (selected: boolean) =>
+    `flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+      selected
+        ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
+        : 'border-transparent text-muted-300 hover:bg-slate-800/60'
+    }`
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className={rowClass(selectedFolderId === 'all')} onClick={() => onSelect('all')}>
+        <span className="truncate">All files</span>
+        <span className="flex-shrink-0 text-xs text-muted-500">{totalFileCount}</span>
+      </div>
+      <div className={rowClass(selectedFolderId === null)} onClick={() => onSelect(null)}>
+        <span className="truncate">Uncategorized</span>
+        <span className="flex-shrink-0 text-xs text-muted-500">{uncategorizedCount}</span>
+      </div>
+
+      {folders.map((folder) => (
+        <div key={folder.id} className={`group ${rowClass(selectedFolderId === folder.id)}`} onClick={() => onSelect(folder.id)}>
+          <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+          <span className="flex flex-shrink-0 items-center gap-1.5">
+            <span className="text-xs text-muted-500">{folder.fileCount}</span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                onRenameFolder(folder)
+              }}
+              className="text-xs text-muted-500 opacity-0 hover:text-accent-sky-400 group-hover:opacity-100"
+              aria-label={`Rename ${folder.name}`}
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                onDeleteFolder(folder)
+              }}
+              className="text-xs text-muted-500 opacity-0 hover:text-status-bad group-hover:opacity-100"
+              aria-label={`Delete ${folder.name}`}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      ))}
+
+      {creating ? (
+        <div className="flex items-center gap-1.5 rounded-lg border border-accent-sky-500/60 bg-slate-900/40 px-2 py-1.5">
+          <input
+            type="text"
+            autoFocus
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submitNewFolder()
+              if (event.key === 'Escape') cancelNewFolder()
+            }}
+            placeholder="Folder name"
+            aria-label="New folder name"
+            className="min-w-0 flex-1 bg-transparent text-sm text-white focus:outline-none"
+          />
+          <button type="button" onClick={submitNewFolder} className="text-xs font-semibold text-accent-sky-400">
+            Add
+          </button>
+          <button type="button" onClick={cancelNewFolder} className="text-xs text-muted-500">
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="rounded-lg border border-dashed border-slate-700 px-3 py-2 text-left text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500"
+        >
+          + New folder
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function MediaManagerPage(): JSX.Element {
   const [files, setFiles] = useState<MediaLibraryFile[]>([])
   const [totalBytes, setTotalBytes] = useState(0)
   const [capBytes, setCapBytes] = useState(100 * 1024 * 1024)
+  const [folders, setFolders] = useState<MediaFolder[]>([])
+  // 'all' = every file regardless of folder (the default view);
+  // null = the virtual "Uncategorized" bucket; otherwise a real
+  // media_folders id.
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null | 'all'>('all')
   const [slots, setSlots] = useState<CarouselSlot[]>([])
   const [cameraOptions, setCameraOptions] = useState<CameraOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -606,6 +790,12 @@ export default function MediaManagerPage(): JSX.Element {
       })
   }
 
+  function loadFolders() {
+    return fetch(MEDIA_FOLDERS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setFolders(data?.folders ?? []))
+  }
+
   function loadSlots() {
     return fetch(CAROUSEL_SLOTS_URL)
       .then((response) => (response.ok ? response.json() : null))
@@ -623,7 +813,7 @@ export default function MediaManagerPage(): JSX.Element {
   }
 
   useEffect(() => {
-    Promise.all([loadLibrary(), loadSlots(), loadCameraOptions()]).finally(() => setLoading(false))
+    Promise.all([loadLibrary(), loadFolders(), loadSlots(), loadCameraOptions()]).finally(() => setLoading(false))
   }, [])
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -644,6 +834,10 @@ export default function MediaManagerPage(): JSX.Element {
 
     const params = new URLSearchParams({ filename: file.name, mediaType })
     if (mp4DurationSeconds !== null) params.set('mp4DurationSeconds', String(mp4DurationSeconds))
+    // Drop the upload straight into whichever real folder is currently
+    // selected - 'all' and the virtual Uncategorized (null) both mean
+    // "no folder", exactly the upload endpoint's default.
+    if (selectedFolderId && selectedFolderId !== 'all') params.set('folderId', selectedFolderId)
 
     try {
       const response = await fetch(`${MEDIA_LIBRARY_UPLOAD_URL}?${params.toString()}`, {
@@ -696,6 +890,52 @@ export default function MediaManagerPage(): JSX.Element {
     await loadLibrary()
   }
 
+  // Metadata-only move, same shape as a carousel slot source change -
+  // no R2 object is touched, just media_library.folderId.
+  async function handleMoveFile(file: MediaLibraryFile, folderId: string | null) {
+    await fetch(`${MEDIA_LIBRARY_URL}/${file.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderId }),
+    })
+    await Promise.all([loadLibrary(), loadFolders()])
+  }
+
+  function handleCreateFolder(name: string) {
+    fetch(MEDIA_FOLDERS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(() => loadFolders())
+  }
+
+  function handleRenameFolder(folder: MediaFolder) {
+    const name = window.prompt('Rename folder', folder.name)?.trim()
+    if (!name || name === folder.name) return
+    fetch(`${MEDIA_FOLDERS_URL}/${folder.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(() => loadFolders())
+  }
+
+  // Files inside a deleted folder fall back to Uncategorized server-side
+  // (functions/api/tenant/media-folders/[id].ts) - never deleted. If the
+  // deleted folder was the one currently selected, fall back the view to
+  // "All files" too, so the page doesn't keep pointing at a folder that
+  // no longer exists.
+  async function handleDeleteFolder(folder: MediaFolder) {
+    const warning =
+      folder.fileCount > 0
+        ? `Delete "${folder.name}"? Its ${folder.fileCount} file${folder.fileCount === 1 ? '' : 's'} will move to Uncategorized, not be deleted.`
+        : `Delete "${folder.name}"?`
+    if (!window.confirm(warning)) return
+
+    await fetch(`${MEDIA_FOLDERS_URL}/${folder.id}`, { method: 'DELETE' })
+    if (selectedFolderId === folder.id) setSelectedFolderId('all')
+    await Promise.all([loadFolders(), loadLibrary()])
+  }
+
   // Local state (hence the live preview) updates synchronously on every
   // call; the network PUT is batched and debounced so dragging a crop/
   // rotation/brightness slider doesn't fire a request per pixel - all
@@ -742,6 +982,11 @@ export default function MediaManagerPage(): JSX.Element {
 
   const selectedSlot = slots.find((s) => s.slotNumber === selectedSlotNumber) ?? null
 
+  const uncategorizedCount = files.filter((f) => f.folderId === null).length
+  const visibleFiles = selectedFolderId === 'all' ? files : files.filter((f) => f.folderId === selectedFolderId)
+  const selectedFolderLabel =
+    selectedFolderId === 'all' ? 'All files' : selectedFolderId === null ? 'Uncategorized' : folders.find((f) => f.id === selectedFolderId)?.name ?? 'Folder'
+
   return (
     <>
       <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
@@ -756,8 +1001,44 @@ export default function MediaManagerPage(): JSX.Element {
           <p className="text-sm text-muted-400">Loading…</p>
         ) : (
           <>
-            {/* ── Media Library ───────────────────────────────────────── */}
+            {/* ── Carousel Slots ──────────────────────────────────────── */}
+            {/* Above the library - which slides are live right now is the
+                daily-use control; the library below is more of a one-time/
+                occasional upload task once files are loaded. */}
             <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+                Carousel Slots
+              </div>
+              {/* Compact always-visible list of all 12 slots + one shared editor
+                  panel for whichever slot is selected - replaces the old grid of
+                  12 fully-expanded cards. Stacks (list above editor) below the
+                  lg breakpoint since the editor's own 3-column zoom/pan grid
+                  needs real width to not feel cramped. */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+                <CarouselSlotList
+                  slots={slots}
+                  files={files}
+                  cameraOptions={cameraOptions}
+                  selectedSlotNumber={selectedSlotNumber}
+                  onSelect={selectSlot}
+                  onToggleEnabled={(slot, enabled) => saveSlot({ ...slot, enabled })}
+                />
+                {selectedSlot && (
+                  <CarouselSlotEditor
+                    slot={selectedSlot}
+                    files={files}
+                    cameraOptions={cameraOptions}
+                    appearanceOpen={appearanceEditorOpen}
+                    onToggleAppearance={() => setAppearanceEditorOpen((prev) => !prev)}
+                    onSourceChange={(value) => handleSourceChange(selectedSlot, value)}
+                    onChange={(patch) => saveSlot({ ...selectedSlot, ...patch })}
+                  />
+                )}
+              </div>
+            </section>
+
+            {/* ── Media Library ───────────────────────────────────────── */}
+            <section className="rounded-2xl border border-border bg-panel p-6">
               <div className="mb-4 flex items-center justify-between">
                 <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Media Library</div>
                 <div className="text-xs text-muted-400">
@@ -793,81 +1074,87 @@ export default function MediaManagerPage(): JSX.Element {
               {uploadError && <p className="mb-4 text-sm font-semibold text-status-bad">{uploadError}</p>}
               {deleteError && <p className="mb-4 text-sm font-semibold text-status-bad">{deleteError}</p>}
 
-              {files.length === 0 ? (
-                <p className="text-sm text-muted-500">No files uploaded yet.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {files.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <FileThumbnail file={file} />
-                        <div>
-                          <div className="text-sm font-semibold text-white">{file.filename}</div>
-                          <div className="text-xs text-muted-500">
-                            {file.mediaType}
-                            {file.mediaType === 'mp4' && file.mp4DurationSeconds ? ` · ${file.mp4DurationSeconds.toFixed(1)}s` : ''}
-                            {' · '}
-                            {formatMb(file.sizeBytes)} · uploaded {formatDate(file.uploadedAt)}
+              {/* Folder sidebar (within this page, distinct from the app's
+                  main admin sidebar) + the selected folder's compact file
+                  list. Stacks below lg, same breakpoint convention as the
+                  Carousel Slots section above. */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
+                <FolderSidebar
+                  folders={folders}
+                  totalFileCount={files.length}
+                  uncategorizedCount={uncategorizedCount}
+                  selectedFolderId={selectedFolderId}
+                  onSelect={setSelectedFolderId}
+                  onCreateFolder={handleCreateFolder}
+                  onRenameFolder={handleRenameFolder}
+                  onDeleteFolder={handleDeleteFolder}
+                />
+
+                <div>
+                  <div className="mb-2 text-xs font-bold uppercase tracking-widest text-muted-400">{selectedFolderLabel}</div>
+                  {visibleFiles.length === 0 ? (
+                    <p className="text-sm text-muted-500">
+                      {files.length === 0 ? 'No files uploaded yet.' : `No files in "${selectedFolderLabel}" yet.`}
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {visibleFiles.map((file) => (
+                        <div
+                          key={file.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <FileThumbnail file={file} />
+                            <div>
+                              <FilenameWithHoverPreview file={file} />
+                              <div className="text-xs text-muted-500">
+                                {file.mediaType}
+                                {file.mediaType === 'mp4' && file.mp4DurationSeconds
+                                  ? ` · ${file.mp4DurationSeconds.toFixed(1)}s`
+                                  : ''}
+                                {' · '}
+                                {formatMb(file.sizeBytes)} · uploaded {formatDate(file.uploadedAt)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-1.5 text-xs text-muted-400">
+                              Move to
+                              <select
+                                value={file.folderId ?? ''}
+                                onChange={(event) => handleMoveFile(file, event.target.value || null)}
+                                className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none"
+                              >
+                                <option value="">Uncategorized</option>
+                                {folders.map((folder) => (
+                                  <option key={folder.id} value={folder.id}>
+                                    {folder.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            {file.slideRecipe && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingSlideFile(file)}
+                                className="text-xs font-semibold text-accent-sky-400"
+                              >
+                                ✏️ Edit Slide
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFile(file)}
+                              className="text-xs font-semibold text-status-bad"
+                            >
+                              Delete
+                            </button>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {file.slideRecipe && (
-                          <button
-                            type="button"
-                            onClick={() => setEditingSlideFile(file)}
-                            className="text-xs font-semibold text-accent-sky-400"
-                          >
-                            ✏️ Edit Slide
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteFile(file)}
-                          className="text-xs font-semibold text-status-bad"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </section>
-
-            {/* ── Carousel Slots ──────────────────────────────────────── */}
-            <section className="rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
-                Carousel Slots
-              </div>
-              {/* Compact always-visible list of all 12 slots + one shared editor
-                  panel for whichever slot is selected - replaces the old grid of
-                  12 fully-expanded cards. Stacks (list above editor) below the
-                  lg breakpoint since the editor's own 3-column zoom/pan grid
-                  needs real width to not feel cramped. */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-                <CarouselSlotList
-                  slots={slots}
-                  files={files}
-                  cameraOptions={cameraOptions}
-                  selectedSlotNumber={selectedSlotNumber}
-                  onSelect={selectSlot}
-                  onToggleEnabled={(slot, enabled) => saveSlot({ ...slot, enabled })}
-                />
-                {selectedSlot && (
-                  <CarouselSlotEditor
-                    slot={selectedSlot}
-                    files={files}
-                    cameraOptions={cameraOptions}
-                    appearanceOpen={appearanceEditorOpen}
-                    onToggleAppearance={() => setAppearanceEditorOpen((prev) => !prev)}
-                    onSourceChange={(value) => handleSourceChange(selectedSlot, value)}
-                    onChange={(patch) => saveSlot({ ...selectedSlot, ...patch })}
-                  />
-                )}
               </div>
             </section>
           </>

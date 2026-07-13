@@ -12,6 +12,16 @@ export interface MediaLibraryFile {
   // slide composer - lets the library list offer "Edit Slide" instead
   // of (or alongside) Delete. Null for every normal upload.
   slideRecipe: SlideRecipe | null
+  // Null = the virtual "Uncategorized" bucket, not a real media_folders
+  // row - every file defaults here until explicitly moved.
+  folderId: string | null
+}
+
+export interface MediaFolder {
+  id: string
+  name: string
+  createdAt: string
+  fileCount: number
 }
 
 // Percentage sub-rect of the source image/video to display - x/y are the

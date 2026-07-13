@@ -48,9 +48,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const mediaType = url.searchParams.get("mediaType") || "";
   const mp4DurationParam = url.searchParams.get("mp4DurationSeconds");
   const mp4DurationSeconds = mp4DurationParam ? Number(mp4DurationParam) : null;
+  // Optional - lets the frontend drop a new upload straight into
+  // whichever folder is currently selected, instead of always landing
+  // in "Uncategorized". Defaults to null (Uncategorized) exactly as
+  // before this param existed.
+  const folderId = url.searchParams.get("folderId") || null;
 
   if (!ALLOWED_MEDIA_TYPES.includes(mediaType)) {
     return jsonResponse({ error: `mediaType must be one of: ${ALLOWED_MEDIA_TYPES.join(", ")}` }, 400);
+  }
+
+  if (folderId) {
+    const folder = await env.DB
+      .prepare("SELECT id FROM media_folders WHERE id = ? AND organizationId = ?")
+      .bind(folderId, organizationId)
+      .first<{ id: string }>();
+    if (!folder) return jsonResponse({ error: `folderId ${folderId} not found in your folders` }, 400);
   }
 
   const contentLengthHeader = request.headers.get("content-length");
@@ -88,9 +101,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const uploadedAt = new Date().toISOString();
   await env.DB
     .prepare(
-      "INSERT INTO media_library (id, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO media_library (id, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, folderId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(fileId, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt)
+    .bind(fileId, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, folderId)
     .run();
 
   return jsonResponse({
@@ -100,5 +113,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     sizeBytes,
     mp4DurationSeconds,
     uploadedAt,
+    folderId,
   });
 };
