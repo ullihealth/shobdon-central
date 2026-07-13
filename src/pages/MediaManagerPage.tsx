@@ -377,6 +377,197 @@ function SlotAppearanceEditor({
   )
 }
 
+// Resolves the human-readable label shown in the compact slot list row -
+// webcam label, assigned library filename, or "— none —" when
+// unassigned. Pure lookup, no state of its own.
+function slotSourceLabel(slot: CarouselSlot, files: MediaLibraryFile[], cameraOptions: CameraOption[]): string {
+  if (slot.mediaType === 'webcam') {
+    return cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.label ?? `Webcam ${slot.cameraSlotNumber ?? '?'}`
+  }
+  return files.find((f) => f.id === slot.mediaLibraryId)?.filename ?? '— none —'
+}
+
+// Compact always-visible list of all 12 slots - replaces the old grid of
+// 12 fully-expanded cards. Each row's Enabled checkbox calls onToggleEnabled
+// directly (the same saveSlot() write the old inline checkbox used),
+// independent of which slot is currently selected for the shared editor
+// below - toggling slot 7 while slot 3 is open in the editor must not
+// require selecting slot 7 first. stopPropagation on the checkbox keeps a
+// toggle click from also firing the row's onSelect.
+function CarouselSlotList({
+  slots,
+  files,
+  cameraOptions,
+  selectedSlotNumber,
+  onSelect,
+  onToggleEnabled,
+}: {
+  slots: CarouselSlot[]
+  files: MediaLibraryFile[]
+  cameraOptions: CameraOption[]
+  selectedSlotNumber: number
+  onSelect: (slotNumber: number) => void
+  onToggleEnabled: (slot: CarouselSlot, enabled: boolean) => void
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {slots.map((slot) => {
+        const isSelected = slot.slotNumber === selectedSlotNumber
+        return (
+          <div
+            key={slot.slotNumber}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(slot.slotNumber)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onSelect(slot.slotNumber)
+              }
+            }}
+            className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition ${
+              isSelected ? 'border-accent-sky-500 bg-accent-sky-500/10' : 'border-border bg-card hover:border-slate-600'
+            }`}
+          >
+            <span className="w-5 flex-shrink-0 text-right text-xs font-bold text-muted-400">{slot.slotNumber}</span>
+            <input
+              type="checkbox"
+              checked={slot.enabled}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                event.stopPropagation()
+                onToggleEnabled(slot, event.target.checked)
+              }}
+              className="h-4 w-4 flex-shrink-0"
+              aria-label={`Slot ${slot.slotNumber} enabled`}
+            />
+            <span
+              className={`min-w-0 flex-1 truncate text-sm ${isSelected ? 'font-semibold text-white' : 'text-muted-300'}`}
+            >
+              {slotSourceLabel(slot, files, cameraOptions)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// The single shared editor panel - today's per-card body (Source,
+// Duration, Fit Mode, Edit appearance) lifted out of the old 12x .map()
+// loop, parameterized by whichever one slot is currently selected instead
+// of implicitly closing over a loop variable. SlotAppearanceEditor,
+// sourceValueFor, and resolveSlotVisual are reused completely unmodified -
+// no editing logic changes, only where this JSX is instantiated from.
+function CarouselSlotEditor({
+  slot,
+  files,
+  cameraOptions,
+  appearanceOpen,
+  onToggleAppearance,
+  onSourceChange,
+  onChange,
+}: {
+  slot: CarouselSlot
+  files: MediaLibraryFile[]
+  cameraOptions: CameraOption[]
+  appearanceOpen: boolean
+  onToggleAppearance: () => void
+  onSourceChange: (value: string) => void
+  onChange: (patch: Partial<CarouselSlot>) => void
+}): JSX.Element {
+  const file = files.find((f) => f.id === slot.mediaLibraryId)
+  const isMp4 = slot.mediaType === 'mp4'
+  const showAppearanceControls = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber}</div>
+
+      <label className="mb-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Source</span>
+        <select
+          value={sourceValueFor(slot)}
+          onChange={(event) => onSourceChange(event.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        >
+          <option value="">— none —</option>
+          {cameraOptions.length > 0 && (
+            <optgroup label="Webcams">
+              {cameraOptions.map((cam) => (
+                <option key={cam.slot} value={`webcam:${cam.slot}`}>
+                  {cam.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {files.length > 0 && (
+            <optgroup label="Media library">
+              {files.map((f) => (
+                <option key={f.id} value={`file:${f.id}`}>
+                  {f.filename} ({f.mediaType})
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Duration (seconds)</span>
+        {isMp4 ? (
+          <input
+            type="text"
+            readOnly
+            value={file?.mp4DurationSeconds ? `Detected: ${file.mp4DurationSeconds.toFixed(1)}s` : 'Detected on upload'}
+            className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm text-muted-400"
+          />
+        ) : (
+          <input
+            type="number"
+            min={1}
+            value={slot.durationSeconds}
+            onChange={(event) => onChange({ durationSeconds: Number(event.target.value) || 10 })}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+          />
+        )}
+      </label>
+
+      {showAppearanceControls && (
+        <label className="mt-3 flex flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Fit mode</span>
+          <select
+            value={slot.fitMode}
+            onChange={(event) => onChange({ fitMode: event.target.value as CarouselSlot['fitMode'] })}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+          >
+            <option value="contain">Fit (show whole image, letterboxed if needed)</option>
+            <option value="fill">Fill (crop to fill the box)</option>
+          </select>
+        </label>
+      )}
+
+      {showAppearanceControls && (
+        <button
+          type="button"
+          onClick={onToggleAppearance}
+          className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 transition hover:border-sky-500"
+        >
+          {appearanceOpen ? '▾ Close appearance editor' : '🎨 Edit appearance'}
+        </button>
+      )}
+
+      {appearanceOpen && showAppearanceControls && (
+        <SlotAppearanceEditor
+          slot={slot}
+          visual={resolveSlotVisual(slot, files, cameraOptions)}
+          onChange={onChange}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function MediaManagerPage(): JSX.Element {
   const [files, setFiles] = useState<MediaLibraryFile[]>([])
   const [totalBytes, setTotalBytes] = useState(0)
@@ -387,7 +578,14 @@ export default function MediaManagerPage(): JSX.Element {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  const [editingSlotNumber, setEditingSlotNumber] = useState<number | null>(null)
+  // selectedSlotNumber: which slot the single shared editor panel is
+  // currently showing (defaults to 1, so the panel is never blank).
+  // appearanceEditorOpen: whether that slot's crop/rotate/banner
+  // sub-panel is expanded - always resets to closed on every slot
+  // switch, matching the old per-card behaviour where opening one
+  // card's appearance editor never left another slot's expanded.
+  const [selectedSlotNumber, setSelectedSlotNumber] = useState<number>(1)
+  const [appearanceEditorOpen, setAppearanceEditorOpen] = useState(false)
   // null = closed; a MediaLibraryFile (with a recipe) = re-editing that
   // slide; an empty-shell value would be wrong here - "create new" is
   // represented by the boolean below instead, since there's no existing
@@ -537,11 +735,16 @@ export default function MediaManagerPage(): JSX.Element {
     saveSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null })
   }
 
-  const assignedFile = (slot: CarouselSlot) => files.find((f) => f.id === slot.mediaLibraryId)
+  function selectSlot(slotNumber: number) {
+    setSelectedSlotNumber(slotNumber)
+    setAppearanceEditorOpen(false)
+  }
+
+  const selectedSlot = slots.find((s) => s.slotNumber === selectedSlotNumber) ?? null
 
   return (
     <>
-      <div className="mx-auto max-w-4xl px-5 pb-16 pt-10">
+      <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
         <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Media Manager</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
           Upload images, MP4 clips, and PDFs to the media library, then assign them to any of the 12 carousel
@@ -640,118 +843,31 @@ export default function MediaManagerPage(): JSX.Element {
               <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
                 Carousel Slots
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {slots.map((slot) => {
-                  const file = assignedFile(slot)
-                  const isMp4 = slot.mediaType === 'mp4'
-                  return (
-                    <div key={slot.slotNumber} className="rounded-xl border border-border bg-card p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-widest text-muted-400">
-                          Slot {slot.slotNumber}
-                        </span>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={slot.enabled}
-                            onChange={(event) => saveSlot({ ...slot, enabled: event.target.checked })}
-                            className="h-4 w-4"
-                          />
-                          <span className="text-xs text-muted-300">Enabled</span>
-                        </label>
-                      </div>
-
-                      <label className="mb-3 flex flex-col gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Source</span>
-                        <select
-                          value={sourceValueFor(slot)}
-                          onChange={(event) => handleSourceChange(slot, event.target.value)}
-                          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                        >
-                          <option value="">— none —</option>
-                          {cameraOptions.length > 0 && (
-                            <optgroup label="Webcams">
-                              {cameraOptions.map((cam) => (
-                                <option key={cam.slot} value={`webcam:${cam.slot}`}>
-                                  {cam.label}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {files.length > 0 && (
-                            <optgroup label="Media library">
-                              {files.map((f) => (
-                                <option key={f.id} value={`file:${f.id}`}>
-                                  {f.filename} ({f.mediaType})
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                      </label>
-
-                      <label className="flex flex-col gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                          Duration (seconds)
-                        </span>
-                        {isMp4 ? (
-                          <input
-                            type="text"
-                            readOnly
-                            value={file?.mp4DurationSeconds ? `Detected: ${file.mp4DurationSeconds.toFixed(1)}s` : 'Detected on upload'}
-                            className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm text-muted-400"
-                          />
-                        ) : (
-                          <input
-                            type="number"
-                            min={1}
-                            value={slot.durationSeconds}
-                            onChange={(event) => saveSlot({ ...slot, durationSeconds: Number(event.target.value) || 10 })}
-                            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                          />
-                        )}
-                      </label>
-
-                      {(slot.mediaType === 'image' || slot.mediaType === 'mp4') && (
-                        <label className="mt-3 flex flex-col gap-1.5">
-                          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                            Fit mode
-                          </span>
-                          <select
-                            value={slot.fitMode}
-                            onChange={(event) =>
-                              saveSlot({ ...slot, fitMode: event.target.value as CarouselSlot['fitMode'] })
-                            }
-                            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                          >
-                            <option value="contain">Fit (show whole image, letterboxed if needed)</option>
-                            <option value="fill">Fill (crop to fill the box)</option>
-                          </select>
-                        </label>
-                      )}
-
-                      {(slot.mediaType === 'image' || slot.mediaType === 'mp4') && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditingSlotNumber((prev) => (prev === slot.slotNumber ? null : slot.slotNumber))
-                          }
-                          className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 transition hover:border-sky-500"
-                        >
-                          {editingSlotNumber === slot.slotNumber ? '▾ Close appearance editor' : '🎨 Edit appearance'}
-                        </button>
-                      )}
-
-                      {editingSlotNumber === slot.slotNumber && (
-                        <SlotAppearanceEditor
-                          slot={slot}
-                          visual={resolveSlotVisual(slot, files, cameraOptions)}
-                          onChange={(patch) => saveSlot({ ...slot, ...patch })}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
+              {/* Compact always-visible list of all 12 slots + one shared editor
+                  panel for whichever slot is selected - replaces the old grid of
+                  12 fully-expanded cards. Stacks (list above editor) below the
+                  lg breakpoint since the editor's own 3-column zoom/pan grid
+                  needs real width to not feel cramped. */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+                <CarouselSlotList
+                  slots={slots}
+                  files={files}
+                  cameraOptions={cameraOptions}
+                  selectedSlotNumber={selectedSlotNumber}
+                  onSelect={selectSlot}
+                  onToggleEnabled={(slot, enabled) => saveSlot({ ...slot, enabled })}
+                />
+                {selectedSlot && (
+                  <CarouselSlotEditor
+                    slot={selectedSlot}
+                    files={files}
+                    cameraOptions={cameraOptions}
+                    appearanceOpen={appearanceEditorOpen}
+                    onToggleAppearance={() => setAppearanceEditorOpen((prev) => !prev)}
+                    onSourceChange={(value) => handleSourceChange(selectedSlot, value)}
+                    onChange={(patch) => saveSlot({ ...selectedSlot, ...patch })}
+                  />
+                )}
               </div>
             </section>
           </>
