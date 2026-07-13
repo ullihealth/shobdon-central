@@ -739,14 +739,15 @@ function folderRowClass(selected: boolean): string {
 // .map()) specifically so useInlineEdit can be called once per row
 // instance; calling a hook directly inside a .map() callback body would
 // violate React's rules of hooks (a varying number of hook calls across
-// renders as folders are added/removed). Clicking the folder NAME still
-// selects/browses into it as before - rename is triggered via the ✎
-// button instead of the name itself, since the name is the row's
-// primary navigation target and overloading it with rename-on-click
-// would make single-clicking into a folder unreliable. The rename
-// WIDGET itself (inline input, Enter/Escape/blur) is the same
-// useInlineEdit-driven experience as the file rename, replacing the old
-// window.prompt() - only the trigger differs, for that one reason.
+// renders as folders are added/removed).
+//
+// Clicking the folder NAME itself now starts renaming - the exact same
+// click-to-edit trigger as a filename in the library list, not a
+// separate ✎ button - per explicit instruction to match the filename
+// pattern exactly rather than the button-triggered compromise this used
+// initially. The name span stops propagation on click so it doesn't
+// also fire the row's onSelect; browsing into a folder still works by
+// clicking anywhere else in the row (the file count, the row's padding).
 function FolderRow({
   folder,
   selected,
@@ -786,21 +787,27 @@ function FolderRow({
           className="min-w-0 flex-1 rounded border border-accent-sky-500/60 bg-slate-900/80 px-1.5 py-0.5 text-sm text-white focus:outline-none"
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-      )}
-      <span className="flex flex-shrink-0 items-center gap-1.5">
-        <span className="text-xs text-muted-500">{folder.fileCount}</span>
-        <button
-          type="button"
+        <span
+          role="button"
+          tabIndex={0}
           onClick={(event) => {
             event.stopPropagation()
             edit.startEditing()
           }}
-          className="text-xs text-muted-500 opacity-0 hover:text-accent-sky-400 group-hover:opacity-100"
-          aria-label={`Rename ${folder.name}`}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.stopPropagation()
+              edit.startEditing()
+            }
+          }}
+          title="Click to rename"
+          className="min-w-0 flex-1 cursor-text truncate decoration-dotted hover:underline"
         >
-          ✎
-        </button>
+          {folder.name}
+        </span>
+      )}
+      <span className="flex flex-shrink-0 items-center gap-1.5">
+        <span className="text-xs text-muted-500">{folder.fileCount}</span>
         <button
           type="button"
           onClick={(event) => {
