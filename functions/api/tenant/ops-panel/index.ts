@@ -29,7 +29,7 @@ interface OpsPanelRow {
 
 interface SafetyNoticeInput {
   text: string;
-  size: "sm" | "md" | "lg";
+  size: "sm" | "md" | "lg" | "xl";
   enabled: boolean;
 }
 
@@ -45,7 +45,7 @@ interface OpsPanelInput {
 const AIRFIELD_INFO_MAX_LENGTH = 60;
 const SAFETY_NOTICE_MAX_LENGTH = 40;
 const SAFETY_NOTICE_MAX_ROWS = 10;
-const NOTICE_SIZES = ["sm", "md", "lg"];
+const NOTICE_SIZES = ["sm", "md", "lg", "xl"];
 const NOTAMS_INTERVAL_MIN_SECONDS = 2;
 const NOTAMS_INTERVAL_MAX_SECONDS = 30;
 
@@ -111,7 +111,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     ) {
       return jsonResponse(
         {
-          error: `each safety notice must be {text: string (max ${SAFETY_NOTICE_MAX_LENGTH} chars), size: 'sm'|'md'|'lg', enabled: boolean}`,
+          error: `each safety notice must be {text: string (max ${SAFETY_NOTICE_MAX_LENGTH} chars), size: 'sm'|'md'|'lg'|'xl', enabled: boolean}`,
         },
         400
       );

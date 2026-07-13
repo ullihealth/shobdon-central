@@ -11,7 +11,7 @@ const NOTAMS_INTERVAL_MAX_SECONDS = 30
 const NOTAMS_INTERVAL_DEFAULT_SECONDS = 5
 
 type CircuitDirection = 'left' | 'right'
-type NoticeSize = 'sm' | 'md' | 'lg'
+type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
 
 interface SafetyNotice {
@@ -24,6 +24,7 @@ const NOTICE_SIZE_OPTIONS: { value: NoticeSize; label: string }[] = [
   { value: 'sm', label: 'Sm' },
   { value: 'md', label: 'Med' },
   { value: 'lg', label: 'Lg' },
+  { value: 'xl', label: 'Xl' },
 ]
 
 // Compact inline selector for the per-notice size - the existing

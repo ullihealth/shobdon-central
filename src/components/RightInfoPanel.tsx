@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 
-type NoticeSize = 'sm' | 'md' | 'lg'
+type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 
 interface SafetyNotice {
   text: string
@@ -23,14 +23,18 @@ function circuitDirectionLabel(direction: string): string {
   return direction === 'right' ? 'Right-hand' : 'Left-hand'
 }
 
-// 'md' matches today's existing fixed text-lg exactly - a notice left
-// at the default size renders pixel-identical to before per-notice
-// sizing existed. 'sm'/'lg' stay well below the old text-3xl (30px)
-// that originally motivated a smaller size for this list-style panel.
+// Shifted up one step from the original sm/md/lg=16/18/20px tier: each
+// existing saved notice keeps its tier label (a notice saved as "md"
+// stays "md") but now renders one Tailwind type-scale step larger than
+// before - a deliberate, visible size increase, not a preserved value.
+// lg and the new xl continue the same step-by-step progression (each
+// tier the next size up in Tailwind's own default scale) rather than
+// jumping to an arbitrary pixel value.
 const SIZE_CLASSES: Record<NoticeSize, string> = {
-  sm: 'text-base',
-  md: 'text-lg',
-  lg: 'text-xl',
+  sm: 'text-lg', // 18px (was md's size)
+  md: 'text-xl', // 20px (was lg's size)
+  lg: 'text-2xl', // 24px - new, genuinely larger than old lg
+  xl: 'text-3xl', // 30px - new largest tier
 }
 
 // State B's content - each notice as its own block, blank-line-separated,
