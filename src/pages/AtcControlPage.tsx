@@ -203,44 +203,47 @@ export default function AtcControlPage(): JSX.Element {
 
   return (
     <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
-      <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
-      <p className="mb-6 max-w-2xl text-sm text-muted-400">
-        Edit the live Ops Panel. Nothing here reaches the dashboard until you click "Update Dashboard" below -
-        toggle and type freely, changes are only staged locally until then.
-      </p>
+      {/* ── Heading + Update Dashboard, side by side (was stacked) ───── */}
+      <div className="mb-6 grid grid-cols-2 items-start gap-6">
+        <div>
+          <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">ATC Control</h1>
+          <p className="max-w-2xl text-sm text-muted-400">
+            Edit the live Ops Panel. Nothing here reaches the dashboard until you click "Update Dashboard" -
+            toggle and type freely, changes are only staged locally until then.
+          </p>
+        </div>
+
+        {!loading && (
+          <div className="sticky top-4 z-20 rounded-xl border border-accent-sky-500/40 bg-slate-950/95 px-5 py-3 shadow-lg shadow-slate-950/40 backdrop-blur">
+            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Update Dashboard</div>
+            <p className="mb-2 text-xs text-muted-500">
+              Publishes the staged changes below to the live dashboard - every device that loads it picks them up
+              within about 15 seconds.
+            </p>
+            {applyStatus === 'success' && (
+              <p className="mb-2 text-xs font-semibold text-status-good">Published - live dashboard will update shortly.</p>
+            )}
+            {applyStatus === 'error' && (
+              <p className="mb-2 text-xs font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
+            )}
+            <button
+              type="button"
+              onClick={handleUpdateDashboard}
+              disabled={applyStatus === 'working'}
+              className="rounded-lg bg-accent-sky-500 px-6 py-2.5 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+            >
+              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
+            </button>
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <p className="text-sm text-muted-400">Loading…</p>
       ) : (
         <>
-          {/* ── Update dashboard - sticky near the top, not buried at the
-              bottom of a long page ─────────────────────────────────── */}
-          <div className="sticky top-4 z-20 mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-accent-sky-500/40 bg-slate-950/95 px-5 py-3 shadow-lg shadow-slate-950/40 backdrop-blur">
-            <div>
-              <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Update Dashboard</div>
-              <p className="text-xs text-muted-500">
-                Publishes the staged changes below to the live dashboard - every device that loads it picks them up
-                within about 15 seconds.
-              </p>
-              {applyStatus === 'success' && (
-                <p className="mt-1 text-xs font-semibold text-status-good">Published - live dashboard will update shortly.</p>
-              )}
-              {applyStatus === 'error' && (
-                <p className="mt-1 text-xs font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={handleUpdateDashboard}
-              disabled={applyStatus === 'working'}
-              className="flex-shrink-0 rounded-lg bg-accent-sky-500 px-6 py-2.5 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-            >
-              {applyStatus === 'working' ? 'Updating…' : 'Update Dashboard'}
-            </button>
-          </div>
-
-          {/* ── Runway in use + Circuit direction, side by side ──────── */}
-          <div className="mb-6 grid grid-cols-2 gap-4">
+          {/* ── Runway in use + Circuit direction + Airfield info, one row ─ */}
+          <div className="mb-6 grid grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
               <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
                 Runway In Use
@@ -267,25 +270,23 @@ export default function AtcControlPage(): JSX.Element {
                 onChange={setCircuitDirection}
               />
             </div>
-          </div>
-
-          {/* ── Airfield info ────────────────────────────────────────── */}
-          <section className="mb-6 rounded-2xl border border-border bg-panel p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Airfield Info</div>
-              <div className="text-xs text-muted-400">
-                {airfieldInfoText.length}/{AIRFIELD_INFO_MAX_LENGTH}
+            <div className="rounded-xl border border-border bg-panel px-5 py-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-bold uppercase tracking-widest text-accent-sky-400">Airfield Info</div>
+                <div className="text-xs text-muted-400">
+                  {airfieldInfoText.length}/{AIRFIELD_INFO_MAX_LENGTH}
+                </div>
               </div>
+              <input
+                type="text"
+                value={airfieldInfoText}
+                onChange={handleAirfieldInfoChange}
+                maxLength={AIRFIELD_INFO_MAX_LENGTH}
+                placeholder="e.g. PPR only after 17:00"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
             </div>
-            <input
-              type="text"
-              value={airfieldInfoText}
-              onChange={handleAirfieldInfoChange}
-              maxLength={AIRFIELD_INFO_MAX_LENGTH}
-              placeholder="e.g. PPR only after 17:00"
-              className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-            />
-          </section>
+          </div>
 
           {/* ── Safety notices ───────────────────────────────────────── */}
           <section className="rounded-2xl border border-border bg-panel p-6">
