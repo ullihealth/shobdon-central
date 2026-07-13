@@ -15,7 +15,16 @@ import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
 // rendering ever changes - there is no shared source of truth by design.
 
 const RING_RADIUS = 180
-const CARDINAL_LETTER_RADIUS = RING_RADIUS * 0.83
+
+// Kept in sync by eye with CompassPanel.tsx's own fix (see that file's
+// header comment for the full radii table and why 0.83/149px was too
+// close to centre - closer than a long strip's rendered end, causing a
+// visual "foul" between the runway graphic and the cardinal letters).
+// N/E/S/W now sit at the true outer rim; the short dashed tick-mark band
+// occupies the gap this used to sit flush against.
+const CARDINAL_LETTER_RADIUS = RING_RADIUS - 12
+const TICK_MARK_INNER_RADIUS = 156
+const TICK_MARK_OUTER_RADIUS = 163
 const CARDINAL_LETTER_VERTICAL_NUDGE = 8
 
 function degreesToRadians(degrees: number): number {
@@ -260,8 +269,8 @@ export default function RunwayStripPreview({ group }: { group: RunwayGroup }): J
 
       <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
         {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
-          const point = circlePoint(200, 200, 175, degree)
-          const innerPoint = circlePoint(200, 200, 163, degree)
+          const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
+          const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)
           return <line key={`marker-${degree}`} x1={point.x} y1={point.y} x2={innerPoint.x} y2={innerPoint.y} />
         })}
       </g>

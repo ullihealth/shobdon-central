@@ -51,10 +51,38 @@ function circlePoint(
 // placed at a fraction of this, not a bare literal, so the two stay linked.
 const RING_RADIUS = 180
 
-// 0.83 leaves clear margin between each glyph's rendered edge and the ring,
-// replacing the previous inconsistent per-letter radii (172/172/182/172),
-// where N/E/W nearly touched the ring and S sat past it entirely.
-const CARDINAL_LETTER_RADIUS = RING_RADIUS * 0.83
+// Sleap-style layout: N/E/S/W sit at the true outer rim (straddling the
+// ring boundary itself, same as a real compass bezel), the degree/heading
+// numbers occupy a smaller radius well inside that, and a band of short
+// dashed tick marks separates the two label rings. Previously the
+// cardinal letters sat at RING_RADIUS * 0.83 (≈149px) - actually CLOSER
+// to centre than the degree-number ring (153px) and the tick-mark band
+// (163-175px), not "near the rim" at all despite the old comment's claim.
+// Since a runway strip's rendered length has no upper clamp (admin-
+// configurable, deliberately unbounded - see MIN_STRIP_HALF_LENGTH's own
+// comment), a sufficiently long strip only had to reach ~149px from
+// centre to visually collide with the giant (fontSize 41) cardinal
+// letters - just 34px past Shobdon's own real strip (stripLengthPx 230,
+// half-length 115px). Moving the letters out to 168px adds ~19px of
+// clearance and puts them outside the tick-mark band entirely, so a
+// strip has to be substantially longer before it can reach them. (172px
+// was tried first but clipped the top of "N" against the SVG's own
+// viewport edge by under a pixel - pulled in 4px for headroom, verified
+// via getBoundingClientRect that all four letters render fully on-screen
+// with margin to spare at 168px.)
+const CARDINAL_LETTER_RADIUS = RING_RADIUS - 12
+
+// Now the SMALLER of the two label radii (previously roomier than the
+// cardinal letters at 153 vs 149 - the two were almost the same radius,
+// which is why they read as one crowded band). Distinctly inside the new
+// tick-mark band below.
+const INTERMEDIATE_LABEL_RADIUS = 148
+
+// The dashed separator band between the two label rings - clear gap on
+// both sides (148 -> 156 is 8px, 163 -> 168 is 5px), replacing the old
+// degree-marker span (163-175) which sat almost flush against the ring.
+const TICK_MARK_INNER_RADIUS = 156
+const TICK_MARK_OUTER_RADIUS = 163
 
 // Pre-existing correction, preserved as-is at the new radius - likely
 // compensating for dominantBaseline="middle" centering less reliably than
@@ -633,7 +661,7 @@ export default function CompassPanel(): JSX.Element {
             {/* Intermediate Bearings */}
             <g id="intermediate-bearings" className="pointer-events-none">
               {INTERMEDIATE_BEARINGS.map((bearing) => {
-                const point = circlePoint(200, 200, 153, bearing.degrees)
+                const point = circlePoint(200, 200, INTERMEDIATE_LABEL_RADIUS, bearing.degrees)
                 return (
                   <text
                     key={`bearing-${bearing.degrees}`}
@@ -656,8 +684,8 @@ export default function CompassPanel(): JSX.Element {
             {/* Degree Markers (every 30°) */}
             <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
               {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
-                const point = circlePoint(200, 200, 175, degree)
-                const innerPoint = circlePoint(200, 200, 163, degree)
+                const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
+                const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)
                 return (
                   <line
                     key={`marker-${degree}`}
