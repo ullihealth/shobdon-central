@@ -63,6 +63,62 @@ function FileThumbnail({ file }: { file: MediaLibraryFile }): JSX.Element {
   )
 }
 
+// Shared Mac-Finder-style click-to-edit behaviour: click to start, Enter
+// or blur (clicking away) saves, Escape cancels and reverts with no
+// save. Used by both the media library's filename rename and the folder
+// sidebar's rename, so both share the exact same save/cancel keys and
+// empty-name handling rather than two subtly different implementations.
+//
+// A React hook, not a plain function - components using it (FilenameWith-
+// HoverPreview, FolderRow) call it exactly once per own render, which is
+// what makes it legal; it must never be called conditionally or inside a
+// loop/.map() callback directly (that would call useState/useRef a
+// varying number of times across renders and break React's hook order).
+//
+// settledRef guards against a save AND a cancel both firing for the same
+// edit - e.g. Escape unmounting the input can also trigger a native blur
+// event in some browsers. Whichever handler runs first "settles" the
+// edit; the other becomes a no-op instead of double-submitting or
+// reverting a value that was already saved.
+function useInlineEdit(value: string, onSave: (next: string) => void) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const settledRef = useRef(false)
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  function startEditing() {
+    settledRef.current = false
+    setDraft(value)
+    setEditing(true)
+  }
+
+  function commit() {
+    if (settledRef.current) return
+    settledRef.current = true
+    setEditing(false)
+    const trimmed = draft.trim()
+    // Empty/whitespace-only input: reject and revert, no save - matches
+    // Finder's own behaviour rather than saving a blank name.
+    if (trimmed && trimmed !== value) onSave(trimmed)
+  }
+
+  function cancel() {
+    if (settledRef.current) return
+    settledRef.current = true
+    setEditing(false)
+    setDraft(value)
+  }
+
+  return { editing, draft, setDraft, inputRef, startEditing, commit, cancel }
+}
+
 // Hovering a filename shows a larger real thumbnail in a floating card -
 // reuses the SAME same-origin image-proxy endpoint the slide composer
 // already relies on for CORS-safe canvas loading (mediaLibraryImageProxyUrl,
@@ -81,12 +137,63 @@ function FileThumbnail({ file }: { file: MediaLibraryFile }): JSX.Element {
 // Positioned via plain absolute (no portal, no new dependency) - safe
 // as long as no ancestor sets overflow-hidden, which the Media Library
 // section's containers deliberately don't.
-function FilenameWithHoverPreview({ file }: { file: MediaLibraryFile }): JSX.Element {
+//
+// Also doubles as the click-to-rename target (Mac Finder style, via
+// useInlineEdit above) - the two features are independent by
+// construction: hover state lives on the OUTER wrapping span and is
+// driven purely by mouseEnter/mouseLeave on that span, regardless of
+// whether its child is currently the plain filename span or the rename
+// <input>, so entering/leaving edit mode never touches hover state or
+// vice versa. The preview is suppressed while actively editing purely
+// as a small polish (no point floating a thumbnail over an open text
+// field), not because the two would otherwise conflict.
+function FilenameWithHoverPreview({
+  file,
+  onRename,
+}: {
+  file: MediaLibraryFile
+  onRename: (newFilename: string) => void
+}): JSX.Element {
   const [hovering, setHovering] = useState(false)
+  const edit = useInlineEdit(file.filename, onRename)
+
   return (
     <span className="relative inline-block" onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
-      <span className="text-sm font-semibold text-white">{file.filename}</span>
-      {hovering && (
+      {edit.editing ? (
+        <input
+          ref={edit.inputRef}
+          type="text"
+          value={edit.draft}
+          onChange={(event) => edit.setDraft(event.target.value)}
+          onBlur={edit.commit}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              edit.commit()
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              edit.cancel()
+            }
+          }}
+          aria-label={`Rename ${file.filename}`}
+          className="rounded border border-accent-sky-500/60 bg-slate-900/80 px-1.5 py-0.5 text-sm font-semibold text-white focus:outline-none"
+        />
+      ) : (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={edit.startEditing}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') edit.startEditing()
+          }}
+          title="Click to rename"
+          className="cursor-text text-sm font-semibold text-white decoration-dotted hover:underline"
+        >
+          {file.filename}
+        </span>
+      )}
+      {hovering && !edit.editing && (
         <span className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-lg border border-border bg-slate-950 p-2 shadow-xl shadow-slate-950/50">
           {file.mediaType === 'image' && (
             <img src={mediaLibraryImageProxyUrl(file.id)} alt="" className="h-40 w-full rounded bg-slate-900 object-contain" />
@@ -620,14 +727,103 @@ function CarouselSlotEditor({
   )
 }
 
+function folderRowClass(selected: boolean): string {
+  return `flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+    selected
+      ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
+      : 'border-transparent text-muted-300 hover:bg-slate-800/60'
+  }`
+}
+
+// One folder row - a real component (not inline JSX in FolderSidebar's
+// .map()) specifically so useInlineEdit can be called once per row
+// instance; calling a hook directly inside a .map() callback body would
+// violate React's rules of hooks (a varying number of hook calls across
+// renders as folders are added/removed). Clicking the folder NAME still
+// selects/browses into it as before - rename is triggered via the ✎
+// button instead of the name itself, since the name is the row's
+// primary navigation target and overloading it with rename-on-click
+// would make single-clicking into a folder unreliable. The rename
+// WIDGET itself (inline input, Enter/Escape/blur) is the same
+// useInlineEdit-driven experience as the file rename, replacing the old
+// window.prompt() - only the trigger differs, for that one reason.
+function FolderRow({
+  folder,
+  selected,
+  onSelect,
+  onRename,
+  onDelete,
+}: {
+  folder: MediaFolder
+  selected: boolean
+  onSelect: () => void
+  onRename: (name: string) => void
+  onDelete: () => void
+}): JSX.Element {
+  const edit = useInlineEdit(folder.name, onRename)
+
+  return (
+    <div className={`group ${folderRowClass(selected)}`} onClick={onSelect}>
+      {edit.editing ? (
+        <input
+          ref={edit.inputRef}
+          type="text"
+          value={edit.draft}
+          onChange={(event) => edit.setDraft(event.target.value)}
+          onBlur={edit.commit}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              edit.commit()
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              edit.cancel()
+            }
+          }}
+          aria-label={`Rename ${folder.name}`}
+          className="min-w-0 flex-1 rounded border border-accent-sky-500/60 bg-slate-900/80 px-1.5 py-0.5 text-sm text-white focus:outline-none"
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+      )}
+      <span className="flex flex-shrink-0 items-center gap-1.5">
+        <span className="text-xs text-muted-500">{folder.fileCount}</span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            edit.startEditing()
+          }}
+          className="text-xs text-muted-500 opacity-0 hover:text-accent-sky-400 group-hover:opacity-100"
+          aria-label={`Rename ${folder.name}`}
+        >
+          ✎
+        </button>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDelete()
+          }}
+          className="text-xs text-muted-500 opacity-0 hover:text-status-bad group-hover:opacity-100"
+          aria-label={`Delete ${folder.name}`}
+        >
+          ×
+        </button>
+      </span>
+    </div>
+  )
+}
+
 // Lightweight, flat (no nesting) folder list WITHIN the media-manager
 // page - distinct from the app's main admin sidebar. "All files" and
 // "Uncategorized" are always present and not deletable/renamable -
 // "Uncategorized" is virtual (folderId IS NULL on media_library), it
 // never has a real media_folders row. Folder-creation is a small local
 // text input rather than window.prompt(), matching the "inline prompt"
-// ask; rename still uses window.prompt() since it's a rarer action with
-// no specific UI called for it.
+// ask.
 function FolderSidebar({
   folders,
   totalFileCount,
@@ -644,7 +840,7 @@ function FolderSidebar({
   selectedFolderId: string | null | 'all'
   onSelect: (id: string | null | 'all') => void
   onCreateFolder: (name: string) => void
-  onRenameFolder: (folder: MediaFolder) => void
+  onRenameFolder: (folder: MediaFolder, name: string) => void
   onDeleteFolder: (folder: MediaFolder) => void
 }): JSX.Element {
   const [creating, setCreating] = useState(false)
@@ -663,53 +859,26 @@ function FolderSidebar({
     setCreating(false)
   }
 
-  const rowClass = (selected: boolean) =>
-    `flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition ${
-      selected
-        ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
-        : 'border-transparent text-muted-300 hover:bg-slate-800/60'
-    }`
-
   return (
     <div className="flex flex-col gap-1.5">
-      <div className={rowClass(selectedFolderId === 'all')} onClick={() => onSelect('all')}>
+      <div className={folderRowClass(selectedFolderId === 'all')} onClick={() => onSelect('all')}>
         <span className="truncate">All files</span>
         <span className="flex-shrink-0 text-xs text-muted-500">{totalFileCount}</span>
       </div>
-      <div className={rowClass(selectedFolderId === null)} onClick={() => onSelect(null)}>
+      <div className={folderRowClass(selectedFolderId === null)} onClick={() => onSelect(null)}>
         <span className="truncate">Uncategorized</span>
         <span className="flex-shrink-0 text-xs text-muted-500">{uncategorizedCount}</span>
       </div>
 
       {folders.map((folder) => (
-        <div key={folder.id} className={`group ${rowClass(selectedFolderId === folder.id)}`} onClick={() => onSelect(folder.id)}>
-          <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-          <span className="flex flex-shrink-0 items-center gap-1.5">
-            <span className="text-xs text-muted-500">{folder.fileCount}</span>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onRenameFolder(folder)
-              }}
-              className="text-xs text-muted-500 opacity-0 hover:text-accent-sky-400 group-hover:opacity-100"
-              aria-label={`Rename ${folder.name}`}
-            >
-              ✎
-            </button>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onDeleteFolder(folder)
-              }}
-              className="text-xs text-muted-500 opacity-0 hover:text-status-bad group-hover:opacity-100"
-              aria-label={`Delete ${folder.name}`}
-            >
-              ×
-            </button>
-          </span>
-        </div>
+        <FolderRow
+          key={folder.id}
+          folder={folder}
+          selected={selectedFolderId === folder.id}
+          onSelect={() => onSelect(folder.id)}
+          onRename={(name) => onRenameFolder(folder, name)}
+          onDelete={() => onDeleteFolder(folder)}
+        />
       ))}
 
       {creating ? (
@@ -909,14 +1078,27 @@ export default function MediaManagerPage(): JSX.Element {
     }).then(() => loadFolders())
   }
 
-  function handleRenameFolder(folder: MediaFolder) {
-    const name = window.prompt('Rename folder', folder.name)?.trim()
-    if (!name || name === folder.name) return
+  // Empty-name rejection and "unchanged, don't bother saving" are both
+  // already handled inside useInlineEdit before onRename ever fires -
+  // this only needs to do the actual write.
+  function handleRenameFolder(folder: MediaFolder, name: string) {
     fetch(`${MEDIA_FOLDERS_URL}/${folder.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     }).then(() => loadFolders())
+  }
+
+  // Display-name-only rename - the PATCH handler never touches r2Key or
+  // the file's id, so this can't affect its public URL or any carousel
+  // slot currently assigned to it (those reference mediaLibraryId, never
+  // filename).
+  function handleRenameFile(file: MediaLibraryFile, filename: string) {
+    fetch(`${MEDIA_LIBRARY_URL}/${file.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+    }).then(() => loadLibrary())
   }
 
   // Files inside a deleted folder fall back to Uncategorized server-side
@@ -1106,7 +1288,7 @@ export default function MediaManagerPage(): JSX.Element {
                           <div className="flex items-center gap-3">
                             <FileThumbnail file={file} />
                             <div>
-                              <FilenameWithHoverPreview file={file} />
+                              <FilenameWithHoverPreview file={file} onRename={(filename) => handleRenameFile(file, filename)} />
                               <div className="text-xs text-muted-500">
                                 {file.mediaType}
                                 {file.mediaType === 'mp4' && file.mp4DurationSeconds
