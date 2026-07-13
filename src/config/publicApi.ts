@@ -11,6 +11,12 @@
 export const TENANT_SLUG = 'shobdon'
 export const PUBLIC_CONFIG_URL = `/api/public/${TENANT_SLUG}/config`
 
+// Served by functions/api/public/[tenant]/visibility-forecast.ts -
+// deliberately a separate route/fetch from PUBLIC_CONFIG_URL above (not
+// bundled into that response) so a Met Office outage can only ever affect
+// this one card, never the rest of the public dashboard.
+export const VISIBILITY_FORECAST_URL = `/api/public/${TENANT_SLUG}/visibility-forecast`
+
 // Authenticated read/write for the management pages - functions/api/
 // tenant/config.ts. Requires a valid BetterAuth session cookie, which a
 // same-origin fetch() sends automatically; no extra credential handling

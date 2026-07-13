@@ -75,6 +75,13 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
     throw new Error('Latest capture is missing one or more required fields (wind direction/speed, temp, QNH)')
   }
 
+  // Deliberately not in the required-field check above - dewpoint feeds
+  // only the supplementary Cloud Base card, not the core reading, so a
+  // capture that's missing it (station hiccup, format change) shouldn't
+  // fail the whole weather fetch. numberField() already returns null for
+  // anything missing/malformed; that null just becomes undefined here.
+  const dewpoint = numberField(reading.parsed, 'dewpoint_c') ?? undefined
+
   const notams = stringArrayField(reading.parsed, 'notams')
 
   // wind_avg_kt is an averaging-period mean, not a gust reading - the
@@ -87,6 +94,7 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
     qnh,
     pressureTrend: 'steady',
     notams,
+    dewpoint,
   }
 
   return { data, live: true }

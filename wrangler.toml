@@ -23,6 +23,17 @@ database_id = "31656f0d-3bf3-4c0f-96bb-39bf90c9e179"
 binding = "MEDIA"
 bucket_name = "shobdon-central-media"
 
+# Short-TTL cache for third-party API responses that don't belong in D1
+# (no durable/relational value - just "what did we last successfully
+# fetch"). First user: functions/api/public/[tenant]/visibility-forecast.ts
+# caches the Met Office hourly forecast here with a 60-minute
+# expirationTtl, so the KV entry's own expiry is what enforces "never
+# silently serve data past its TTL" - once it's gone, the Function must
+# refetch or report unavailable, no manual staleness bookkeeping needed.
+[[kv_namespaces]]
+binding = "WEATHER_CACHE"
+id = "c5ada3c64f1745509ed0977c0ab0c323"
+
 [vars]
 # BETTER_AUTH_URL / AUTH_TRUSTED_ORIGIN: placeholder pointing at the
 # default *.pages.dev domain - confirm/correct this in the Cloudflare
