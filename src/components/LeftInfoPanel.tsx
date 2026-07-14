@@ -1,15 +1,57 @@
+import { useEffect, useRef, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
 import { degreesToCardinal } from '../utils/windCalculations'
 import { estimateCloudBaseFt } from '../utils/cloudBase'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
+import { PUBLIC_CONFIG_URL } from '../config/publicApi'
+import CloudVisibilityChart from './CloudVisibilityChart'
+
+interface OpsPanelChartConfig {
+  weatherSummaryChartEnabled: boolean
+  weatherSummaryStateADurationSeconds: number
+  weatherSummaryStateBDurationSeconds: number
+}
 
 export default function LeftInfoPanel(): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
-  const { forecast: visibilityForecast } = useVisibilityForecast()
+  const { hours: visibilityHours } = useVisibilityForecast()
+
+  // Self-contained fetch of the public config, matching RightInfoPanel's
+  // established pattern - only the three chart-rotation fields are used
+  // here, everything else in the response is RightInfoPanel/MediaPanel's
+  // concern.
+  const [chartConfig, setChartConfig] = useState<OpsPanelChartConfig | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const opsPanel = data?.opsPanel
+        setChartConfig({
+          weatherSummaryChartEnabled: !!opsPanel?.weatherSummaryChartEnabled,
+          weatherSummaryStateADurationSeconds: opsPanel?.weatherSummaryStateADurationSeconds ?? 8,
+          weatherSummaryStateBDurationSeconds: opsPanel?.weatherSummaryStateBDurationSeconds ?? 5,
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // liveDataUnavailable: the selected source's fetch failed and weather
   // is actually the substituted mock fixture - show N/A rather than
   // presenting that fake data as if it were a real reading.
+  const cloudBaseFt =
+    !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
+      ? null
+      : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
+  const visibilityOutlookText = visibilityHours[0]
+    ? `${visibilityHours[0].category} (${visibilityHours[0].rangeLabel})`
+    : 'Unavailable'
+
   const data = [
     {
       label: 'Wind',
@@ -22,10 +64,7 @@ export default function LeftInfoPanel(): JSX.Element {
       // internet/mock equivalent) - N/A whenever that's not genuinely the
       // live source in use, rather than a calculation from substituted data.
       label: 'Cloud Base (Shobdon Calculated)',
-      value:
-        !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
-          ? 'N/A'
-          : `${estimateCloudBaseFt(weather.temperature, weather.dewpoint)} ft AGL`,
+      value: cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`,
     },
     {
       // Net-new predicted data (Shobdon has no visibility sensor at all) -
@@ -33,20 +72,82 @@ export default function LeftInfoPanel(): JSX.Element {
       // be reached this cycle" from the other cards' "no live reading",
       // and never shows a value held over past its own 60-minute TTL.
       label: 'Visibility Outlook (Met Office Forecast)',
-      value: visibilityForecast ? `${visibilityForecast.category} (${visibilityForecast.rangeLabel})` : 'Unavailable',
+      value: visibilityOutlookText,
     },
   ]
 
+  // State A (today's 5 cards) <-> State B (Cloud/Visibility Chart), with
+  // INDEPENDENT durations per state - unlike RightInfoPanel/NOTAMS'
+  // single shared setInterval (which can only express one symmetric
+  // period), this reuses MediaPanel.tsx's recursive-setTimeout carousel
+  // pattern: each scheduled timeout reads whichever state is about to be
+  // shown and waits that state's own duration, then flips and reschedules
+  // with the new state's own duration. Off (chartConfig not yet loaded,
+  // or weatherSummaryChartEnabled false) means State A only, no timer at
+  // all - matches the D1 column's own DEFAULT 0 for zero-visible-change.
+  const [showChartState, setShowChartState] = useState(false)
+  const timerRef = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    window.clearTimeout(timerRef.current)
+    setShowChartState(false)
+    if (!chartConfig?.weatherSummaryChartEnabled) return
+
+    let state: 'A' | 'B' = 'A'
+    const scheduleNext = () => {
+      const seconds =
+        state === 'A' ? chartConfig.weatherSummaryStateADurationSeconds : chartConfig.weatherSummaryStateBDurationSeconds
+      timerRef.current = window.setTimeout(() => {
+        state = state === 'A' ? 'B' : 'A'
+        setShowChartState(state === 'B')
+        scheduleNext()
+      }, Math.max(1, seconds) * 1000)
+    }
+    scheduleNext()
+
+    return () => window.clearTimeout(timerRef.current)
+  }, [
+    chartConfig?.weatherSummaryChartEnabled,
+    chartConfig?.weatherSummaryStateADurationSeconds,
+    chartConfig?.weatherSummaryStateBDurationSeconds,
+  ])
+
   return (
-    <div className="h-full rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">
-      <div className="mb-5 text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">Weather Summary</div>
-      <div className="grid gap-4">
-        {data.map((item) => (
-          <div key={item.label} className="rounded-3xl border border-border bg-card p-2">
-            <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{item.label}</div>
-            <div className="mt-1 text-3xl font-semibold text-primary">{item.value}</div>
+    <div className="flex h-full flex-col rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">
+      <div className="mb-5 flex-shrink-0 text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
+        Weather Summary
+      </div>
+      <div className="min-h-0 flex-1">
+        {showChartState ? (
+          <div className="flex h-full flex-col">
+            {/* Numeric callouts ABOVE the chart, matching Weather Summary's
+                existing heading-then-content order. */}
+            <div className="mb-2 grid flex-shrink-0 grid-cols-2 gap-2">
+              <div className="rounded-2xl border border-border bg-card p-2">
+                <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Ceiling</div>
+                <div className="mt-1 text-xl font-semibold text-primary">
+                  {cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border bg-card p-2">
+                <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Visibility</div>
+                <div className="mt-1 text-xl font-semibold text-primary">{visibilityOutlookText}</div>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 rounded-2xl border border-border bg-card p-2">
+              <CloudVisibilityChart cloudBaseFt={cloudBaseFt} visibilityHours={visibilityHours} />
+            </div>
           </div>
-        ))}
+        ) : (
+          <div className="grid gap-4">
+            {data.map((item) => (
+              <div key={item.label} className="rounded-3xl border border-border bg-card p-2">
+                <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{item.label}</div>
+                <div className="mt-1 text-3xl font-semibold text-primary">{item.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

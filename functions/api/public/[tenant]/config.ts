@@ -80,6 +80,9 @@ interface OpsPanelRow {
   showAutoNotams: number;
   notamsCarouselIntervalSeconds: number;
   reverseCompassNeedle: number;
+  weatherSummaryChartEnabled: number;
+  weatherSummaryStateADurationSeconds: number;
+  weatherSummaryStateBDurationSeconds: number;
 }
 
 interface SafetyNoticeResolved {
@@ -159,7 +162,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
         cameraUrl: string | null;
       }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds FROM ops_panel_state WHERE organizationId = ?")
       .bind(org.id)
       .first<OpsPanelRow>(),
   ]);
@@ -220,6 +223,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
         showAutoNotams: !!opsPanelRow.showAutoNotams,
         notamsCarouselIntervalSeconds: opsPanelRow.notamsCarouselIntervalSeconds,
         reverseCompassNeedle: !!opsPanelRow.reverseCompassNeedle,
+        weatherSummaryChartEnabled: !!opsPanelRow.weatherSummaryChartEnabled,
+        weatherSummaryStateADurationSeconds: opsPanelRow.weatherSummaryStateADurationSeconds,
+        weatherSummaryStateBDurationSeconds: opsPanelRow.weatherSummaryStateBDurationSeconds,
       }
     : null;
 

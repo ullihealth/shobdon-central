@@ -57,15 +57,29 @@ const MET_OFFICE_BASE_URL = "https://data.hub.api.metoffice.gov.uk/sitespecific/
 // staleness timestamp to check or forget to check.
 const CACHE_TTL_SECONDS = 60 * 60;
 
-interface CachedForecast {
+interface VisibilityHour {
   forecastForUtc: string;
   visibilityM: number;
   category: string;
   rangeLabel: string;
+}
+
+interface CachedForecast {
+  // Ordered nearest-hour first. The existing single-value "Visibility
+  // Outlook" card reads hours[0] - same value it always showed, just
+  // sourced from this array now instead of a lone field. The
+  // Cloud/Visibility Chart's trend strip uses the rest.
+  hours: VisibilityHour[];
   fetchedAt: string;
 }
 
 type VisibilityForecastResponse = ({ available: true } & CachedForecast) | { available: false };
+
+// "Several upcoming hours" per the approved plan - long enough for a
+// genuine trend strip, short enough to stay a tight glance. Not a hard
+// requirement: fetchFromMetOffice returns however many valid steps it
+// actually finds, up to this count.
+const FORECAST_HOUR_COUNT = 6;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -101,16 +115,16 @@ interface MetOfficeResponse {
   }[];
 }
 
-// "Hourly-ahead" - the first forecast step strictly after now, not the
-// current/nearest hour. Picks the earliest such step rather than assuming
+// "Hourly-ahead" - forecast steps strictly after now, not the
+// current/nearest hour. Picks the earliest such steps rather than assuming
 // a fixed array index, since the API's first returned step is sometimes
 // the current hour and sometimes already the next one.
-function pickHourAhead(steps: MetOfficeTimeStep[]): MetOfficeTimeStep | null {
+function pickUpcomingHours(steps: MetOfficeTimeStep[], count: number): MetOfficeTimeStep[] {
   const nowMs = Date.now();
-  const future = steps
+  return steps
     .filter((step) => typeof step.visibility === "number" && Date.parse(step.time) > nowMs)
-    .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
-  return future[0] ?? null;
+    .sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+    .slice(0, count);
 }
 
 async function fetchFromMetOffice(apiKey: string): Promise<CachedForecast | null> {
@@ -129,17 +143,17 @@ async function fetchFromMetOffice(apiKey: string): Promise<CachedForecast | null
   const steps = body?.features?.[0]?.properties?.timeSeries;
   if (!Array.isArray(steps)) return null;
 
-  const step = pickHourAhead(steps);
-  if (!step || typeof step.visibility !== "number") return null;
+  const upcoming = pickUpcomingHours(steps, FORECAST_HOUR_COUNT);
+  if (upcoming.length === 0) return null;
 
-  const { category, rangeLabel } = categorise(step.visibility);
-  return {
-    forecastForUtc: step.time,
-    visibilityM: step.visibility,
-    category,
-    rangeLabel,
-    fetchedAt: new Date().toISOString(),
-  };
+  const hours: VisibilityHour[] = upcoming.map((step) => {
+    // typeof step.visibility === "number" already guaranteed by the
+    // filter inside pickUpcomingHours.
+    const { category, rangeLabel } = categorise(step.visibility as number);
+    return { forecastForUtc: step.time, visibilityM: step.visibility as number, category, rangeLabel };
+  });
+
+  return { hours, fetchedAt: new Date().toISOString() };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
@@ -151,8 +165,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
 
   const cacheKey = `visibility-forecast:${org.id}`;
 
+  // Array.isArray check, not just truthiness - a cache entry written by
+  // the previous single-value version of this route (hours field didn't
+  // exist yet) is still a valid, non-null KV read, but has no .hours at
+  // all. Treating that as a hit would hand the client `hours: undefined`
+  // and crash it. Anything not matching the current shape is treated as
+  // a miss, same as no cache entry existing yet - the TTL will naturally
+  // replace it with a well-formed entry on the next successful fetch.
   const cached = await env.WEATHER_CACHE.get<CachedForecast>(cacheKey, "json");
-  if (cached) {
+  if (cached && Array.isArray(cached.hours)) {
     const response: VisibilityForecastResponse = { available: true, ...cached };
     return jsonResponse(response);
   }

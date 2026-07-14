@@ -9,6 +9,12 @@ const SAFETY_NOTICE_ROWS = 10
 const NOTAMS_INTERVAL_MIN_SECONDS = 2
 const NOTAMS_INTERVAL_MAX_SECONDS = 30
 const NOTAMS_INTERVAL_DEFAULT_SECONDS = 5
+// Same bounds as the NOTAMS interval above - no reason for Weather
+// Summary's own rotation to allow a wider range.
+const WEATHER_SUMMARY_DURATION_MIN_SECONDS = 2
+const WEATHER_SUMMARY_DURATION_MAX_SECONDS = 30
+const WEATHER_SUMMARY_STATE_A_DEFAULT_SECONDS = 8
+const WEATHER_SUMMARY_STATE_B_DEFAULT_SECONDS = 5
 
 type CircuitDirection = 'left' | 'right'
 type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -103,6 +109,12 @@ export default function AtcControlPage(): JSX.Element {
   )
   const [showAutoNotams, setShowAutoNotams] = useState(true)
   const [notamsIntervalSeconds, setNotamsIntervalSeconds] = useState(NOTAMS_INTERVAL_DEFAULT_SECONDS)
+  // Default OFF matches the D1 column's own DEFAULT 0 - deploying this
+  // feature is a zero-visible-change event until explicitly turned on
+  // here and published.
+  const [weatherSummaryChartEnabled, setWeatherSummaryChartEnabled] = useState(false)
+  const [weatherSummaryStateADuration, setWeatherSummaryStateADuration] = useState(WEATHER_SUMMARY_STATE_A_DEFAULT_SECONDS)
+  const [weatherSummaryStateBDuration, setWeatherSummaryStateBDuration] = useState(WEATHER_SUMMARY_STATE_B_DEFAULT_SECONDS)
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
   // Purely a local editing convenience, never sent to the backend and
   // never loaded from it - functions/api/tenant/ops-panel/index.ts only
@@ -136,6 +148,9 @@ export default function AtcControlPage(): JSX.Element {
         )
         setShowAutoNotams(opsPanel.showAutoNotams ?? true)
         setNotamsIntervalSeconds(opsPanel.notamsCarouselIntervalSeconds ?? NOTAMS_INTERVAL_DEFAULT_SECONDS)
+        setWeatherSummaryChartEnabled(opsPanel.weatherSummaryChartEnabled ?? false)
+        setWeatherSummaryStateADuration(opsPanel.weatherSummaryStateADurationSeconds ?? WEATHER_SUMMARY_STATE_A_DEFAULT_SECONDS)
+        setWeatherSummaryStateBDuration(opsPanel.weatherSummaryStateBDurationSeconds ?? WEATHER_SUMMARY_STATE_B_DEFAULT_SECONDS)
       }
       setLoading(false)
     })
@@ -200,6 +215,22 @@ export default function AtcControlPage(): JSX.Element {
     setNotamsIntervalSeconds(clamped)
   }
 
+  function handleWeatherSummaryDurationChange(state: 'A' | 'B', event: ChangeEvent<HTMLInputElement>) {
+    const setter = state === 'A' ? setWeatherSummaryStateADuration : setWeatherSummaryStateBDuration
+    const raw = event.target.value
+    if (raw === '') {
+      setter(WEATHER_SUMMARY_DURATION_MIN_SECONDS)
+      return
+    }
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed)) return
+    const clamped = Math.min(
+      WEATHER_SUMMARY_DURATION_MAX_SECONDS,
+      Math.max(WEATHER_SUMMARY_DURATION_MIN_SECONDS, Math.round(parsed))
+    )
+    setter(clamped)
+  }
+
   // Deliberately not auto-saved on every toggle/keystroke - everything
   // above is staged local state until this is clicked, giving ATC a
   // clear, single moment where a change is actually published. Same
@@ -227,6 +258,9 @@ export default function AtcControlPage(): JSX.Element {
           safetyNotices: safetyNotices.filter((n) => n.text.trim().length > 0),
           showAutoNotams,
           notamsCarouselIntervalSeconds: notamsIntervalSeconds,
+          weatherSummaryChartEnabled,
+          weatherSummaryStateADurationSeconds: weatherSummaryStateADuration,
+          weatherSummaryStateBDurationSeconds: weatherSummaryStateBDuration,
         }),
       })
       if (!response.ok) {
@@ -414,6 +448,63 @@ export default function AtcControlPage(): JSX.Element {
                 </div>
               ))}
             </div>
+          </section>
+
+          {/* ── Weather Summary Chart ────────────────────────────────── */}
+          <section className="mt-6 rounded-2xl border border-border bg-panel p-6">
+            <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+              Weather Summary Chart
+            </div>
+            <p className="mb-4 text-xs text-muted-500">
+              A second, rotating state for Weather Summary showing Shobdon's calculated cloud base and a Met Office
+              visibility trend as a chart. Off by default - today's 5 cards stay static until this is turned on.
+            </p>
+            <div className="flex flex-wrap items-end gap-6">
+              <div>
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  Chart Rotation
+                </div>
+                <SegmentedToggle
+                  options={[
+                    { value: 'on', label: 'On' },
+                    { value: 'off', label: 'Off' },
+                  ]}
+                  value={weatherSummaryChartEnabled ? 'on' : 'off'}
+                  onChange={(v) => setWeatherSummaryChartEnabled(v === 'on')}
+                />
+              </div>
+              <div>
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  State A Duration (sec)
+                </div>
+                <input
+                  type="number"
+                  min={WEATHER_SUMMARY_DURATION_MIN_SECONDS}
+                  max={WEATHER_SUMMARY_DURATION_MAX_SECONDS}
+                  value={weatherSummaryStateADuration}
+                  onChange={(event) => handleWeatherSummaryDurationChange('A', event)}
+                  className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  State B Duration (sec)
+                </div>
+                <input
+                  type="number"
+                  min={WEATHER_SUMMARY_DURATION_MIN_SECONDS}
+                  max={WEATHER_SUMMARY_DURATION_MAX_SECONDS}
+                  value={weatherSummaryStateBDuration}
+                  onChange={(event) => handleWeatherSummaryDurationChange('B', event)}
+                  className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted-500">
+              State A is today's 5 cards (Wind/QNH/Temperature/Cloud Base/Visibility Outlook); State B is the chart.
+              Each has its own independent duration, {WEATHER_SUMMARY_DURATION_MIN_SECONDS}-
+              {WEATHER_SUMMARY_DURATION_MAX_SECONDS} seconds.
+            </p>
           </section>
         </>
       )}

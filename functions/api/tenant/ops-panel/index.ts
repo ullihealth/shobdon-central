@@ -25,6 +25,9 @@ interface OpsPanelRow {
   safetyNoticesJson: string;
   showAutoNotams: number;
   notamsCarouselIntervalSeconds: number;
+  weatherSummaryChartEnabled: number;
+  weatherSummaryStateADurationSeconds: number;
+  weatherSummaryStateBDurationSeconds: number;
 }
 
 interface SafetyNoticeInput {
@@ -40,6 +43,9 @@ interface OpsPanelInput {
   safetyNotices: SafetyNoticeInput[];
   showAutoNotams: boolean;
   notamsCarouselIntervalSeconds: number;
+  weatherSummaryChartEnabled: boolean;
+  weatherSummaryStateADurationSeconds: number;
+  weatherSummaryStateBDurationSeconds: number;
 }
 
 const AIRFIELD_INFO_MAX_LENGTH = 60;
@@ -48,6 +54,10 @@ const SAFETY_NOTICE_MAX_ROWS = 10;
 const NOTICE_SIZES = ["sm", "md", "lg", "xl"];
 const NOTAMS_INTERVAL_MIN_SECONDS = 2;
 const NOTAMS_INTERVAL_MAX_SECONDS = 30;
+// Same bounds as the NOTAMS interval above, per the approved plan - no
+// reason for Weather Summary's own rotation to allow a wider range.
+const WEATHER_SUMMARY_DURATION_MIN_SECONDS = 2;
+const WEATHER_SUMMARY_DURATION_MAX_SECONDS = 30;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireRoles(request, env, ["owner", "admin", "atc"]);
@@ -55,7 +65,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { organizationId } = result.membership;
 
   const row = await env.DB
-    .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds FROM ops_panel_state WHERE organizationId = ?")
+    .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds FROM ops_panel_state WHERE organizationId = ?")
     .bind(organizationId)
     .first<OpsPanelRow>();
 
@@ -67,6 +77,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       safetyNotices: [],
       showAutoNotams: true,
       notamsCarouselIntervalSeconds: 5,
+      weatherSummaryChartEnabled: false,
+      weatherSummaryStateADurationSeconds: 8,
+      weatherSummaryStateBDurationSeconds: 5,
     });
   }
 
@@ -77,6 +90,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     safetyNotices: JSON.parse(row.safetyNoticesJson),
     showAutoNotams: !!row.showAutoNotams,
     notamsCarouselIntervalSeconds: row.notamsCarouselIntervalSeconds,
+    weatherSummaryChartEnabled: !!row.weatherSummaryChartEnabled,
+    weatherSummaryStateADurationSeconds: row.weatherSummaryStateADurationSeconds,
+    weatherSummaryStateBDurationSeconds: row.weatherSummaryStateBDurationSeconds,
   });
 };
 
@@ -130,6 +146,33 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       400
     );
   }
+  if (typeof body.weatherSummaryChartEnabled !== "boolean") {
+    return jsonResponse({ error: "weatherSummaryChartEnabled must be a boolean" }, 400);
+  }
+  if (
+    !Number.isInteger(body.weatherSummaryStateADurationSeconds) ||
+    body.weatherSummaryStateADurationSeconds < WEATHER_SUMMARY_DURATION_MIN_SECONDS ||
+    body.weatherSummaryStateADurationSeconds > WEATHER_SUMMARY_DURATION_MAX_SECONDS
+  ) {
+    return jsonResponse(
+      {
+        error: `weatherSummaryStateADurationSeconds must be an integer between ${WEATHER_SUMMARY_DURATION_MIN_SECONDS} and ${WEATHER_SUMMARY_DURATION_MAX_SECONDS}`,
+      },
+      400
+    );
+  }
+  if (
+    !Number.isInteger(body.weatherSummaryStateBDurationSeconds) ||
+    body.weatherSummaryStateBDurationSeconds < WEATHER_SUMMARY_DURATION_MIN_SECONDS ||
+    body.weatherSummaryStateBDurationSeconds > WEATHER_SUMMARY_DURATION_MAX_SECONDS
+  ) {
+    return jsonResponse(
+      {
+        error: `weatherSummaryStateBDurationSeconds must be an integer between ${WEATHER_SUMMARY_DURATION_MIN_SECONDS} and ${WEATHER_SUMMARY_DURATION_MAX_SECONDS}`,
+      },
+      400
+    );
+  }
 
   // Empty rows are dropped rather than stored as blanks - keeps the
   // public config's safetyNotices array free of placeholder empties that
@@ -141,8 +184,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
-      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organizationId) DO UPDATE SET
          activeRunwayEnd = excluded.activeRunwayEnd,
          circuitDirection = excluded.circuitDirection,
@@ -150,6 +193,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
          safetyNoticesJson = excluded.safetyNoticesJson,
          showAutoNotams = excluded.showAutoNotams,
          notamsCarouselIntervalSeconds = excluded.notamsCarouselIntervalSeconds,
+         weatherSummaryChartEnabled = excluded.weatherSummaryChartEnabled,
+         weatherSummaryStateADurationSeconds = excluded.weatherSummaryStateADurationSeconds,
+         weatherSummaryStateBDurationSeconds = excluded.weatherSummaryStateBDurationSeconds,
          updatedAt = excluded.updatedAt`
     )
     .bind(
@@ -160,6 +206,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       JSON.stringify(safetyNotices),
       body.showAutoNotams ? 1 : 0,
       body.notamsCarouselIntervalSeconds,
+      body.weatherSummaryChartEnabled ? 1 : 0,
+      body.weatherSummaryStateADurationSeconds,
+      body.weatherSummaryStateBDurationSeconds,
       now
     )
     .run();
