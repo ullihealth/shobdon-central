@@ -10,18 +10,22 @@ interface CloudVisibilityChartProps {
 // coordinates convention as CompassPanel.tsx. "none" (this component's
 // first version) stretched X and Y independently to exactly fill
 // whatever box the flex layout gave it, which is what turned the cloud
-// icons' circles into ellipses ("teardrops") whenever the real card
-// wasn't the same aspect ratio as the viewBox - "meet" scales both axes
-// by the same factor instead, so circles stay circles regardless of the
-// card's real proportions, at the cost of some unused space on one axis
-// if the aspect ratios don't match closely (chosen close enough below,
-// verified against real rendered output, that this is minimal).
-const VIEW_WIDTH = 300
-const VIEW_HEIGHT = 170
-const PLOT_LEFT = 54
+// icons' circles into ellipses ("teardrops"). "meet" fixed that, but its
+// first viewBox (300x170, a LANDSCAPE 1.76:1 ratio) was picked without
+// checking the real card - measured directly, the actual card is
+// PORTRAIT (0.87:1 at 1366x768, down to 0.59:1 at 1920x1080 - narrower
+// relative to its height on taller screens). "meet" fits to whichever
+// axis is more constraining, so a landscape viewBox inside a portrait
+// box fit to width and left a large empty gap above/below - this
+// viewBox is portrait instead, close to the middle of the real observed
+// range, so there's real content filling the card at every measured
+// size, not just a fallback that happens to not clip.
+const VIEW_WIDTH = 220
+const VIEW_HEIGHT = 300
+const PLOT_LEFT = 46
 const PLOT_RIGHT = VIEW_WIDTH - 10
-const PLOT_TOP = 14
-const HEIGHT_SCALE_BOTTOM = 150
+const PLOT_TOP = 20
+const HEIGHT_SCALE_BOTTOM = 280
 
 const GRIDLINE_STEP_FT = 1000
 // Floor for the dynamic scale, and what's used when cloud base is N/A
@@ -119,51 +123,56 @@ export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: C
     // the Ceiling/Visibility callouts above them, stacked with a real
     // gap between.
     <div className="flex h-full flex-col gap-2">
-      <div className="min-h-0 flex-[2] rounded-2xl border border-border bg-card p-2">
-        <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} preserveAspectRatio="xMidYMid meet" className="h-full w-full">
-          {/* Gridlines + full aviation-style ft labels - "1000ft", not
-              the abbreviated "1k" this started with, so it reads
-              unambiguously as altitude data. */}
-          <g stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
-            {gridlines.map((ft) => (
-              <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
-            ))}
-          </g>
-          <g fill="rgba(148, 163, 184, 0.85)" fontSize="8" fontWeight="600">
-            {gridlines.map((ft) => (
-              <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
-                {ft}ft
-              </text>
-            ))}
-          </g>
+      <div className="flex min-h-0 flex-[2] flex-col rounded-2xl border border-border bg-card p-4">
+        <div className="mb-2 flex-shrink-0 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
+          Cloud Base Forecast
+        </div>
+        <div className="min-h-0 flex-1">
+          <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} preserveAspectRatio="xMidYMid meet" className="h-full w-full">
+            {/* Gridlines + full aviation-style ft labels - "1000ft", not
+                the abbreviated "1k" this started with, so it reads
+                unambiguously as altitude data. */}
+            <g stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+              {gridlines.map((ft) => (
+                <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
+              ))}
+            </g>
+            <g fill="rgba(148, 163, 184, 0.85)" fontSize="8" fontWeight="600">
+              {gridlines.map((ft) => (
+                <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
+                  {ft}ft
+                </text>
+              ))}
+            </g>
 
-          {/* Current-conditions cloud cluster: a row of icons all at ONE
-              real height (Shobdon's calculated Cloud Base) - never at
-              any other height, since there is only one real data point.
-              Icon COUNT and COLOUR encode the current hour's real
-              visibility category. */}
-          {cloudY !== null ? (
-            cloudIconXs.map((x, i) => (
-              <CloudIcon key={i} cx={x} cy={cloudY} size={cloudIconSize} fill={iconStyle.color} />
-            ))
-          ) : (
-            <text
-              x={(PLOT_LEFT + PLOT_RIGHT) / 2}
-              y={(PLOT_TOP + HEIGHT_SCALE_BOTTOM) / 2}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="rgba(148, 163, 184, 0.85)"
-              fontSize="11"
-              fontWeight="600"
-            >
-              Cloud base unavailable
-            </text>
-          )}
-        </svg>
+            {/* Current-conditions cloud cluster: a row of icons all at
+                ONE real height (Shobdon's calculated Cloud Base) - never
+                at any other height, since there is only one real data
+                point. Icon COUNT and COLOUR encode the current hour's
+                real visibility category. */}
+            {cloudY !== null ? (
+              cloudIconXs.map((x, i) => (
+                <CloudIcon key={i} cx={x} cy={cloudY} size={cloudIconSize} fill={iconStyle.color} />
+              ))
+            ) : (
+              <text
+                x={(PLOT_LEFT + PLOT_RIGHT) / 2}
+                y={(PLOT_TOP + HEIGHT_SCALE_BOTTOM) / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="rgba(148, 163, 184, 0.85)"
+                fontSize="11"
+                fontWeight="600"
+              >
+                Cloud base unavailable
+              </text>
+            )}
+          </svg>
+        </div>
       </div>
 
-      <div className="flex-shrink-0 rounded-2xl border border-border bg-card p-2">
-        <div className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-widest text-muted-500">
+      <div className="flex-shrink-0 rounded-2xl border border-border bg-card p-4">
+        <div className="mb-2 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
           6-Hour Forecast
         </div>
         {/* Plain HTML, not SVG, deliberately - a flow-layout emoji glyph
@@ -178,7 +187,7 @@ export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: C
             {visibilityHours.map((hour, i) => (
               <div key={i} className="flex flex-col items-center">
                 <span className="text-xl leading-none">{weatherIconFor(hour.weatherCode)}</span>
-                <span className="mt-1 text-[9px] font-semibold text-muted-500">+{i + 1}h</span>
+                <span className="mt-1.5 text-xs font-semibold text-muted-500">+{i + 1}h</span>
               </div>
             ))}
           </div>
