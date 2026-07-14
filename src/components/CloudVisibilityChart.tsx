@@ -2,7 +2,23 @@ import type { VisibilityHour } from '../services/visibilityForecastService'
 
 interface CloudVisibilityChartProps {
   cloudBaseFt: number | null
+  // ISO timestamp of the ATC station reading cloudBaseFt was calculated
+  // from - null whenever cloudBaseFt itself is null, same gate, so this
+  // is never a freshness claim about data that isn't actually shown.
+  cloudBaseCapturedAt: string | null
   visibilityHours: VisibilityHour[]
+  // ISO timestamp of when the Met Office forecast was actually fetched
+  // (server-side, then cached) - null whenever visibilityHours is empty.
+  visibilityFetchedAt: string | null
+}
+
+// Same "Last updated HH:MM" formatting Header.tsx already uses for the
+// main dashboard clock - reused here for consistency, though unlike that
+// display (which just ticks with the current time every second) these
+// two values are genuine data-freshness timestamps: an ATC capture time
+// and a Met Office fetch time, not the current render time.
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
 // Fixed viewBox, uniformly scaled to fit its card (preserveAspectRatio=
@@ -22,7 +38,13 @@ interface CloudVisibilityChartProps {
 // size, not just a fallback that happens to not clip.
 const VIEW_WIDTH = 220
 const VIEW_HEIGHT = 300
-const PLOT_LEFT = 46
+// Widened from 46 - doubling the gridline label font size (8 -> 16, see
+// below) roughly doubles their rendered width too ("4000ft" at 16px
+// needs real room), so the plot area is shifted right to give them
+// space without crowding the gridlines themselves. Verified empirically
+// against real rendered output, not just computed - see the labels'
+// actual x position relative to the card's left edge after this change.
+const PLOT_LEFT = 92
 const PLOT_RIGHT = VIEW_WIDTH - 10
 const PLOT_TOP = 20
 const HEIGHT_SCALE_BOTTOM = 280
@@ -100,7 +122,12 @@ function weatherIconFor(code: number | undefined): string {
   return '❓' // Unmapped (e.g. code 4, not used by the API)
 }
 
-export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: CloudVisibilityChartProps): JSX.Element {
+export default function CloudVisibilityChart({
+  cloudBaseFt,
+  cloudBaseCapturedAt,
+  visibilityHours,
+  visibilityFetchedAt,
+}: CloudVisibilityChartProps): JSX.Element {
   const scaleMaxFt = scaleMaxFtFor(cloudBaseFt)
   const gridlines: number[] = []
   for (let ft = 0; ft <= scaleMaxFt; ft += GRIDLINE_STEP_FT) gridlines.push(ft)
@@ -137,9 +164,9 @@ export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: C
                 <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
               ))}
             </g>
-            <g fill="rgba(148, 163, 184, 0.85)" fontSize="8" fontWeight="600">
+            <g fill="rgba(148, 163, 184, 0.85)" fontSize="16" fontWeight="600">
               {gridlines.map((ft) => (
-                <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
+                <text key={ft} x={PLOT_LEFT - 8} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
                   {ft}ft
                 </text>
               ))}
@@ -169,10 +196,15 @@ export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: C
             )}
           </svg>
         </div>
+        {cloudBaseCapturedAt && (
+          <div className="mt-1 flex-shrink-0 text-center text-[10px] text-muted-500">
+            Last updated {formatTime(cloudBaseCapturedAt)}
+          </div>
+        )}
       </div>
 
       <div className="flex-shrink-0 rounded-2xl border border-border bg-card p-4">
-        <div className="mb-2 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
+        <div className="mb-4 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
           6-Hour Forecast
         </div>
         {/* Plain HTML, not SVG, deliberately - a flow-layout emoji glyph
@@ -191,6 +223,9 @@ export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: C
               </div>
             ))}
           </div>
+        )}
+        {visibilityFetchedAt && (
+          <div className="mt-5 text-center text-[10px] text-muted-500">Last updated {formatTime(visibilityFetchedAt)}</div>
         )}
       </div>
     </div>

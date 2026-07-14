@@ -14,7 +14,7 @@ interface OpsPanelChartConfig {
 
 export default function LeftInfoPanel(): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
-  const { hours: visibilityHours } = useVisibilityForecast()
+  const { hours: visibilityHours, fetchedAt: visibilityFetchedAt } = useVisibilityForecast()
 
   // Self-contained fetch of the public config, matching RightInfoPanel's
   // established pattern - only the three chart-rotation fields are used
@@ -48,6 +48,10 @@ export default function LeftInfoPanel(): JSX.Element {
     !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
       ? null
       : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
+  // Same gate as cloudBaseFt itself - a capturedAt timestamp with no real
+  // Cloud Base value alongside it would be a freshness claim about data
+  // that isn't actually being shown.
+  const cloudBaseCapturedAt = cloudBaseFt === null ? null : (weather?.capturedAt ?? null)
   const visibilityOutlookText = visibilityHours[0]
     ? `${visibilityHours[0].category} (${visibilityHours[0].rangeLabel})`
     : 'Unavailable'
@@ -137,7 +141,12 @@ export default function LeftInfoPanel(): JSX.Element {
             {/* No card wrapper here - CloudVisibilityChart renders its
                 own two separate bordered cards internally. */}
             <div className="min-h-0 flex-1">
-              <CloudVisibilityChart cloudBaseFt={cloudBaseFt} visibilityHours={visibilityHours} />
+              <CloudVisibilityChart
+                cloudBaseFt={cloudBaseFt}
+                cloudBaseCapturedAt={cloudBaseCapturedAt}
+                visibilityHours={visibilityHours}
+                visibilityFetchedAt={visibilityFetchedAt}
+              />
             </div>
           </div>
         ) : (

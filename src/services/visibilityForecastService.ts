@@ -37,8 +37,12 @@ const POLL_INTERVAL_MS = 15 * 60 * 1000
 // (never populated, or a genuine upstream failure) is what both
 // consumers treat as "unavailable" - there's no separate error flag to
 // thread through.
-export function useVisibilityForecast(): { hours: VisibilityHour[]; loading: boolean } {
+export function useVisibilityForecast(): { hours: VisibilityHour[]; fetchedAt: string | null; loading: boolean } {
   const [hours, setHours] = useState<VisibilityHour[]>([])
+  // When Met Office was actually called (server-side, then cached) - not
+  // when this browser polled the route. Null whenever hours is empty, so
+  // consumers never show a "Last updated" line with no real data behind it.
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -54,12 +58,17 @@ export function useVisibilityForecast(): { hours: VisibilityHour[]; loading: boo
         // also guards its cache read, but a consumer should never trust a
         // network response enough to skip this and risk `hours[0]`
         // crashing the whole panel below).
-        setHours(body.available && Array.isArray(body.hours) ? body.hours : [])
+        const validHours = body.available && Array.isArray(body.hours) ? body.hours : []
+        setHours(validHours)
+        setFetchedAt(validHours.length > 0 && body.available ? body.fetchedAt : null)
       } catch {
         // Network failure reaching our own route - same "unavailable" as
         // a well-formed { available: false } response, never a stale
         // value left on screen from a previous successful poll.
-        if (!cancelled) setHours([])
+        if (!cancelled) {
+          setHours([])
+          setFetchedAt(null)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -73,5 +82,5 @@ export function useVisibilityForecast(): { hours: VisibilityHour[]; loading: boo
     }
   }, [])
 
-  return { hours, loading }
+  return { hours, fetchedAt, loading }
 }

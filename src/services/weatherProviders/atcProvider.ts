@@ -95,6 +95,7 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
     pressureTrend: 'steady',
     notams,
     dewpoint,
+    capturedAt: reading.capturedAt,
   }
 
   return { data, live: true }
