@@ -217,7 +217,7 @@ export default function CloudVisibilityChart({
           </svg>
         </div>
         {cloudBaseCapturedAt && (
-          <div className="mt-1 flex-shrink-0 text-center text-[10px] text-muted-500">
+          <div className="mt-1 flex-shrink-0 text-center text-[0.625rem] text-muted-500">
             Last updated {formatTime(cloudBaseCapturedAt)}
           </div>
         )}
@@ -245,7 +245,7 @@ export default function CloudVisibilityChart({
           </div>
         )}
         {visibilityFetchedAt && (
-          <div className="mt-5 text-center text-[10px] text-muted-500">Last updated {formatTime(visibilityFetchedAt)}</div>
+          <div className="mt-5 text-center text-[0.625rem] text-muted-500">Last updated {formatTime(visibilityFetchedAt)}</div>
         )}
       </div>
     </div>

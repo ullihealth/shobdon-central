@@ -481,8 +481,8 @@ interface ReadoutRowProps {
 function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowProps): JSX.Element {
   return (
     <>
-      <div className="text-right text-[16px] font-semibold uppercase leading-none tracking-widest text-slate-400">{label}</div>
-      <div className={`text-[28px] font-extrabold leading-none ${valueClassName}`}>{value}</div>
+      <div className="text-right text-[1rem] font-semibold uppercase leading-none tracking-widest text-slate-400">{label}</div>
+      <div className={`text-[1.75rem] font-extrabold leading-none ${valueClassName}`}>{value}</div>
     </>
   )
 }
@@ -619,16 +619,25 @@ export default function CompassPanel(): JSX.Element {
           Layer 2 (top):    live  — wind arrow only, always on top.
           Separate SVG elements guarantee the arrow can never merge
           with the runway regardless of wind/runway alignment.
+          h-full + aspect-square (not a vh-based clamp()) - the instrument
+          fills whatever height its flex row actually has, capped at
+          max-w-full so it can never force this row wider than its own
+          parent. Each SVG's own preserveAspectRatio="xMidYMid meet" then
+          uniformly scales the fixed 400×400 content to fit that box with
+          no distortion, exactly like CloudVisibilityChart's icons - so
+          even if the box ends up non-square (width capped below height),
+          the visible rose still renders as a true circle, just centred
+          with empty margin on the constrained axis, never stretched.
           position:relative + left:-18px shifts ONLY this instrument left -
           unlike a negative margin, it doesn't drag the readout panel
           (the next flex sibling) along with it, since relative positioning
           doesn't affect where following siblings are laid out. */}
-      <div className="relative left-[-18px] w-[clamp(200px,30vh,340px)] h-[clamp(200px,30vh,340px)] flex-shrink-0">
+      <div className="relative left-[-18px] h-full aspect-square max-w-full flex-shrink-0">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg
             viewBox="0 0 400 400"
-            className="w-[clamp(200px,30vh,340px)] h-[clamp(200px,30vh,340px)]"
+            className="w-full h-full"
             preserveAspectRatio="xMidYMid meet"
           >
             {/* Background Circle - the one themeable fill in this file; everything
@@ -712,7 +721,7 @@ export default function CompassPanel(): JSX.Element {
           {/* LAYER 2 — Wind arrow + annotation: always renders above Layer 1 */}
           <svg
             viewBox="0 0 400 400"
-            className="absolute inset-0 w-[clamp(200px,30vh,340px)] h-[clamp(200px,30vh,340px)]"
+            className="absolute inset-0 w-full h-full"
             style={{ pointerEvents: 'none' }}
             preserveAspectRatio="xMidYMid meet"
           >

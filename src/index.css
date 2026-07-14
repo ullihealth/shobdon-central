@@ -55,6 +55,27 @@
   --color-compass-disc-bg: rgba(15, 23, 42, 0.95);
 }
 
+/* Fluid root type scale - every Tailwind text-* utility is rem-based, so
+   this single rule cascades to virtually all text in the app (header
+   clock/title, notice board and stat text, media banners) without any
+   per-component change. 1.5vmin lands at ~16.2px on 1920x1080 (matches
+   today's unscaled Tailwind default almost exactly, so the originally-
+   tuned clubhouse TV looks unchanged) and ~10.8-11.5px on 1280x720/
+   1366x768 before the floor; 4K's 21.6vmin would compute past 32px
+   uncapped, so it's ceilinged at 20px rather than growing unbounded.
+   12px floor (not a rounder-looking 14px) - verified by direct
+   measurement that LeftInfoPanel's longest label+value pairing
+   (Visibility Outlook, both wrapping to 2 lines at this column width)
+   only clears its own card's height at 1280x720/1366x768 once root
+   font-size drops this far; a higher floor left that specific card
+   clipped at the bottom on both those resolutions. vmin (not vw or vh
+   alone) ties scaling to whichever axis is tighter, so it degrades
+   gracefully on portrait or unusually narrow/short screens too, not
+   just standard 16:9 ones. */
+html {
+  font-size: clamp(12px, 1.5vmin, 20px);
+}
+
 html, body, #root {
   height: 100%;
 }
