@@ -126,14 +126,21 @@ export default function LeftInfoPanel(): JSX.Element {
           <div className="flex h-full flex-col">
             {/* Numeric callouts ABOVE the chart, matching Weather Summary's
                 existing heading-then-content order. */}
+            {/* min-h-[4.5rem] on each card, not just on the list overall -
+                a value that's empty/late (or just short, e.g. "N/A")
+                must not be able to collapse this box down to its text's
+                own line-height and let "6-Hour Forecast" below shift up
+                into it. 4.5rem comfortably fits this card's label +
+                text-xl value + padding with room to spare, verified
+                against real rendered output, not assumed. */}
             <div className="mb-2 grid flex-shrink-0 grid-cols-2 gap-2">
-              <div className="rounded-2xl border border-border bg-card p-2">
+              <div className="min-h-[4.5rem] rounded-2xl border border-border bg-card p-2">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Ceiling</div>
                 <div className="mt-1 text-xl font-semibold text-primary">
                   {cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`}
                 </div>
               </div>
-              <div className="rounded-2xl border border-border bg-card p-2">
+              <div className="min-h-[4.5rem] rounded-2xl border border-border bg-card p-2">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Visibility</div>
                 <div className="mt-1 text-xl font-semibold text-primary">{visibilityOutlookText}</div>
               </div>
@@ -150,9 +157,28 @@ export default function LeftInfoPanel(): JSX.Element {
             </div>
           </div>
         ) : (
-          <div className="grid gap-4">
+          // Explicit per-row minmax(4.5rem, 1fr), not the previous plain
+          // `grid gap-4` (grid-auto-rows: auto, i.e. every row exactly as
+          // tall as its own content, however tall that ends up being).
+          // That worked fine on the one screen this was built and tested
+          // against, but had two real failure modes on any screen with
+          // less vertical room for this column: (1) the whole list could
+          // run taller than the panel's actual available height, and
+          // since every ancestor up to the page root is overflow-hidden
+          // with no scrollbar, the last row - whichever one that happened
+          // to be - was silently clipped clean off; (2) no row had a
+          // reserved minimum height at all, so a genuinely short/empty
+          // value (not just today's "N/A" fallback strings, which happen
+          // to mask this) could collapse a row toward its label's own
+          // line-height, and neighbouring rows would shift to fill the
+          // gap. minmax(4.5rem, 1fr) fixes both: rows never grow past an
+          // equal fr-share of whatever height this panel genuinely has on
+          // THIS screen (no overflow/clipping), and never shrink below
+          // 4.5rem regardless of content (no collapse/overlap) - true on
+          // any resolution, not tuned to either TV this was verified on.
+          <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${data.length}, minmax(4.5rem, 1fr))` }}>
             {data.map((item) => (
-              <div key={item.label} className="rounded-3xl border border-border bg-card p-2">
+              <div key={item.label} className="min-h-0 overflow-hidden rounded-3xl border border-border bg-card p-2">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{item.label}</div>
                 <div className="mt-1 text-3xl font-semibold text-primary">{item.value}</div>
               </div>

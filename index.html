@@ -2,6 +2,12 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <!-- Deliberately no user-scalable=no / maximum-scale lock here - native
+         pinch-to-zoom and drag-to-pan must keep working on phone/tablet
+         browsers. This dashboard is a fixed canvas (same layout as desktop/
+         TV) that a mobile user zooms/pans into, rather than a separately
+         reflowed compact mobile layout - a dedicated phase-2 mobile layout
+         is a possible future improvement, out of scope for now. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shobdon Central — Weather Connectivity Test</title>
   </head>

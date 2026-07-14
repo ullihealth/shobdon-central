@@ -39,10 +39,21 @@ export default function DashboardPage(): JSX.Element {
     <WeatherProvider>
       <div
         className="h-screen w-screen overflow-hidden bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100"
-        style={themeOverride}
+        // Safe-area/overscan margin, not a design choice - TVs commonly
+        // crop a few percent off every edge of what the browser reports
+        // as "the viewport" (overscan), and this varies by TV model/
+        // firmware, not something knowable in advance for a SaaS product
+        // running on whatever screen a given tenant plugs in. vmin (not
+        // vw/vh alone) keeps the margin proportionally consistent on both
+        // axes regardless of aspect ratio; clamp() keeps it from becoming
+        // silly on a tiny phone or enormous on an 8K display. Was a fixed
+        // p-10 (40px) on the inner content div only, which was neither
+        // resolution-relative nor did anything for genuine edge-of-panel
+        // overscan cropping - moved out to here, wrapping everything.
+        style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
       >
         <div
-          className="mx-auto h-full max-w-[1920px] p-10"
+          className="mx-auto h-full max-w-[1920px]"
           // minmax(0, 1fr), not bare 1fr - a bare 1fr row implicitly means
           // minmax(auto, 1fr), which refuses to shrink below its content's
           // own minimum height. At short browser-window heights that let
