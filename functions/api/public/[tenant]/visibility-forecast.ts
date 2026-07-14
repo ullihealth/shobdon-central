@@ -62,6 +62,12 @@ interface VisibilityHour {
   visibilityM: number;
   category: string;
   rangeLabel: string;
+  // Met Office's own 0-30 "Significant Weather Code" - same timeSeries
+  // entry as visibility, no second API call. Optional: unlike visibility
+  // (which gates whether an hour is included at all), a missing code for
+  // an otherwise-valid hour shouldn't drop that hour's visibility data -
+  // the client just has nothing to show for that hour's weather-type icon.
+  weatherCode?: number;
 }
 
 interface CachedForecast {
@@ -105,6 +111,7 @@ function categorise(visibilityM: number): { category: string; rangeLabel: string
 interface MetOfficeTimeStep {
   time: string;
   visibility?: number;
+  significantWeatherCode?: number;
 }
 
 interface MetOfficeResponse {
@@ -150,7 +157,8 @@ async function fetchFromMetOffice(apiKey: string): Promise<CachedForecast | null
     // typeof step.visibility === "number" already guaranteed by the
     // filter inside pickUpcomingHours.
     const { category, rangeLabel } = categorise(step.visibility as number);
-    return { forecastForUtc: step.time, visibilityM: step.visibility as number, category, rangeLabel };
+    const weatherCode = typeof step.significantWeatherCode === "number" ? step.significantWeatherCode : undefined;
+    return { forecastForUtc: step.time, visibilityM: step.visibility as number, category, rangeLabel, weatherCode };
   });
 
   return { hours, fetchedAt: new Date().toISOString() };

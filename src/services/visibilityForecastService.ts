@@ -6,6 +6,11 @@ export interface VisibilityHour {
   visibilityM: number
   category: string
   rangeLabel: string
+  // Met Office's own 0-30 Significant Weather Code - may be absent on an
+  // otherwise-valid hour (see visibility-forecast.ts), so the Cloud/
+  // Visibility Chart's weather-type icon strip should treat a missing
+  // code as "nothing to show for this hour", not fall back to a fake one.
+  weatherCode?: number
 }
 
 interface VisibilityForecastData {
