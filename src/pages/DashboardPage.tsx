@@ -53,7 +53,23 @@ export default function DashboardPage(): JSX.Element {
         style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
       >
         <div
-          className="mx-auto h-full max-w-[1920px]"
+          className="h-full"
+          // Was mx-auto max-w-[1920px] - a resolution-specific cap left over
+          // from this page's original hardcoded layout, predating every
+          // fluid-scaling fix in this series. It only ever engaged above
+          // 1920px width (so 1080p/720p/768p never revealed it), and since
+          // it constrained WIDTH but not HEIGHT, a 4K screen got squeezed
+          // into an unusually narrow, unusually TALL column shape - shown
+          // by direct measurement to be the actual cause of the Cloud Base
+          // Forecast chart rendering as a squashed sliver at 4K: the chart
+          // itself scales correctly to whatever box it's given, but the cap
+          // was handing it a box far more extreme (portrait) than its
+          // viewBox or any resolution below 1920px wide ever produced.
+          // Removed rather than patched around, matching this series' own
+          // constraint that nothing should be tuned to a specific
+          // resolution - every column here is already percentage/fr-based,
+          // so the layout is correct by construction at any width without
+          // an artificial ceiling.
           // minmax(0, 1fr), not bare 1fr - a bare 1fr row implicitly means
           // minmax(auto, 1fr), which refuses to shrink below its content's
           // own minimum height. At short browser-window heights that let
@@ -76,8 +92,22 @@ export default function DashboardPage(): JSX.Element {
               minmax(0, 1fr) row makes it shrinkable too. */}
           <div
             style={{
+            // fr, not %, for the columns - grid gap is added ON TOP of
+            // percentage tracks (23%+54%+23% = 100% of the container, then
+            // two 16px gaps are inserted in addition to that, making the
+            // grid's real content 32px wider than its own container). Grid
+            // overflows to the end (right, in LTR) by default, so that 32px
+            // silently ate into the right column's own safe-area padding at
+            // every resolution - measured directly: 0.4px of right margin
+            // left over at 1920x1080 (vs. the left column's correct
+            // 32.4px), and actually negative (-8.95px, genuinely off-
+            // screen) at 1366x768. fr tracks divide up the space that's
+            // LEFT after gaps are subtracted, so 23fr/54fr/23fr gives the
+            // exact same 23/54/23 proportion the percentages intended, but
+            // gap-aware by construction at any resolution - not a value
+            // tuned to the resolutions this was tested at.
               display: 'grid',
-              gridTemplateColumns: '23% 54% 23%',
+              gridTemplateColumns: '23fr 54fr 23fr',
               gridTemplateRows: 'minmax(0, 1fr)',
               gap: '16px',
               height: '100%',

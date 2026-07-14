@@ -478,11 +478,41 @@ interface ReadoutRowProps {
   valueClassName?: string
 }
 
+// Sized off vh directly, not rem (which would inherit the global root
+// clamp() in index.css) - that global scale is driven by vmin, which
+// tracks viewport WIDTH on a narrow/tall screen just as much as height,
+// but this list's actual available room comes purely from how tall its
+// flex row is, itself ultimately a fraction of viewport HEIGHT. On most
+// 16:9-ish screens the two track closely enough that it never showed up,
+// but on a short-height screen the global floor (12px, tuned for
+// LeftInfoPanel's stat cards, a separate list with different row count/
+// spacing) can stay above what 7 rows actually fit into here - confirmed
+// by direct measurement: at a short enough viewport, the compass row's
+// real height budget shrinks faster than the vmin-floored global font
+// does, so the last readout row ran off the bottom. vh ties this list's
+// size directly to the axis it actually competes for, independent of the
+// media-panel/compass flex ratio (that ratio only sets the compass
+// INSTRUMENT's own h-full box - the readout is a separate flex sibling).
+// Ceiling matches this list's original tuned size exactly (28px/16px at
+// 1080p, where this was designed and is unchanged today), so nothing
+// shifts at the reference resolution - only the floor is materially
+// different, giving this dense 7-row list more room to shrink than the
+// shared global floor allows before it would start clipping.
+const READOUT_VALUE_FONT = 'clamp(9px, 2.6vh, 28px)'
+const READOUT_LABEL_FONT = 'clamp(7px, 1.5vh, 16px)'
+
 function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowProps): JSX.Element {
   return (
     <>
-      <div className="text-right text-[1rem] font-semibold uppercase leading-none tracking-widest text-slate-400">{label}</div>
-      <div className={`text-[1.75rem] font-extrabold leading-none ${valueClassName}`}>{value}</div>
+      <div
+        className="text-right font-semibold uppercase leading-none tracking-widest text-slate-400"
+        style={{ fontSize: READOUT_LABEL_FONT }}
+      >
+        {label}
+      </div>
+      <div className={`font-extrabold leading-none ${valueClassName}`} style={{ fontSize: READOUT_VALUE_FONT }}>
+        {value}
+      </div>
     </>
   )
 }
