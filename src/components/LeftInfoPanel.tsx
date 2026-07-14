@@ -12,6 +12,31 @@ interface OpsPanelChartConfig {
   weatherSummaryStateBDurationSeconds: number
 }
 
+// Local to these stat cards, decoupled from the global root clamp() in
+// index.css (same pattern as CompassPanel's ReadoutRow in b75c77e) - that
+// scale also drives the header clock, media banners, and notice boards,
+// none of which this adjustment is meant to touch. Label and value get
+// separate clamp()s, not the same size scaled down together: a label
+// that wraps to two lines (e.g. "CLOUD BASE (SHOBDON CALCULATED)") was
+// previously the same font-size as a one-line label (e.g. "WIND"), so
+// wrapping ate noticeably more of the row's fixed height and pushed the
+// value down toward the card's bottom edge - shrinking both sizes by the
+// same proportion wouldn't fix that, since the value shrinks right along
+// with the label instead of the label preferentially making room. Vh-
+// based (not rem) for the same reason as the compass readout: the row's
+// real available height comes from viewport height via this panel's own
+// flex/grid chain, not from vmin (which also moves with viewport width).
+// Ceilings land 2px under the previous text-xs/text-3xl sizes (12px/30px
+// at this list's 16px-root reference) - both the two-line headroom fix
+// and a deliberate small overall reduction happen together here. Floors
+// (6px/11px) sit below what a comfortable reading size would be on their
+// own - deliberately, so a two-line label still has somewhere to shrink
+// to on a shorter-than-usual viewport before its row's own minmax(4.5rem,
+// 1fr) floor (from 7e7852c, unchanged here) becomes the binding
+// constraint instead of font-size.
+const STAT_LABEL_FONT = 'clamp(6px, 0.95vh, 10px)'
+const STAT_VALUE_FONT = 'clamp(11px, 2.55vh, 28px)'
+
 export default function LeftInfoPanel(): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
   const { hours: visibilityHours, fetchedAt: visibilityFetchedAt } = useVisibilityForecast()
@@ -179,8 +204,15 @@ export default function LeftInfoPanel(): JSX.Element {
           <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${data.length}, minmax(4.5rem, 1fr))` }}>
             {data.map((item) => (
               <div key={item.label} className="min-h-0 overflow-hidden rounded-3xl border border-border bg-card p-2">
-                <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{item.label}</div>
-                <div className="mt-1 text-3xl font-semibold text-primary">{item.value}</div>
+                <div
+                  className="uppercase tracking-[0.25em] text-muted-500"
+                  style={{ fontSize: STAT_LABEL_FONT, paddingLeft: '4px' }}
+                >
+                  {item.label}
+                </div>
+                <div className="mt-1 font-semibold text-primary" style={{ fontSize: STAT_VALUE_FONT }}>
+                  {item.value}
+                </div>
               </div>
             ))}
           </div>

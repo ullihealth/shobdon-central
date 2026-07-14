@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { VisibilityHour } from '../services/visibilityForecastService'
 
 interface CloudVisibilityChartProps {
@@ -21,32 +22,39 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
-// Fixed viewBox, uniformly scaled to fit its card (preserveAspectRatio=
-// "xMidYMid meet", not "none") - same fixed-viewBox-plus-computed-
-// coordinates convention as CompassPanel.tsx. "none" (this component's
-// first version) stretched X and Y independently to exactly fill
-// whatever box the flex layout gave it, which is what turned the cloud
-// icons' circles into ellipses ("teardrops"). "meet" fixed that, but its
-// first viewBox (300x170, a LANDSCAPE 1.76:1 ratio) was picked without
-// checking the real card - measured directly, the actual card is
-// PORTRAIT (0.87:1 at 1366x768, down to 0.59:1 at 1920x1080 - narrower
-// relative to its height on taller screens). "meet" fits to whichever
-// axis is more constraining, so a landscape viewBox inside a portrait
-// box fit to width and left a large empty gap above/below - this
-// viewBox is portrait instead, close to the middle of the real observed
-// range, so there's real content filling the card at every measured
-// size, not just a fallback that happens to not clip.
-const VIEW_WIDTH = 220
+// Previously a FIXED viewBox (220x300, a portrait ratio picked as "close
+// to the middle of the real observed range" across a handful of measured
+// resolutions) uniformly scaled via preserveAspectRatio="xMidYMid meet".
+// That's inherently unfixable by construction: any card aspect ratio
+// outside whatever range was "observed" when the ratio was picked still
+// mismatches "meet"'s own viewBox, and letterboxes worse the further the
+// real box diverges from the guess - confirmed directly: a non-4K TV
+// still showed a squashed plot even after the one already-known 4K-
+// specific cause (DashboardPage's since-removed max-w-[1920px] cap) was
+// fixed, because THIS card's real aspect ratio simply falls outside the
+// range 220x300 was tuned against. VIEW_WIDTH is now measured from the
+// SVG's actual rendered box (see plotWrapperRef/ResizeObserver below) and
+// kept in sync with it, so the viewBox's ratio always exactly matches the
+// real box - "meet" then never has anything to letterbox, at any
+// resolution or aspect ratio, without needing to know it in advance.
+// VIEW_HEIGHT stays fixed - it's the coordinate system's vertical scale,
+// what every ft-to-pixel calculation below is built around - only the
+// width side needs to track the real box.
 const VIEW_HEIGHT = 300
-// 92 (the previous value) over-corrected for the font-size-doubling
-// round below it undoes: labels ended up both larger than the card's
-// own "Cloud Base Forecast" title AND floating in from the left edge
-// with a large unused gap. Pulled back down close to comfortable-
-// padding-only alongside the smaller font size - verified empirically
-// (real gap from card edge to label, real gap from label to gridline)
-// rather than computed from the font-size change alone.
+// Used for exactly one render, before ResizeObserver reports the real
+// box - replaced immediately after, so its own value barely matters as
+// long as it's a reasonable placeholder that doesn't visibly flash.
+const FALLBACK_VIEW_WIDTH = 220
+// 92 (an earlier value) over-corrected for the font-size-doubling round
+// below it undoes: labels ended up both larger than the card's own
+// "Cloud Base Forecast" title AND floating in from the left edge with a
+// large unused gap. Pulled back down close to comfortable-padding-only
+// alongside the smaller font size - verified empirically (real gap from
+// card edge to label, real gap from label to gridline) rather than
+// computed from the font-size change alone. Fixed, not width-relative -
+// it's sized to comfortably fit the "0000ft" label text at the font size
+// below, which doesn't itself change with the box's aspect ratio.
 const PLOT_LEFT = 36
-const PLOT_RIGHT = VIEW_WIDTH - 10
 const PLOT_TOP = 20
 const HEIGHT_SCALE_BOTTOM = 280
 
@@ -129,13 +137,35 @@ export default function CloudVisibilityChart({
   visibilityHours,
   visibilityFetchedAt,
 }: CloudVisibilityChartProps): JSX.Element {
+  // Tracks the plot SVG's own real rendered box so viewWidth (and
+  // everything derived from it below) always matches the box's actual
+  // aspect ratio - see the VIEW_HEIGHT comment above for why this
+  // replaced a fixed-ratio viewBox.
+  const plotWrapperRef = useRef<HTMLDivElement>(null)
+  const [viewWidth, setViewWidth] = useState(FALLBACK_VIEW_WIDTH)
+
+  useEffect(() => {
+    const el = plotWrapperRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const { width, height } = entry.contentRect
+      if (width > 0 && height > 0) setViewWidth((VIEW_HEIGHT * width) / height)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const plotRight = viewWidth - 10
+
   const scaleMaxFt = scaleMaxFtFor(cloudBaseFt)
   const gridlines: number[] = []
   for (let ft = 0; ft <= scaleMaxFt; ft += GRIDLINE_STEP_FT) gridlines.push(ft)
 
   const cloudY = cloudBaseFt === null ? null : ftToY(cloudBaseFt, scaleMaxFt)
   const iconStyle = VISIBILITY_ICON_STYLE[visibilityHours[0]?.category ?? ''] ?? DEFAULT_ICON_STYLE
-  const usableWidth = PLOT_RIGHT - PLOT_LEFT
+  const usableWidth = plotRight - PLOT_LEFT
   // Shrinks as count grows (1 icon at count=1 up to 11 at Very Poor) so
   // the densest case never overlaps - capped at 22 so the sparse cases
   // (1-3 icons) don't blow up into oversized shapes. The 0.9 factor is a
@@ -162,14 +192,14 @@ export default function CloudVisibilityChart({
         <div className="mb-2 flex-shrink-0 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
           Cloud Base Forecast
         </div>
-        <div className="min-h-0 flex-1">
-          <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} preserveAspectRatio="xMidYMid meet" className="h-full w-full">
+        <div ref={plotWrapperRef} className="min-h-0 flex-1">
+          <svg viewBox={`0 0 ${viewWidth} ${VIEW_HEIGHT}`} preserveAspectRatio="xMidYMid meet" className="h-full w-full">
             {/* Gridlines + full aviation-style ft labels - "1000ft", not
                 the abbreviated "1k" this started with, so it reads
                 unambiguously as altitude data. */}
             <g stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
               {gridlines.map((ft) => (
-                <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
+                <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={plotRight} y2={ftToY(ft, scaleMaxFt)} />
               ))}
             </g>
             {/* fontSize deliberately well under the card title's real
@@ -203,7 +233,7 @@ export default function CloudVisibilityChart({
               ))
             ) : (
               <text
-                x={(PLOT_LEFT + PLOT_RIGHT) / 2}
+                x={(PLOT_LEFT + plotRight) / 2}
                 y={(PLOT_TOP + HEIGHT_SCALE_BOTTOM) / 2}
                 textAnchor="middle"
                 dominantBaseline="middle"
