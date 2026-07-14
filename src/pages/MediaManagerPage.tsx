@@ -637,7 +637,17 @@ function CarouselSlotEditor({
 }): JSX.Element {
   const file = files.find((f) => f.id === slot.mediaLibraryId)
   const isMp4 = slot.mediaType === 'mp4'
-  const showAppearanceControls = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+  // webcam included alongside image/mp4 now that MediaSlotRenderer
+  // applies the same zoom/pan/rotate transform to it (see that file's
+  // supportsCropRotate comment) - lets an admin reposition/zoom the
+  // webcam view exactly like any other slot.
+  const showAppearanceControls = slot.mediaType === 'image' || slot.mediaType === 'mp4' || slot.mediaType === 'webcam'
+  // Fit mode specifically stays image/mp4 only - the webcam <iframe>
+  // always renders at a fixed h-full w-full regardless of fitMode (see
+  // MediaSlotRenderer's webcam case, which never reads objectFitClass),
+  // so showing this control for webcam would be a dead toggle with no
+  // visible effect.
+  const showFitMode = slot.mediaType === 'image' || slot.mediaType === 'mp4'
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
@@ -692,7 +702,7 @@ function CarouselSlotEditor({
         )}
       </label>
 
-      {showAppearanceControls && (
+      {showFitMode && (
         <label className="mt-3 flex flex-col gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Fit mode</span>
           <select

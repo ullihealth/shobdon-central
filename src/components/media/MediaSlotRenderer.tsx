@@ -160,11 +160,21 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
   const filterStyle: React.CSSProperties =
     slot.brightnessPercent !== 100 ? { filter: `brightness(${slot.brightnessPercent}%)` } : {}
 
-  // Crop/zoom only make visual sense for raster content (image/mp4);
-  // webcam/pdf still render (with brightness/banner still applicable),
-  // just without the zoom transform, since an iframe's embedded page
-  // content isn't a "source image" with pixels to zoom into.
-  const supportsCropRotate = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+  // Originally image/mp4 only - webcam was excluded on the reasoning that
+  // an iframe's embedded page "isn't a source image with pixels to zoom
+  // into." That's true in the sense that zooming a webcam iframe doesn't
+  // reveal extra native-resolution detail the way zooming a real image
+  // does, but the SAME scale()/translate() CSS technique still works on
+  // an iframe exactly as it does on any element: it magnifies and pans
+  // within the iframe's own already-rendered box (video plus rtsp.me's
+  // own overlay chrome, moving together), clipped by this component's
+  // own overflow-hidden wrapper - which is exactly "zoom and reposition
+  // the display" from a viewer's perspective, just not a crop into
+  // higher-resolution source pixels. Added per an explicit ask to be
+  // able to reposition/zoom the webcam view the same way other slots
+  // already can. pdf stays excluded - zooming a document page wasn't
+  // asked for and doesn't have an obvious use case here.
+  const supportsCropRotate = slot.mediaType === 'image' || slot.mediaType === 'mp4' || slot.mediaType === 'webcam'
   const objectFitClass = slot.fitMode === 'fill' ? 'object-cover' : 'object-contain'
   const mediaStyle: React.CSSProperties = supportsCropRotate
     ? { ...filterStyle, ...zoomPanTransformStyle(crop) }
