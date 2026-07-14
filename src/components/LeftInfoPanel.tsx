@@ -31,11 +31,26 @@ interface OpsPanelChartConfig {
 // and a deliberate small overall reduction happen together here. Floors
 // (6px/11px) sit below what a comfortable reading size would be on their
 // own - deliberately, so a two-line label still has somewhere to shrink
-// to on a shorter-than-usual viewport before its row's own minmax(4.5rem,
-// 1fr) floor (from 7e7852c, unchanged here) becomes the binding
+// to on a shorter-than-usual viewport before its row's own minmax floor
+// (below, bumped slightly from 7e7852c's 4.5rem) becomes the binding
 // constraint instead of font-size.
 const STAT_LABEL_FONT = 'clamp(6px, 0.95vh, 10px)'
 const STAT_VALUE_FONT = 'clamp(11px, 2.55vh, 28px)'
+// Sized and coloured distinctly from STAT_LABEL_FONT, not just a smaller
+// version of the same style - a parenthetical qualifier ("(Shobdon
+// Calculated)", "(Met Office Forecast)") is secondary to the main label
+// it clarifies, not a second heading of equal weight. Two of five cards
+// carry one; those two previously had the SAME font-size as the three
+// one-word labels, so their qualifier text wrapped the row's label onto
+// a second line at full label height, eating noticeably more of the
+// card than a plain "WIND"/"QNH" row and squeezing the value down
+// toward the bottom edge. Shrinking just the qualifier - not the whole
+// label - frees that height back up without losing the main label's own
+// size or legibility. The accent colour (reused from the existing
+// design system, not a new one) keeps it visually distinct as
+// "supplementary" rather than reading like a dimmer version of the same
+// text.
+const STAT_QUALIFIER_FONT = 'clamp(5px, 0.75vh, 8px)'
 
 export default function LeftInfoPanel(): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
@@ -81,18 +96,23 @@ export default function LeftInfoPanel(): JSX.Element {
     ? `${visibilityHours[0].category} (${visibilityHours[0].rangeLabel})`
     : 'Unavailable'
 
+  // qualifier split out from label (was inline in the label string, e.g.
+  // "Cloud Base (Shobdon Calculated)") so it can be rendered at its own
+  // smaller size/colour - see STAT_QUALIFIER_FONT above.
   const data = [
     {
       label: 'Wind',
+      qualifier: null,
       value: !weather || liveDataUnavailable ? 'N/A' : `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt`,
     },
-    { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
-    { label: 'Temperature', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
+    { label: 'QNH', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
+    { label: 'Temperature', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
     {
       // Only ever meaningful from Shobdon's own station (dewpoint has no
       // internet/mock equivalent) - N/A whenever that's not genuinely the
       // live source in use, rather than a calculation from substituted data.
-      label: 'Cloud Base (Shobdon Calculated)',
+      label: 'Cloud Base',
+      qualifier: '(Shobdon Calculated)',
       value: cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`,
     },
     {
@@ -100,7 +120,8 @@ export default function LeftInfoPanel(): JSX.Element {
       // "Unavailable" rather than N/A distinguishes "Met Office couldn't
       // be reached this cycle" from the other cards' "no live reading",
       // and never shows a value held over past its own 60-minute TTL.
-      label: 'Visibility Outlook (Met Office Forecast)',
+      label: 'Visibility Outlook',
+      qualifier: '(Met Office Forecast)',
       value: visibilityOutlookText,
     },
   ]
@@ -196,12 +217,18 @@ export default function LeftInfoPanel(): JSX.Element {
           // value (not just today's "N/A" fallback strings, which happen
           // to mask this) could collapse a row toward its label's own
           // line-height, and neighbouring rows would shift to fill the
-          // gap. minmax(4.5rem, 1fr) fixes both: rows never grow past an
+          // gap. minmax(<floor>, 1fr) fixes both: rows never grow past an
           // equal fr-share of whatever height this panel genuinely has on
           // THIS screen (no overflow/clipping), and never shrink below
-          // 4.5rem regardless of content (no collapse/overlap) - true on
-          // any resolution, not tuned to either TV this was verified on.
-          <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${data.length}, minmax(4.5rem, 1fr))` }}>
+          // the floor regardless of content (no collapse/overlap) - true
+          // on any resolution, not tuned to either TV this was verified
+          // on. 4.75rem, not 7e7852c's original 4.5rem - a small bump
+          // (not a large one; the qualifier-shrinking above does most of
+          // the work) verified to give reliable headroom across all five
+          // cards, including Visibility Outlook's longest realistic
+          // value ("Very Good (20.1km-40km)", itself two lines) alongside
+          // its own two-part label - not just tuned to today's mock data.
+          <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${data.length}, minmax(4.75rem, 1fr))` }}>
             {data.map((item) => (
               <div key={item.label} className="min-h-0 overflow-hidden rounded-3xl border border-border bg-card p-2">
                 <div
@@ -209,6 +236,12 @@ export default function LeftInfoPanel(): JSX.Element {
                   style={{ fontSize: STAT_LABEL_FONT, paddingLeft: '4px' }}
                 >
                   {item.label}
+                  {item.qualifier && (
+                    <span className="text-accent-sky-400" style={{ fontSize: STAT_QUALIFIER_FONT }}>
+                      {' '}
+                      {item.qualifier}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-1 font-semibold text-primary" style={{ fontSize: STAT_VALUE_FONT }}>
                   {item.value}

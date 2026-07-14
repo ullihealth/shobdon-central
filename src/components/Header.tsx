@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { AIRFIELD_TIMEZONE } from '../config/publicApi'
 
 interface HeaderProps {
   rightSlot?: ReactNode
@@ -44,15 +45,23 @@ export default function Header({ rightSlot }: HeaderProps): JSX.Element {
     }
   }, [isPublicDashboard])
 
+  // timeZone: AIRFIELD_TIMEZONE, not the viewing device's own local zone -
+  // this clock represents the airfield's actual local time (what a pilot
+  // or ATC reading it on-site needs), not whatever timezone the browser/
+  // TV's own system clock happens to be set to. A device with a
+  // misconfigured clock, or a browser session behind a VPN in another
+  // region, would otherwise show a plausible-looking but wrong time.
   const timeString = now.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
+    timeZone: AIRFIELD_TIMEZONE,
   })
 
   const lastUpdatedString = now.toLocaleTimeString('en-GB', {
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    timeZone: AIRFIELD_TIMEZONE,
   })
 
   return (

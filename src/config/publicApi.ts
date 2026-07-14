@@ -11,6 +11,19 @@
 export const TENANT_SLUG = 'shobdon'
 export const PUBLIC_CONFIG_URL = `/api/public/${TENANT_SLUG}/config`
 
+// Same phase-0-single-tenant caveat as TENANT_SLUG above: hardcoded to
+// Shobdon's real IANA zone for now, becomes a genuine per-tenant value
+// once a second airfield (potentially in a different zone) onboards.
+// A single named constant, not a literal repeated at each call site -
+// every clock/timestamp display on the live public dashboard (Header's
+// clock, the "Last updated" freshness stamps) must show the AIRFIELD's
+// local time, not whatever timezone the viewing device's own system
+// clock happens to be set to (a TV with a misconfigured clock, or a
+// browser session behind a VPN in another region, would otherwise show
+// a plausible-looking but wrong time with no indication anything was
+// off).
+export const AIRFIELD_TIMEZONE = 'Europe/London'
+
 // Served by functions/api/public/[tenant]/visibility-forecast.ts -
 // deliberately a separate route/fetch from PUBLIC_CONFIG_URL above (not
 // bundled into that response) so a Met Office outage can only ever affect
