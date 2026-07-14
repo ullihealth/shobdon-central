@@ -5,6 +5,7 @@
 // and MediaManagerPage.tsx (the /media-manager live preview while
 // editing), so what an editor sees while adjusting a slot is a genuine
 // match for what goes live - not a similar-looking approximation.
+import { useEffect, useRef } from 'react'
 import type { CropRect } from '../../types/mediaLibrary'
 
 export interface MediaSlotVisual {
@@ -113,7 +114,45 @@ function BannerOverlay({
 // Renders one carousel slot's visual content into whatever box the
 // caller provides (both call sites use the identical aspect-video 16:9
 // box) - fills it edge-to-edge, no internal padding of its own.
-export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): JSX.Element | null {
+//
+// isActive defaults to true so MediaManagerPage.tsx's single-slot preview
+// (never passes it - there's no carousel there, just one slot being
+// edited) keeps behaving exactly as before. MediaPanel.tsx's carousel is
+// the one real caller that passes it explicitly: since all slots now stay
+// mounted simultaneously (see MediaPanel.tsx) rather than only the
+// active one, an mp4 slot needs to know whether IT is the one currently
+// visible so its own video element can pause while hidden instead of
+// playing/decoding off-screen indefinitely.
+export default function MediaSlotRenderer({ slot, isActive = true }: { slot: MediaSlotVisual; isActive?: boolean }): JSX.Element | null {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  // Ref-based play/pause, not the autoPlay attribute - autoPlay only
+  // fires once on mount, which is exactly wrong now that mp4 slots stay
+  // mounted continuously: every slot's video would start playing the
+  // moment carouselSlots first loads, regardless of which one is
+  // actually active. Driving play()/pause() off isActive instead means
+  // exactly one video plays at a time (whichever slot is current),
+  // deterministically, on every activeIndex change - not just on mount.
+  // No explicit "restart from 0" on reactivation: pause() leaves
+  // currentTime where it was, so play() simply resumes from there, the
+  // same behaviour every native <video> gives you for free - resetting
+  // to 0 would need an extra currentTime assignment for no clear benefit
+  // (loop is already on, so a slide left mid-loop resuming mid-loop
+  // reads the same as a fresh loop to a viewer). Declared before the
+  // early return below (not after) so hook call order stays unconditional
+  // across renders, per React's own rules - harmless no-op on the
+  // non-mp4/no-videoRef branches, since the effect just no-ops when
+  // videoRef.current is null.
+  useEffect(() => {
+    const videoEl = videoRef.current
+    if (!videoEl) return
+    if (isActive) {
+      videoEl.play().catch(() => {})
+    } else {
+      videoEl.pause()
+    }
+  }, [isActive])
+
   if (!slot.resolvedUrl && slot.mediaType !== 'webcam') return null
 
   const crop = slot.cropRect ?? IDENTITY_CROP
@@ -154,11 +193,11 @@ export default function MediaSlotRenderer({ slot }: { slot: MediaSlotVisual }): 
     case 'mp4':
       content = (
         <video
+          ref={videoRef}
           key={slot.resolvedUrl}
           src={slot.resolvedUrl ?? undefined}
           className={`h-full w-full ${objectFitClass}`}
           style={mediaStyle}
-          autoPlay
           muted
           loop
           playsInline

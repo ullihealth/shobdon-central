@@ -95,10 +95,32 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
       className="aspect-video h-full max-h-full max-w-full overflow-hidden rounded-xl border border-border bg-slate-950/90 shadow-lg shadow-slate-950/30"
     >
       <div
-        className={`flex h-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-slate-900/60 text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
+        className={`relative flex h-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-slate-900/60 text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
       >
         {hasCarousel ? (
-          activeSlot && <MediaSlotRenderer slot={activeSlot} />
+          // Every slot stays mounted for the panel's whole lifetime - only
+          // the active one is visually shown (absolute + inset-0 stacks
+          // them exactly on top of one another, same box every slot
+          // already renders into via its own h-full w-full, so this is a
+          // pure visibility swap with no layout/size change). Previously
+          // this rendered ONLY activeSlot, so a webcam slide's <iframe>
+          // (or any other slot's DOM) was destroyed the moment the
+          // carousel moved on and rebuilt from scratch - a full reload -
+          // whenever it came back around. visibility:hidden (Tailwind's
+          // `invisible`), not display:none: both keep the DOM/JS state
+          // alive, but display:none is more likely to make a browser
+          // throttle/suspend an embedded iframe's rendering while hidden,
+          // which is exactly the "still alive" property this exists to
+          // preserve. key={slot.slotNumber} - stable per-slot identity
+          // (not array index; slots don't reorder at runtime, but this is
+          // the correct key regardless) so React keeps reusing the same
+          // component instance/DOM node across every activeIndex change,
+          // never remounting a slot just because a sibling did.
+          carouselSlots.map((slot, index) => (
+            <div key={slot.slotNumber} className={`absolute inset-0 ${index === activeIndex ? '' : 'invisible'}`}>
+              <MediaSlotRenderer slot={slot} isActive={index === activeIndex} />
+            </div>
+          ))
         ) : webcamUrl ? (
           <iframe
             src={webcamUrl}
