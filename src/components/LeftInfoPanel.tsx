@@ -134,7 +134,9 @@ export default function LeftInfoPanel(): JSX.Element {
                 <div className="mt-1 text-xl font-semibold text-primary">{visibilityOutlookText}</div>
               </div>
             </div>
-            <div className="min-h-0 flex-1 rounded-2xl border border-border bg-card p-2">
+            {/* No card wrapper here - CloudVisibilityChart renders its
+                own two separate bordered cards internally. */}
+            <div className="min-h-0 flex-1">
               <CloudVisibilityChart cloudBaseFt={cloudBaseFt} visibilityHours={visibilityHours} />
             </div>
           </div>

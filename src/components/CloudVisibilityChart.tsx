@@ -5,21 +5,23 @@ interface CloudVisibilityChartProps {
   visibilityHours: VisibilityHour[]
 }
 
-// Fixed viewBox, stretched to fill whatever box the flex layout gives it
-// (preserveAspectRatio="none") - same fixed-viewBox-plus-computed-
-// coordinates convention as CompassPanel.tsx, adapted for a rectangular
-// (not square) chart whose real available height varies a lot by kiosk
-// viewport, per this panel's own history of overflow bugs. Measured
-// empirically against real rendered output at 1366x768 and other sizes
-// before finalising these numbers.
-const VIEW_WIDTH = 320
-const VIEW_HEIGHT = 230
-const PLOT_LEFT = 34
-const PLOT_RIGHT = VIEW_WIDTH - 8
-const PLOT_TOP = 12
+// Fixed viewBox, uniformly scaled to fit its card (preserveAspectRatio=
+// "xMidYMid meet", not "none") - same fixed-viewBox-plus-computed-
+// coordinates convention as CompassPanel.tsx. "none" (this component's
+// first version) stretched X and Y independently to exactly fill
+// whatever box the flex layout gave it, which is what turned the cloud
+// icons' circles into ellipses ("teardrops") whenever the real card
+// wasn't the same aspect ratio as the viewBox - "meet" scales both axes
+// by the same factor instead, so circles stay circles regardless of the
+// card's real proportions, at the cost of some unused space on one axis
+// if the aspect ratios don't match closely (chosen close enough below,
+// verified against real rendered output, that this is minimal).
+const VIEW_WIDTH = 300
+const VIEW_HEIGHT = 170
+const PLOT_LEFT = 54
+const PLOT_RIGHT = VIEW_WIDTH - 10
+const PLOT_TOP = 14
 const HEIGHT_SCALE_BOTTOM = 150
-const TREND_STRIP_CENTER_Y = 186
-const TREND_LABEL_Y = 222
 
 const GRIDLINE_STEP_FT = 1000
 // Floor for the dynamic scale, and what's used when cloud base is N/A
@@ -111,81 +113,77 @@ export default function CloudVisibilityChart({ cloudBaseFt, visibilityHours }: C
     return PLOT_LEFT + spacing * (i + 1)
   })
 
-  const trendSlotWidth = (PLOT_RIGHT - PLOT_LEFT) / Math.max(1, visibilityHours.length)
-
   return (
-    <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} preserveAspectRatio="none" className="h-full w-full">
-      {/* Gridlines + ft labels */}
-      <g stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
-        {gridlines.map((ft) => (
-          <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
-        ))}
-      </g>
-      <g fill="rgba(148, 163, 184, 0.85)" fontSize="9" fontWeight="600">
-        {gridlines.map((ft) => (
-          <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
-            {ft / 1000}k
-          </text>
-        ))}
-      </g>
-
-      {/* Current-conditions cloud cluster: a row of icons all at ONE real
-          height (Shobdon's calculated Cloud Base) - never at any other
-          height, since there is only one real data point. Icon COUNT and
-          COLOUR encode the current hour's real visibility category. */}
-      {cloudY !== null ? (
-        cloudIconXs.map((x, i) => <CloudIcon key={i} cx={x} cy={cloudY} size={cloudIconSize} fill={iconStyle.color} />)
-      ) : (
-        <text
-          x={(PLOT_LEFT + PLOT_RIGHT) / 2}
-          y={(PLOT_TOP + HEIGHT_SCALE_BOTTOM) / 2}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="rgba(148, 163, 184, 0.85)"
-          fontSize="11"
-          fontWeight="600"
-        >
-          Cloud base unavailable
-        </text>
-      )}
-
-      {/* 6-hour trend: weather-TYPE icon per upcoming hour, from Met
-          Office's own significantWeatherCode - visibility itself is only
-          represented above (the cluster), not duplicated here. */}
-      {visibilityHours.length === 0 ? (
-        <text
-          x={(PLOT_LEFT + PLOT_RIGHT) / 2}
-          y={TREND_STRIP_CENTER_Y}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="rgba(148, 163, 184, 0.85)"
-          fontSize="11"
-          fontWeight="600"
-        >
-          Weather trend unavailable
-        </text>
-      ) : (
-        visibilityHours.map((hour, i) => {
-          const x = PLOT_LEFT + trendSlotWidth * i + trendSlotWidth / 2
-          return (
-            <g key={i}>
-              <text x={x} y={TREND_STRIP_CENTER_Y} textAnchor="middle" dominantBaseline="middle" fontSize="20">
-                {weatherIconFor(hour.weatherCode)}
+    // Two genuinely separate card containers (not one shared block with
+    // an internal divider) - same rounded-2xl/border/bg-card styling as
+    // the Ceiling/Visibility callouts above them, stacked with a real
+    // gap between.
+    <div className="flex h-full flex-col gap-2">
+      <div className="min-h-0 flex-[2] rounded-2xl border border-border bg-card p-2">
+        <svg viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`} preserveAspectRatio="xMidYMid meet" className="h-full w-full">
+          {/* Gridlines + full aviation-style ft labels - "1000ft", not
+              the abbreviated "1k" this started with, so it reads
+              unambiguously as altitude data. */}
+          <g stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+            {gridlines.map((ft) => (
+              <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
+            ))}
+          </g>
+          <g fill="rgba(148, 163, 184, 0.85)" fontSize="8" fontWeight="600">
+            {gridlines.map((ft) => (
+              <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
+                {ft}ft
               </text>
-              <text
-                x={x}
-                y={TREND_LABEL_Y}
-                textAnchor="middle"
-                fill="rgba(148, 163, 184, 0.85)"
-                fontSize="8"
-                fontWeight="600"
-              >
-                +{i + 1}h
-              </text>
-            </g>
-          )
-        })
-      )}
-    </svg>
+            ))}
+          </g>
+
+          {/* Current-conditions cloud cluster: a row of icons all at ONE
+              real height (Shobdon's calculated Cloud Base) - never at
+              any other height, since there is only one real data point.
+              Icon COUNT and COLOUR encode the current hour's real
+              visibility category. */}
+          {cloudY !== null ? (
+            cloudIconXs.map((x, i) => (
+              <CloudIcon key={i} cx={x} cy={cloudY} size={cloudIconSize} fill={iconStyle.color} />
+            ))
+          ) : (
+            <text
+              x={(PLOT_LEFT + PLOT_RIGHT) / 2}
+              y={(PLOT_TOP + HEIGHT_SCALE_BOTTOM) / 2}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fill="rgba(148, 163, 184, 0.85)"
+              fontSize="11"
+              fontWeight="600"
+            >
+              Cloud base unavailable
+            </text>
+          )}
+        </svg>
+      </div>
+
+      <div className="flex-shrink-0 rounded-2xl border border-border bg-card p-2">
+        <div className="mb-1.5 text-center text-[10px] font-bold uppercase tracking-widest text-muted-500">
+          6-Hour Forecast
+        </div>
+        {/* Plain HTML, not SVG, deliberately - a flow-layout emoji glyph
+            is sized by font-size alone and can never be non-uniformly
+            stretched the way an SVG scaled to fill an arbitrary box can
+            be. Visibility itself isn't shown here at all (see the
+            cluster above) - this row is weather TYPE only. */}
+        {visibilityHours.length === 0 ? (
+          <div className="py-2 text-center text-xs font-semibold text-muted-500">Weather trend unavailable</div>
+        ) : (
+          <div className="flex items-start justify-around">
+            {visibilityHours.map((hour, i) => (
+              <div key={i} className="flex flex-col items-center">
+                <span className="text-xl leading-none">{weatherIconFor(hour.weatherCode)}</span>
+                <span className="mt-1 text-[9px] font-semibold text-muted-500">+{i + 1}h</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
