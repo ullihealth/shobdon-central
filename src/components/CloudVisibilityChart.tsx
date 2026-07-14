@@ -38,13 +38,14 @@ function formatTime(iso: string): string {
 // size, not just a fallback that happens to not clip.
 const VIEW_WIDTH = 220
 const VIEW_HEIGHT = 300
-// Widened from 46 - doubling the gridline label font size (8 -> 16, see
-// below) roughly doubles their rendered width too ("4000ft" at 16px
-// needs real room), so the plot area is shifted right to give them
-// space without crowding the gridlines themselves. Verified empirically
-// against real rendered output, not just computed - see the labels'
-// actual x position relative to the card's left edge after this change.
-const PLOT_LEFT = 92
+// 92 (the previous value) over-corrected for the font-size-doubling
+// round below it undoes: labels ended up both larger than the card's
+// own "Cloud Base Forecast" title AND floating in from the left edge
+// with a large unused gap. Pulled back down close to comfortable-
+// padding-only alongside the smaller font size - verified empirically
+// (real gap from card edge to label, real gap from label to gridline)
+// rather than computed from the font-size change alone.
+const PLOT_LEFT = 36
 const PLOT_RIGHT = VIEW_WIDTH - 10
 const PLOT_TOP = 20
 const HEIGHT_SCALE_BOTTOM = 280
@@ -137,8 +138,15 @@ export default function CloudVisibilityChart({
   const usableWidth = PLOT_RIGHT - PLOT_LEFT
   // Shrinks as count grows (1 icon at count=1 up to 11 at Very Poor) so
   // the densest case never overlaps - capped at 22 so the sparse cases
-  // (1-3 icons) don't blow up into oversized shapes.
-  const cloudIconSize = Math.min(22, usableWidth / (iconStyle.count + 1))
+  // (1-3 icons) don't blow up into oversized shapes. The 0.9 factor is a
+  // real fix, not a fudge: CloudIcon's outer lobes extend to about 1.05x
+  // the nominal `size` (their centres sit at 0.55r either side of cx,
+  // each with its own 0.5r radius), so icons spaced exactly `size` apart
+  // measurably overlapped by ~1-2px at every tested count when sized at
+  // the full available spacing - caught by directly measuring the real
+  // gap between adjacent rendered icons, not assumed from the spacing
+  // formula alone.
+  const cloudIconSize = Math.min(22, (usableWidth / (iconStyle.count + 1)) * 0.9)
   const cloudIconXs = Array.from({ length: iconStyle.count }, (_, i) => {
     const spacing = usableWidth / (iconStyle.count + 1)
     return PLOT_LEFT + spacing * (i + 1)
@@ -164,9 +172,21 @@ export default function CloudVisibilityChart({
                 <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={PLOT_RIGHT} y2={ftToY(ft, scaleMaxFt)} />
               ))}
             </g>
-            <g fill="rgba(148, 163, 184, 0.85)" fontSize="16" fontWeight="600">
+            {/* fontSize deliberately well under the card title's real
+                rendered size (text-sm/14px in plain CSS) - the title
+                must stay the most prominent text on the card. Picked by
+                direct measurement, not just the number itself: the
+                "meet" scale factor that converts these SVG units to
+                real pixels varies a LOT by viewport (measured 0.5x at
+                1366x768 up to 1.83x at 1920x1080 for this card's real
+                proportions), so a value that looks right on one screen
+                can render nearly 4x bigger on another - this needed to
+                stay small enough to beat the title's real height even
+                at the largest observed scale factor, not just the
+                screen a single screenshot happened to be taken on. */}
+            <g fill="rgba(148, 163, 184, 0.85)" fontSize="8" fontWeight="600">
               {gridlines.map((ft) => (
-                <text key={ft} x={PLOT_LEFT - 8} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
+                <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
                   {ft}ft
                 </text>
               ))}
