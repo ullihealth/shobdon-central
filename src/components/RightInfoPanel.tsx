@@ -190,9 +190,22 @@ export default function RightInfoPanel(): JSX.Element {
         {showNotamsState ? (
           <NotamsPanel notices={noticesForDisplay} />
         ) : (
-          <div className="grid gap-4">
+          // Follow-up to 7e7852c, same bug/fix pattern: this was a plain
+          // `grid gap-4` with content-driven auto-height rows, inside the
+          // identical overflow-hidden-to-page-root ancestor chain
+          // LeftInfoPanel sits in (same 23%/54%/23% column grid in
+          // DashboardPage.tsx). Never reported here, but the same fix
+          // applies for the same reason: on a screen with less vertical
+          // room, the last card could get silently clipped with no
+          // scrollbar to reveal it, and no card had a reserved minimum
+          // height to stop one collapsing and letting its neighbour
+          // shift up into it. 6.5rem, not LeftInfoPanel's 4.5rem - these
+          // cards run heavier padding (p-5 vs p-2) and a bigger label-to-
+          // value gap (mt-3 vs mt-1), so they need a taller floor to fit
+          // the same label+text-3xl-value content without cramming.
+          <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${cards.length}, minmax(6.5rem, 1fr))` }}>
             {cards.map((card) => (
-              <div key={card.title} className="rounded-3xl border border-border bg-card p-5">
+              <div key={card.title} className="min-h-0 overflow-hidden rounded-3xl border border-border bg-card p-5">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{card.title}</div>
                 <div className="mt-3 text-3xl font-semibold text-primary">{card.value}</div>
               </div>
