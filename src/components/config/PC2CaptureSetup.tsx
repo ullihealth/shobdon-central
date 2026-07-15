@@ -6,6 +6,7 @@ import { useState } from 'react'
 // string in this bundle.
 const CAPTURE_SCRIPT_URL = '/downloads/capture-weathercentral.ps1'
 const INSTALLER_URL = '/downloads/install-weather-capture-autostart.bat'
+const SETUP_PDF_URL = '/downloads/Shobdon-Central-Weather-Feed-Setup.pdf'
 
 // Same-origin, authenticated routes (functions/api/tenant/capture-logs.ts
 // and capture-refresh.ts) - replace the old direct links to
@@ -61,6 +62,13 @@ export default function PC2CaptureSetup(): JSX.Element {
           className="rounded-lg border border-border bg-panel px-4 py-2 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
         >
           ⬇ Download auto-start installer
+        </a>
+        <a
+          href={SETUP_PDF_URL}
+          download
+          className="rounded-lg border border-border bg-panel px-4 py-2 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
+        >
+          ⬇ Download setup instructions (PDF)
         </a>
         <a
           href={CAPTURE_LOGS_ROUTE}
