@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import AtcDeveloperTools from '../components/config/AtcDeveloperTools'
+import InvestigateStation from '../components/config/InvestigateStation'
 
 const DEVELOPER_SETTINGS_URL = '/api/tenant/developer-settings'
 
@@ -82,11 +82,17 @@ export default function DeveloperToolsPage(): JSX.Element {
       <div className="rounded-3xl border border-slate-700 bg-slate-950/85 p-10 shadow-xl shadow-slate-950/20">
         <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Developer Tools</h1>
         <p className="mb-2 max-w-2xl text-sm text-muted-400">
-          Capture pipeline diagnostics - relocated here from /config, visible only to the developer account
-          regardless of tenant role.
+          Deep capture diagnostics, visible only to the developer account regardless of tenant role. The self-serve
+          PC2 capture setup (download files, view logs, trigger a refresh) moved to /config, where any owner/admin
+          can use it directly without developer involvement.
         </p>
 
-        <AtcDeveloperTools />
+        {/* Amber box matches this page's other developer-only tools below -
+            InvestigateStation renders its own "Investigate Station" heading
+            and top divider internally, so no extra heading is added here. */}
+        <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
+          <InvestigateStation />
+        </div>
         <ReverseNeedleToggle />
       </div>
     </div>

@@ -1,9 +1,4 @@
-// Single source of truth for capture-weathercentral.ps1's contents - both the
-// downloadable file and the on-screen preview in AtcDeveloperTools.tsx render
-// from this exact string, so they can never drift out of sync with each other.
-export const CAPTURE_SCRIPT_FILENAME = 'capture-weathercentral.ps1'
-
-export const CAPTURE_SCRIPT_CONTENTS = `<#
+<#
 This script reads the local weather station page at 192.168.2.1 and sends
 the data to a Cloudflare address (shobdon-central-capture.jeffthompson.workers.dev).
 
@@ -57,4 +52,3 @@ while ($true) {
 
     Start-Sleep -Seconds $IntervalSeconds
 }
-`
