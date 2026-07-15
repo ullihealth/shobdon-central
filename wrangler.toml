@@ -35,13 +35,16 @@ binding = "WEATHER_CACHE"
 id = "c5ada3c64f1745509ed0977c0ab0c323"
 
 [vars]
-# BETTER_AUTH_URL / AUTH_TRUSTED_ORIGIN: placeholder pointing at the
-# default *.pages.dev domain - confirm/correct this in the Cloudflare
-# dashboard (or override via `wrangler pages secret put`) once the
-# project's actual production domain is confirmed. Doesn't affect local
-# `wrangler pages dev` testing.
-BETTER_AUTH_URL = "https://shobdon-central.pages.dev"
-AUTH_TRUSTED_ORIGIN = "https://shobdon-central.pages.dev"
+# BETTER_AUTH_URL / AUTH_TRUSTED_ORIGIN previously lived here as single
+# hardcoded strings - removed. functions/api/auth/[[path]].ts now derives
+# baseURL dynamically per-request (allowedHosts, wildcard-capable) and
+# hardcodes trustedOrigins as a wildcard list directly in code, since
+# both need to cover *.airfieldcentral.com (every current and future
+# tenant subdomain) rather than a single fixed value - see that file's
+# own comment for the full reasoning. If a stale BETTER_AUTH_URL/
+# AUTH_TRUSTED_ORIGIN env var exists in the Cloudflare dashboard's own
+# Environment Variables (separate from this file), it's harmless now -
+# neither is read anywhere in the code anymore.
 
 # Public r2.dev base URL for the MEDIA bucket above - used to construct
 # public file URLs for the dashboard (functions/api/public/[tenant]/
