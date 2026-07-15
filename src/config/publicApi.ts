@@ -1,19 +1,23 @@
 // Public, unauthenticated read endpoint for the live dashboard - served
-// by functions/api/public/[tenant]/config.ts (a Cloudflare Pages
-// Function on the same origin as this SPA, hence a plain relative path -
-// this is a native fetch() call, not the BetterAuth client, which
-// specifically needs an absolute URL; a relative path works fine here in
-// every browser).
+// by functions/api/public/config.ts (a Cloudflare Pages Function on the
+// same origin as this SPA, hence a plain relative path - this is a
+// native fetch() call, not the BetterAuth client, which specifically
+// needs an absolute URL; a relative path works fine here in every
+// browser).
 //
-// TENANT_SLUG is hardcoded to Shobdon for now - phase 0 is explicitly
-// single-tenant infrastructure; this becomes a real per-deployment value
-// once a second airfield onboards in a later phase.
-export const TENANT_SLUG = 'shobdon'
-export const PUBLIC_CONFIG_URL = `/api/public/${TENANT_SLUG}/config`
+// No tenant slug embedded in the URL (Stage 3): the server resolves
+// which tenant a request belongs to from the browser's own Host header
+// (functions/api/_utils/resolveTenantHost.ts), since this is the same
+// static JS bundle served to every tenant's subdomain - it can't know
+// its own tenant at build time. The old slug-based route
+// (functions/api/public/[tenant]/config.ts, e.g. /api/public/shobdon/config)
+// still exists unchanged as a rollback path if this ever needs reverting.
+export const PUBLIC_CONFIG_URL = `/api/public/config`
 
-// Same phase-0-single-tenant caveat as TENANT_SLUG above: hardcoded to
-// Shobdon's real IANA zone for now, becomes a genuine per-tenant value
-// once a second airfield (potentially in a different zone) onboards.
+// Still single-tenant here: hardcoded to Shobdon's real IANA zone for
+// now, becomes a genuine per-tenant value (resolved server-side, same as
+// PUBLIC_CONFIG_URL above) once a second airfield (potentially in a
+// different zone) onboards.
 // A single named constant, not a literal repeated at each call site -
 // every clock/timestamp display on the live public dashboard (Header's
 // clock, the "Last updated" freshness stamps) must show the AIRFIELD's
@@ -24,11 +28,12 @@ export const PUBLIC_CONFIG_URL = `/api/public/${TENANT_SLUG}/config`
 // off).
 export const AIRFIELD_TIMEZONE = 'Europe/London'
 
-// Served by functions/api/public/[tenant]/visibility-forecast.ts -
-// deliberately a separate route/fetch from PUBLIC_CONFIG_URL above (not
-// bundled into that response) so a Met Office outage can only ever affect
-// this one card, never the rest of the public dashboard.
-export const VISIBILITY_FORECAST_URL = `/api/public/${TENANT_SLUG}/visibility-forecast`
+// Served by functions/api/public/visibility-forecast.ts - deliberately a
+// separate route/fetch from PUBLIC_CONFIG_URL above (not bundled into
+// that response) so a Met Office outage can only ever affect this one
+// card, never the rest of the public dashboard. Same host-based tenant
+// resolution as PUBLIC_CONFIG_URL above.
+export const VISIBILITY_FORECAST_URL = `/api/public/visibility-forecast`
 
 // Authenticated read/write for the management pages - functions/api/
 // tenant/config.ts. Requires a valid BetterAuth session cookie, which a
