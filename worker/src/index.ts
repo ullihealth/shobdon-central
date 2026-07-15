@@ -219,9 +219,18 @@ function parseTempDew(raw: string): { temp_c: number | null; dewpoint_c: number 
 }
 
 // Time "11:46:26 UTC" + UTCDATE "07/07/26" (DD/MM/YY) -> "2026-07-07T11:46:26Z"
+//
+// HTMLRewriter's text() hands back the element's raw text content,
+// including surrounding whitespace/newlines from the source HTML's own
+// indentation (confirmed via a live capture: Time arrives as
+// "\r\n    11:46:26 UTC    ", not "11:46:26 UTC") - trimmed here rather
+// than in extractFieldsById(), since every other field's regex already
+// tolerates that whitespace (none of them anchor with ^/$ the way these
+// two do) and this keeps the fix scoped to the two lines actually
+// broken by it.
 function parseObservedAt(time: string, utcDate: string): { observed_at_utc: string | null } {
-  const dateMatch = utcDate.match(/^(\d{2})\/(\d{2})\/(\d{2})$/)
-  const timeMatch = time.match(/^(\d{2}):(\d{2}):(\d{2})/)
+  const dateMatch = utcDate.trim().match(/^(\d{2})\/(\d{2})\/(\d{2})$/)
+  const timeMatch = time.trim().match(/^(\d{2}):(\d{2}):(\d{2})/)
   if (!dateMatch || !timeMatch) return { observed_at_utc: null }
 
   const [, dd, mm, yy] = dateMatch
