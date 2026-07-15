@@ -6,6 +6,7 @@ import ConfigPage from './pages/ConfigPage'
 import DashboardPage from './pages/DashboardPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
+import GlobalDashboardPage from './pages/GlobalDashboardPage'
 import LoginPage from './pages/LoginPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
@@ -21,6 +22,11 @@ export default function App(): JSX.Element {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/checklist" element={<ChecklistPage />} />
+        {/* Public, unauthenticated cross-tenant directory - Stage 4's
+            public/private toggle plumbing's own consumer. Not linked from
+            anywhere in the existing dashboard/nav yet (direct URL only) -
+            wiring it into the root landing page is separately parked. */}
+        <Route path="/global" element={<GlobalDashboardPage />} />
         {/* Shared sidebar shell (AdminLayout.tsx) for every authenticated
             admin page - a React Router layout route rendering <Outlet/>.
             Per-route access gating below is completely unchanged: each

@@ -64,3 +64,10 @@ export const mediaLibraryReplaceUrl = (fileId: string): string => `/api/tenant/m
 
 // Owner/atc-role ATC-control endpoint.
 export const OPS_PANEL_URL = '/api/tenant/ops-panel'
+
+// Public, unauthenticated cross-tenant listing - functions/api/public/
+// tenants.ts. Unlike every other constant above, deliberately NOT
+// tenant-scoped in any way (no Host resolution, no slug) - this is the
+// "which tenants have opted into weather_public/ops_public" query,
+// consumed by GlobalDashboardPage.tsx (/global).
+export const PUBLIC_TENANTS_URL = '/api/public/tenants'
