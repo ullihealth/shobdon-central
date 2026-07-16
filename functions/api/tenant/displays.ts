@@ -24,34 +24,47 @@ interface TenantDisplayRow {
   updatedAt: string;
 }
 
-async function resolveTenantId(db: D1Database, organizationId: string): Promise<number | null> {
-  const row = await db.prepare("SELECT id FROM tenants WHERE organization_id = ?").bind(organizationId).first<{ id: number }>();
-  return row?.id ?? null;
+interface TenantIdentity {
+  id: number;
+  subdomain: string;
 }
 
+async function resolveTenant(db: D1Database, organizationId: string): Promise<TenantIdentity | null> {
+  const row = await db
+    .prepare("SELECT id, subdomain FROM tenants WHERE organization_id = ?")
+    .bind(organizationId)
+    .first<TenantIdentity>();
+  return row ?? null;
+}
+
+// Response includes the tenant's own subdomain alongside the displays -
+// so a consumer (the /config "Your displays" list) can build each
+// display's full live URL (https://<subdomain>/d/<slug>) without a
+// second request or hardcoding the domain scheme itself.
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
 
-  const tenantId = await resolveTenantId(env.DB, result.membership.organizationId);
-  if (!tenantId) return jsonResponse({ error: "No tenant record linked to this organization" }, 404);
+  const tenant = await resolveTenant(env.DB, result.membership.organizationId);
+  if (!tenant) return jsonResponse({ error: "No tenant record linked to this organization" }, 404);
 
   const rows = await env.DB
     .prepare(
       "SELECT slug, name, template_id AS templateId, panel_config AS panelConfigJson, updated_at AS updatedAt FROM tenant_displays WHERE tenant_id = ? ORDER BY id"
     )
-    .bind(tenantId)
+    .bind(tenant.id)
     .all<TenantDisplayRow>();
 
-  return jsonResponse(
-    rows.results.map((row) => ({
+  return jsonResponse({
+    subdomain: tenant.subdomain,
+    displays: rows.results.map((row) => ({
       slug: row.slug,
       name: row.name,
       templateId: row.templateId,
       panelConfig: row.panelConfigJson ? JSON.parse(row.panelConfigJson) : null,
       updatedAt: row.updatedAt,
-    }))
-  );
+    })),
+  });
 };
 
 // Upsert by (tenantId, slug) - the table's own UNIQUE constraint. One
@@ -62,8 +75,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
 
-  const tenantId = await resolveTenantId(env.DB, result.membership.organizationId);
-  if (!tenantId) return jsonResponse({ error: "No tenant record linked to this organization" }, 404);
+  const tenant = await resolveTenant(env.DB, result.membership.organizationId);
+  if (!tenant) return jsonResponse({ error: "No tenant record linked to this organization" }, 404);
 
   const body = (await request.json().catch(() => null)) as
     | { slug?: unknown; name?: unknown; templateId?: unknown; panelConfig?: unknown }
@@ -90,7 +103,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
          panel_config = excluded.panel_config,
          updated_at = excluded.updated_at`
     )
-    .bind(tenantId, slug, name, templateId, panelConfigJson, now, now)
+    .bind(tenant.id, slug, name, templateId, panelConfigJson, now, now)
     .run();
 
   return jsonResponse({ ok: true, slug, name, templateId, panelConfig: body.panelConfig ?? null });

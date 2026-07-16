@@ -642,7 +642,7 @@ export default function CompassPanel(): JSX.Element {
   }
 
   return (
-    <div className="flex h-full items-center justify-center gap-7 pt-6">
+    <div className="flex h-full flex-col items-center justify-center gap-4 pt-6 sm:flex-row sm:gap-7">
       {/* ── COMPASS INSTRUMENT ─────────────────────────────────────────
           Two overlapping SVGs sharing the same 400×400 viewBox.
           Layer 1 (bottom): static — compass rose and runway reference.

@@ -69,22 +69,31 @@ export default function Header({ rightSlot }: HeaderProps): JSX.Element {
   })
 
   return (
-    <div className="relative h-full w-full rounded-xl bg-gradient-to-r from-header-from via-header-via to-header-to p-3 shadow-lg flex items-center justify-between px-5">
-      {/* Left - title (doubles as the Configuration nav control) with Last Updated, read as one info block */}
+    <div className="relative h-full w-full rounded-xl bg-gradient-to-r from-header-from via-header-via to-header-to p-3 shadow-lg flex items-center justify-between gap-2 px-3 sm:px-5">
+      {/* Left - title (doubles as the Configuration nav control) with Last Updated, read as one info block.
+          min-w-0 + truncate: a flex child otherwise refuses to shrink below its text's own natural width,
+          which is what was pushing the clock (below) into overlapping it at narrow widths. */}
       <Link
         to={isConfigPage ? '/' : isPublicDashboard ? dashboardLandingPage : '/config'}
-        className="group flex flex-col cursor-pointer"
+        className="group flex min-w-0 flex-col cursor-pointer"
         title={isConfigPage ? 'Back to Dashboard' : 'Weather Config'}
       >
-        <div className="text-3xl font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400">
+        <div className="truncate text-lg font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 sm:text-3xl">
           SHOBDON AIRFIELD
         </div>
-        <div className="text-sm font-medium text-muted-300 leading-tight">Last updated {lastUpdatedString}</div>
+        {/* Hidden below sm - at that width there isn't room for a second line
+            alongside the clock and status slot without forcing the title to
+            shrink further than it already has to. */}
+        <div className="hidden text-sm font-medium text-muted-300 leading-tight sm:block">Last updated {lastUpdatedString}</div>
       </Link>
 
-      {/* Centre - large clock, absolutely centred against the full header width */}
-      <div className="absolute left-1/2 -translate-x-1/2">
-        <div className="text-5xl font-extrabold text-primary">{timeString}</div>
+      {/* Centre - large clock, absolutely centred against the full header
+          width from sm up. Below sm, absolute positioning is exactly what
+          caused the overlap (it ignored the title's actual width entirely) -
+          a normal flex item instead, sized down, takes its place in the row
+          between the title and rightSlot with no collision. */}
+      <div className="flex-shrink-0 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+        <div className="text-lg font-extrabold text-primary sm:text-5xl">{timeString}</div>
       </div>
 
       {/* Right - optional slot (e.g. weather status indicator on the dashboard) */}

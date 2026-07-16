@@ -7,8 +7,10 @@ import RightInfoPanel from '../components/RightInfoPanel'
 import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { useIsDesktopLayout } from '../hooks/useIsDesktopLayout'
 
 export default function DashboardPage(): JSX.Element {
+  const isDesktop = useIsDesktopLayout()
   // Active theme, synced across every device via the tenant-scoped D1
   // config (was the Worker's global theme KV key - see
   // functions/api/public/[tenant]/config.ts). Absent a fetched override,
@@ -38,7 +40,9 @@ export default function DashboardPage(): JSX.Element {
   return (
     <WeatherProvider>
       <div
-        className="h-screen w-screen overflow-hidden bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100"
+        className={`w-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100 ${
+          isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'
+        }`}
         // Safe-area/overscan margin, not a design choice - TVs commonly
         // crop a few percent off every edge of what the browser reports
         // as "the viewport" (overscan), and this varies by TV model/
@@ -53,7 +57,7 @@ export default function DashboardPage(): JSX.Element {
         style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
       >
         <div
-          className="h-full"
+          className={isDesktop ? 'h-full' : ''}
           // Was mx-auto max-w-[1920px] - a resolution-specific cap left over
           // from this page's original hardcoded layout, predating every
           // fluid-scaling fix in this series. It only ever engaged above
@@ -86,10 +90,20 @@ export default function DashboardPage(): JSX.Element {
           // shrinks to absorb the new row rather than overflowing, the
           // same "won't clip below content" fix already relied on
           // elsewhere in this layout.
-          style={{ display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }}
+          style={
+            isDesktop
+              ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }
+              : { display: 'flex', flexDirection: 'column', gap: '16px' }
+          }
         >
-          {/* HEADER (10%) */}
-          <Header rightSlot={<WeatherStatusIndicator />} />
+          {/* HEADER (10%). Fixed height below md (not auto/flex-shrink) -
+              Header's own content assumes a real box to centre the
+              clock/status slot within; a stacked flex-column layout
+              otherwise gives it only as much height as its content
+              strictly needs, which clipped the clock in testing. */}
+          <div style={isDesktop ? undefined : { height: '64px', flexShrink: 0 }}>
+            <Header rightSlot={<WeatherStatusIndicator />} />
+          </div>
 
           {/* BODY (90%) - three columns left/center/right. gridTemplateRows
               wasn't set at all here previously - an unset row defaults to
@@ -99,37 +113,47 @@ export default function DashboardPage(): JSX.Element {
               still stuck at a content-driven floor height). An explicit
               minmax(0, 1fr) row makes it shrinkable too. */}
           <div
-            style={{
-            // fr, not %, for the columns - grid gap is added ON TOP of
-            // percentage tracks (23%+54%+23% = 100% of the container, then
-            // two 16px gaps are inserted in addition to that, making the
-            // grid's real content 32px wider than its own container). Grid
-            // overflows to the end (right, in LTR) by default, so that 32px
-            // silently ate into the right column's own safe-area padding at
-            // every resolution - measured directly: 0.4px of right margin
-            // left over at 1920x1080 (vs. the left column's correct
-            // 32.4px), and actually negative (-8.95px, genuinely off-
-            // screen) at 1366x768. fr tracks divide up the space that's
-            // LEFT after gaps are subtracted, so 23fr/54fr/23fr gives the
-            // exact same 23/54/23 proportion the percentages intended, but
-            // gap-aware by construction at any resolution - not a value
-            // tuned to the resolutions this was tested at.
-              display: 'grid',
-              gridTemplateColumns: '23fr 54fr 23fr',
-              gridTemplateRows: 'minmax(0, 1fr)',
-              gap: '16px',
-              height: '100%',
-            }}
+            style={
+              isDesktop
+                ? {
+                    // fr, not %, for the columns - grid gap is added ON TOP of
+                    // percentage tracks (23%+54%+23% = 100% of the container, then
+                    // two 16px gaps are inserted in addition to that, making the
+                    // grid's real content 32px wider than its own container). Grid
+                    // overflows to the end (right, in LTR) by default, so that 32px
+                    // silently ate into the right column's own safe-area padding at
+                    // every resolution - measured directly: 0.4px of right margin
+                    // left over at 1920x1080 (vs. the left column's correct
+                    // 32.4px), and actually negative (-8.95px, genuinely off-
+                    // screen) at 1366x768. fr tracks divide up the space that's
+                    // LEFT after gaps are subtracted, so 23fr/54fr/23fr gives the
+                    // exact same 23/54/23 proportion the percentages intended, but
+                    // gap-aware by construction at any resolution - not a value
+                    // tuned to the resolutions this was tested at.
+                    display: 'grid',
+                    gridTemplateColumns: '23fr 54fr 23fr',
+                    gridTemplateRows: 'minmax(0, 1fr)',
+                    gap: '16px',
+                    height: '100%',
+                  }
+                : // Below md: stacked, natural height per panel, page
+                  // scrolls - a fixed 3-column split has nowhere near
+                  // enough width per column at phone size (confirmed by
+                  // testing: it squeezed CompassPanel's readout row far
+                  // past legibility and cut off the right-hand Ops Panel
+                  // entirely).
+                  { display: 'flex', flexDirection: 'column', gap: '16px' }
+            }
           >
-            <div className="h-full">
+            <div className={isDesktop ? 'h-full' : ''}>
               <LeftInfoPanel />
             </div>
 
-            <div className="h-full">
+            <div className={isDesktop ? 'h-full' : ''}>
               <CentreDisplayPanel />
             </div>
 
-            <div className="h-full">
+            <div className={isDesktop ? 'h-full' : ''}>
               <RightInfoPanel />
             </div>
           </div>

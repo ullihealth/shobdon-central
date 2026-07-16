@@ -15,3 +15,10 @@ Push visual tweaks right away (commit + push after making the change, same turn)
 the user checks results on the live site, not from screenshots alone. Skipping heavy
 verification does not mean holding back the push; those are separate. Still fine to
 include a screenshot alongside the push, but don't treat it as a gate before pushing.
+
+## Check mobile width on every UI/layout change
+
+Any UI/layout prompt gets checked at a phone-width viewport (~375px) before being
+called done, in addition to desktop - always, not just when explicitly asked.
+Absolute-positioned elements over background images are the most likely thing to
+break at narrow widths; check those first when present.

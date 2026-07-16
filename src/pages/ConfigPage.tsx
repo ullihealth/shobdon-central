@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
+import DisplayUrlList from '../components/config/DisplayUrlList'
 import InternetWeatherConfigSection from '../components/config/InternetWeatherConfigSection'
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
 import PC2CaptureSetup from '../components/config/PC2CaptureSetup'
@@ -66,6 +67,10 @@ export default function ConfigPage(): JSX.Element {
 
       <div className="mt-6">
         <PC2CaptureSetup />
+      </div>
+
+      <div className="mt-6">
+        <DisplayUrlList />
       </div>
     </div>
   )

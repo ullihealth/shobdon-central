@@ -462,7 +462,7 @@ export default function LandingPage(): JSX.Element {
             the grass/tarmac behind them. */}
         <div className="absolute inset-x-6 bottom-6 sm:inset-x-10 sm:bottom-10">
           <div className="mx-auto max-w-7xl">
-            <div className="ml-auto w-full max-w-sm translate-x-[35px] -translate-y-[35px] rounded-2xl border border-white/10 bg-slate-950/70 p-5 text-left shadow-2xl shadow-black/40 backdrop-blur-md">
+            <div className="ml-auto w-full max-w-sm rounded-2xl border border-white/10 bg-slate-950/70 p-5 text-left shadow-2xl shadow-black/40 backdrop-blur-md sm:translate-x-[35px] sm:-translate-y-[35px]">
               <h2 className="text-lg font-bold text-white">See it live</h2>
               <p className="mt-2 text-sm text-white/80">
                 This is a real airfield's real dashboard, right now — not a demo.{' '}
