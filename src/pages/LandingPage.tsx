@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TRIAL_SIGNUP_URL } from '../config/publicApi'
+import { LATEST_READING_URL } from '../config/captureEndpoint'
 
 // Public marketing/landing page for Airfield Central, live at the bare
 // airfieldcentral.com root domain (see src/components/RootRoute.tsx for
@@ -226,6 +227,174 @@ function SignupForm(): JSX.Element {
   )
 }
 
+// Live-preview widget for the hero's 16:9 panel. Deliberately does NOT
+// reuse WeatherContext/useWeather (DashboardPage.tsx's own weather
+// plumbing) - that reads its provider choice (ATC station / internet /
+// mock) from a PER-BROWSER, PER-ORIGIN localStorage key
+// ('shobdon-central.weather-config.v1'), defaulting to 'mock' whenever
+// that key has never been set - which, on this origin (airfieldcentral.
+// com, never shobdon.airfieldcentral.com), it never has. Reusing that
+// context here would silently show FAKE numbers on the marketing page
+// by default - a real, actively misleading bug, not just a visual one.
+//
+// Instead this fetches LATEST_READING_URL directly - the same capture-
+// worker endpoint src/services/weatherProviders/atcProvider.ts already
+// calls for the real dashboard's ATC-provider path. That endpoint's CORS
+// is wide open (Access-Control-Allow-Origin: '*', worker/src/index.ts),
+// and it's already proven reliable all session - genuinely live real
+// Shobdon numbers, zero new backend.
+//
+// STALE_THRESHOLD_MS mirrors atcProvider.ts's own threshold (PC2's
+// capture cadence is 60s; a few missed cycles' grace before treating a
+// reading as unusable). Unlike atcProvider.ts, there's no separate
+// "stale but shown dimmed" state - stale and absent are both folded into
+// one 'unavailable' fallback, same philosophy as atcProvider.ts's own
+// "stale is just as unusable as missing", kept simple rather than a
+// three-way state machine for a marketing widget.
+const STALE_THRESHOLD_MS = 3 * 60 * 1000
+
+interface LivePreviewReading {
+  windDirDeg: number
+  windSpeedKt: number
+  tempC: number
+  qnhHpa: number
+  capturedAt: string
+}
+
+type PreviewStatus = 'loading' | 'live' | 'unavailable'
+
+function formatCapturedAt(iso: string): string {
+  const date = new Date(iso)
+  return `${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC`
+}
+
+function LiveDashboardPreview(): JSX.Element {
+  const [status, setStatus] = useState<PreviewStatus>('loading')
+  const [reading, setReading] = useState<LivePreviewReading | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch(LATEST_READING_URL)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json()
+      })
+      .then((data: { capturedAt?: unknown; parsed?: Record<string, unknown> } | null) => {
+        if (cancelled) return
+        if (!data || typeof data.capturedAt !== 'string' || !data.parsed) {
+          throw new Error('no reading available yet')
+        }
+
+        const capturedAtMs = Date.parse(data.capturedAt)
+        if (Number.isNaN(capturedAtMs) || Date.now() - capturedAtMs > STALE_THRESHOLD_MS) {
+          throw new Error('reading is stale')
+        }
+
+        const p = data.parsed
+        const windDirDeg = typeof p.wind_dir_deg === 'number' ? p.wind_dir_deg : null
+        const windSpeedKt = typeof p.wind_speed_kt === 'number' ? p.wind_speed_kt : null
+        const tempC = typeof p.temp_c === 'number' ? p.temp_c : null
+        const qnhHpa = typeof p.qnh_hpa === 'number' ? p.qnh_hpa : null
+
+        if (windDirDeg === null || windSpeedKt === null || tempC === null || qnhHpa === null) {
+          throw new Error('reading is missing required fields')
+        }
+
+        if (!cancelled) {
+          setReading({ windDirDeg, windSpeedKt, tempC, qnhHpa, capturedAt: data.capturedAt })
+          setStatus('live')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('unavailable')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const panelClass =
+    'aspect-video w-full overflow-hidden rounded-xl border border-slate-700/70 bg-slate-950/90 shadow-2xl shadow-black/40 backdrop-blur-sm'
+
+  if (status === 'loading') {
+    return (
+      <div className={`${panelClass} flex items-center justify-center`}>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-sky-400" />
+      </div>
+    )
+  }
+
+  if (status === 'unavailable') {
+    return (
+      <div className={`${panelClass} flex flex-col items-center justify-center gap-3 p-6 text-center`}>
+        <div className="text-3xl">✈️</div>
+        <p className="text-sm font-medium text-slate-300">Live preview temporarily unavailable</p>
+        <p className="max-w-xs text-xs text-slate-500">
+          This happens occasionally between captures.{' '}
+          <a
+            href={SHOBDON_LIVE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sky-400 hover:underline"
+          >
+            See the full live dashboard →
+          </a>
+        </p>
+      </div>
+    )
+  }
+
+  // live
+  return (
+    <div className={`${panelClass} p-5`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+          </span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-emerald-400">
+            Live from Shobdon Airfield
+          </span>
+        </div>
+        {reading && <span className="text-xs text-slate-500">{formatCapturedAt(reading.capturedAt)}</span>}
+      </div>
+      {reading && (
+        <div className="mt-6 grid grid-cols-2 gap-5">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Wind</div>
+            <div className="mt-1 text-2xl font-bold text-slate-100">
+              {Math.round(reading.windDirDeg)}° / {Math.round(reading.windSpeedKt)}kt
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">QNH</div>
+            <div className="mt-1 text-2xl font-bold text-slate-100">{Math.round(reading.qnhHpa)} hPa</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Temperature</div>
+            <div className="mt-1 text-2xl font-bold text-slate-100">{Math.round(reading.tempC)}°C</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Airfield</div>
+            <div className="mt-1 text-lg font-semibold text-slate-100">Shobdon EGBS</div>
+          </div>
+        </div>
+      )}
+      <a
+        href={SHOBDON_LIVE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-6 inline-block text-sm text-sky-400 hover:underline"
+      >
+        Open full dashboard →
+      </a>
+    </div>
+  )
+}
+
 export default function LandingPage(): JSX.Element {
   const signupRef = useRef<HTMLDivElement>(null)
 
@@ -240,16 +409,33 @@ export default function LandingPage(): JSX.Element {
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-16">
-        {/* HERO */}
-        <section className="text-center">
-          <h1 className="text-3xl font-bold sm:text-4xl">
-            Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-400">
-            Real-time wind, QNH, and airfield status on your clubhouse screen and every member's phone — set up in
-            minutes, no weather station required to start.
-          </p>
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* HERO - hero-runway-night.jpg (Pexels, free commercial use, no
+            attribution required - see the image's own sourcing notes)
+            sits behind a strong dark gradient so headline text stays
+            legible over a busy night-time image. Two columns at desktop
+            width (copy left, live preview right); stacks on mobile. */}
+        <section className="relative -mx-6 overflow-hidden px-6 py-16 sm:mx-0 sm:rounded-2xl sm:px-10">
+          <img
+            src="/images/hero-runway-night.jpg"
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/75 via-slate-950/70 to-slate-950" />
+
+          <div className="relative grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+            <div className="text-center lg:text-left">
+              <h1 className="text-3xl font-bold sm:text-4xl">
+                Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
+              </h1>
+              <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-300 lg:mx-0">
+                Real-time wind, QNH, and airfield status on your clubhouse screen and every member's phone — set up
+                in minutes, no weather station required to start.
+              </p>
+            </div>
+            <LiveDashboardPreview />
+          </div>
+
+          <div className="relative mt-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {STAT_CALLOUTS.map((stat) => (
               <StatCard key={stat.before} {...stat} />
             ))}
