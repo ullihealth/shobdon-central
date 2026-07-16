@@ -429,18 +429,22 @@ export default function LandingPage(): JSX.Element {
           CENTRAL" signage baked into the terminal building) actually
           reads, while staying dark enough at the bottom for the page's
           own background to blend in. */}
-      <section className="relative w-full overflow-hidden">
+      <section className="relative flex h-[420px] w-full items-center overflow-hidden sm:h-[520px]">
         <img
           src="/images/landing-page-runway.jpg"
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover object-[center_38%] saturate-[1.1] contrast-[1.05]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/55 via-slate-950/40 to-slate-950" />
-        <div className="relative mx-auto max-w-7xl px-6 py-28 text-center sm:px-10">
-          <h1 className="text-4xl font-bold text-white sm:text-5xl">
+        {/* Gradient scrim, not a flat overlay - darker at top/bottom for
+            edge blending, much lighter through the middle band (where the
+            runway/sky/signage actually are) so the photo's real color and
+            detail read through instead of being crushed. */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/45 via-slate-950/10 to-slate-950/55" />
+        <div className="relative mx-auto w-full max-w-7xl px-6 text-center sm:px-10">
+          <h1 className="text-4xl font-bold text-white [text-shadow:0_2px_16px_rgba(0,0,0,0.7)] sm:text-5xl">
             Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-white/90">
+          <p className="mx-auto mt-5 max-w-2xl text-lg text-white/95 [text-shadow:0_1px_10px_rgba(0,0,0,0.7)]">
             Real-time wind, QNH, and airfield status on your clubhouse screen and every member's phone — set up in
             minutes, no weather station required to start.
           </p>
