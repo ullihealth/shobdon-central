@@ -11,5 +11,7 @@ multi-resolution/regression screenshots, Cloudflare status checks) for changes t
 touch backend, data, auth, or payments, or when the user explicitly says something
 like "that's it, finalize this" or "ship it."
 
-Don't deploy low-risk visual tweaks until the user confirms they're happy with the
-screenshot - iterate locally first.
+Push visual tweaks right away (commit + push after making the change, same turn) -
+the user checks results on the live site, not from screenshots alone. Skipping heavy
+verification does not mean holding back the push; those are separate. Still fine to
+include a screenshot alongside the push, but don't treat it as a gate before pushing.
