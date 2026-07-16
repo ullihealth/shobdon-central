@@ -78,7 +78,15 @@ export default function DashboardPage(): JSX.Element {
           // clipped by the page's overflow-hidden with no scrollbar to
           // reveal it - same root cause min-h-0 already fixes for flex
           // elsewhere in this codebase (e.g. CentreDisplayPanel.tsx).
-          style={{ display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px' }}
+          // Third row added ('auto') for the small "Powered by Airfield
+          // Central" footer link below - sized to its own tiny content,
+          // not a fixed px guess, so it costs the body row exactly as
+          // much space as it actually needs and nothing more. minmax(0,
+          // 1fr) on the body row (unchanged) is what makes this safe: it
+          // shrinks to absorb the new row rather than overflowing, the
+          // same "won't clip below content" fix already relied on
+          // elsewhere in this layout.
+          style={{ display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }}
         >
           {/* HEADER (10%) */}
           <Header rightSlot={<WeatherStatusIndicator />} />
@@ -124,6 +132,26 @@ export default function DashboardPage(): JSX.Element {
             <div className="h-full">
               <RightInfoPanel />
             </div>
+          </div>
+
+          {/* FOOTER - small, deliberately unobtrusive "powered by" credit.
+              This renders on the clubhouse TV too, so it stays tiny and
+              low-opacity rather than competing with the actual weather/ops
+              content above it - legible if someone looks, not something
+              that draws the eye. Opens in a new tab: this page is a kiosk
+              display as much as anything else, and clicking through
+              shouldn't navigate the display itself away from the
+              dashboard. */}
+          <div className="flex items-center justify-center pt-1">
+            <a
+              href="https://airfieldcentral.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-[11px] text-slate-400 opacity-50 transition hover:opacity-90"
+            >
+              <img src="/favicon/favicon-32.png" alt="" className="h-3 w-3" />
+              <span>Powered by Airfield Central</span>
+            </a>
           </div>
         </div>
       </div>
