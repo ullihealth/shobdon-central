@@ -71,3 +71,9 @@ export const OPS_PANEL_URL = '/api/tenant/ops-panel'
 // "which tenants have opted into weather_public/ops_public" query,
 // consumed by GlobalDashboardPage.tsx (/global).
 export const PUBLIC_TENANTS_URL = '/api/public/tenants'
+
+// Public, unauthenticated self-serve trial signup - functions/api/
+// public/trial-signup.ts. Consumed by LandingPage.tsx's signup form.
+// Also cross-tenant by nature (it's how a NEW tenant comes to exist),
+// same reasoning as PUBLIC_TENANTS_URL above.
+export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'

@@ -9,12 +9,15 @@
 // - shobdon-central.pages.dev: Shobdon's own Pages project's own default
 //   hostname - permanently Shobdon, same category as the worker/D1/KV
 //   internal resource names that don't get renamed for the rebrand.
-// - airfieldcentral.com (bare root, no subdomain): TEMPORARY placeholder
-//   for the not-yet-built cross-tenant landing page (Stage 5, deferred).
-//   Preserves today's actual behaviour (the bare root already shows
-//   Shobdon, since it's the only tenant) rather than changing anything -
-//   revisit this the moment Stage 5 is actually scoped, don't mistake it
-//   for a permanent design choice before then.
+// - airfieldcentral.com (bare root, no subdomain): the landing page
+//   (src/pages/LandingPage.tsx, rendered via src/components/RootRoute.tsx)
+//   now lives at this host and never calls this endpoint or any other
+//   tenant-scoped public API - so this fallback no longer drives any
+//   real rendering decision. Left in place (comment-only update, not a
+//   behaviour change) purely so a direct call to this endpoint under
+//   this host still returns something valid rather than 404, since
+//   Shobdon remains the only real tenant. Revisit if that ever stops
+//   being a reasonable default.
 // - localhost (any port): local dev only, so `wrangler pages dev`
 //   continues working exactly as it does today with no extra setup.
 //

@@ -3,7 +3,6 @@ import AccountPage from './pages/AccountPage'
 import AtcControlPage from './pages/AtcControlPage'
 import ChecklistPage from './pages/ChecklistPage'
 import ConfigPage from './pages/ConfigPage'
-import DashboardPage from './pages/DashboardPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
@@ -13,6 +12,7 @@ import MembersPage from './pages/MembersPage'
 import RunwaysPage from './pages/RunwaysPage'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
+import RootRoute from './components/RootRoute'
 import AdminLayout from './components/admin/AdminLayout'
 
 export default function App(): JSX.Element {
@@ -121,9 +121,13 @@ export default function App(): JSX.Element {
           />
         </Route>
         {/* Public live dashboard - no auth, must work for PC2, the
-            clubhouse display, and anyone with the link, unchanged. */}
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="*" element={<DashboardPage />} />
+            clubhouse display, and anyone with the link - OR the public
+            marketing landing page, depending on hostname (RootRoute.tsx).
+            Both routes point here (not just "/") so a mistyped URL on
+            the marketing domain lands on the marketing homepage rather
+            than falling through to a tenant's operational dashboard. */}
+        <Route path="/" element={<RootRoute />} />
+        <Route path="*" element={<RootRoute />} />
       </Routes>
     </BrowserRouter>
   )
