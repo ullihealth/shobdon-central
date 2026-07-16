@@ -405,27 +405,30 @@ export default function LandingPage(): JSX.Element {
   return (
     <div className="min-h-screen w-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800 px-6 py-4">
-        <div className="mx-auto max-w-5xl text-lg font-bold">Airfield Central</div>
+        <div className="mx-auto max-w-7xl text-lg font-bold">Airfield Central</div>
       </header>
 
       {/* HERO - landing-page-runway.png (Jeff's own asset, replacing the
           earlier sourced Pexels photo). Deliberately OUTSIDE <main>'s
-          max-w-5xl wrapper - the previous version nested the hero inside
+          max-w-7xl wrapper - the previous version nested the hero inside
           that constrained column, so the background image was never
-          wider than the 5xl content column even on desktop, not a true
+          wider than the content column even on desktop, not a true
           full-bleed. This section is a direct child of the outer
           min-h-screen w-screen div instead, so it genuinely spans the
-          viewport; only the TEXT inside it gets its own max-w-5xl
-          wrapper for readable line length. Pure visual/headline moment
-          now - no competing panel fighting for attention; the live-
-          preview widget moved down into the Proof section below, where
-          "here's real live data" actually belongs narratively. White
-          text directly over the image (not a dark panel-on-panel
-          treatment) - a lighter gradient than the previous version so
-          the image (including the "AIRFIELD CENTRAL" signage baked into
-          the terminal building) actually reads, while staying dark
-          enough at the bottom for the page's own background to blend
-          in. */}
+          viewport; only the TEXT inside it gets its own max-w-7xl
+          wrapper, matching every other section's width so the whole page
+          reads as one deliberate width rather than a mix (header, hero
+          text, and <main> all share max-w-7xl now - widened from 5xl,
+          which left too much dead space on large desktop viewports).
+          Pure visual/headline moment now - no competing panel fighting
+          for attention; the live-preview widget moved down into the
+          Proof section below, where "here's real live data" actually
+          belongs narratively. White text directly over the image (not a
+          dark panel-on-panel treatment) - a lighter gradient than the
+          previous version so the image (including the "AIRFIELD
+          CENTRAL" signage baked into the terminal building) actually
+          reads, while staying dark enough at the bottom for the page's
+          own background to blend in. */}
       <section className="relative w-full overflow-hidden">
         <img
           src="/images/landing-page-runway.png"
@@ -433,7 +436,7 @@ export default function LandingPage(): JSX.Element {
           className="absolute inset-0 h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-slate-950/55 via-slate-950/40 to-slate-950" />
-        <div className="relative mx-auto max-w-5xl px-6 py-28 text-center sm:px-10">
+        <div className="relative mx-auto max-w-7xl px-6 py-28 text-center sm:px-10">
           <h1 className="text-4xl font-bold text-white sm:text-5xl">
             Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
           </h1>
@@ -444,7 +447,7 @@ export default function LandingPage(): JSX.Element {
         </div>
       </section>
 
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-7xl px-6 py-16">
         {/* STAT CALLOUTS - moved out of the hero image panel too, now
             its own plain section on the regular page background. */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
