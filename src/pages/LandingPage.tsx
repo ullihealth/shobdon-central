@@ -408,7 +408,7 @@ export default function LandingPage(): JSX.Element {
         <div className="mx-auto max-w-7xl text-lg font-bold">Airfield Central</div>
       </header>
 
-      {/* HERO - landing-page-runway.png (Jeff's own asset, replacing the
+      {/* HERO - landing-page-runway.jpg (Jeff's own asset, replacing the
           earlier sourced Pexels photo). Deliberately OUTSIDE <main>'s
           max-w-7xl wrapper - the previous version nested the hero inside
           that constrained column, so the background image was never
@@ -431,7 +431,7 @@ export default function LandingPage(): JSX.Element {
           own background to blend in. */}
       <section className="relative w-full overflow-hidden">
         <img
-          src="/images/landing-page-runway.png"
+          src="/images/landing-page-runway.jpg"
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
         />
