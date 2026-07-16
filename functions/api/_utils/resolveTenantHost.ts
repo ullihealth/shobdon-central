@@ -30,7 +30,7 @@
 // .first(), and every D1 binding across this codebase already satisfies
 // that shape, so there's nothing to gain by coupling to either of those
 // files' own (slightly larger) D1Database types.
-type D1Database = {
+export type D1Database = {
   prepare: (query: string) => {
     bind: (...values: unknown[]) => {
       first: <T = Record<string, unknown>>() => Promise<T | null>;
@@ -54,6 +54,36 @@ export async function resolveOrganizationIdFromHost(host: string, db: D1Database
       .prepare("SELECT organization_id AS organizationId FROM tenants WHERE slug = 'shobdon'")
       .first<{ organizationId: string | null }>();
     return shobdon?.organizationId ?? null;
+  }
+
+  return null;
+}
+
+export interface ResolvedTenant {
+  id: number;
+  organizationId: string | null;
+}
+
+// Same Host resolution + fallback rules as resolveOrganizationIdFromHost
+// above, but returns tenants.id too - needed by tenant_displays (0027),
+// which is keyed off tenants.id rather than organizationId. Added
+// alongside rather than changing the existing function's return shape,
+// so every current caller of resolveOrganizationIdFromHost is
+// completely unaffected.
+export async function resolveTenantFromHost(host: string, db: D1Database): Promise<ResolvedTenant | null> {
+  const bareHost = host.split(":")[0];
+
+  const bySubdomain = await db
+    .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE subdomain = ?")
+    .bind(bareHost)
+    .first<ResolvedTenant>();
+  if (bySubdomain) return bySubdomain;
+
+  if (FALLBACK_TO_SHOBDON_HOSTS.has(bareHost) || bareHost === "localhost") {
+    const shobdon = await db
+      .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE slug = 'shobdon'")
+      .first<ResolvedTenant>();
+    return shobdon ?? null;
   }
 
   return null;

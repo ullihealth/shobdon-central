@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
 import RunwaysPage from './pages/RunwaysPage'
+import TenantDisplayPage from './pages/TenantDisplayPage'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
 import RootRoute from './components/RootRoute'
@@ -27,6 +28,14 @@ export default function App(): JSX.Element {
             anywhere in the existing dashboard/nav yet (direct URL only) -
             wiring it into the root landing page is separately parked. */}
         <Route path="/global" element={<GlobalDashboardPage />} />
+        {/* Named per-tenant displays (tenant_displays, migration 0027) -
+            e.g. /d/main, /d/cafe-tv. Same Host-based tenant resolution
+            as '/' (server-side, via functions/api/public/display.ts);
+            the :displaySlug param only selects which named display
+            within that tenant to render. '/' itself (RootRoute ->
+            DashboardPage) is untouched and keeps working exactly as
+            before - this is a new, additional route, not a replacement. */}
+        <Route path="/d/:displaySlug" element={<TenantDisplayPage />} />
         {/* Shared sidebar shell (AdminLayout.tsx) for every authenticated
             admin page - a React Router layout route rendering <Outlet/>.
             Per-route access gating below is completely unchanged: each

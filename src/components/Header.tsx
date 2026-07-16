@@ -11,7 +11,11 @@ export default function Header({ rightSlot }: HeaderProps): JSX.Element {
   const [now, setNow] = useState(new Date())
   const location = useLocation()
   const isConfigPage = location.pathname === '/config'
-  const isPublicDashboard = location.pathname === '/'
+  // '/d/:displaySlug' (tenant_displays, migration 0027) is a second public
+  // dashboard route alongside '/' - same role-aware title-link behaviour
+  // applies there too, otherwise a viewer on a named display's title link
+  // would incorrectly fall through to the owner-only '/config' target.
+  const isPublicDashboard = location.pathname === '/' || location.pathname.startsWith('/d/')
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 1000)
