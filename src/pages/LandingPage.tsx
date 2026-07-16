@@ -70,10 +70,10 @@ const FAQ_ENTRIES: FaqEntry[] = [
 
 function StatCard({ before, after }: StatCallout): JSX.Element {
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-5 text-center">
-      <div className="text-sm text-slate-500 line-through decoration-slate-600">{before}</div>
-      <div className="my-2 text-sky-400">↓</div>
-      <div className="text-base font-semibold text-slate-100">{after}</div>
+    <div className="rounded-xl border border-slate-700 bg-slate-900/80 p-7 text-center">
+      <div className="text-base text-slate-500 line-through decoration-slate-600">{before}</div>
+      <div className="my-3 text-sky-400">↓</div>
+      <div className="text-xl font-semibold text-slate-100">{after}</div>
     </div>
   )
 }
@@ -429,7 +429,7 @@ export default function LandingPage(): JSX.Element {
           CENTRAL" signage baked into the terminal building) actually
           reads, while staying dark enough at the bottom for the page's
           own background to blend in. */}
-      <section className="relative flex h-[420px] w-full items-center overflow-hidden sm:h-[520px]">
+      <section className="relative h-[640px] w-full overflow-hidden sm:h-[760px]">
         <img
           src="/images/landing-page-runway.jpg"
           alt=""
@@ -440,14 +440,46 @@ export default function LandingPage(): JSX.Element {
             runway/sky/signage actually are) so the photo's real color and
             detail read through instead of being crushed. */}
         <div className="absolute inset-0 bg-gradient-to-b from-slate-950/45 via-slate-950/10 to-slate-950/55" />
-        <div className="relative mx-auto w-full max-w-7xl px-6 text-center sm:px-10">
-          <h1 className="text-4xl font-bold text-white [text-shadow:0_2px_16px_rgba(0,0,0,0.7)] sm:text-5xl">
-            Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-white/95 [text-shadow:0_1px_10px_rgba(0,0,0,0.7)]">
-            Real-time wind, QNH, and airfield status on your clubhouse screen and every member's phone — set up in
-            minutes, no weather station required to start.
-          </p>
+
+        {/* Headline - centered, upper-middle of the image. */}
+        <div className="relative flex h-full w-full items-center justify-center px-6 pb-56 text-center sm:px-10 sm:pb-64">
+          <div className="mx-auto max-w-7xl">
+            <h1 className="text-6xl font-bold text-white [text-shadow:0_2px_16px_rgba(0,0,0,0.7)] sm:text-7xl">
+              Live Weather &amp; Airfield Conditions
+            </h1>
+            <p className="mt-4 text-2xl font-semibold text-white/95 [text-shadow:0_2px_12px_rgba(0,0,0,0.7)] sm:text-3xl">
+              For Clubhouse Screens &amp; Mobile Devices
+            </p>
+          </div>
+        </div>
+
+        {/* PROOF - moved off the dark page background and onto the hero
+            image itself, lower-right over the apron/grass strip rather
+            than centered under the headline. Sits inside a frosted card
+            (semi-opaque + backdrop-blur) since it's now over a busy,
+            colourful photo rather than a solid dark background - without
+            it, "See it live" and the live reading would disappear into
+            the grass/tarmac behind them. */}
+        <div className="absolute inset-x-6 bottom-6 sm:inset-x-10 sm:bottom-10">
+          <div className="mx-auto max-w-7xl">
+            <div className="ml-auto w-full max-w-sm rounded-2xl border border-white/10 bg-slate-950/70 p-5 text-left shadow-2xl shadow-black/40 backdrop-blur-md">
+              <h2 className="text-lg font-bold text-white">See it live</h2>
+              <p className="mt-2 text-sm text-white/80">
+                This is a real airfield's real dashboard, right now — not a demo.{' '}
+                <a
+                  href={SHOBDON_LIVE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-400 hover:underline"
+                >
+                  {SHOBDON_LIVE_URL.replace('https://', '')}
+                </a>
+              </p>
+              <div className="mt-4">
+                <LiveDashboardPreview />
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -458,28 +490,6 @@ export default function LandingPage(): JSX.Element {
           {STAT_CALLOUTS.map((stat) => (
             <StatCard key={stat.before} {...stat} />
           ))}
-        </section>
-
-        {/* PROOF SECTION - the live-preview widget lives here now, not
-            in the hero - this is where "here's real live data, not a
-            demo" actually belongs narratively, right next to the text
-            making that same claim. */}
-        <section className="mt-20 text-center">
-          <h2 className="text-2xl font-bold">See it live</h2>
-          <p className="mt-3 text-slate-400">
-            This is a real airfield's real dashboard, right now — not a demo.{' '}
-            <a
-              href={SHOBDON_LIVE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sky-400 hover:underline"
-            >
-              {SHOBDON_LIVE_URL.replace('https://', '')}
-            </a>
-          </p>
-          <div className="mx-auto mt-8 max-w-md">
-            <LiveDashboardPreview />
-          </div>
         </section>
 
         {/* BENEFITS */}
