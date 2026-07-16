@@ -5,7 +5,7 @@
 // who'll then get turned away from owner-only pages precisely because of
 // what this endpoint tells them.
 
-import { requireTenant, jsonResponse, type D1Database } from "../_utils/tenantAuth";
+import { requireTenant, listUserMemberships, jsonResponse, type D1Database } from "../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -27,9 +27,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // whatever tenant role the developer's account happens to hold.
   const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(result.userId).first<{ developer: number }>();
 
+  // memberships feeds the account/org switcher (AdminSidebar's
+  // OrgSwitcher) - every org this user belongs to, not just the one the
+  // current request resolved to.
+  const memberships = await listUserMemberships(env.DB, result.userId);
+
   return jsonResponse({
     role: result.membership.role,
     organizationSlug: result.membership.slug,
+    organizationName: result.membership.name,
     isDeveloper: !!userRow?.developer,
+    memberships,
   });
 };

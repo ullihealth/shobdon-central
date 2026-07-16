@@ -41,6 +41,7 @@ export async function getSessionUserId(request: Request): Promise<string | null>
 export interface TenantMembership {
   organizationId: string;
   slug: string;
+  name: string;
   role: string;
 }
 
@@ -57,7 +58,7 @@ export async function resolveTenantMembership(
   if (requestedSlug) {
     const row = await db
       .prepare(
-        "SELECT m.organizationId AS organizationId, o.slug AS slug, m.role AS role FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = ? AND o.slug = ?"
+        "SELECT m.organizationId AS organizationId, o.slug AS slug, o.name AS name, m.role AS role FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = ? AND o.slug = ?"
       )
       .bind(userId, requestedSlug)
       .first<TenantMembership>();
@@ -66,11 +67,47 @@ export async function resolveTenantMembership(
 
   const row = await db
     .prepare(
-      "SELECT m.organizationId AS organizationId, o.slug AS slug, m.role AS role FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = ? ORDER BY m.createdAt LIMIT 1"
+      "SELECT m.organizationId AS organizationId, o.slug AS slug, o.name AS name, m.role AS role FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = ? ORDER BY m.createdAt LIMIT 1"
     )
     .bind(userId)
     .first<TenantMembership>();
   return row ?? null;
+}
+
+export interface UserMembershipSummary {
+  slug: string;
+  name: string;
+  role: string;
+}
+
+// Every org the user belongs to, for the account/org switcher (functions/
+// api/tenant/me.ts's `memberships` field) - ordered the same way the
+// no-?org= default resolves (earliest membership first), so the
+// switcher's default selection always matches what a plain page load
+// with no override would already show.
+export async function listUserMemberships(db: D1Database, userId: string): Promise<UserMembershipSummary[]> {
+  const rows = await db
+    .prepare(
+      "SELECT o.slug AS slug, o.name AS name, m.role AS role FROM member m JOIN organization o ON o.id = m.organizationId WHERE m.userId = ? ORDER BY m.createdAt"
+    )
+    .bind(userId)
+    .all<UserMembershipSummary>();
+  return rows.results;
+}
+
+export const ACTIVE_ORG_COOKIE = "aic-active-org";
+
+function getCookieValue(request: Request, name: string): string | null {
+  const header = request.headers.get("cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const separatorIndex = part.indexOf("=");
+    if (separatorIndex === -1) continue;
+    if (part.slice(0, separatorIndex).trim() === name) {
+      return decodeURIComponent(part.slice(separatorIndex + 1).trim());
+    }
+  }
+  return null;
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
@@ -93,11 +130,29 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
   const userId = await getSessionUserId(request);
   if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) };
 
-  const orgSlug = new URL(request.url).searchParams.get("org");
-  const membership = await resolveTenantMembership(env.DB, userId, orgSlug);
-  if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
+  // Explicit ?org= is a direct-link override (bookmarks, pasted URLs) and
+  // keeps its existing hard-403-if-not-a-member behaviour untouched.
+  const explicitOrgSlug = new URL(request.url).searchParams.get("org");
+  if (explicitOrgSlug) {
+    const membership = await resolveTenantMembership(env.DB, userId, explicitOrgSlug);
+    if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
+    return { membership, userId };
+  }
 
-  return { membership, userId };
+  // No ?org= - try the switcher's remembered choice next, but fall back
+  // to the original default (earliest membership by createdAt) if the
+  // cookie is missing or stale (e.g. access to that org was revoked
+  // after the cookie was set). A stale cookie should never lock someone
+  // out entirely; it should just behave as if it weren't there.
+  const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
+  if (cookieOrgSlug) {
+    const membership = await resolveTenantMembership(env.DB, userId, cookieOrgSlug);
+    if (membership) return { membership, userId };
+  }
+
+  const defaultMembership = await resolveTenantMembership(env.DB, userId, null);
+  if (!defaultMembership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
+  return { membership: defaultMembership, userId };
 }
 
 // Same as requireTenant, but additionally requires the caller's role to

@@ -4,6 +4,7 @@ import type { MemberRole } from '../../types/member'
 import { SIDEBAR_GROUPS, STANDALONE_ITEMS, type SidebarItem } from './sidebarConfig'
 import SidebarGroup from './SidebarGroup'
 import SidebarUserMenu from './SidebarUserMenu'
+import OrgSwitcher, { type MembershipSummary } from './OrgSwitcher'
 
 const COLLAPSE_STORAGE_KEY = 'shobdon.adminSidebar.collapsedGroups.v1'
 
@@ -34,6 +35,9 @@ export default function AdminSidebar(): JSX.Element {
   const [isDeveloper, setIsDeveloper] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadCollapsedGroups())
+  const [organizationName, setOrganizationName] = useState('Shobdon Airfield')
+  const [organizationSlug, setOrganizationSlug] = useState('')
+  const [memberships, setMemberships] = useState<MembershipSummary[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -43,6 +47,9 @@ export default function AdminSidebar(): JSX.Element {
         if (cancelled) return
         setRole(data?.role ?? null)
         setIsDeveloper(!!data?.isDeveloper)
+        if (data?.organizationName) setOrganizationName(data.organizationName)
+        setOrganizationSlug(data?.organizationSlug ?? '')
+        setMemberships(Array.isArray(data?.memberships) ? data.memberships : [])
       })
       .catch(() => {})
       .finally(() => {
@@ -82,12 +89,14 @@ export default function AdminSidebar(): JSX.Element {
           pinned while <main> scrolls independently. */}
       <div className="px-5 pb-4 pt-6">
         <Link to="/" className="text-lg font-black uppercase tracking-wide text-primary transition hover:text-accent-sky-400">
-          Shobdon Airfield
+          {organizationName}
         </Link>
       </div>
 
       {!loading && (
         <>
+          <OrgSwitcher memberships={memberships} activeOrgSlug={organizationSlug} />
+
           <nav className="flex-1 overflow-y-auto px-3 pb-4">
             {visibleGroups.map((group) => {
               // The active item's group always renders open, even if the

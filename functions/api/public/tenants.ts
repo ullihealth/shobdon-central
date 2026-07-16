@@ -13,6 +13,14 @@
 // this endpoint is genuinely inert (returns []) until an owner opts in
 // via PUT /api/tenant/public-visibility.
 //
+// is_internal (0026_demo_template_tenant.sql) is a SEPARATE flag from
+// weather_public/ops_public, checked here unconditionally - internal/
+// template tenants (e.g. the 'demo' tenant used for marketing
+// screenshots) must never appear in this listing, even if
+// weather_public/ops_public ever get flipped on by mistake while
+// populating sample data. Only this WHERE clause enforces that; there's
+// no separate admin-only listing to also update.
+//
 // Does not touch or affect functions/api/public/config.ts /
 // visibility-forecast.ts (Stage 3's per-tenant dashboard reads) or any
 // organizationId-scoped table (camera_slots/carousel_slots/etc.) - this
@@ -133,7 +141,7 @@ async function loadActiveOps(tenantId: number, db: D1Database) {
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   const tenantRows = await env.DB
     .prepare(
-      "SELECT id, slug, name, subdomain, icao_code, lat, lon, weather_public, ops_public FROM tenants WHERE active = 1 AND (weather_public = 1 OR ops_public = 1)"
+      "SELECT id, slug, name, subdomain, icao_code, lat, lon, weather_public, ops_public FROM tenants WHERE active = 1 AND is_internal = 0 AND (weather_public = 1 OR ops_public = 1)"
     )
     .all<TenantRow>();
 
