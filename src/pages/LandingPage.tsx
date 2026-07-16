@@ -408,41 +408,55 @@ export default function LandingPage(): JSX.Element {
         <div className="mx-auto max-w-5xl text-lg font-bold">Airfield Central</div>
       </header>
 
+      {/* HERO - landing-page-runway.png (Jeff's own asset, replacing the
+          earlier sourced Pexels photo). Deliberately OUTSIDE <main>'s
+          max-w-5xl wrapper - the previous version nested the hero inside
+          that constrained column, so the background image was never
+          wider than the 5xl content column even on desktop, not a true
+          full-bleed. This section is a direct child of the outer
+          min-h-screen w-screen div instead, so it genuinely spans the
+          viewport; only the TEXT inside it gets its own max-w-5xl
+          wrapper for readable line length. Pure visual/headline moment
+          now - no competing panel fighting for attention; the live-
+          preview widget moved down into the Proof section below, where
+          "here's real live data" actually belongs narratively. White
+          text directly over the image (not a dark panel-on-panel
+          treatment) - a lighter gradient than the previous version so
+          the image (including the "AIRFIELD CENTRAL" signage baked into
+          the terminal building) actually reads, while staying dark
+          enough at the bottom for the page's own background to blend
+          in. */}
+      <section className="relative w-full overflow-hidden">
+        <img
+          src="/images/landing-page-runway.png"
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/55 via-slate-950/40 to-slate-950" />
+        <div className="relative mx-auto max-w-5xl px-6 py-28 text-center sm:px-10">
+          <h1 className="text-4xl font-bold text-white sm:text-5xl">
+            Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-lg text-white/90">
+            Real-time wind, QNH, and airfield status on your clubhouse screen and every member's phone — set up in
+            minutes, no weather station required to start.
+          </p>
+        </div>
+      </section>
+
       <main className="mx-auto max-w-5xl px-6 py-16">
-        {/* HERO - hero-runway-night.jpg (Pexels, free commercial use, no
-            attribution required - see the image's own sourcing notes)
-            sits behind a strong dark gradient so headline text stays
-            legible over a busy night-time image. Two columns at desktop
-            width (copy left, live preview right); stacks on mobile. */}
-        <section className="relative -mx-6 overflow-hidden px-6 py-16 sm:mx-0 sm:rounded-2xl sm:px-10">
-          <img
-            src="/images/hero-runway-night.jpg"
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/75 via-slate-950/70 to-slate-950" />
-
-          <div className="relative grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
-            <div className="text-center lg:text-left">
-              <h1 className="text-3xl font-bold sm:text-4xl">
-                Live Weather &amp; Airfield Conditions — Not a Phone Call, Not a Guess
-              </h1>
-              <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-300 lg:mx-0">
-                Real-time wind, QNH, and airfield status on your clubhouse screen and every member's phone — set up
-                in minutes, no weather station required to start.
-              </p>
-            </div>
-            <LiveDashboardPreview />
-          </div>
-
-          <div className="relative mt-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {STAT_CALLOUTS.map((stat) => (
-              <StatCard key={stat.before} {...stat} />
-            ))}
-          </div>
+        {/* STAT CALLOUTS - moved out of the hero image panel too, now
+            its own plain section on the regular page background. */}
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {STAT_CALLOUTS.map((stat) => (
+            <StatCard key={stat.before} {...stat} />
+          ))}
         </section>
 
-        {/* PROOF SECTION */}
+        {/* PROOF SECTION - the live-preview widget lives here now, not
+            in the hero - this is where "here's real live data, not a
+            demo" actually belongs narratively, right next to the text
+            making that same claim. */}
         <section className="mt-20 text-center">
           <h2 className="text-2xl font-bold">See it live</h2>
           <p className="mt-3 text-slate-400">
@@ -456,6 +470,9 @@ export default function LandingPage(): JSX.Element {
               {SHOBDON_LIVE_URL.replace('https://', '')}
             </a>
           </p>
+          <div className="mx-auto mt-8 max-w-md">
+            <LiveDashboardPreview />
+          </div>
         </section>
 
         {/* BENEFITS */}
