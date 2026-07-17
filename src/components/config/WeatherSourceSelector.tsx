@@ -6,7 +6,7 @@ interface WeatherSourceSelectorProps {
   onChange: (value: WeatherProviderId) => void
 }
 
-const PROVIDER_ORDER: WeatherProviderId[] = ['atc', 'internet', 'mock']
+const PROVIDER_ORDER: WeatherProviderId[] = ['atc', 'internet', 'ingested', 'mock']
 
 export default function WeatherSourceSelector({ value, onChange }: WeatherSourceSelectorProps): JSX.Element {
   return (

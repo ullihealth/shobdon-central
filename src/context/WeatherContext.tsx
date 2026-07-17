@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { fetchWeatherData } from '../services/weatherService'
-import { loadWeatherConfig } from '../services/weatherConfigStore'
+import { DEFAULT_WEATHER_CONFIG, resolveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherData, WeatherSource } from '../types/weather'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
@@ -37,14 +37,21 @@ const WeatherContext = createContext<WeatherContextValue | undefined>(undefined)
 
 interface WeatherProviderProps {
   children: ReactNode
-  // Overrides the persisted config instead of reading it from localStorage.
-  // Used by the /design preview so it always shows mock data, regardless of
+  // Overrides the persisted config instead of resolving it. Used by the
+  // /design preview so it always shows mock data, regardless of
   // whatever weather source is currently configured for the real dashboard.
   forcedConfig?: WeatherConfig
 }
 
 export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps): JSX.Element {
-  const [config] = useState<WeatherConfig>(() => forcedConfig ?? loadWeatherConfig())
+  // Starts null (not synchronously loaded) - resolveWeatherConfig() may
+  // need one network round-trip for a device that's never been
+  // configured (see weatherConfigStore.ts). An already-configured
+  // device (e.g. Shobdon's own kiosks) resolves on the next microtask
+  // with no network call at all, so this adds no visible delay there -
+  // the page already showed a loading state before its first weather
+  // fetch resolved anyway.
+  const [config, setConfig] = useState<WeatherConfig | null>(forcedConfig ?? null)
   const [value, setValue] = useState<Omit<WeatherContextValue, 'activeProvider' | 'config'>>({
     weather: null,
     source: 'mock',
@@ -52,10 +59,22 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   })
 
   useEffect(() => {
+    if (forcedConfig) return
+    let cancelled = false
+    resolveWeatherConfig().then((resolved) => {
+      if (!cancelled) setConfig(resolved)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [forcedConfig])
+
+  useEffect(() => {
+    if (!config) return
     let cancelled = false
 
     async function load() {
-      const { data, source } = await fetchWeatherData(config)
+      const { data, source } = await fetchWeatherData(config as WeatherConfig)
       if (!cancelled) {
         setValue({ weather: data, source, loading: false })
       }
@@ -69,10 +88,17 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     }
   }, [config])
 
-  const liveDataUnavailable = config.activeProvider !== 'mock' && value.source === 'mock'
+  const liveDataUnavailable = !!config && config.activeProvider !== 'mock' && value.source === 'mock'
 
   return (
-    <WeatherContext.Provider value={{ ...value, activeProvider: config.activeProvider, config, liveDataUnavailable }}>
+    <WeatherContext.Provider
+      value={{
+        ...value,
+        activeProvider: config?.activeProvider ?? DEFAULT_WEATHER_CONFIG.activeProvider,
+        config: config ?? DEFAULT_WEATHER_CONFIG,
+        liveDataUnavailable,
+      }}
+    >
       {children}
     </WeatherContext.Provider>
   )

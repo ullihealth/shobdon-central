@@ -35,6 +35,19 @@ export const AIRFIELD_TIMEZONE = 'Europe/London'
 // resolution as PUBLIC_CONFIG_URL above.
 export const VISIBILITY_FORECAST_URL = `/api/public/visibility-forecast`
 
+// Served by functions/api/public/weather-default.ts - the per-tenant
+// weather-config default (activeProvider 'internet' + this tenant's own
+// lat/lon) a brand-new device with no stored config yet should adopt.
+// See weatherConfigStore.ts's resolveWeatherConfig().
+export const WEATHER_DEFAULT_URL = `/api/public/weather-default`
+
+// Served by functions/api/public/weather-latest.ts - the latest reading
+// written by the generic ingestion endpoint (functions/api/ingest/
+// weather.ts), consumed by the 'ingested' weather provider
+// (weatherProviders/ingestedProvider.ts). Same host-based tenant
+// resolution as PUBLIC_CONFIG_URL above.
+export const INGESTED_WEATHER_LATEST_URL = `/api/public/weather-latest`
+
 // Authenticated read/write for the management pages - functions/api/
 // tenant/config.ts. Requires a valid BetterAuth session cookie, which a
 // same-origin fetch() sends automatically; no extra credential handling

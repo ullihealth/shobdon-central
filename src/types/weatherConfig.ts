@@ -1,4 +1,4 @@
-export type WeatherProviderId = 'atc' | 'internet' | 'mock'
+export type WeatherProviderId = 'atc' | 'internet' | 'ingested' | 'mock'
 
 // Future internet providers (e.g. 'aviationweather', 'custom') extend this union;
 // the internet provider registry is the only place that needs to grow.

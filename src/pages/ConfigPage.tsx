@@ -1,17 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
 import DisplayUrlList from '../components/config/DisplayUrlList'
+import IngestedWeatherConfigSection from '../components/config/IngestedWeatherConfigSection'
 import InternetWeatherConfigSection from '../components/config/InternetWeatherConfigSection'
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
 import PC2CaptureSetup from '../components/config/PC2CaptureSetup'
 import StorageUsage from '../components/config/StorageUsage'
-import { loadWeatherConfig, saveWeatherConfig } from '../services/weatherConfigStore'
+import { loadWeatherConfig, resolveWeatherConfig, saveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
 export default function ConfigPage(): JSX.Element {
+  // Starts with the synchronous local value (unchanged, no blank flash),
+  // then - only if nothing was actually stored yet - resolves to this
+  // tenant's own server-side default instead of staying on the
+  // hardcoded 'mock' + Shobdon-coordinates fallback. An already-
+  // configured device (Shobdon's own kiosks/PC2 flow) has a stored
+  // value, so resolveWeatherConfig() just returns it unchanged here too
+  // - this is a no-op for them, not a behaviour change.
   const [config, setConfig] = useState<WeatherConfig>(() => loadWeatherConfig())
+
+  useEffect(() => {
+    let cancelled = false
+    resolveWeatherConfig().then((resolved) => {
+      if (!cancelled) setConfig(resolved)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function updateConfig(next: WeatherConfig) {
     setConfig(next)
@@ -62,6 +80,7 @@ export default function ConfigPage(): JSX.Element {
               onChange={(internet) => updateConfig({ ...config, internet })}
             />
           )}
+          {config.activeProvider === 'ingested' && <IngestedWeatherConfigSection />}
           {config.activeProvider === 'mock' && <MockWeatherConfigSection />}
         </div>
       </div>
