@@ -1,0 +1,50 @@
+# NEW Worker config for the Pages -> Workers migration - deliberately a
+# separate file from wrangler.toml (which still configures the live
+# Pages project, untouched, throughout this migration). Deployed via
+# `wrangler deploy --config wrangler.worker.toml`, never the default
+# `wrangler deploy` (which would look for wrangler.toml and find the
+# Pages config instead - this explicit --config flag is what keeps the
+# two projects from ever colliding).
+#
+# Same bindings as wrangler.toml (identical database_id/bucket_name/KV
+# id) - this points at the exact same D1/R2/KV resources, not copies.
+# No data migration involved, only a compute/routing layer change.
+name = "airfield-central"
+main = "./dist/_worker.js/index.js"
+compatibility_date = "2026-07-17"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# Required explicitly here - Workers does not auto-detect SPA behaviour
+# the way Pages does (no 404.html present, so Pages silently serves
+# index.html for any unmatched path; Workers needs this told to it).
+# Without this, every client-side route (/config, /d/main, /media-manager,
+# etc. - none of which are real files in dist/) would 404 instead of
+# loading the app.
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "shobdon-central"
+database_id = "31656f0d-3bf3-4c0f-96bb-39bf90c9e179"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "shobdon-central-media"
+
+[[kv_namespaces]]
+binding = "WEATHER_CACHE"
+id = "c5ada3c64f1745509ed0977c0ab0c323"
+
+[vars]
+MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
+
+# AUTH_SECRET, MET_OFFICE_API_KEY set via:
+#   npx wrangler secret put AUTH_SECRET --config wrangler.worker.toml
+#   npx wrangler secret put MET_OFFICE_API_KEY --config wrangler.worker.toml
+# CAPTURE_KEY intentionally not set - functions/api/tenant/capture-logs.ts
+# and capture-refresh.ts both already fall back to a hardcoded value
+# when env.CAPTURE_KEY is unset, matching current Pages behaviour.

@@ -22,10 +22,14 @@
 // adding a second flag - one tenant, one "is this live" concept, no
 // risk of the two ever disagreeing with each other.
 //
-// Three fallback hosts resolve to Shobdon rather than 404:
+// Four fallback hosts resolve to Shobdon rather than 404:
 // - shobdon-central.pages.dev: Shobdon's own Pages project's own default
 //   hostname - permanently Shobdon, same category as the worker/D1/KV
 //   internal resource names that don't get renamed for the rebrand.
+// - airfield-central.jeffthompson.workers.dev: the new Worker's own
+//   workers.dev URL from the Pages -> Workers migration - same role as
+//   the .pages.dev entry above, added alongside it (not replacing it)
+//   while the Pages project still serves real traffic.
 // - airfieldcentral.com (bare root, no subdomain): the landing page
 //   (src/pages/LandingPage.tsx, rendered via src/components/RootRoute.tsx)
 //   now lives at this host and never calls this endpoint or any other
@@ -55,7 +59,11 @@ export type D1Database = {
   };
 };
 
-const FALLBACK_TO_SHOBDON_HOSTS = new Set(["airfieldcentral.com", "shobdon-central.pages.dev"]);
+const FALLBACK_TO_SHOBDON_HOSTS = new Set([
+  "airfieldcentral.com",
+  "shobdon-central.pages.dev",
+  "airfield-central.jeffthompson.workers.dev",
+]);
 
 export async function resolveOrganizationIdFromHost(host: string, db: D1Database): Promise<string | null> {
   const bareHost = host.split(":")[0];

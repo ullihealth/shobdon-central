@@ -61,8 +61,19 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         // code changes, matching the same pattern trustedOrigins below uses.
         // fallback keeps the original .pages.dev URL working if a request
         // ever arrives with a Host header that isn't on the allowlist.
+        // airfield-central.jeffthompson.workers.dev added alongside the
+        // .pages.dev entry - the new Worker's own workers.dev URL from the
+        // Pages -> Workers migration (Cloudflare's documented conversion
+        // path). Additive only: the .pages.dev entries stay exactly as
+        // they are, since the Pages project keeps serving real traffic
+        // until custom domains are deliberately moved over.
         baseURL: {
-          allowedHosts: ["shobdon-central.pages.dev", "airfieldcentral.com", "*.airfieldcentral.com"],
+          allowedHosts: [
+            "shobdon-central.pages.dev",
+            "airfield-central.jeffthompson.workers.dev",
+            "airfieldcentral.com",
+            "*.airfieldcentral.com",
+          ],
           fallback: "https://shobdon-central.pages.dev",
           protocol: "https",
         },
@@ -74,6 +85,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         // a non-HTTPS request to a matching host is correctly rejected.
         trustedOrigins: [
           "https://shobdon-central.pages.dev",
+          "https://airfield-central.jeffthompson.workers.dev",
           "https://airfieldcentral.com",
           "https://*.airfieldcentral.com",
         ],
