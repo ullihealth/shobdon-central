@@ -9,6 +9,7 @@ import GlobalDashboardPage from './pages/GlobalDashboardPage'
 import LoginPage from './pages/LoginPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
+import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
@@ -36,6 +37,22 @@ export default function App(): JSX.Element {
             DashboardPage) is untouched and keeps working exactly as
             before - this is a new, additional route, not a replacement. */}
         <Route path="/d/:displaySlug" element={<TenantDisplayPage />} />
+        {/* Platform-admin, cross-tenant tenant list/control - deliberately
+            OUTSIDE AdminLayout (no org-switcher/tenant-admin sidebar chrome;
+            a tenant owner should never see a link to this, and it has
+            nothing to do with "which org am I currently switched to" -
+            it operates on every tenant regardless). requireDeveloper is
+            the same user.developer gate /developertools uses, enforced
+            again server-side by every functions/api/platform/* route -
+            this client-side check is a UX nicety, not the real boundary. */}
+        <Route
+          path="/platform/tenants"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformTenantsPage />
+            </RequireAuth>
+          }
+        />
         {/* Shared sidebar shell (AdminLayout.tsx) for every authenticated
             admin page - a React Router layout route rendering <Outlet/>.
             Per-route access gating below is completely unchanged: each

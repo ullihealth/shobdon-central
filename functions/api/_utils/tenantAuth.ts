@@ -204,3 +204,37 @@ export async function requireDeveloper(request: Request, env: { DB: D1Database }
   }
   return result;
 }
+
+export interface RequirePlatformAdminResult {
+  userId: string;
+}
+
+export type RequirePlatformAdminOutcome = RequirePlatformAdminResult | { error: Response };
+
+// Platform-admin gate for functions/api/platform/* - deliberately does
+// NOT go through requireTenant. requireDeveloper above wraps
+// requireTenant, which means it needs org-membership resolution to
+// succeed FIRST (whichever org ?org=/the switcher cookie/the earliest-
+// membership default lands on) before it even looks at user.developer -
+// fine for /developertools and developer-settings (both act on one
+// specific org's own data), but wrong here: this was tested directly
+// (disposable local accounts, see the platform-tenants build) and an
+// explicit ?org=<an-org-the-developer-isn't-a-member-of> produced a 403
+// from requireTenant's own membership check, before requireDeveloper's
+// developer-flag check ever ran - a real platform admin got locked out
+// of cross-tenant tooling by org-switcher state, exactly the failure
+// mode this page must never have. This check only ever asks two
+// questions - is there a valid session, and does that user have
+// developer=1 - with no dependency on org membership, ?org=, or the
+// switcher cookie at all, so it behaves identically no matter which
+// org (if any) the caller currently belongs to or is switched to.
+export async function requirePlatformAdmin(request: Request, env: { DB: D1Database }): Promise<RequirePlatformAdminOutcome> {
+  const userId = await getSessionUserId(request);
+  if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) };
+
+  const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(userId).first<{ developer: number }>();
+  if (!userRow?.developer) {
+    return { error: jsonResponse({ error: "Developer access required" }, 403) };
+  }
+  return { userId };
+}
