@@ -1,8 +1,9 @@
 // Owner/admin/media-role: list the tenant's uploaded media library files plus
-// running usage vs. the 100MB cap. Upload/delete are separate routes
-// (upload.ts, [id].ts) - this one is read-only.
+// running usage vs. this tenant's own storage_quota_bytes (migration
+// 0028, defaults to 100MB - see mediaQuota.ts). Upload/delete are
+// separate routes (upload.ts, [id].ts) - this one is read-only.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
-import { MEDIA_QUOTA_BYTES } from "../../_utils/mediaQuota";
+import { resolveMediaQuotaBytes } from "../../_utils/mediaQuota";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -31,12 +32,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
-  const { results } = await env.DB
-    .prepare(
-      "SELECT id, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, slideRecipeJson, folderId FROM media_library WHERE organizationId = ? ORDER BY uploadedAt DESC"
-    )
-    .bind(organizationId)
-    .all<MediaLibraryRow>();
+  const [{ results }, capBytes] = await Promise.all([
+    env.DB
+      .prepare(
+        "SELECT id, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, slideRecipeJson, folderId FROM media_library WHERE organizationId = ? ORDER BY uploadedAt DESC"
+      )
+      .bind(organizationId)
+      .all<MediaLibraryRow>(),
+    resolveMediaQuotaBytes(env.DB, organizationId),
+  ]);
 
   const totalBytes = results.reduce((sum, row) => sum + row.sizeBytes, 0);
 
@@ -54,5 +58,5 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     slideRecipe: slideRecipeJson ? JSON.parse(slideRecipeJson) : null,
   }));
 
-  return jsonResponse({ files, totalBytes, capBytes: MEDIA_QUOTA_BYTES });
+  return jsonResponse({ files, totalBytes, capBytes });
 };

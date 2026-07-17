@@ -6,6 +6,7 @@ import DisplayUrlList from '../components/config/DisplayUrlList'
 import InternetWeatherConfigSection from '../components/config/InternetWeatherConfigSection'
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
 import PC2CaptureSetup from '../components/config/PC2CaptureSetup'
+import StorageUsage from '../components/config/StorageUsage'
 import { loadWeatherConfig, saveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
@@ -71,6 +72,10 @@ export default function ConfigPage(): JSX.Element {
 
       <div className="mt-6">
         <DisplayUrlList />
+      </div>
+
+      <div className="mt-6">
+        <StorageUsage />
       </div>
     </div>
   )

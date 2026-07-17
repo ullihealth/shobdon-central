@@ -12,7 +12,7 @@
 // the tenant over the 100MB cap - so a rejected upload never partially
 // writes to R2 or creates a library row.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
-import { MEDIA_QUOTA_BYTES } from "../../_utils/mediaQuota";
+import { resolveMediaQuotaBytes } from "../../_utils/mediaQuota";
 
 interface R2Bucket {
   put: (key: string, value: ReadableStream | ArrayBuffer | null, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>;
@@ -72,15 +72,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "Missing or invalid Content-Length" }, 400);
   }
 
-  const totalRow = await env.DB
-    .prepare("SELECT COALESCE(SUM(sizeBytes), 0) AS total FROM media_library WHERE organizationId = ?")
-    .bind(organizationId)
-    .first<{ total: number }>();
+  const [totalRow, quotaBytes] = await Promise.all([
+    env.DB
+      .prepare("SELECT COALESCE(SUM(sizeBytes), 0) AS total FROM media_library WHERE organizationId = ?")
+      .bind(organizationId)
+      .first<{ total: number }>(),
+    resolveMediaQuotaBytes(env.DB, organizationId),
+  ]);
   const currentTotal = totalRow?.total ?? 0;
 
-  if (currentTotal + sizeBytes > MEDIA_QUOTA_BYTES) {
+  if (currentTotal + sizeBytes > quotaBytes) {
     const currentMb = (currentTotal / (1024 * 1024)).toFixed(1);
-    const capMb = (MEDIA_QUOTA_BYTES / (1024 * 1024)).toFixed(0);
+    const capMb = (quotaBytes / (1024 * 1024)).toFixed(0);
     const newFileMb = (sizeBytes / (1024 * 1024)).toFixed(1);
     return jsonResponse(
       {
