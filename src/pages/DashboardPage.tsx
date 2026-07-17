@@ -4,6 +4,7 @@ import CentreDisplayPanel from '../components/CentreDisplayPanel'
 import Header from '../components/Header'
 import LeftInfoPanel from '../components/LeftInfoPanel'
 import RightInfoPanel from '../components/RightInfoPanel'
+import TenantUnavailable from '../components/TenantUnavailable'
 import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
@@ -19,23 +20,40 @@ export default function DashboardPage(): JSX.Element {
   // on this fetch deliberately - this is the live public dashboard,
   // unauthenticated for everyone, same as today.
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
+  // Set only on a genuine resolution failure (config.ts 404s - unknown
+  // host, or the tenant is paused: tenants.active = 0, see
+  // resolveTenantHost.ts). A transient network hiccup that still
+  // resolves fine next poll doesn't belong here - this fetch runs once
+  // on mount, not on an interval, so "unavailable" reflects the actual
+  // resolution outcome, not a one-off blip.
+  const [unavailable, setUnavailable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
 
     fetch(PUBLIC_CONFIG_URL)
-      .then((response) => (response.ok ? response.json() : null))
+      .then((response) => {
+        if (!response.ok) {
+          if (!cancelled) setUnavailable(true)
+          return null
+        }
+        return response.json()
+      })
       .then((data) => {
         if (!cancelled && data?.theme) setThemeOverride(data.theme as CSSProperties)
       })
       .catch(() => {
-        // Endpoint unreachable - fall through to the committed :root defaults.
+        // Network failure, not a resolution failure - fall through to
+        // the committed :root defaults rather than showing "unavailable"
+        // for what might just be a dropped request.
       })
 
     return () => {
       cancelled = true
     }
   }, [])
+
+  if (unavailable) return <TenantUnavailable />
 
   return (
     <WeatherProvider>

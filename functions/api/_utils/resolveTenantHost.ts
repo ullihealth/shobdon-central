@@ -5,6 +5,23 @@
 // stores the full hostname ('shobdon.airfieldcentral.com'), so this is a
 // direct equality match, not label/prefix parsing.
 //
+// active = 1 is required to resolve - this is the tenant "pause" gate.
+// Every public dashboard endpoint (config.ts, display.ts, weather-
+// latest.ts, weather-default.ts, visibility-forecast.ts) resolves its
+// tenant through this function or resolveTenantFromHost below, so
+// flipping a tenant's active flag off here is the single point that
+// takes its public dashboard offline everywhere at once - no per-file
+// changes needed. Authenticated /api/tenant/* admin routes resolve via
+// requireTenant (tenantAuth.ts), a completely separate path keyed off
+// session + membership that never queries the tenants table at all -
+// confirmed by inspection, not assumed - so admin access to a paused
+// tenant is unaffected by this check.
+//
+// Reuses the existing `active` column (already gating the cross-tenant
+// directory listing, functions/api/public/tenants.ts) rather than
+// adding a second flag - one tenant, one "is this live" concept, no
+// risk of the two ever disagreeing with each other.
+//
 // Three fallback hosts resolve to Shobdon rather than 404:
 // - shobdon-central.pages.dev: Shobdon's own Pages project's own default
 //   hostname - permanently Shobdon, same category as the worker/D1/KV
@@ -44,14 +61,14 @@ export async function resolveOrganizationIdFromHost(host: string, db: D1Database
   const bareHost = host.split(":")[0];
 
   const bySubdomain = await db
-    .prepare("SELECT organization_id AS organizationId FROM tenants WHERE subdomain = ?")
+    .prepare("SELECT organization_id AS organizationId FROM tenants WHERE subdomain = ? AND active = 1")
     .bind(bareHost)
     .first<{ organizationId: string | null }>();
   if (bySubdomain?.organizationId) return bySubdomain.organizationId;
 
   if (FALLBACK_TO_SHOBDON_HOSTS.has(bareHost) || bareHost === "localhost") {
     const shobdon = await db
-      .prepare("SELECT organization_id AS organizationId FROM tenants WHERE slug = 'shobdon'")
+      .prepare("SELECT organization_id AS organizationId FROM tenants WHERE slug = 'shobdon' AND active = 1")
       .first<{ organizationId: string | null }>();
     return shobdon?.organizationId ?? null;
   }
@@ -74,14 +91,14 @@ export async function resolveTenantFromHost(host: string, db: D1Database): Promi
   const bareHost = host.split(":")[0];
 
   const bySubdomain = await db
-    .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE subdomain = ?")
+    .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE subdomain = ? AND active = 1")
     .bind(bareHost)
     .first<ResolvedTenant>();
   if (bySubdomain) return bySubdomain;
 
   if (FALLBACK_TO_SHOBDON_HOSTS.has(bareHost) || bareHost === "localhost") {
     const shobdon = await db
-      .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE slug = 'shobdon'")
+      .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE slug = 'shobdon' AND active = 1")
       .first<ResolvedTenant>();
     return shobdon ?? null;
   }

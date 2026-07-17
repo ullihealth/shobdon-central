@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom'
 import CafeTvTemplate from '../components/displayTemplates/CafeTvTemplate'
 import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
+import TenantUnavailable from '../components/TenantUnavailable'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 
@@ -25,7 +26,7 @@ export default function TenantDisplayPage(): JSX.Element {
 
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
   const [display, setDisplay] = useState<DisplayMeta>({ templateId: 'classic', panelConfig: DEFAULT_PANEL_CONFIG })
-  const [notFound, setNotFound] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -42,7 +43,7 @@ export default function TenantDisplayPage(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    setNotFound(false)
+    setUnavailable(false)
     fetch(`/api/public/display?slug=${encodeURIComponent(slug)}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error('not found'))))
       .then((data) => {
@@ -53,20 +54,20 @@ export default function TenantDisplayPage(): JSX.Element {
         })
       })
       .catch(() => {
-        if (!cancelled) setNotFound(true)
+        if (!cancelled) setUnavailable(true)
       })
     return () => {
       cancelled = true
     }
   }, [slug])
 
-  if (notFound) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-300">
-        No display named &ldquo;{slug}&rdquo; for this airfield.
-      </div>
-    )
-  }
+  // Covers both an unknown display slug AND a paused tenant
+  // (tenants.active = 0 makes resolveTenantFromHost - and therefore
+  // /api/public/display - 404 the same way an unrecognised host does,
+  // see resolveTenantHost.ts) - both get the identical clean message
+  // rather than a slug-specific one that would be misleading for the
+  // "whole tenant is paused" case.
+  if (unavailable) return <TenantUnavailable />
 
   return (
     <WeatherProvider>
