@@ -25,7 +25,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // the members list) - deliberately a separate column from role, not a
   // tenant role itself, so it can gate /developertools independently of
   // whatever tenant role the developer's account happens to hold.
-  const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(result.userId).first<{ developer: number }>();
+  // termsAcceptedAt backs RequireAuth.tsx's mandatory onboarding-terms
+  // redirect - per-user, not per-tenant (see migration 0032's own
+  // comment on why).
+  const userRow = await env.DB
+    .prepare("SELECT developer, termsAcceptedAt FROM user WHERE id = ?")
+    .bind(result.userId)
+    .first<{ developer: number; termsAcceptedAt: string | null }>();
 
   // memberships feeds the account/org switcher (AdminSidebar's
   // OrgSwitcher) - every org this user belongs to, not just the one the
@@ -37,6 +43,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     organizationSlug: result.membership.slug,
     organizationName: result.membership.name,
     isDeveloper: !!userRow?.developer,
+    hasAcceptedTerms: !!userRow?.termsAcceptedAt,
     memberships,
   });
 };

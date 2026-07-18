@@ -48,6 +48,11 @@ const SIZE_CLASSES: Record<NoticeSize, string> = {
 // the end, one at a time, until what's left plus a "+N more" indicator
 // actually fits - so anyone looking at the display can always tell more
 // notices exist rather than seeing a cut-off fragment.
+// Stays private to this file (not exported) - Clubhouse2Template.tsx's
+// "fixed notices panel" reuses it via RightInfoPanel's own new
+// notamsOnly prop below, not by importing this directly, since the
+// notices array it needs is derived from state (useWeather + opsPanel
+// fetch) that lives in RightInfoPanel, not passed in from outside.
 function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const [visibleCount, setVisibleCount] = useState(notices.length)
@@ -90,7 +95,16 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
   )
 }
 
-export default function RightInfoPanel(): JSX.Element {
+interface RightInfoPanelProps {
+  // When true, skips the A/B flip timer and the Runway Status/Circuit
+  // Direction/Airfield Info cards entirely, always rendering just
+  // NotamsPanel - Clubhouse Template 2's "fixed notices panel...
+  // statically displayed rather than rotating". Default false/undefined
+  // - Template 1/Café's existing full flip behaviour is unaffected.
+  notamsOnly?: boolean
+}
+
+export default function RightInfoPanel({ notamsOnly }: RightInfoPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
 
   // Self-contained fetch of the public config, matching MediaPanel.tsx's
@@ -123,12 +137,13 @@ export default function RightInfoPanel(): JSX.Element {
 
   useEffect(() => {
     setShowNotamsState(false)
+    if (notamsOnly) return
     const intervalSeconds = opsPanel?.notamsCarouselIntervalSeconds ?? 5
     const id = window.setInterval(() => {
       setShowNotamsState((value) => !value)
     }, Math.max(1, intervalSeconds) * 1000)
     return () => window.clearInterval(id)
-  }, [opsPanel?.notamsCarouselIntervalSeconds])
+  }, [notamsOnly, opsPanel?.notamsCarouselIntervalSeconds])
 
   // Same liveDataUnavailable treatment as LeftInfoPanel's Notices row -
   // an empty notams array during an unintended mock fallback would
@@ -180,6 +195,18 @@ export default function RightInfoPanel(): JSX.Element {
     { title: 'Circuit Direction', value: circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left') },
     ...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : []),
   ]
+
+  // notamsOnly skips the "Ops Panel" heading/flip-state wrapper entirely -
+  // NotamsPanel already renders its own complete, self-styled bordered
+  // card (matching how CompassPanel/MediaPanel are self-contained "drop
+  // in anywhere" components), so this is a plain h-full passthrough.
+  if (notamsOnly) {
+    return (
+      <div className="h-full">
+        <NotamsPanel notices={noticesForDisplay} />
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full flex-col rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">

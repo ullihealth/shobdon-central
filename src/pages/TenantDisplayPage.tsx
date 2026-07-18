@@ -25,6 +25,8 @@ export default function TenantDisplayPage(): JSX.Element {
   const slug = displaySlug || 'main'
 
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
+  const [airfieldName, setAirfieldName] = useState<string | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [display, setDisplay] = useState<DisplayMeta>({ templateId: 'classic', panelConfig: DEFAULT_PANEL_CONFIG })
   const [unavailable, setUnavailable] = useState(false)
 
@@ -33,7 +35,13 @@ export default function TenantDisplayPage(): JSX.Element {
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled && data?.theme) setThemeOverride(data.theme as CSSProperties)
+        if (cancelled) return
+        if (data?.theme) setThemeOverride(data.theme as CSSProperties)
+        if (data?.airfieldName) {
+          setAirfieldName(data.airfieldName as string)
+          document.title = `${data.airfieldName} — Airfield Central`
+        }
+        if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
       })
       .catch(() => {})
     return () => {
@@ -72,9 +80,9 @@ export default function TenantDisplayPage(): JSX.Element {
   return (
     <WeatherProvider>
       {display.templateId === 'cafe-tv' ? (
-        <CafeTvTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} />
+        <CafeTvTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
       ) : (
-        <ClassicTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} />
+        <ClassicTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
       )}
     </WeatherProvider>
   )

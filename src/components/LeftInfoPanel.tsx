@@ -52,7 +52,29 @@ const STAT_VALUE_FONT = 'clamp(11px, 2.55vh, 28px)'
 // text.
 const STAT_QUALIFIER_FONT = 'clamp(5px, 0.75vh, 8px)'
 
-export default function LeftInfoPanel(): JSX.Element {
+interface LeftInfoPanelProps {
+  // When true, the 5-stat grid (Wind/QNH/Temperature/Cloud Base/
+  // Visibility Outlook) stays permanently shown - the A/B flip timer to
+  // the internal CloudVisibilityChart state never starts. Clubhouse
+  // Template 2 shows a standalone Met Office forecast panel elsewhere on
+  // the same screen, so this instance should be fixed, not carousel -
+  // "more fixed, less carousel" per its own layout spec. Default
+  // false/undefined - Template 1/Café's existing flip behaviour (when
+  // weatherSummaryChartEnabled is on) is unaffected.
+  disableChartFlip?: boolean
+  // When true, uses a smaller per-card minimum row height (2.75rem vs
+  // the default 4.75rem). Clubhouse Template 2 gives this panel roughly
+  // half the vertical room Template 1 always has (a shared lower half,
+  // not the full body height), so the default floor - tuned assuming a
+  // near-full-height allocation - overflowed its own container at short
+  // viewport heights (confirmed at 1280x720/1366x768). The 5 real
+  // values here are short (e.g. "NNE 9 kt"), legible well below the
+  // default floor. Default false/undefined - Template 1/Café's sizing
+  // is completely unaffected.
+  compactStats?: boolean
+}
+
+export default function LeftInfoPanel({ disableChartFlip, compactStats }: LeftInfoPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
   const { hours: visibilityHours, fetchedAt: visibilityFetchedAt } = useVisibilityForecast()
 
@@ -141,7 +163,7 @@ export default function LeftInfoPanel(): JSX.Element {
   useEffect(() => {
     window.clearTimeout(timerRef.current)
     setShowChartState(false)
-    if (!chartConfig?.weatherSummaryChartEnabled) return
+    if (disableChartFlip || !chartConfig?.weatherSummaryChartEnabled) return
 
     let state: 'A' | 'B' = 'A'
     const scheduleNext = () => {
@@ -157,6 +179,7 @@ export default function LeftInfoPanel(): JSX.Element {
 
     return () => window.clearTimeout(timerRef.current)
   }, [
+    disableChartFlip,
     chartConfig?.weatherSummaryChartEnabled,
     chartConfig?.weatherSummaryStateADurationSeconds,
     chartConfig?.weatherSummaryStateBDurationSeconds,
@@ -228,7 +251,7 @@ export default function LeftInfoPanel(): JSX.Element {
           // cards, including Visibility Outlook's longest realistic
           // value ("Very Good (20.1km-40km)", itself two lines) alongside
           // its own two-part label - not just tuned to today's mock data.
-          <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${data.length}, minmax(4.75rem, 1fr))` }}>
+          <div className="grid h-full gap-4" style={{ gridTemplateRows: `repeat(${data.length}, minmax(${compactStats ? '2.75rem' : '4.75rem'}, 1fr))` }}>
             {data.map((item) => (
               <div key={item.label} className="min-h-0 overflow-hidden rounded-3xl border border-border bg-card p-2">
                 <div

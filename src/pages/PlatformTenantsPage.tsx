@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import type { ChangeEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
 
 const TENANTS_URL = '/api/platform/tenants'
 
@@ -13,6 +16,7 @@ interface PlatformTenant {
   isInternal: boolean
   storageQuotaBytes: number
   usedBytes: number
+  logoUrl: string | null
   createdAt: string
 }
 
@@ -26,7 +30,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-async function patchTenant(id: number, body: Record<string, boolean | number>): Promise<PlatformTenant | null> {
+async function patchTenant(id: number, body: Record<string, boolean | number | string>): Promise<PlatformTenant | null> {
   const response = await fetch(`${TENANTS_URL}/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -82,6 +86,102 @@ function QuotaEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (by
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
         <div className="h-full bg-accent-sky-500" style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  )
+}
+
+// Same inline-edit-on-blur pattern as QuotaEditor above - a developer
+// customer-service fix (e.g. a tenant's name has a typo or their logo
+// was uploaded badly-sized) shouldn't need a separate "Edit" mode.
+function NameEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (name: string) => void }): JSX.Element {
+  const [name, setName] = useState(tenant.name)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setName(tenant.name)
+  }, [tenant.name])
+
+  async function commit() {
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === tenant.name) {
+      setName(tenant.name)
+      return
+    }
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { name: trimmed })
+    setSaving(false)
+    if (updated) onSaved(updated.name)
+    else setName(tenant.name)
+  }
+
+  return (
+    <input
+      value={name}
+      disabled={saving}
+      onChange={(event) => setName(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+      }}
+      className="w-full rounded border border-slate-700 bg-slate-900/80 px-2 py-1 text-sm font-semibold text-white focus:border-sky-500 focus:outline-none"
+    />
+  )
+}
+
+// Developer-override logo upload/replace - the customer-service fallback
+// for a tenant's badly-sized or wrong logo, independent of the tenant's
+// own self-service branding editor (DesignPage.tsx's Branding section).
+// Uses the same validateAndUploadLogo pipeline server-side (functions/
+// api/_utils/logoUpload.ts), just via the platform-admin-gated route.
+function LogoEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (logoUrl: string) => void }): JSX.Element {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      const response = await fetch(`${TENANTS_URL}/${tenant.id}/logo`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setError(data?.error || 'Upload failed')
+        return
+      }
+      if (data?.logoUrl) onSaved(data.logoUrl as string)
+    } catch {
+      setError('Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex h-8 w-14 shrink-0 items-center justify-center rounded border border-slate-700 bg-slate-900/80">
+        {tenant.logoUrl ? (
+          <img src={tenant.logoUrl} alt="" className="h-full w-full object-contain" />
+        ) : (
+          <span className="text-[9px] text-muted-500">None</span>
+        )}
+      </div>
+      <label className="cursor-pointer text-xs font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+        {uploading ? 'Uploading…' : 'Replace'}
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+          onChange={handleUpload}
+          disabled={uploading}
+          className="hidden"
+        />
+      </label>
+      {error && <span className="text-xs text-status-bad">{error}</span>}
     </div>
   )
 }
@@ -144,6 +244,48 @@ export default function PlatformTenantsPage(): JSX.Element {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, storageQuotaBytes: bytes } : t)))
   }
 
+  function handleNameSaved(tenantId: number, name: string) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, name } : t)))
+  }
+
+  function handleLogoSaved(tenantId: number, logoUrl: string) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, logoUrl } : t)))
+  }
+
+  const [onboarding, setOnboarding] = useState(false)
+  const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; slug: string } | null>(null)
+  const [onboardError, setOnboardError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function handleOnboardTenant() {
+    setOnboarding(true)
+    setOnboardError(null)
+    setInviteResult(null)
+    try {
+      const response = await fetch(PLATFORM_ONBOARD_TENANT_URL, { method: 'POST' })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setOnboardError(data?.error || 'Failed to onboard a new tenant')
+        return
+      }
+      setInviteResult({ inviteUrl: data.inviteUrl, slug: data.slug })
+      // Refresh the list so the new tenant row appears immediately,
+      // reusing the exact same fetch the initial mount already does.
+      const refreshed = await fetch(TENANTS_URL)
+      const refreshedData = refreshed.ok ? await refreshed.json() : null
+      if (refreshedData) setTenants(refreshedData.tenants ?? [])
+    } finally {
+      setOnboarding(false)
+    }
+  }
+
+  async function handleCopyInviteLink() {
+    if (!inviteResult) return
+    await navigator.clipboard.writeText(inviteResult.inviteUrl).catch(() => {})
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+
   if (forbidden) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
@@ -158,12 +300,55 @@ export default function PlatformTenantsPage(): JSX.Element {
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-6 pb-16 pt-10 text-slate-100">
       <div className="mx-auto max-w-6xl">
-        <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Platform · Tenants</h1>
-        <p className="mb-8 max-w-2xl text-sm text-muted-400">
+        <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Platform · Tenants</h1>
+          <div className="flex items-center gap-3">
+            <Link to="/platform/onboarding-content" className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+              Edit onboarding content →
+            </Link>
+            <button
+              type="button"
+              onClick={handleOnboardTenant}
+              disabled={onboarding}
+              className="rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+            >
+              {onboarding ? 'Creating…' : 'Onboard new tenant'}
+            </button>
+          </div>
+        </div>
+        <p className="mb-4 max-w-2xl text-sm text-muted-400">
           Every tenant, across every organization. Developer-only — controls pause/resume, cross-tenant public
           visibility, internal/template status, and storage quota for any tenant, regardless of which org you're
           currently switched to.
         </p>
+
+        {onboardError && <p className="mb-4 text-sm font-semibold text-status-bad">{onboardError}</p>}
+
+        {inviteResult && (
+          <div className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
+            <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+              New tenant created: {inviteResult.slug}
+            </div>
+            <p className="mb-3 text-xs text-muted-500">
+              Copy this single-use link and send it to the customer manually — no email is sent automatically yet.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={inviteResult.inviteUrl}
+                onFocus={(event) => event.target.select()}
+                className="flex-1 rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-white"
+              />
+              <button
+                type="button"
+                onClick={handleCopyInviteLink}
+                className="shrink-0 rounded bg-accent-sky-500 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white hover:bg-accent-sky-400"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-sm text-muted-400">Loading…</p>
@@ -173,6 +358,7 @@ export default function PlatformTenantsPage(): JSX.Element {
               <thead>
                 <tr className="border-b border-border text-xs font-semibold uppercase tracking-widest text-muted-400">
                   <th className="px-4 py-3">Tenant</th>
+                  <th className="px-4 py-3">Logo</th>
                   <th className="px-4 py-3">Subdomain</th>
                   <th className="px-4 py-3 text-center">Active</th>
                   <th className="px-4 py-3 text-center">Weather public</th>
@@ -186,8 +372,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                 {tenants.map((tenant) => (
                   <tr key={tenant.id} className="border-b border-border/60 last:border-0">
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-white">{tenant.name}</div>
-                      <div className="text-xs text-muted-500">{tenant.slug}</div>
+                      <NameEditor tenant={tenant} onSaved={(name) => handleNameSaved(tenant.id, name)} />
+                      <div className="mt-1 text-xs text-muted-500">{tenant.slug}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <LogoEditor tenant={tenant} onSaved={(logoUrl) => handleLogoSaved(tenant.id, logoUrl)} />
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-400">{tenant.subdomain}</td>
                     <td className="px-4 py-3">

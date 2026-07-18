@@ -83,12 +83,22 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export async function buildPublicConfigResponse(organizationId: string, env: PublicConfigEnv): Promise<Response> {
-  const [runwayRows, themeRow, cameraRows, carouselRows, opsPanelRow] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, opsPanelRow, mainDisplayRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
       .all<RunwayGroupRow>(),
     env.DB.prepare("SELECT tokensJson FROM club_theme WHERE organizationId = ?").bind(organizationId).first<{ tokensJson: string }>(),
+    // Real tenant display name (tenants.name) - was previously not part
+    // of this response at all; Header.tsx hardcoded "SHOBDON AIRFIELD"
+    // literally, since there was no per-tenant name flowing to the
+    // public dashboard anywhere. Found during the pre-onboarding
+    // branding audit. logo_r2_key resolved to logoUrl below, same
+    // pattern as carouselSlots[].resolvedUrl.
+    env.DB
+      .prepare("SELECT name, logo_r2_key AS logoR2Key FROM tenants WHERE organization_id = ?")
+      .bind(organizationId)
+      .first<{ name: string; logoR2Key: string | null }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -143,6 +153,19 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
       .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds FROM ops_panel_state WHERE organizationId = ?")
       .bind(organizationId)
       .first<OpsPanelRow>(),
+    // Which dashboard template renders at "/" for this tenant - the
+    // tenant_displays 'main' row (migration 0027, already used by
+    // /d/:slug). Missing row (e.g. newcustomer, or any tenant that's
+    // never touched the Dashboard Layout selector) must never 404 here -
+    // "/" always has a template, defaulting to 'classic' (Clubhouse
+    // Template 1), unlike /api/public/display's strict 404 for named
+    // displays.
+    env.DB
+      .prepare(
+        "SELECT td.template_id AS templateId FROM tenant_displays td JOIN tenants t ON t.id = td.tenant_id WHERE t.organization_id = ? AND td.slug = 'main'"
+      )
+      .bind(organizationId)
+      .first<{ templateId: string }>(),
   ]);
 
   const runwayGroups = runwayRows.results.map((row) => ({
@@ -157,6 +180,8 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
   }));
 
   const theme = themeRow ? JSON.parse(themeRow.tokensJson) : null;
+  const airfieldName = tenantRow?.name ?? null;
+  const logoUrl = tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null;
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -207,5 +232,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
       }
     : null;
 
-  return jsonResponse({ runwayGroups, theme, cameraSlots, carouselSlots, opsPanel });
+  const mainTemplateId = mainDisplayRow?.templateId ?? "classic";
+
+  return jsonResponse({ runwayGroups, theme, airfieldName, logoUrl, cameraSlots, carouselSlots, opsPanel, mainTemplateId });
 }

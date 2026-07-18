@@ -18,6 +18,7 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+  MEDIA_PUBLIC_BASE_URL?: string;
 }
 
 interface RunwayGroupRow {
@@ -60,12 +61,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
-  const [runwayRows, themeRow, cameraRows] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
       .all<RunwayGroupRow>(),
     env.DB.prepare("SELECT tokensJson FROM club_theme WHERE organizationId = ?").bind(organizationId).first<{ tokensJson: string }>(),
+    // Same airfieldName field as the public config response - DesignPage.tsx's
+    // preview renders the real Header component, which now needs this to
+    // avoid falling back to its generic placeholder. logo_r2_key resolved
+    // to logoUrl the same way publicConfig.ts does.
+    env.DB
+      .prepare("SELECT name, logo_r2_key AS logoR2Key FROM tenants WHERE organization_id = ?")
+      .bind(organizationId)
+      .first<{ name: string; logoR2Key: string | null }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -84,6 +93,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       strips: JSON.parse(row.stripsJson),
     })),
     theme: themeRow ? JSON.parse(themeRow.tokensJson) : null,
+    airfieldName: tenantRow?.name ?? null,
+    logoUrl: tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
   });
 };
@@ -101,10 +112,22 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     runwayGroups?: RunwayGroupInput[];
     theme?: Record<string, string>;
     cameraSlots?: CameraSlotInput[];
+    airfieldName?: string;
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
   const now = new Date().toISOString();
+
+  // Writes tenants.name directly - the same column airfieldName already
+  // reads (both here and in publicConfig.ts). Self-service branding edit;
+  // requireOwner above is the only gate needed, matching every other
+  // field this endpoint already writes.
+  if (typeof body.airfieldName === "string" && body.airfieldName.trim()) {
+    await env.DB
+      .prepare("UPDATE tenants SET name = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(body.airfieldName.trim(), now, organizationId)
+      .run();
+  }
 
   if (Array.isArray(body.runwayGroups)) {
     await env.DB.prepare("DELETE FROM runway_groups WHERE organizationId = ?").bind(organizationId).run();

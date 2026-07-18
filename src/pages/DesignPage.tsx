@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import Header from '../components/Header'
 import LeftInfoPanel from '../components/LeftInfoPanel'
@@ -8,7 +8,7 @@ import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
 import { WeatherProvider } from '../context/WeatherContext'
 import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
 import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
-import { TENANT_CONFIG_URL } from '../config/publicApi'
+import { TENANT_CONFIG_URL, BRANDING_LOGO_URL } from '../config/publicApi'
 import {
   CURRENT_LIVE_THEME,
   CURRENT_LIVE_THEME_ID,
@@ -20,6 +20,7 @@ import {
   saveDesignTemplates,
 } from '../services/designTemplateStore'
 import type { DesignTemplate, DesignTokens } from '../services/designTemplateStore'
+import { TEMPLATE_SLOTS } from '../components/displayTemplates/templateRegistry'
 
 // Forces the preview to mock data regardless of whatever weather source is
 // actually configured for the real dashboard right now.
@@ -122,6 +123,159 @@ export default function DesignPage(): JSX.Element {
   const [renameInput, setRenameInput] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
+  // Real tenant name for this preview's own Header - was previously never
+  // fetched at all here (this page only PUTs to TENANT_CONFIG_URL to apply
+  // a theme, never GETs it), so the preview always showed Header's
+  // hardcoded "SHOBDON AIRFIELD" literal regardless of which tenant's
+  // owner was previewing their own design.
+  const [airfieldName, setAirfieldName] = useState<string | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch(TENANT_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        if (data?.airfieldName) setAirfieldName(data.airfieldName as string)
+        if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Branding (name + logo) - self-service editing, no confirm gate
+  // (unlike handleApplyToLiveDashboard's theme push below, which
+  // deliberately confirms because it repaints a shared physical
+  // display) - a name/logo change is lower-stakes and saves immediately.
+  // Only auto-populates from the fetch BEFORE the user has typed anything -
+  // re-syncing on every airfieldName change (the original approach) could
+  // silently clobber a user's in-progress edit if they started typing
+  // during the brief window before TENANT_CONFIG_URL's fetch resolved.
+  const [brandingNameInput, setBrandingNameInput] = useState('')
+  const brandingNameTouchedRef = useRef(false)
+  useEffect(() => {
+    if (airfieldName && !brandingNameTouchedRef.current) setBrandingNameInput(airfieldName)
+  }, [airfieldName])
+  const [nameSaveStatus, setNameSaveStatus] = useState<ApplyStatus>('idle')
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoError, setLogoError] = useState<string | null>(null)
+
+  async function handleSaveName() {
+    const trimmed = brandingNameInput.trim()
+    if (!trimmed || trimmed === airfieldName) return
+    setNameSaveStatus('working')
+    try {
+      const response = await fetch(TENANT_CONFIG_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ airfieldName: trimmed }),
+      })
+      if (!response.ok) {
+        setNameSaveStatus('error')
+        return
+      }
+      setAirfieldName(trimmed)
+      setNameSaveStatus('success')
+    } catch {
+      setNameSaveStatus('error')
+    }
+  }
+
+  async function handleLogoUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setLogoUploading(true)
+    setLogoError(null)
+    try {
+      const response = await fetch(BRANDING_LOGO_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setLogoError(data?.error || 'Upload failed - please try again.')
+        return
+      }
+      if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
+    } catch {
+      setLogoError('Upload failed - please try again.')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
+  // Dashboard Layout - which template renders at this tenant's own "/"
+  // (tenant_displays 'main' row, migration 0027 - already-existing
+  // infrastructure, reused as-is via the same owner-gated /api/tenant/
+  // displays endpoint DisplayUrlList.tsx already uses for named
+  // displays). Fetches the current row (if any) so switching templates
+  // never clobbers an existing name/panelConfig - a tenant with no 'main'
+  // row yet (e.g. newcustomer) falls back to sensible defaults on first
+  // save, matching how the endpoint's own upsert semantics already work.
+  const [mainDisplay, setMainDisplay] = useState<{ name: string; templateId: string; panelConfig: unknown } | null>(null)
+  const [templateSaving, setTemplateSaving] = useState<string | null>(null)
+  const [templateError, setTemplateError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tenant/displays')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        const main = (data.displays ?? []).find((display: { slug: string }) => display.slug === 'main')
+        if (main) setMainDisplay({ name: main.name, templateId: main.templateId, panelConfig: main.panelConfig })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const activeTemplateId = mainDisplay?.templateId ?? 'classic'
+
+  // Named distinctly from the pre-existing handleSelectTemplate below
+  // (colour-theme templates, unrelated) - a same-named function
+  // declaration collision here would silently shadow one or the other
+  // at runtime with no TypeScript error, since both are plain top-level
+  // function declarations in the same component scope.
+  async function handleSelectLayoutTemplate(templateId: string) {
+    if (templateId === activeTemplateId) return
+    if (
+      !window.confirm(
+        'Switch your live dashboard to this template? This affects every device that loads it (PC2, clubhouse display, etc.) immediately.'
+      )
+    ) {
+      return
+    }
+    setTemplateSaving(templateId)
+    setTemplateError(null)
+    try {
+      const response = await fetch('/api/tenant/displays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: 'main',
+          name: mainDisplay?.name ?? 'Main Dashboard',
+          templateId,
+          panelConfig: mainDisplay?.panelConfig ?? { weather: true, compass: true, media: true, ops: true },
+        }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setTemplateError(data?.error || "Couldn't switch templates - please try again.")
+        return
+      }
+      setMainDisplay({ name: data.name, templateId: data.templateId, panelConfig: data.panelConfig })
+    } catch {
+      setTemplateError("Couldn't switch templates - please try again.")
+    } finally {
+      setTemplateSaving(null)
+    }
+  }
 
   const allTemplates = [CURRENT_LIVE_THEME, BRIGHT_BLUE_THEME, ...templates]
 
@@ -301,7 +455,7 @@ export default function DesignPage(): JSX.Element {
           <WeatherProvider forcedConfig={MOCK_CONFIG}>
             <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
               <div className="grid h-full grid-rows-[7%_1fr] gap-4">
-                <Header rightSlot={<WeatherStatusIndicator />} />
+                <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
                 <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
                   <LeftInfoPanel />
                   <CentreDisplayPanel />
@@ -312,6 +466,65 @@ export default function DesignPage(): JSX.Element {
           </WeatherProvider>
         </div>
       </div>
+
+      {/* BRANDING - name + logo, saved immediately (no confirm gate, unlike
+          the theme "Apply to Live Dashboard" action below which repaints a
+          shared physical display). Self-service: any owner/admin can use
+          this without developer involvement. */}
+      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+        <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Branding</div>
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs uppercase tracking-wide text-muted-400">Business name</label>
+            <div className="flex gap-2">
+              <input
+                value={brandingNameInput}
+                onChange={(event) => {
+                  brandingNameTouchedRef.current = true
+                  setBrandingNameInput(event.target.value)
+                }}
+                className="w-full rounded border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+                placeholder="Your Airfield Name"
+              />
+              <button
+                type="button"
+                onClick={handleSaveName}
+                disabled={nameSaveStatus === 'working' || !brandingNameInput.trim() || brandingNameInput.trim() === airfieldName}
+                className="shrink-0 rounded bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white disabled:opacity-40"
+              >
+                {nameSaveStatus === 'working' ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+            {nameSaveStatus === 'success' && <p className="mt-1 text-xs text-status-good">Saved.</p>}
+            {nameSaveStatus === 'error' && <p className="mt-1 text-xs text-status-bad">Couldn't save - please try again.</p>}
+          </div>
+
+          <div className="flex-1">
+            <label className="mb-1 block text-xs uppercase tracking-wide text-muted-400">Logo</label>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-24 items-center justify-center rounded border border-border bg-slate-900">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Current logo" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-[10px] text-muted-500">No logo</span>
+                )}
+              </div>
+              <label className="cursor-pointer rounded bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white">
+                {logoUploading ? 'Uploading…' : logoUrl ? 'Replace' : 'Upload'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  onChange={handleLogoUpload}
+                  disabled={logoUploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-muted-500">PNG, JPG, SVG, or WebP, up to 2MB.</p>
+            {logoError && <p className="mt-1 text-xs text-status-bad">{logoError}</p>}
+          </div>
+        </div>
+      </section>
 
       {/* COLOUR PICKERS - shown before Templates/Apply so the workflow reads
           top-to-bottom: pick colours first, then save/apply them below. */}
@@ -420,6 +633,50 @@ export default function DesignPage(): JSX.Element {
           </label>
         </div>
         {importError && <p className="mt-3 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
+      </section>
+
+      {/* DASHBOARD LAYOUT - which of the 5 template slots renders at this
+          tenant's own "/" (the real live kiosk route). Distinct from the
+          "Templates" section above, which is about colour themes, not
+          page layout - kept as its own section immediately after it to
+          avoid the two being confused for the same feature. */}
+      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+        <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Dashboard Layout</div>
+        <p className="mb-4 text-xs text-muted-500">
+          Choose which layout renders on your live dashboard. Switching takes effect immediately on every device that
+          loads it.
+        </p>
+        {templateError && <p className="mb-3 text-sm font-semibold text-status-bad">{templateError}</p>}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+          {TEMPLATE_SLOTS.map((slot) => {
+            const isActive = slot.id === activeTemplateId
+            const isComingSoon = slot.status === 'coming-soon'
+            const isSaving = templateSaving === slot.id
+            return (
+              <button
+                key={slot.id}
+                type="button"
+                disabled={isComingSoon || isSaving}
+                onClick={() => handleSelectLayoutTemplate(slot.id)}
+                className={`rounded-xl border p-4 text-left transition ${
+                  isComingSoon
+                    ? 'cursor-not-allowed border-border bg-slate-900/40 opacity-50'
+                    : isActive
+                      ? 'border-accent-sky-500 bg-slate-900'
+                      : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
+                }`}
+              >
+                <div className="mb-2 flex aspect-video items-center justify-center rounded-lg border border-border bg-slate-950/60 text-[10px] uppercase tracking-wide text-muted-500">
+                  {isComingSoon ? 'Coming soon' : slot.category === 'cafe' ? 'Café' : 'Clubhouse'}
+                </div>
+                <div className="text-xs font-semibold text-primary">{slot.label}</div>
+                {isActive && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active</div>}
+                {isComingSoon && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-500">Coming soon</div>}
+                {isSaving && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Switching…</div>}
+              </button>
+            )
+          })}
+        </div>
       </section>
 
       {/* APPLY TO LIVE DASHBOARD - deliberately separate from the Templates

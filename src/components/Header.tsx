@@ -5,9 +5,22 @@ import { AIRFIELD_TIMEZONE } from '../config/publicApi'
 
 interface HeaderProps {
   rightSlot?: ReactNode
+  // Real tenant display name (tenants.name via the public config /
+  // tenant config response's airfieldName field) - was a hardcoded
+  // "SHOBDON AIRFIELD" literal until the pre-onboarding branding audit
+  // caught it (every tenant's dashboard showed Shobdon's name
+  // regardless of hostname). Undefined/null covers both the brief
+  // window before a fetch resolves and a genuinely brand-new tenant
+  // with nothing configured yet - the generic fallback below is
+  // correct for both, never another tenant's real name.
+  airfieldName?: string | null
+  // Uploaded tenant logo (tenants.logo_r2_key, resolved to a public R2
+  // URL). Null/undefined (no logo set) renders nothing extra - falls
+  // back to the text-only layout unchanged.
+  logoUrl?: string | null
 }
 
-export default function Header({ rightSlot }: HeaderProps): JSX.Element {
+export default function Header({ rightSlot, airfieldName, logoUrl }: HeaderProps): JSX.Element {
   const [now, setNow] = useState(new Date())
   const location = useLocation()
   const isConfigPage = location.pathname === '/config'
@@ -78,8 +91,22 @@ export default function Header({ rightSlot }: HeaderProps): JSX.Element {
         className="group flex min-w-0 flex-col cursor-pointer"
         title={isConfigPage ? 'Back to Dashboard' : 'Weather Config'}
       >
-        <div className="truncate text-lg font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 sm:text-3xl">
-          SHOBDON AIRFIELD
+        <div className="flex min-w-0 items-center gap-2">
+          {logoUrl && (
+            // shrink-0 + capped max-width: a logo of any aspect ratio must
+            // never be allowed to grow and push the centred clock (below)
+            // out of position - the exact narrow-width collision this
+            // file's own comments already document for the title text.
+            // h-full + object-contain (never object-cover/fixed w+h)
+            // guarantees no distortion and no cropping regardless of the
+            // uploaded image's native dimensions.
+            <div className="h-8 max-w-[100px] shrink-0 sm:h-12 sm:max-w-[160px]">
+              <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
+            </div>
+          )}
+          <div className="truncate text-lg font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 sm:text-3xl">
+            {airfieldName || 'AIRFIELD CENTRAL'}
+          </div>
         </div>
         {/* Hidden below sm - at that width there isn't room for a second line
             alongside the clock and status slot without forcing the title to

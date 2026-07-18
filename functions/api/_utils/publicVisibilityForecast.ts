@@ -19,18 +19,19 @@ export type KVNamespace = {
   put: (key: string, value: string, options?: { expirationTtl?: number }) => Promise<void>;
 };
 
+type D1Database = {
+  prepare: (query: string) => {
+    bind: (...values: unknown[]) => {
+      first: <T = Record<string, unknown>>() => Promise<T | null>;
+    };
+  };
+};
+
 export interface PublicVisibilityForecastEnv {
   WEATHER_CACHE: KVNamespace;
   MET_OFFICE_API_KEY?: string;
+  DB: D1Database;
 }
-
-// Shobdon Aerodrome coordinates - matches DEFAULT_WEATHER_CONFIG.internet
-// in src/services/weatherConfigStore.ts. Hardcoded rather than read from
-// D1: this app is single-tenant today and there's no admin UI for
-// per-tenant coordinates yet - move into D1 (alongside runway_groups) if
-// a second tenant ever needs this route with its own location, not before.
-const SHOBDON_LATITUDE = 52.2416;
-const SHOBDON_LONGITUDE = -2.8821;
 
 const MET_OFFICE_BASE_URL = "https://data.hub.api.metoffice.gov.uk/sitespecific/v0/point/hourly";
 
@@ -120,10 +121,10 @@ function pickUpcomingHours(steps: MetOfficeTimeStep[], count: number): MetOffice
     .slice(0, count);
 }
 
-async function fetchFromMetOffice(apiKey: string): Promise<CachedForecast | null> {
+async function fetchFromMetOffice(apiKey: string, latitude: number, longitude: number): Promise<CachedForecast | null> {
   const url = new URL(MET_OFFICE_BASE_URL);
-  url.searchParams.set("latitude", String(SHOBDON_LATITUDE));
-  url.searchParams.set("longitude", String(SHOBDON_LONGITUDE));
+  url.searchParams.set("latitude", String(latitude));
+  url.searchParams.set("longitude", String(longitude));
   url.searchParams.set("excludeParameterMetadata", "true");
   url.searchParams.set("includeLocationName", "false");
 
@@ -176,7 +177,22 @@ export async function buildVisibilityForecastResponse(
     return jsonResponse({ available: false } satisfies VisibilityForecastResponse);
   }
 
-  const fresh = await fetchFromMetOffice(env.MET_OFFICE_API_KEY).catch(() => null);
+  // Each tenant's own coordinates (tenants.lat/lon), same source
+  // weather-default.ts already reads - this used to be a hardcoded
+  // Shobdon-only constant here (found during the pre-onboarding
+  // isolation/branding audit: every tenant's forecast card was silently
+  // showing SHOBDON's Met Office forecast, not their own). No
+  // coordinates on file -> unavailable, same "nothing sensible to
+  // default to" stance weather-default.ts takes, never a wrong location.
+  const tenantLocation = await env.DB
+    .prepare("SELECT lat, lon FROM tenants WHERE organization_id = ?")
+    .bind(organizationId)
+    .first<{ lat: number | null; lon: number | null }>();
+  if (!tenantLocation || tenantLocation.lat === null || tenantLocation.lon === null) {
+    return jsonResponse({ available: false } satisfies VisibilityForecastResponse);
+  }
+
+  const fresh = await fetchFromMetOffice(env.MET_OFFICE_API_KEY, tenantLocation.lat, tenantLocation.lon).catch(() => null);
   if (!fresh) {
     return jsonResponse({ available: false } satisfies VisibilityForecastResponse);
   }

@@ -12,6 +12,8 @@ import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 interface ClassicTemplateProps {
   panelConfig: DisplayPanelConfig
   themeOverride: CSSProperties
+  airfieldName?: string | null
+  logoUrl?: string | null
 }
 
 // The 'classic' template (tenant_displays.template_id) - the same
@@ -22,7 +24,7 @@ interface ClassicTemplateProps {
 // extraction, so '/' - the live production kiosk route - carries zero
 // risk from this feature: DashboardPage.tsx is not imported by or
 // changed for this file at all.
-export default function ClassicTemplate({ panelConfig, themeOverride }: ClassicTemplateProps): JSX.Element {
+export default function ClassicTemplate({ panelConfig, themeOverride, airfieldName, logoUrl }: ClassicTemplateProps): JSX.Element {
   const isDesktop = useIsDesktopLayout()
 
   const showLeft = panelConfig.weather
@@ -55,7 +57,7 @@ export default function ClassicTemplate({ panelConfig, themeOverride }: ClassicT
             much height as its content strictly needs, which clipped the
             clock in testing. */}
         <div style={isDesktop ? undefined : { height: '64px', flexShrink: 0 }}>
-          <Header rightSlot={<WeatherStatusIndicator />} />
+          <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
         </div>
 
         <div

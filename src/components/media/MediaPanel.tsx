@@ -25,9 +25,16 @@ function renderMediaContent(item: MediaItem) {
 
 interface MediaPanelProps {
   item: MediaItem
+  // When true, prioritizes video (mp4) carousel content over the full
+  // mix - Clubhouse Template 2's "video-forward" media panel. Filters
+  // to mp4 slots only when at least one exists; falls back to the full
+  // mix otherwise (same graceful-degradation posture as this file's
+  // existing webcam/item fallback tiers below). Default false/undefined
+  // - every existing caller (Template 1, Café) is completely unaffected.
+  preferVideo?: boolean
 }
 
-export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
+export default function MediaPanel({ item, preferVideo }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-
@@ -56,23 +63,30 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
     }
   }, [])
 
+  // preferVideo: filters to mp4 slots only when at least one exists,
+  // otherwise falls back to the full mix - raw carouselSlots stays the
+  // true fetched state; this is purely a display-order derivation, not
+  // a second data source.
+  const videoSlots = carouselSlots.filter((slot) => slot.mediaType === 'mp4')
+  const effectiveSlots = preferVideo && videoSlots.length > 0 ? videoSlots : carouselSlots
+
   // Cycles through enabled carousel slots in order, each for its own
   // duration (mp4DurationSeconds overrides durationSeconds for mp4),
   // looping back to the first after the last - plain cut, no fade/swipe
   // transition (explicitly out of phase-1 scope).
   useEffect(() => {
     window.clearTimeout(timerRef.current)
-    if (carouselSlots.length === 0) return
+    if (effectiveSlots.length === 0) return
 
     setActiveIndex(0)
     let index = 0
 
     const scheduleNext = () => {
-      const slot = carouselSlots[index]
+      const slot = effectiveSlots[index]
       const seconds =
         slot.mediaType === 'mp4' && slot.mp4DurationSeconds ? slot.mp4DurationSeconds : slot.durationSeconds
       timerRef.current = window.setTimeout(() => {
-        index = (index + 1) % carouselSlots.length
+        index = (index + 1) % effectiveSlots.length
         setActiveIndex(index)
         scheduleNext()
       }, Math.max(1, seconds) * 1000)
@@ -80,10 +94,10 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
     scheduleNext()
 
     return () => window.clearTimeout(timerRef.current)
-  }, [carouselSlots])
+  }, [effectiveSlots])
 
-  const hasCarousel = carouselSlots.length > 0
-  const activeSlot = hasCarousel ? carouselSlots[activeIndex] : null
+  const hasCarousel = effectiveSlots.length > 0
+  const activeSlot = hasCarousel ? effectiveSlots[activeIndex] : null
 
   // Actual media content (image/mp4/webcam/pdf) fills the panel
   // edge-to-edge. Only the empty-state placeholder text keeps its
@@ -116,7 +130,7 @@ export default function MediaPanel({ item }: MediaPanelProps): JSX.Element {
           // the correct key regardless) so React keeps reusing the same
           // component instance/DOM node across every activeIndex change,
           // never remounting a slot just because a sibling did.
-          carouselSlots.map((slot, index) => (
+          effectiveSlots.map((slot, index) => (
             <div key={slot.slotNumber} className={`absolute inset-0 ${index === activeIndex ? '' : 'invisible'}`}>
               <MediaSlotRenderer slot={slot} isActive={index === activeIndex} />
             </div>

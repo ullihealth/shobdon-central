@@ -30,6 +30,7 @@ interface Env {
 }
 
 interface TenantRow {
+  name: string;
   active: number;
   weatherPublic: number;
   opsPublic: number;
@@ -38,6 +39,7 @@ interface TenantRow {
 }
 
 interface PatchBody {
+  name?: string;
   active?: boolean;
   weatherPublic?: boolean;
   opsPublic?: boolean;
@@ -55,9 +57,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const body = (await request.json().catch(() => null)) as PatchBody | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
-  const fields: (keyof PatchBody)[] = ["active", "weatherPublic", "opsPublic", "isInternal", "storageQuotaBytes"];
+  const fields: (keyof PatchBody)[] = ["name", "active", "weatherPublic", "opsPublic", "isInternal", "storageQuotaBytes"];
   if (!fields.some((field) => body[field] !== undefined)) {
     return jsonResponse({ error: `Provide at least one of: ${fields.join(", ")}` }, 400);
+  }
+  if (body.name !== undefined && (typeof body.name !== "string" || !body.name.trim())) {
+    return jsonResponse({ error: "name must be a non-empty string" }, 400);
   }
   for (const field of ["active", "weatherPublic", "opsPublic", "isInternal"] as const) {
     if (body[field] !== undefined && typeof body[field] !== "boolean") {
@@ -70,13 +75,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const current = await env.DB
     .prepare(
-      "SELECT active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal, storage_quota_bytes AS storageQuotaBytes FROM tenants WHERE id = ?"
+      "SELECT name, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal, storage_quota_bytes AS storageQuotaBytes FROM tenants WHERE id = ?"
     )
     .bind(tenantId)
     .first<TenantRow>();
   if (!current) return jsonResponse({ error: "Tenant not found" }, 404);
 
   const next = {
+    name: body.name?.trim() ?? current.name,
     active: body.active ?? !!current.active,
     weatherPublic: body.weatherPublic ?? !!current.weatherPublic,
     opsPublic: body.opsPublic ?? !!current.opsPublic,
@@ -86,10 +92,11 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   await env.DB
     .prepare(
-      `UPDATE tenants SET active = ?, weather_public = ?, ops_public = ?, is_internal = ?, storage_quota_bytes = ?, updated_at = ?
+      `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, storage_quota_bytes = ?, updated_at = ?
        WHERE id = ?`
     )
     .bind(
+      next.name,
       next.active ? 1 : 0,
       next.weatherPublic ? 1 : 0,
       next.opsPublic ? 1 : 0,

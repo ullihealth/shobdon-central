@@ -10,6 +10,8 @@ import type { DisplayPanelConfig } from './panelConfig'
 interface CafeTvTemplateProps {
   panelConfig: DisplayPanelConfig
   themeOverride: CSSProperties
+  airfieldName?: string | null
+  logoUrl?: string | null
 }
 
 // The 'cafe-tv' template - simpler than 'classic', suited to a TV viewed
@@ -32,7 +34,7 @@ interface CafeTvTemplateProps {
 // here is that the media panel gets the WHOLE centre column height
 // (no compass sharing it 3:2) and the side columns are wider, not a
 // vertical stack.
-export default function CafeTvTemplate({ panelConfig, themeOverride }: CafeTvTemplateProps): JSX.Element {
+export default function CafeTvTemplate({ panelConfig, themeOverride, airfieldName, logoUrl }: CafeTvTemplateProps): JSX.Element {
   const showLeft = panelConfig.weather
   const showCenter = panelConfig.media
   const showRight = panelConfig.ops
@@ -48,7 +50,7 @@ export default function CafeTvTemplate({ panelConfig, themeOverride }: CafeTvTem
       style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
     >
       <div className="h-full" style={{ display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }}>
-        <Header rightSlot={<WeatherStatusIndicator />} />
+        <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
 
         <div
           style={{

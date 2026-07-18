@@ -48,5 +48,10 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
 ]
 
 // Rendered below a divider, outside any group - isDeveloper is orthogonal
-// to the role/group system, so it doesn't belong inside one.
-export const STANDALONE_ITEMS: SidebarItem[] = [{ to: '/developertools', label: 'Developer Tools', requireDeveloper: true }]
+// to the role/group system, so it doesn't belong inside one. Help has
+// neither allowedRoles nor requireDeveloper - visible to every logged-in
+// role (isItemVisible's default), matching /help's own bare <RequireAuth>.
+export const STANDALONE_ITEMS: SidebarItem[] = [
+  { to: '/help', label: 'Help' },
+  { to: '/developertools', label: 'Developer Tools', requireDeveloper: true },
+]

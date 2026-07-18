@@ -58,6 +58,7 @@ export const TENANT_CONFIG_URL = '/api/tenant/config'
 // Owner/media-role media-manager endpoints.
 export const MEDIA_LIBRARY_URL = '/api/tenant/media-library'
 export const MEDIA_LIBRARY_UPLOAD_URL = '/api/tenant/media-library/upload'
+export const BRANDING_LOGO_URL = '/api/tenant/branding/logo'
 export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
 // Lightweight, flat (no nesting) per-tenant folders for the media
 // library - functions/api/tenant/media-folders/*.
@@ -90,3 +91,29 @@ export const PUBLIC_TENANTS_URL = '/api/public/tenants'
 // Also cross-tenant by nature (it's how a NEW tenant comes to exist),
 // same reasoning as PUBLIC_TENANTS_URL above.
 export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'
+
+// Platform-admin only: mints a new tenant + single-use invite link -
+// functions/api/platform/tenants/onboard.ts. Consumed by
+// PlatformTenantsPage.tsx's "Onboard new tenant" button.
+export const PLATFORM_ONBOARD_TENANT_URL = '/api/platform/tenants/onboard'
+
+// Public, unauthenticated invite-link account setup - functions/api/
+// public/onboard/[token].ts (GET validate) and its accept.ts sibling
+// (POST). Consumed by OnboardInvitePage.tsx.
+export const onboardInviteValidateUrl = (token: string): string => `/api/public/onboard/${token}`
+export const onboardInviteAcceptUrl = (token: string): string => `/api/public/onboard/${token}/accept`
+
+// Authenticated: mandatory onboarding-terms acceptance - functions/api/
+// tenant/terms/accept.ts. Consumed by OnboardingTermsPage.tsx.
+export const TERMS_ACCEPT_URL = '/api/tenant/terms/accept'
+
+// Authenticated, any role: read-only global onboarding content (video
+// placeholders + Terms/Privacy text) - functions/api/tenant/
+// onboarding-content/index.ts. Consumed by both OnboardingTermsPage.tsx
+// (the mandatory gate) and HelpPage.tsx (ongoing access).
+export const TENANT_ONBOARDING_CONTENT_URL = '/api/tenant/onboarding-content'
+
+// Platform-admin only: get/edit the same global onboarding content above -
+// functions/api/platform/onboarding-content/index.ts. Consumed by
+// PlatformOnboardingContentPage.tsx.
+export const PLATFORM_ONBOARDING_CONTENT_URL = '/api/platform/onboarding-content'

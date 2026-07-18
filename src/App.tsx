@@ -6,9 +6,13 @@ import ConfigPage from './pages/ConfigPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
+import HelpPage from './pages/HelpPage'
 import LoginPage from './pages/LoginPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
+import OnboardInvitePage from './pages/OnboardInvitePage'
+import OnboardingTermsPage from './pages/OnboardingTermsPage'
+import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
@@ -24,6 +28,23 @@ export default function App(): JSX.Element {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/checklist" element={<ChecklistPage />} />
+        {/* Public, unauthenticated invite-link account setup - the entry
+            point of the onboarding pipeline. Path-based, not tied to the
+            new tenant's own (not-yet-DNS-provisioned) subdomain - runs
+            entirely on whatever host served this link. */}
+        <Route path="/onboard/:token" element={<OnboardInvitePage />} />
+        {/* Mandatory terms/privacy gate - reached via RequireAuth.tsx's
+            redirect, never linked to directly. Its own RequireAuth carries
+            skipTermsGate (must not redirect to itself) but still requires
+            a real session - this isn't a public route. */}
+        <Route
+          path="/onboarding/terms"
+          element={
+            <RequireAuth skipTermsGate>
+              <OnboardingTermsPage />
+            </RequireAuth>
+          }
+        />
         {/* Public, unauthenticated cross-tenant directory - Stage 4's
             public/private toggle plumbing's own consumer. Not linked from
             anywhere in the existing dashboard/nav yet (direct URL only) -
@@ -53,6 +74,14 @@ export default function App(): JSX.Element {
             </RequireAuth>
           }
         />
+        <Route
+          path="/platform/onboarding-content"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformOnboardingContentPage />
+            </RequireAuth>
+          }
+        />
         {/* Shared sidebar shell (AdminLayout.tsx) for every authenticated
             admin page - a React Router layout route rendering <Outlet/>.
             Per-route access gating below is completely unchanged: each
@@ -74,10 +103,14 @@ export default function App(): JSX.Element {
               </RequireAuth>
             }
           />
+          {/* skipTermsGate: the invite flow's branding step, reached
+              directly from account creation, must stay usable BEFORE
+              the mandatory terms/privacy gate - see RequireAuth.tsx's
+              own comment on why this is the one route carrying it. */}
           <Route
             path="/design"
             element={
-              <RequireAuth requireRole={['owner', 'admin']}>
+              <RequireAuth requireRole={['owner', 'admin']} skipTermsGate>
                 <DesignPage />
               </RequireAuth>
             }
@@ -131,6 +164,17 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth>
                 <AccountPage />
+              </RequireAuth>
+            }
+          />
+          {/* Any logged-in role - persistent access to the same video/
+              Terms/Privacy content shown during onboarding, so it isn't
+              only reachable that one time. */}
+          <Route
+            path="/help"
+            element={
+              <RequireAuth>
+                <HelpPage />
               </RequireAuth>
             }
           />

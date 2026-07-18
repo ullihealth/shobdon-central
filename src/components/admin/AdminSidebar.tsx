@@ -35,7 +35,11 @@ export default function AdminSidebar(): JSX.Element {
   const [isDeveloper, setIsDeveloper] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadCollapsedGroups())
-  const [organizationName, setOrganizationName] = useState('Shobdon Airfield')
+  // Empty until /api/tenant/me resolves, not another tenant's real name -
+  // found during the pre-onboarding branding audit: every other tenant's
+  // admin sidebar briefly flashed "Shobdon Airfield" on load before the
+  // real fetch overwrote it.
+  const [organizationName, setOrganizationName] = useState('')
   const [organizationSlug, setOrganizationSlug] = useState('')
   const [memberships, setMemberships] = useState<MembershipSummary[]>([])
 
