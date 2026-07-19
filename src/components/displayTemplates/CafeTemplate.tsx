@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import MediaPanel from '../media/MediaPanel'
-import CafeTicker, { type TickerSlot } from '../CafeTicker'
+import CafeTicker, { type TickerSlot, type TickerStyle } from '../CafeTicker'
 import VenueCornerBadge from '../VenueCornerBadge'
 import { currentMedia } from '../../config/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
@@ -26,13 +26,43 @@ interface CafeSettings {
   adLabelEnabled: boolean
   tickerEnabled: boolean
   tickerSlots: TickerSlot[]
+  tickerStyle: TickerStyle
 }
 
+// Matches migration 0035's own column DEFAULTs and cafe-settings/
+// index.ts's defaultSettings() - the fallback used only until the real
+// fetch below resolves (or if it fails outright).
 const DEFAULT_CAFE_SETTINGS: CafeSettings = {
   layoutMode: 'full',
   adLabelEnabled: false,
   tickerEnabled: false,
-  tickerSlots: Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null })),
+  tickerSlots: Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null, enabled: true })),
+  tickerStyle: {
+    backgroundColor: '#0f172a',
+    backgroundOpacity: 100,
+    heightPx: 64,
+    fontFamily: 'Inter',
+    fontSizePx: 16,
+    fontColor: '#ffffff',
+    scrollSpeedPxPerSec: 80,
+  },
+}
+
+// publicConfig.ts's cafeSettings.ticker* fields (DB-column-named, wire
+// format shared with cafe-settings/index.ts's own API) map onto
+// CafeTicker's own unprefixed TickerStyle shape - one contained mapping
+// step here rather than a "ticker" prefix repeated inside a prop that's
+// already named `style` on an already-named-Ticker component.
+function tickerStyleFromApi(cs: Record<string, unknown>): TickerStyle {
+  return {
+    backgroundColor: (cs.tickerBackgroundColor as string) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.backgroundColor,
+    backgroundOpacity: (cs.tickerBackgroundOpacity as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.backgroundOpacity,
+    heightPx: (cs.tickerHeightPx as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.heightPx,
+    fontFamily: (cs.tickerFontFamily as TickerStyle['fontFamily']) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.fontFamily,
+    fontSizePx: (cs.tickerFontSizePx as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.fontSizePx,
+    fontColor: (cs.tickerFontColor as string) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.fontColor,
+    scrollSpeedPxPerSec: (cs.tickerScrollSpeedPxPerSec as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.scrollSpeedPxPerSec,
+  }
 }
 
 function AdLabel(): JSX.Element {
@@ -63,7 +93,16 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled || !data) return
-        if (data.cafeSettings) setCafeSettings(data.cafeSettings)
+        if (data.cafeSettings) {
+          const cs = data.cafeSettings
+          setCafeSettings({
+            layoutMode: cs.layoutMode,
+            adLabelEnabled: cs.adLabelEnabled,
+            tickerEnabled: cs.tickerEnabled,
+            tickerSlots: cs.tickerSlots,
+            tickerStyle: tickerStyleFromApi(cs),
+          })
+        }
         if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
       })
       .catch(() => {})
@@ -72,7 +111,7 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
     }
   }, [])
 
-  const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots } = cafeSettings
+  const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots, tickerStyle } = cafeSettings
 
   return (
     <div
@@ -105,33 +144,41 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
                   : { display: 'flex', flexDirection: 'column', gap: '16px' }
               }
             >
-              <div className={`relative ${isDesktop ? 'h-full' : ''} flex items-center justify-center overflow-hidden`}>
-                <MediaPanel item={currentMedia} zone="left" />
+              {/* No flex/centering here - MediaPanel's `fill` prop makes it
+                  a plain h-full w-full block, so it fills this grid cell
+                  directly rather than letterboxing to a fixed 16:9 box
+                  within it (the root cause of the reported empty-space bug -
+                  see MediaPanel.tsx's own comment on `fill`). */}
+              <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
+                <MediaPanel item={currentMedia} zone="left" fill />
                 {adLabelEnabled && <AdLabel />}
               </div>
-              <div className={`relative ${isDesktop ? 'h-full' : ''} flex items-center justify-center overflow-hidden`}>
-                <MediaPanel item={currentMedia} zone="right" />
+              <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
+                <MediaPanel item={currentMedia} zone="right" fill />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
-            <div className={`relative ${isDesktop ? 'h-full' : ''} flex items-center justify-center overflow-hidden`}>
-              <MediaPanel item={currentMedia} />
+            <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
+              <MediaPanel item={currentMedia} fill />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
         </div>
 
         {/* FOOTER TICKER - fully collapses (not just hidden) when off, so
-            no empty space is reserved for it. */}
+            no empty space is reserved for it. No fixed height wrapper
+            here anymore - CafeTicker sets its own height from
+            tickerStyle.heightPx (Phase 2 style controls). */}
         {tickerEnabled && (
-          <div className="h-14 flex-shrink-0 sm:h-16">
+          <div className="flex-shrink-0">
             <CafeTicker
               slots={tickerSlots}
               weather={weather}
               liveDataUnavailable={liveDataUnavailable}
               visibilityHours={visibilityHours}
               safetyNotices={safetyNotices}
+              style={tickerStyle}
             />
           </div>
         )}

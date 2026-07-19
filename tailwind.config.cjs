@@ -27,22 +27,14 @@ module.exports = {
         'status-bad': 'var(--color-status-bad-text)',
         'compass-disc-bg': 'var(--color-compass-disc-bg)',
       },
-      // Café Template's footer ticker (CafeTicker.tsx) - a continuous,
-      // seamless loop, not the discrete dwell-per-slide pattern used
-      // elsewhere in this codebase. Fixed default speed for this pass -
-      // speed customization is a deliberate later follow-up, not missing
-      // by accident. The component renders its content track twice
-      // back-to-back and translates exactly -50%, so this animation
-      // never needs to know the actual content width.
-      keyframes: {
-        'cafe-ticker': {
-          '0%': { transform: 'translateX(0)' },
-          '100%': { transform: 'translateX(-50%)' },
-        },
-      },
-      animation: {
-        'cafe-ticker': 'cafe-ticker 30s linear infinite',
-      },
+      // Café Template's footer ticker (CafeTicker.tsx) scroll-speed
+      // control (Phase 2) made the animation duration a runtime,
+      // tenant-configurable value - moved to a plain, always-present
+      // @keyframes rule in index.css instead of this theme.extend
+      // block, since Tailwind's JIT only emits config-based keyframes
+      // when a matching animate-* utility class is found in scanned
+      // source, and no such static class exists anymore now that
+      // duration is set via inline style. See index.css's own comment.
     }
   },
   plugins: []

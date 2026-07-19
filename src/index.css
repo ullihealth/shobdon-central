@@ -113,3 +113,22 @@ body {
 .wind-arrow.arrow-red .arrow-head {
   filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.75)) drop-shadow(0 0 10px rgba(239, 68, 68, 0.35));
 }
+
+/* Café Template's footer ticker (CafeTicker.tsx) - a plain, always-
+   present @keyframes rule rather than Tailwind's theme.extend.keyframes
+   (which only emits keyframes into the compiled CSS when a
+   corresponding animate-* utility class is detected as used in scanned
+   source - fine for a fixed build-time duration, but the ticker's
+   scroll speed is now a runtime, tenant-configurable value applied via
+   inline animation-duration, so there's no static `animate-*` class
+   name left anywhere in source for Tailwind's JIT scanner to key off
+   of). Content is rendered twice back-to-back and translated exactly
+   -50%, so the loop point is seamless regardless of actual duration. */
+@keyframes cafe-ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

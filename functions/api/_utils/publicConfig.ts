@@ -81,6 +81,13 @@ interface CafeSettingsRow {
   adLabelEnabled: number;
   tickerEnabled: number;
   tickerSlotsJson: string;
+  tickerBackgroundColor: string;
+  tickerBackgroundOpacity: number;
+  tickerHeightPx: number;
+  tickerFontFamily: string;
+  tickerFontSizePx: number;
+  tickerFontColor: string;
+  tickerScrollSpeedPxPerSec: number;
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
@@ -180,12 +187,18 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
       )
       .bind(organizationId)
       .first<{ templateId: string; active: number }>(),
-    // Café template's own settings (migration 0033) - missing row (a
-    // tenant that's never visited /cafe-media) must never 404 here,
-    // same "/" resilience posture as mainTemplateId above - defaults
-    // applied below match cafe-settings/index.ts's own defaultSettings().
+    // Café template's own settings (migration 0033, style columns added
+    // in 0035) - missing row (a tenant that's never visited /cafe-media)
+    // must never 404 here, same "/" resilience posture as mainTemplateId
+    // above - defaults applied below match cafe-settings/index.ts's own
+    // defaultSettings().
     env.DB
-      .prepare("SELECT layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson FROM cafe_template_settings WHERE organizationId = ?")
+      .prepare(
+        `SELECT layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson,
+                tickerBackgroundColor, tickerBackgroundOpacity, tickerHeightPx, tickerFontFamily,
+                tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec
+         FROM cafe_template_settings WHERE organizationId = ?`
+      )
       .bind(organizationId)
       .first<CafeSettingsRow>(),
   ]);
@@ -264,9 +277,23 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     layoutMode: cafeSettingsRow?.layoutMode ?? "full",
     adLabelEnabled: !!cafeSettingsRow?.adLabelEnabled,
     tickerEnabled: !!cafeSettingsRow?.tickerEnabled,
-    tickerSlots: cafeSettingsRow?.tickerSlotsJson
+    tickerSlots: (cafeSettingsRow?.tickerSlotsJson
       ? JSON.parse(cafeSettingsRow.tickerSlotsJson)
-      : Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null })),
+      : Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null, enabled: true }))
+    ).map((slot: { position: number; type: string | null; enabled?: boolean }) => ({
+      position: slot.position,
+      type: slot.type,
+      // Missing on an older saved config = enabled, same
+      // `enabled !== false` convention as safetyNotices.
+      enabled: slot.enabled !== false,
+    })),
+    tickerBackgroundColor: cafeSettingsRow?.tickerBackgroundColor ?? "#0f172a",
+    tickerBackgroundOpacity: cafeSettingsRow?.tickerBackgroundOpacity ?? 100,
+    tickerHeightPx: cafeSettingsRow?.tickerHeightPx ?? 64,
+    tickerFontFamily: cafeSettingsRow?.tickerFontFamily ?? "Inter",
+    tickerFontSizePx: cafeSettingsRow?.tickerFontSizePx ?? 16,
+    tickerFontColor: cafeSettingsRow?.tickerFontColor ?? "#ffffff",
+    tickerScrollSpeedPxPerSec: cafeSettingsRow?.tickerScrollSpeedPxPerSec ?? 80,
   };
 
   return jsonResponse({

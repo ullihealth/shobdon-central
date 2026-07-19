@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import Header from '../components/Header'
+import DisplayUrlList from '../components/config/DisplayUrlList'
 import LeftInfoPanel from '../components/LeftInfoPanel'
 import CentreDisplayPanel from '../components/CentreDisplayPanel'
 import RightInfoPanel from '../components/RightInfoPanel'
@@ -678,6 +679,16 @@ export default function DesignPage(): JSX.Element {
           })}
         </div>
       </section>
+
+      {/* YOUR DISPLAYS - moved here from /config (Weather Config), which
+          should be about weather source configuration only. Belongs next
+          to Dashboard Layout: both are about which template/URL a given
+          display shows, not weather. Pure relocation - DisplayUrlList.tsx
+          itself is unchanged, still its own self-contained
+          GET /api/tenant/displays fetch. */}
+      <div className="mb-8">
+        <DisplayUrlList />
+      </div>
 
       {/* APPLY TO LIVE DASHBOARD - deliberately separate from the Templates
           section above: this affects the shared, physically-visible

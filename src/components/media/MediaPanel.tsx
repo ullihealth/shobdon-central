@@ -39,9 +39,23 @@ interface MediaPanelProps {
   // already established. Default undefined = no filtering (every
   // existing caller, including Café's own full-16:9 mode, unaffected).
   zone?: 'left' | 'right'
+  // Fills the panel's ENTIRE container instead of letterboxing to a
+  // fixed 16:9 box (the default, below) - Café Template's main content
+  // zone spans the whole screen width with no side columns, unlike
+  // Clubhouse1/2Template's ~54%/~40% centre column, where a forced 16:9
+  // box happens to sit close enough to that column's own proportions
+  // that the letterboxing is barely visible. At Café's full width the
+  // same fixed-aspect box left a large empty gap (root cause of a
+  // reported live layout bug) - `fill` removes the aspect-ratio
+  // constraint entirely rather than trying to tune it, so every actual
+  // slot's own fitMode (contain/fill, set per-slot in Media Manager)
+  // is what determines any letterboxing now, not this wrapper. Default
+  // false - every existing caller (Clubhouse1/2Template,
+  // CentreDisplayPanel) is completely unaffected.
+  fill?: boolean
 }
 
-export default function MediaPanel({ item, preferVideo, zone }: MediaPanelProps): JSX.Element {
+export default function MediaPanel({ item, preferVideo, zone, fill }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-
@@ -113,7 +127,9 @@ export default function MediaPanel({ item, preferVideo, zone }: MediaPanelProps)
 
   return (
     <div
-      className="aspect-video h-full max-h-full max-w-full overflow-hidden rounded-xl border border-border bg-slate-950/90 shadow-lg shadow-slate-950/30"
+      className={`h-full overflow-hidden rounded-xl border border-border bg-slate-950/90 shadow-lg shadow-slate-950/30 ${
+        fill ? 'w-full' : 'aspect-video max-h-full max-w-full'
+      }`}
     >
       <div
         className={`relative flex h-full flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-slate-900/60 text-center ${isEdgeToEdgeContent ? '' : 'p-6'}`}
