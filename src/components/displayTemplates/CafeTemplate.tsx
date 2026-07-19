@@ -86,7 +86,19 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
 
-  const [cafeSettings, setCafeSettings] = useState<CafeSettings>(DEFAULT_CAFE_SETTINGS)
+  // null (not DEFAULT_CAFE_SETTINGS) until the real fetch resolves -
+  // this used to initialize straight to DEFAULT_CAFE_SETTINGS
+  // (layoutMode: 'full'), which meant this component's FIRST render
+  // always used to briefly show full-16:9 mode (a single, unfiltered
+  // MediaPanel) regardless of what the tenant actually has saved, then
+  // swap to split mode (two brand-new, zone-filtered MediaPanel
+  // instances, mounted fresh with empty state) the moment the real
+  // settings arrived - a genuine, code-confirmed flash-then-different-
+  // content transition on every single page load for any tenant using
+  // split mode. Waiting for the real value before rendering the main
+  // content at all removes that transition entirely instead of
+  // papering over its symptoms.
+  const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null)
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
 
   useEffect(() => {
@@ -94,8 +106,8 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (cancelled || !data) return
-        if (data.cafeSettings) {
+        if (cancelled) return
+        if (data?.cafeSettings) {
           const cs = data.cafeSettings
           setCafeSettings({
             layoutMode: cs.layoutMode,
@@ -104,14 +116,29 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
             tickerSlots: cs.tickerSlots,
             tickerStyle: tickerStyleFromApi(cs),
           })
+        } else {
+          // Request failed, or genuinely no row yet for this tenant
+          // (never visited /cafe-media) - fall back to the documented
+          // defaults rather than staying stuck on the loading state
+          // forever.
+          setCafeSettings(DEFAULT_CAFE_SETTINGS)
         }
-        if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
+        if (data?.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setCafeSettings(DEFAULT_CAFE_SETTINGS)
+      })
     return () => {
       cancelled = true
     }
   }, [])
+
+  // Same background gradient as the real content below (not a blank/
+  // white flash), just without the grid/panels yet - avoids a jarring
+  // colour flash on top of avoiding the wrong-content flash above.
+  if (!cafeSettings) {
+    return <div className="h-screen w-screen bg-gradient-to-b from-page-from via-page-via to-page-to" style={themeOverride} />
+  }
 
   const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots, tickerStyle } = cafeSettings
 

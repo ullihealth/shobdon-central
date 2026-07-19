@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
@@ -111,9 +111,30 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
   // zone then preferVideo, both independent, optional, and combinable -
   // raw carouselSlots stays the true fetched state throughout; these are
   // purely display-order/selection derivations, never a second data source.
-  const zoneFilteredSlots = zone ? carouselSlots.filter((slot) => slot.zone === zone || slot.zone === 'both') : carouselSlots
-  const videoSlots = zoneFilteredSlots.filter((slot) => slot.mediaType === 'mp4')
-  const effectiveSlots = preferVideo && videoSlots.length > 0 ? videoSlots : zoneFilteredSlots
+  //
+  // Memoized (was three plain .filter() calls run fresh on every render)
+  // - .filter() always returns a NEW array, even when the result is
+  // element-for-element identical to last time, so effectiveSlots had a
+  // different reference on EVERY render of this component, not just
+  // when carouselSlots/zone/preferVideo actually changed. The cycling
+  // effect below is keyed on [effectiveSlots], so it was re-running on
+  // every single re-render this component received for ANY reason
+  // (e.g. a parent re-rendering from unrelated weather-polling context
+  // updates) - clearing the running timer and forcing activeIndex back
+  // to 0 each time, which would visibly snap a multi-slot carousel back
+  // to its first slide mid-rotation, discarding whatever was actually
+  // showing. Memoizing so the reference only changes when the real
+  // inputs do fixes this at the source, rather than working around it
+  // in the effect below.
+  const zoneFilteredSlots = useMemo(
+    () => (zone ? carouselSlots.filter((slot) => slot.zone === zone || slot.zone === 'both') : carouselSlots),
+    [carouselSlots, zone]
+  )
+  const videoSlots = useMemo(() => zoneFilteredSlots.filter((slot) => slot.mediaType === 'mp4'), [zoneFilteredSlots])
+  const effectiveSlots = useMemo(
+    () => (preferVideo && videoSlots.length > 0 ? videoSlots : zoneFilteredSlots),
+    [preferVideo, videoSlots, zoneFilteredSlots]
+  )
 
   // Cycles through enabled carousel slots in order, each for its own
   // duration (mp4DurationSeconds overrides durationSeconds for mp4),
