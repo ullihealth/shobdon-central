@@ -183,6 +183,17 @@ export default function CafeMediaPage(): JSX.Element {
   const [customTemplates, setCustomTemplates] = useState<TickerStyleTemplate[]>(() => loadTickerStyleTemplates())
   const [templateNameInput, setTemplateNameInput] = useState('')
 
+  // Collapsed by default - styling (colour/font/speed/gap) is a "set
+  // once via a preset, rarely revisit" section, unlike the slot content
+  // editor directly below it, which is what most visits to this page
+  // are actually here to change. Collapsing it by default keeps that
+  // more frequently-used section right under the preview without an
+  // extra scroll, matching this reorg's own "reduce vertical space"
+  // goal - expand on demand costs one click, whereas a permanently
+  // expanded styling block would cost every visitor unwanted scrolling
+  // on every visit.
+  const [styleExpanded, setStyleExpanded] = useState(false)
+
   useEffect(() => {
     let cancelled = false
 
@@ -335,49 +346,213 @@ export default function CafeMediaPage(): JSX.Element {
         </div>
       </div>
 
-      {/* LAYOUT MODE */}
+      {/* TICKER STYLE - moved directly beneath the preview (was below
+          Footer Ticker) and made a collapsible accordion: the header
+          itself is the toggle button, controlling styleExpanded. See
+          that state's own comment for why it defaults collapsed. */}
       <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-        <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Layout</div>
-        <p className="mb-4 text-xs text-muted-500">
-          Split-pane shows two independent carousel zones side by side (assign slots to Left/Right in Media
-          Manager). Full 16:9 shows a single carousel filling the whole area.
-        </p>
-        <div className="flex gap-3">
-          {(['full', 'split'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setLayoutMode(mode)}
-              className={`rounded-lg border px-4 py-2 text-sm font-semibold transition ${
-                layoutMode === mode
-                  ? 'border-accent-sky-500 bg-slate-900 text-white'
-                  : 'border-border bg-slate-900/80 text-slate-300 hover:border-accent-sky-500/60'
-              }`}
-            >
-              {mode === 'full' ? 'Full 16:9' : 'Split-Pane'}
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={() => setStyleExpanded((prev) => !prev)}
+          className="flex w-full items-center justify-between text-left"
+          aria-expanded={styleExpanded}
+        >
+          <div>
+            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Ticker Style</div>
+            <p className="mt-1 text-xs text-muted-500">
+              Background, text, and scroll-speed appearance for the footer ticker.
+            </p>
+          </div>
+          <span
+            className={`shrink-0 text-lg text-muted-400 transition-transform ${styleExpanded ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            ▾
+          </span>
+        </button>
+
+        {styleExpanded && (
+          <div className="mt-4">
+            <p className="mb-4 text-xs text-muted-500">Pick a preset below as a starting point, then fine-tune anything here.</p>
+
+            {/* PRESETS */}
+            <div className="mb-6">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-400">Presets</div>
+              <div className="flex flex-wrap gap-2">
+                {BUILT_IN_TICKER_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyPreset(preset.style)}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500"
+                  >
+                    <span
+                      className="h-3 w-3 rounded-full border border-white/20"
+                      style={{ backgroundColor: preset.style.backgroundColor }}
+                    />
+                    {preset.name}
+                  </button>
+                ))}
+                {customTemplates.map((template) => (
+                  <div
+                    key={template.id}
+                    className="flex items-center gap-1 rounded-lg border border-border bg-slate-900/80 pl-1 pr-2 text-xs font-semibold text-slate-200"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => applyPreset(template.style)}
+                      className="flex items-center gap-2 rounded-md px-2 py-2 transition hover:text-accent-sky-400"
+                    >
+                      <span
+                        className="h-3 w-3 rounded-full border border-white/20"
+                        style={{ backgroundColor: template.style.backgroundColor }}
+                      />
+                      {template.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(template.id)}
+                      className="text-muted-500 hover:text-status-bad"
+                      title="Delete this saved template"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CONTROLS */}
+            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-muted-400">Background colour</span>
+                <input
+                  type="color"
+                  value={tickerStyle.backgroundColor}
+                  onChange={(event) => updateStyle({ backgroundColor: event.target.value })}
+                  className="h-9 w-full cursor-pointer rounded border border-border bg-transparent"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-muted-400">Background opacity ({tickerStyle.backgroundOpacity}%)</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={tickerStyle.backgroundOpacity}
+                  onChange={(event) => updateStyle({ backgroundOpacity: Number(event.target.value) })}
+                  className="accent-accent-sky-500"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-muted-400">Height (px)</span>
+                <input
+                  type="number"
+                  min={24}
+                  max={200}
+                  value={tickerStyle.heightPx}
+                  onChange={(event) => updateStyle({ heightPx: Number(event.target.value) })}
+                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-muted-400">Font family</span>
+                <select
+                  value={tickerStyle.fontFamily}
+                  onChange={(event) => updateStyle({ fontFamily: event.target.value as TickerStyle['fontFamily'] })}
+                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                >
+                  {FONT_FAMILY_OPTIONS.map((font) => (
+                    <option key={font} value={font}>
+                      {font}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-muted-400">Font size (px)</span>
+                <input
+                  type="number"
+                  min={8}
+                  max={72}
+                  value={tickerStyle.fontSizePx}
+                  onChange={(event) => updateStyle({ fontSizePx: Number(event.target.value) })}
+                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-muted-400">Font colour</span>
+                <input
+                  type="color"
+                  value={tickerStyle.fontColor}
+                  onChange={(event) => updateStyle({ fontColor: event.target.value })}
+                  className="h-9 w-full cursor-pointer rounded border border-border bg-transparent"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
+                <span className="text-xs uppercase tracking-wide text-muted-400">
+                  Scroll speed ({tickerStyle.scrollSpeedPxPerSec === 0 ? 'Static - no scrolling' : `${tickerStyle.scrollSpeedPxPerSec} px/sec`})
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={200}
+                  value={tickerStyle.scrollSpeedPxPerSec}
+                  onChange={(event) => updateStyle({ scrollSpeedPxPerSec: Number(event.target.value) })}
+                  className="accent-accent-sky-500"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
+                <span className="text-xs uppercase tracking-wide text-muted-400">
+                  Gap between messages ({tickerStyle.gapPx === 0 ? 'Tight (default)' : `${tickerStyle.gapPx}px`})
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={2000}
+                  value={tickerStyle.gapPx}
+                  onChange={(event) => updateStyle({ gapPx: Number(event.target.value) })}
+                  className="accent-accent-sky-500"
+                />
+                <span className="text-[11px] text-muted-500">
+                  At the high end, one message fully scrolls off-screen before the next appears - that blank moment
+                  is expected, not a bug.
+                </span>
+              </label>
+            </div>
+
+            {/* SAVE AS TEMPLATE */}
+            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+              <input
+                value={templateNameInput}
+                onChange={(event) => setTemplateNameInput(event.target.value)}
+                placeholder="New template name"
+                className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+              />
+              <button
+                type="button"
+                onClick={handleSaveAsTemplate}
+                disabled={!templateNameInput.trim()}
+                className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Save as template
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
-      {/* AD LABEL */}
-      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-        <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Advertisement Label</div>
-        <p className="mb-4 text-xs text-muted-500">
-          When on, a small "Advertisement" label appears on carousel content.
-        </p>
-        <label className="flex w-fit cursor-pointer items-center gap-3">
-          <input
-            type="checkbox"
-            checked={adLabelEnabled}
-            onChange={(event) => setAdLabelEnabled(event.target.checked)}
-            className="h-5 w-5 accent-accent-sky-500"
-          />
-          <span className="text-sm font-semibold text-primary">{adLabelEnabled ? 'On' : 'Off'}</span>
-        </label>
-      </section>
-
-      {/* TICKER */}
+      {/* FOOTER TICKER - directly beneath Ticker Style, per your
+          requested order: collapsed styling -> this sits right under
+          the preview; expanded styling -> this sits below the
+          expanded controls. */}
       <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
         <div className="mb-1 flex items-center justify-between">
           <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Footer Ticker</div>
@@ -425,186 +600,57 @@ export default function CafeMediaPage(): JSX.Element {
         </div>
       </section>
 
-      {/* TICKER STYLE - Phase 2, deliberately deferred when the ticker
-          first shipped. All controls write into the same tickerStyle
-          state the preview above already reads, so every change is
-          immediately visible there too. */}
+      {/* LAYOUT + AD LABEL + SAVE - condensed onto one row (was three
+          separate full-width sections) to cut vertical space. Same
+          state/handlers as before, just laid out differently -
+          wraps on narrow screens via flex-wrap. */}
       <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-        <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Ticker Style</div>
-        <p className="mb-4 text-xs text-muted-500">
-          Background, text, and scroll-speed appearance for the footer ticker. Pick a preset below as a starting
-          point, then fine-tune anything here.
-        </p>
-
-        {/* PRESETS */}
-        <div className="mb-6">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-400">Presets</div>
-          <div className="flex flex-wrap gap-2">
-            {BUILT_IN_TICKER_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => applyPreset(preset.style)}
-                className="flex items-center gap-2 rounded-lg border border-border bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500"
-              >
-                <span
-                  className="h-3 w-3 rounded-full border border-white/20"
-                  style={{ backgroundColor: preset.style.backgroundColor }}
-                />
-                {preset.name}
-              </button>
-            ))}
-            {customTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="flex items-center gap-1 rounded-lg border border-border bg-slate-900/80 pl-1 pr-2 text-xs font-semibold text-slate-200"
-              >
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div className="flex items-center gap-3" title="Split-pane shows two independent carousel zones side by side (assign slots to Left/Right in Media Manager). Full 16:9 shows a single carousel filling the whole area.">
+            <span className="shrink-0 text-xs font-bold uppercase tracking-widest text-accent-sky-400">Layout</span>
+            <div className="flex gap-2">
+              {(['full', 'split'] as const).map((mode) => (
                 <button
+                  key={mode}
                   type="button"
-                  onClick={() => applyPreset(template.style)}
-                  className="flex items-center gap-2 rounded-md px-2 py-2 transition hover:text-accent-sky-400"
+                  onClick={() => setLayoutMode(mode)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
+                    layoutMode === mode
+                      ? 'border-accent-sky-500 bg-slate-900 text-white'
+                      : 'border-border bg-slate-900/80 text-slate-300 hover:border-accent-sky-500/60'
+                  }`}
                 >
-                  <span
-                    className="h-3 w-3 rounded-full border border-white/20"
-                    style={{ backgroundColor: template.style.backgroundColor }}
-                  />
-                  {template.name}
+                  {mode === 'full' ? 'Full 16:9' : 'Split-Pane'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteTemplate(template.id)}
-                  className="text-muted-500 hover:text-status-bad"
-                  title="Delete this saved template"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* CONTROLS */}
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-400">Background colour</span>
-            <input
-              type="color"
-              value={tickerStyle.backgroundColor}
-              onChange={(event) => updateStyle({ backgroundColor: event.target.value })}
-              className="h-9 w-full cursor-pointer rounded border border-border bg-transparent"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-400">Background opacity ({tickerStyle.backgroundOpacity}%)</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={tickerStyle.backgroundOpacity}
-              onChange={(event) => updateStyle({ backgroundOpacity: Number(event.target.value) })}
-              className="accent-accent-sky-500"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-400">Height (px)</span>
-            <input
-              type="number"
-              min={24}
-              max={200}
-              value={tickerStyle.heightPx}
-              onChange={(event) => updateStyle({ heightPx: Number(event.target.value) })}
-              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-400">Font family</span>
-            <select
-              value={tickerStyle.fontFamily}
-              onChange={(event) => updateStyle({ fontFamily: event.target.value as TickerStyle['fontFamily'] })}
-              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-            >
-              {FONT_FAMILY_OPTIONS.map((font) => (
-                <option key={font} value={font}>
-                  {font}
-                </option>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-400">Font size (px)</span>
-            <input
-              type="number"
-              min={8}
-              max={72}
-              value={tickerStyle.fontSizePx}
-              onChange={(event) => updateStyle({ fontSizePx: Number(event.target.value) })}
-              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-400">Font colour</span>
-            <input
-              type="color"
-              value={tickerStyle.fontColor}
-              onChange={(event) => updateStyle({ fontColor: event.target.value })}
-              className="h-9 w-full cursor-pointer rounded border border-border bg-transparent"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
-            <span className="text-xs uppercase tracking-wide text-muted-400">
-              Scroll speed ({tickerStyle.scrollSpeedPxPerSec === 0 ? 'Static - no scrolling' : `${tickerStyle.scrollSpeedPxPerSec} px/sec`})
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={200}
-              value={tickerStyle.scrollSpeedPxPerSec}
-              onChange={(event) => updateStyle({ scrollSpeedPxPerSec: Number(event.target.value) })}
-              className="accent-accent-sky-500"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
-            <span className="text-xs uppercase tracking-wide text-muted-400">
-              Gap between messages ({tickerStyle.gapPx === 0 ? 'Tight (default)' : `${tickerStyle.gapPx}px`})
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={2000}
-              value={tickerStyle.gapPx}
-              onChange={(event) => updateStyle({ gapPx: Number(event.target.value) })}
-              className="accent-accent-sky-500"
-            />
-            <span className="text-[11px] text-muted-500">
-              At the high end, one message fully scrolls off-screen before the next appears - that blank moment is
-              expected, not a bug.
-            </span>
-          </label>
-        </div>
-
-        {/* SAVE AS TEMPLATE */}
-        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
-          <input
-            value={templateNameInput}
-            onChange={(event) => setTemplateNameInput(event.target.value)}
-            placeholder="New template name"
-            className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
-          />
-          <button
-            type="button"
-            onClick={handleSaveAsTemplate}
-            disabled={!templateNameInput.trim()}
-            className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          <label
+            className="flex cursor-pointer items-center gap-3"
+            title='When on, a small "Advertisement" label appears on carousel content.'
           >
-            Save as template
-          </button>
+            <span className="shrink-0 text-xs font-bold uppercase tracking-widest text-accent-sky-400">Ad Label</span>
+            <input
+              type="checkbox"
+              checked={adLabelEnabled}
+              onChange={(event) => setAdLabelEnabled(event.target.checked)}
+              className="h-5 w-5 accent-accent-sky-500"
+            />
+          </label>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saveStatus === 'working'}
+              className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saveStatus === 'working' ? 'Saving…' : 'Save Settings'}
+            </button>
+            {saveStatus === 'success' && <span className="text-sm font-semibold text-status-good">Saved.</span>}
+            {saveStatus === 'error' && <span className="text-sm font-semibold text-status-bad">Couldn't save.</span>}
+          </div>
         </div>
       </section>
 
@@ -612,20 +658,6 @@ export default function CafeMediaPage(): JSX.Element {
       <section className="mb-8 rounded-2xl border border-dashed border-border bg-panel/50 p-6">
         <div className="mb-1 text-sm font-bold uppercase tracking-widest text-muted-500">Ad Slots</div>
         <p className="text-xs text-muted-500">Coming soon - manage paid advertisement content for this template here.</p>
-      </section>
-
-      {/* SAVE */}
-      <section className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saveStatus === 'working'}
-          className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saveStatus === 'working' ? 'Saving…' : 'Save Settings'}
-        </button>
-        {saveStatus === 'success' && <p className="mt-3 text-sm font-semibold text-status-good">Saved.</p>}
-        {saveStatus === 'error' && <p className="mt-3 text-sm font-semibold text-status-bad">Couldn't save - please try again.</p>}
       </section>
     </div>
   )
