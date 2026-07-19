@@ -1221,7 +1221,7 @@ export default function MediaManagerPage(): JSX.Element {
   return (
     <>
       <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
-        <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Media Manager</h1>
+        <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Dashboard Manager</h1>
         <p className="mb-8 max-w-2xl text-sm text-muted-400">
           Upload images, MP4 clips, and PDFs to the media library, then assign them to any of the 12 carousel
           slots. Slots cycle in order on the live dashboard, each for its own duration - plain cuts between

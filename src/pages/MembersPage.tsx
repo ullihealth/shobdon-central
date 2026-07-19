@@ -107,8 +107,8 @@ export default function MembersPage(): JSX.Element {
       <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Members</h1>
       <p className="mb-8 max-w-2xl text-sm text-muted-400">
         Add or remove admin, ATC, and media accounts for this tenant. Admin has full owner-level access
-        (including this page) plus Media Manager. ATC lands on ATC Control after login; media lands on Media
-        Manager. Owner accounts aren't managed here.
+        (including this page) plus Dashboard Manager. ATC lands on ATC Control after login; media lands on
+        Dashboard Manager. Owner accounts aren't managed here.
       </p>
 
       {revealedPassword && (

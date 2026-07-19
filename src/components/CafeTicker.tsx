@@ -17,6 +17,7 @@ import '@fontsource/oswald/400.css'
 import '@fontsource/oswald/700.css'
 import { AIRFIELD_TIMEZONE } from '../config/publicApi'
 import { degreesToCardinal } from '../utils/windCalculations'
+import { weatherIconFor } from '../utils/weatherIcons'
 import type { VisibilityHour } from '../services/visibilityForecastService'
 import type { WeatherData } from '../types/weather'
 
@@ -32,6 +33,13 @@ export interface TickerSlot {
   // missing value as enabled (same `!== false` convention safetyNotices
   // itself already uses).
   enabled?: boolean
+  // Only meaningful when type === 'notice' - WHICH specific named
+  // notice this slot shows (Part C), matched against SafetyNotice.id.
+  // A slot with type 'notice' and no noticeId (or one that no longer
+  // matches any existing notice - e.g. it was deleted) resolves to an
+  // empty segment and is skipped, same graceful-degradation posture as
+  // every other empty/unset slot - never a crash.
+  noticeId?: string
 }
 
 export interface TickerStyle {
@@ -66,8 +74,14 @@ const FONT_CSS_STACK: Record<TickerStyle['fontFamily'], string> = {
 // AtcControlPage.tsx already each keep their own private copy of this
 // exact shape (see Part A investigation); this follows the same
 // pre-existing convention rather than introducing the first shared
-// export of it.
+// export of it. id/name added for Part C's named, per-slot-selectable
+// notices - both fields are always present by the time this data
+// reaches the client (self-healed server-side, see ops-panel/index.ts's
+// own comment), but typed optional here defensively since this
+// component has no control over what publicConfig.ts actually returns.
 interface SafetyNotice {
+  id?: string
+  name?: string
   text: string
   size: 'sm' | 'md' | 'lg' | 'xl'
   enabled: boolean
@@ -93,10 +107,18 @@ function useClockText(): string {
   return `${date} — ${time}`
 }
 
+// Icons, not the text category label ("Very Good" etc.) - reuses
+// weatherIconFor() from src/utils/weatherIcons.ts, the exact same
+// day/night-aware icon set the main dashboard's own 6-Hour Forecast row
+// (CloudVisibilityChart.tsx) already renders, per your instruction not
+// to build or duplicate a second icon set. "MET OFFICE" restored in the
+// label - the admin dropdown (CafeMediaPage.tsx's SLOT_TYPE_OPTIONS)
+// already said "6-Hour Met Office Forecast"; this rendered text had
+// drifted from it.
 function forecastSegmentText(visibilityHours: VisibilityHour[]): string {
-  if (visibilityHours.length === 0) return '6-HOUR FORECAST: Unavailable'
-  const parts = visibilityHours.slice(0, 6).map((hour, index) => `+${index + 1}h ${hour.category}`)
-  return `6-HOUR FORECAST: ${parts.join(' · ')}`
+  if (visibilityHours.length === 0) return '6-HOUR MET OFFICE FORECAST: Unavailable'
+  const icons = visibilityHours.slice(0, 6).map((hour) => weatherIconFor(hour.weatherCode))
+  return `6-HOUR MET OFFICE FORECAST: ${icons.join('  ')}`
 }
 
 function conditionsSegmentText(weather: WeatherData | null, liveDataUnavailable: boolean): string {
@@ -105,10 +127,18 @@ function conditionsSegmentText(weather: WeatherData | null, liveDataUnavailable:
   return `CURRENT CONDITIONS: ${weather.temperature}°C · Wind ${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt${gust}`
 }
 
-function noticeSegmentText(safetyNotices: SafetyNotice[]): string {
-  const enabled = safetyNotices.filter((notice) => notice.enabled !== false)
-  if (enabled.length === 0) return ''
-  return enabled.map((notice) => notice.text).join('   •   ')
+// Part C: a slot with type 'notice' now references ONE specific named
+// notice by id, not a blanket concatenation of every enabled notice -
+// different slots can show different notices independently. Per-notice
+// `enabled` still gates it (a disabled notice reads as unset here, same
+// as RightInfoPanel's own NOTAM panel already treats it) - that's a
+// separate, global "is this notice live at all" switch, independent of
+// any individual slot's own on/off toggle.
+function noticeSegmentText(noticeId: string | undefined, safetyNotices: SafetyNotice[]): string {
+  if (!noticeId) return ''
+  const notice = safetyNotices.find((n) => n.id === noticeId)
+  if (!notice || notice.enabled === false) return ''
+  return notice.text
 }
 
 // Resolves each configured, ENABLED slot to its display text - built-in
@@ -133,7 +163,7 @@ function useResolvedSegments(props: CafeTickerProps): string[] {
         case 'conditions':
           return conditionsSegmentText(weather, liveDataUnavailable)
         case 'notice':
-          return noticeSegmentText(safetyNotices)
+          return noticeSegmentText(slot.noticeId, safetyNotices)
         default:
           return ''
       }

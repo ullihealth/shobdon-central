@@ -71,6 +71,8 @@ interface OpsPanelRow {
 }
 
 interface SafetyNoticeResolved {
+  id: string;
+  name: string;
   text: string;
   size: "sm" | "md" | "lg" | "xl";
   enabled: boolean;

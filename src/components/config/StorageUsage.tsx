@@ -42,7 +42,7 @@ export default function StorageUsage(): JSX.Element | null {
       </div>
       <p className="mb-4 text-sm text-muted-300">
         Camera thumbnails, carousel photos, and video slides all count toward this. Manage files in{' '}
-        <span className="font-medium text-primary">Media Manager</span>.
+        <span className="font-medium text-primary">Dashboard Manager</span>.
       </p>
       <div className="h-2 overflow-hidden rounded-full bg-slate-800">
         <div

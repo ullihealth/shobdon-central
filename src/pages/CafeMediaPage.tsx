@@ -3,7 +3,7 @@ import MediaPanel from '../components/media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import { currentMedia } from '../config/media'
-import { PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import {
@@ -17,8 +17,18 @@ import {
 const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
 const FONT_FAMILY_OPTIONS: TickerStyle['fontFamily'][] = ['Inter', 'Montserrat', 'Oswald']
+const NOTICE_NAME_MAX_LENGTH = 40
+const NOTICE_TEXT_MAX_LENGTH = 40
 
+// id/name added for Part C - notices are now named and individually
+// selectable per ticker slot, not one undifferentiated block of text.
+// Same shape as ops-panel/index.ts's own SafetyNoticeStored and
+// AtcControlPage.tsx's own local copy - this IS that same data, read
+// and written through the exact same /api/tenant/ops-panel endpoint,
+// not a parallel store.
 interface SafetyNotice {
+  id: string
+  name: string
   text: string
   size: 'sm' | 'md' | 'lg' | 'xl'
   enabled: boolean
@@ -26,13 +36,40 @@ interface SafetyNotice {
 
 type SaveStatus = 'idle' | 'working' | 'success' | 'error'
 
-const SLOT_TYPE_OPTIONS: { value: TickerSlotType | ''; label: string }[] = [
-  { value: '', label: '— None —' },
-  { value: 'clock', label: 'Clock / Date' },
-  { value: 'forecast', label: '6-Hour Met Office Forecast' },
-  { value: 'conditions', label: 'Current Conditions (Temp / Wind)' },
-  { value: 'notice', label: 'Notice (from ATC Control)' },
-]
+// A slot's <select> value is a plain string encoding both `type` and,
+// for notices, WHICH one - '' | 'clock' | 'forecast' | 'conditions' |
+// `notice:${id}`. Keeps the dropdown a single native <select> (one
+// onChange, no separate "which notice" sub-control to keep in sync)
+// while still letting each slot reference one specific notice.
+function slotOptionValue(slot: TickerSlot): string {
+  if (slot.type === 'notice') return `notice:${slot.noticeId ?? ''}`
+  return slot.type ?? ''
+}
+
+function parseSlotOptionValue(value: string): Partial<TickerSlot> {
+  if (value.startsWith('notice:')) return { type: 'notice', noticeId: value.slice('notice:'.length) }
+  return { type: (value || null) as TickerSlotType | null, noticeId: undefined }
+}
+
+// Base types plus one option per EXISTING notice - replaces the old
+// static single "Notice (from ATC Control)" entry, per Part C: each
+// slot now picks a specific named notice, so different slots can show
+// different notices independently. All notices are listed regardless
+// of their own enabled state (a slot can be pre-wired to a currently-
+// off notice, ready for later) - the "(off)" suffix makes that visible
+// rather than silently confusing.
+function buildSlotOptions(notices: SafetyNotice[]): { value: string; label: string }[] {
+  return [
+    { value: '', label: '— None —' },
+    { value: 'clock', label: 'Clock / Date' },
+    { value: 'forecast', label: '6-Hour Met Office Forecast' },
+    { value: 'conditions', label: 'Current Conditions (Temp / Wind)' },
+    ...notices.map((notice) => ({
+      value: `notice:${notice.id}`,
+      label: `Notice: ${notice.name || notice.text}${notice.enabled === false ? ' (off)' : ''}`,
+    })),
+  ]
+}
 
 function defaultTickerSlots(): TickerSlot[] {
   return Array.from({ length: TICKER_SLOT_COUNT }, (_, i) => ({ position: i + 1, type: null, enabled: true }))
@@ -175,7 +212,20 @@ export default function CafeMediaPage(): JSX.Element {
 
   const [airfieldName, setAirfieldName] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  // Preview-only mirror of the public dashboard's own opsPanel.safetyNotices
+  // (fetched from PUBLIC_CONFIG_URL below, same as CafeTemplate.tsx itself
+  // reads at render time) - kept in sync with `notices` after any CRUD
+  // action below so the preview never lags what was just saved.
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
+
+  // Part C: the tenant's own manageable notices - loaded from
+  // /api/tenant/ops-panel, the SAME endpoint (and SAME underlying
+  // ops_panel_state row) ATC Control's Safety Notices section already
+  // reads/writes. Not a second data source.
+  const [notices, setNotices] = useState<SafetyNotice[]>([])
+  const [noticeStatus, setNoticeStatus] = useState<SaveStatus>('idle')
+  const [newNoticeName, setNewNoticeName] = useState('')
+  const [newNoticeText, setNewNoticeText] = useState('')
 
   // Custom "Save as template" presets - personal/browser-local, same
   // storage convention as Dashboard Design's colour theme templates
@@ -233,6 +283,19 @@ export default function CafeMediaPage(): JSX.Element {
       })
       .catch(() => {})
 
+    // Owner/admin-authenticated GET, same endpoint ATC Control uses -
+    // this is what actually drives the Notices CRUD section and the
+    // per-slot dropdown's list of selectable notices below (distinct
+    // from the public, unauthenticated fetch above, which only feeds
+    // the preview).
+    fetch(OPS_PANEL_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        if (Array.isArray(data.safetyNotices)) setNotices(data.safetyNotices)
+      })
+      .catch(() => {})
+
     return () => {
       cancelled = true
     }
@@ -240,6 +303,90 @@ export default function CafeMediaPage(): JSX.Element {
 
   function updateSlot(position: number, patch: Partial<TickerSlot>) {
     setTickerSlots((prev) => prev.map((slot) => (slot.position === position ? { ...slot, ...patch } : slot)))
+  }
+
+  // Fetches the CURRENT full ops-panel row immediately before writing,
+  // rather than reusing whatever this page loaded at mount time. That
+  // endpoint requires the FULL row on every PUT (activeRunwayEnd,
+  // circuitDirection, etc. all required - no partial-field merge
+  // server-side, unlike cafe-settings' own PUT) and is the SAME row ATC
+  // Control's own bulk-edit-then-"Update Dashboard" flow writes to.
+  // Re-fetching right here keeps every OTHER field exactly as it
+  // currently is and shrinks the window in which a concurrent ATC
+  // Control edit could be clobbered down to "between this fetch and
+  // this PUT" - a real mitigation, not a complete fix. If ATC Control's
+  // own Update Dashboard click lands inside that same short window, its
+  // full-array overwrite still wins - the same pre-existing "last
+  // write wins" behaviour this endpoint already has for two ATC
+  // Control tabs open at once, now with a second page in the mix too.
+  // True optimistic-concurrency-control (versioning/ETags) would close
+  // this properly but is a bigger change than this pass - flagged, not
+  // silently built around.
+  async function withFreshOpsPanel(nextNotices: SafetyNotice[]): Promise<boolean> {
+    const currentResponse = await fetch(OPS_PANEL_URL)
+    if (!currentResponse.ok) return false
+    const current = await currentResponse.json().catch(() => null)
+    if (!current) return false
+    const response = await fetch(OPS_PANEL_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...current, safetyNotices: nextNotices }),
+    })
+    return response.ok
+  }
+
+  function updateNoticeField(id: string, patch: Partial<SafetyNotice>) {
+    setNotices((prev) => prev.map((notice) => (notice.id === id ? { ...notice, ...patch } : notice)))
+  }
+
+  // Batches any pending edits to EXISTING notices' name/text/size/enabled
+  // into one save - typing in a name/text field only updates local
+  // state (same "stage locally, explicit save" pattern ATC Control's
+  // own form already uses), so this doesn't fire a network request per
+  // keystroke.
+  async function handleSaveNotices() {
+    setNoticeStatus('working')
+    const ok = await withFreshOpsPanel(notices)
+    setNoticeStatus(ok ? 'success' : 'error')
+    if (ok) setSafetyNotices(notices)
+  }
+
+  // Add/delete are immediate (not batched behind Save Notices) - a
+  // newly-added notice needs to actually exist server-side right away
+  // to be genuinely selectable in a ticker slot's dropdown, and a
+  // delete is a deliberate one-shot action, not something staged
+  // alongside in-progress text edits to OTHER rows.
+  async function handleAddNotice() {
+    const name = newNoticeName.trim()
+    const text = newNoticeText.trim()
+    if (!name || !text) return
+    setNoticeStatus('working')
+    const next: SafetyNotice = { id: crypto.randomUUID(), name, text, size: 'md', enabled: true }
+    const merged = [...notices, next]
+    const ok = await withFreshOpsPanel(merged)
+    if (!ok) {
+      setNoticeStatus('error')
+      return
+    }
+    setNotices(merged)
+    setSafetyNotices(merged)
+    setNewNoticeName('')
+    setNewNoticeText('')
+    setNoticeStatus('success')
+  }
+
+  async function handleDeleteNotice(id: string) {
+    if (!window.confirm('Delete this notice? Any ticker slot currently showing it will go blank until reassigned.')) return
+    setNoticeStatus('working')
+    const merged = notices.filter((notice) => notice.id !== id)
+    const ok = await withFreshOpsPanel(merged)
+    if (!ok) {
+      setNoticeStatus('error')
+      return
+    }
+    setNotices(merged)
+    setSafetyNotices(merged)
+    setNoticeStatus('success')
   }
 
   function updateStyle(patch: Partial<TickerStyle>) {
@@ -549,6 +696,90 @@ export default function CafeMediaPage(): JSX.Element {
         )}
       </section>
 
+      {/* NOTICES - Part C: named, tenant-manageable notices, full CRUD
+          here - same single ops_panel_state row ATC Control's Safety
+          Notices section reads/writes, not a parallel store. Placed
+          directly above Footer Ticker so a notice exists to pick before
+          reaching the slot dropdowns that reference it. */}
+      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+        <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Notices</div>
+        <p className="mb-4 text-xs text-muted-500">
+          Create named notices here to show in specific ticker slots below. Same notices ATC Control's Safety
+          Notices section manages - editing or deleting one here updates it there too, and vice versa.
+        </p>
+
+        <div className="mb-4 flex flex-col gap-1.5">
+          {notices.map((notice) => (
+            <div key={notice.id} className={`flex items-center gap-2 ${notice.enabled === false ? 'opacity-50' : ''}`}>
+              <input
+                type="checkbox"
+                checked={notice.enabled !== false}
+                onChange={(event) => updateNoticeField(notice.id, { enabled: event.target.checked })}
+                className="h-3.5 w-3.5 flex-shrink-0"
+                title="Enabled"
+              />
+              <input
+                type="text"
+                value={notice.name}
+                onChange={(event) => updateNoticeField(notice.id, { name: event.target.value.slice(0, NOTICE_NAME_MAX_LENGTH) })}
+                maxLength={NOTICE_NAME_MAX_LENGTH}
+                placeholder="Name"
+                className="w-40 flex-shrink-0 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+              <input
+                type="text"
+                value={notice.text}
+                onChange={(event) => updateNoticeField(notice.id, { text: event.target.value.slice(0, NOTICE_TEXT_MAX_LENGTH) })}
+                maxLength={NOTICE_TEXT_MAX_LENGTH}
+                placeholder="Notice text"
+                className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => handleDeleteNotice(notice.id)}
+                className="shrink-0 text-xs font-semibold text-muted-500 hover:text-status-bad"
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+          {notices.length === 0 && <p className="text-xs text-muted-500">No notices yet - add one below.</p>}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          <input
+            value={newNoticeName}
+            onChange={(event) => setNewNoticeName(event.target.value.slice(0, NOTICE_NAME_MAX_LENGTH))}
+            placeholder="New notice name"
+            className="w-40 rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+          />
+          <input
+            value={newNoticeText}
+            onChange={(event) => setNewNoticeText(event.target.value.slice(0, NOTICE_TEXT_MAX_LENGTH))}
+            placeholder="Notice text"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+          />
+          <button
+            type="button"
+            onClick={handleAddNotice}
+            disabled={!newNoticeName.trim() || !newNoticeText.trim() || noticeStatus === 'working'}
+            className="shrink-0 rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Add Notice
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveNotices}
+            disabled={noticeStatus === 'working'}
+            className="shrink-0 rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {noticeStatus === 'working' ? 'Saving…' : 'Save Notice Edits'}
+          </button>
+          {noticeStatus === 'success' && <span className="text-sm font-semibold text-status-good">Saved.</span>}
+          {noticeStatus === 'error' && <span className="text-sm font-semibold text-status-bad">Couldn't save - please try again.</span>}
+        </div>
+      </section>
+
       {/* FOOTER TICKER - directly beneath Ticker Style, per your
           requested order: collapsed styling -> this sits right under
           the preview; expanded styling -> this sits below the
@@ -568,19 +799,20 @@ export default function CafeMediaPage(): JSX.Element {
         </div>
         <p className="mb-4 text-xs text-muted-500">
           A continuous scrolling strip across the bottom of the screen. Up to 10 slots, each set to a content
-          type and independently switched on/off - notices come from ATC Control's existing safety notices, so
-          edit their text there. A slot's own toggle only matters while the master toggle above is on.
+          type and independently switched on/off - pick a specific named notice from the Notices section above,
+          different slots can show different notices. A slot's own toggle only matters while the master toggle
+          above is on.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {tickerSlots.map((slot) => (
             <div key={slot.position} className="flex items-center gap-2">
               <span className="w-6 shrink-0 text-xs font-bold text-muted-500">{slot.position}.</span>
               <select
-                value={slot.type ?? ''}
-                onChange={(event) => updateSlot(slot.position, { type: (event.target.value || null) as TickerSlotType | null })}
+                value={slotOptionValue(slot)}
+                onChange={(event) => updateSlot(slot.position, parseSlotOptionValue(event.target.value))}
                 className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
               >
-                {SLOT_TYPE_OPTIONS.map((option) => (
+                {buildSlotOptions(notices).map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -606,7 +838,7 @@ export default function CafeMediaPage(): JSX.Element {
           wraps on narrow screens via flex-wrap. */}
       <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
         <div className="flex flex-wrap items-center justify-between gap-6">
-          <div className="flex items-center gap-3" title="Split-pane shows two independent carousel zones side by side (assign slots to Left/Right in Media Manager). Full 16:9 shows a single carousel filling the whole area.">
+          <div className="flex items-center gap-3" title="Split-pane shows two independent carousel zones side by side (assign slots to Left/Right in Dashboard Manager). Full 16:9 shows a single carousel filling the whole area.">
             <span className="shrink-0 text-xs font-bold uppercase tracking-widest text-accent-sky-400">Layout</span>
             <div className="flex gap-2">
               {(['full', 'split'] as const).map((mode) => (

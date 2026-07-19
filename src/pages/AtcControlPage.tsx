@@ -5,6 +5,7 @@ import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 
 const AIRFIELD_INFO_MAX_LENGTH = 60
 const SAFETY_NOTICE_MAX_LENGTH = 40
+const SAFETY_NOTICE_NAME_MAX_LENGTH = 40
 const SAFETY_NOTICE_ROWS = 10
 const NOTAMS_INTERVAL_MIN_SECONDS = 2
 const NOTAMS_INTERVAL_MAX_SECONDS = 30
@@ -21,6 +22,14 @@ type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
 
 interface SafetyNotice {
+  // Optional - undefined for a still-blank row that's never been saved;
+  // real notices always have one by the time they reach this page
+  // (self-healed server-side, see ops-panel/index.ts). Also now
+  // manageable directly from CAFE MEDIA (Part C) - this page and that
+  // one read/write the exact same underlying data, so a name/notice
+  // created or edited on either shows up on both.
+  id?: string
+  name?: string
   text: string
   size: NoticeSize
   enabled: boolean
@@ -192,6 +201,12 @@ export default function AtcControlPage(): JSX.Element {
   function handleNoticeChange(index: number, value: string) {
     setSafetyNotices((prev) =>
       prev.map((n, i) => (i === index ? { ...n, text: value.slice(0, SAFETY_NOTICE_MAX_LENGTH) } : n))
+    )
+  }
+
+  function handleNoticeNameChange(index: number, value: string) {
+    setSafetyNotices((prev) =>
+      prev.map((n, i) => (i === index ? { ...n, name: value.slice(0, SAFETY_NOTICE_NAME_MAX_LENGTH) } : n))
     )
   }
 
@@ -383,7 +398,9 @@ export default function AtcControlPage(): JSX.Element {
               Safety Notices
             </div>
             <p className="mb-4 text-xs text-muted-500">
-              Appended below the automatic NOTAM feed on the live dashboard - leave a row blank to omit it.
+              Appended below the automatic NOTAM feed on the live dashboard - leave a row blank to omit it. Each
+              notice's Name is also how it's picked in the Café footer ticker's own slot editor (CAFE MEDIA) -
+              notices can be managed from either page, both read and write the same list.
             </p>
 
             <div className="mb-4">
@@ -434,6 +451,14 @@ export default function AtcControlPage(): JSX.Element {
                     title="Enabled"
                   />
                   <SizeSelector value={notice.size} onChange={(size) => handleNoticeSizeChange(index, size)} />
+                  <input
+                    type="text"
+                    value={notice.name ?? ''}
+                    onChange={(event) => handleNoticeNameChange(index, event.target.value)}
+                    maxLength={SAFETY_NOTICE_NAME_MAX_LENGTH}
+                    placeholder="Name (e.g. Bird Activity)"
+                    className="w-40 flex-shrink-0 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  />
                   <input
                     type="text"
                     value={notice.text}
