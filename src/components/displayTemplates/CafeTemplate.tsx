@@ -158,8 +158,12 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
         }
       >
         {/* MAIN AREA - split-pane or full-16:9, both built from the same
-            existing MediaPanel/carousel component per the layout toggle. */}
-        <div className="relative min-h-0">
+            existing MediaPanel/carousel component per the layout toggle.
+            min-w-0: this div is a grid item in the outer single-column
+            grid below; grid items default to min-width:auto (content-
+            based), not 0 - defensive here for the same reason it's
+            required on the ticker wrapper below. */}
+        <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
           </div>
@@ -236,9 +240,25 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
         {/* FOOTER TICKER - fully collapses (not just hidden) when off, so
             no empty space is reserved for it. No fixed height wrapper
             here anymore - CafeTicker sets its own height from
-            tickerStyle.heightPx (Phase 2 style controls). */}
+            tickerStyle.heightPx (Phase 2 style controls).
+            overflow-hidden + min-w-0: this wrapper is the actual grid
+            item in the outer single-column grid above (CafeTicker's own
+            div is just its child) - grid items default to
+            min-width:auto, i.e. sized to fit their content's intrinsic
+            (min-content) width, not 0. CafeTicker's animated track is
+            deliberately width:max-content with its segment list
+            duplicated for a seamless marquee loop, so its intrinsic
+            content width is routinely 2x+ the viewport - without
+            overriding the default here, THAT width was winning the
+            grid track's sizing, pushing the whole outer frame wider
+            than the screen (confirmed live: toggling the ticker off
+            alone made the whole frame render correctly, ticker back on
+            broke it immediately, independent of anything media-panel-
+            related). CafeTicker's own overflow-hidden only clips ITS
+            OWN box visually - it doesn't stop this ancestor grid item
+            from being sized by that content in the first place. */}
         {tickerEnabled && (
-          <div className="flex-shrink-0">
+          <div className="min-w-0 overflow-hidden">
             <CafeTicker
               slots={tickerSlots}
               weather={weather}
