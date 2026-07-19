@@ -205,8 +205,29 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
               </div>
             </div>
           ) : (
-            <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
-              <MediaPanel item={currentMedia} fill slotSource="cafe" />
+            // Full 16:9 mode deliberately reuses Dashboard Manager's own
+            // proven rendering path verbatim - not the `fill`-based
+            // approach above (that's what four rounds of unresolved
+            // split-pane debugging couldn't fully explain; `fill` is a
+            // codepath the "confirmed working, never had an issue"
+            // dashboard carousel has NEVER actually exercised - only
+            // café and admin previews ever pass it). This is the exact
+            // same invocation ClassicTemplate.tsx/CentreDisplayPanel.tsx
+            // use for the real, always-worked dashboard carousel -
+            // MediaPanel with no `fill`, no `zone`, just its own default
+            // aspect-video box, centred in a simple flex container -
+            // the ONLY difference from dashboard's own call is
+            // slotSource="cafe", the one parameter that was already
+            // generalized for exactly this purpose. Trade-off, stated
+            // plainly: this can letterbox (empty side gaps) at very wide
+            // aspect ratios, the exact visual issue `fill` was
+            // originally built to avoid - accepted deliberately this
+            // round in exchange for using code with an actual track
+            // record, rather than continuing to debug code that hasn't
+            // earned one. Split-pane above is untouched and still uses
+            // `fill` - explicitly out of scope this round.
+            <div className="relative flex items-center justify-center overflow-hidden" style={isDesktop ? { height: '100%' } : undefined}>
+              <MediaPanel item={currentMedia} slotSource="cafe" />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
