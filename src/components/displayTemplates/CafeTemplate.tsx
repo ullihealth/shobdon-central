@@ -177,18 +177,35 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
                   a plain h-full w-full block, so it fills this grid cell
                   directly rather than letterboxing to a fixed 16:9 box
                   within it (the root cause of the reported empty-space bug -
-                  see MediaPanel.tsx's own comment on `fill`). */}
-              <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
+                  see MediaPanel.tsx's own comment on `fill`).
+                  aspect-video on the non-desktop branch specifically -
+                  MediaPanel's own outer element is UNCONDITIONALLY h-full
+                  (100%), which only resolves to a real pixel height if
+                  every ancestor up the chain has an explicit height too.
+                  The desktop branch provides that (h-full/height:100%
+                  cascading all the way from the h-screen root). The
+                  non-desktop branch deliberately does NOT (min-h-screen
+                  lets the page grow and scroll instead of clipping to
+                  the viewport) - so without an aspect ratio here,
+                  MediaPanel's h-full resolves against an ancestor chain
+                  with no real height anywhere in it, and the whole
+                  panel - including whatever slot is meant to be
+                  showing - collapses to zero height. aspect-video gives
+                  it a real, self-contained height derived from its own
+                  (reliably available, since this IS a flex-column with
+                  real width) width instead, sidestepping the percentage-
+                  height chain entirely. */}
+              <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
                 <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
-              <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
+              <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
                 <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
-            <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
+            <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
               <MediaPanel item={currentMedia} fill slotSource="cafe" />
               {adLabelEnabled && <AdLabel />}
             </div>

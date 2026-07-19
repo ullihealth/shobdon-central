@@ -94,7 +94,20 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
-      .then((response) => (response.ok ? response.json() : null))
+      .then((response) => {
+        if (!response.ok) {
+          // Was silently treated identically to "fetch succeeded, zero
+          // slots configured" (both fell through to the same null/empty
+          // result below) - genuinely indistinguishable from a tenant
+          // with no carousel content at all. Logged now so a real
+          // failure (rate limit, transient 5xx, timeout) is at least
+          // visible in the console instead of masquerading as "nothing
+          // to show" with zero trace of what actually happened.
+          console.error(`MediaPanel: public config fetch failed (${response.status})`)
+          return null
+        }
+        return response.json()
+      })
       .then((data) => {
         if (cancelled) return
         const slotOne = data?.cameraSlots?.find((slot: { slot: number; url: string }) => slot.slot === 1)
@@ -102,7 +115,9 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
         const rawSlots = slotSource === 'cafe' ? data?.cafeCarouselSlots : data?.carouselSlots
         setCarouselSlots(Array.isArray(rawSlots) ? rawSlots : [])
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (!cancelled) console.error('MediaPanel: public config fetch threw', err)
+      })
     return () => {
       cancelled = true
     }
