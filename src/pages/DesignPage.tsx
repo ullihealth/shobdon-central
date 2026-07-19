@@ -220,6 +220,15 @@ export default function DesignPage(): JSX.Element {
   const [mainDisplay, setMainDisplay] = useState<{ name: string; templateId: string; panelConfig: unknown } | null>(null)
   const [templateSaving, setTemplateSaving] = useState<string | null>(null)
   const [templateError, setTemplateError] = useState<string | null>(null)
+  // Same shape, for the 'cafe-tv' named display - fetched alongside
+  // 'main' below so "Apply to Live Cafe Screen" can upsert without
+  // clobbering its existing name/panelConfig, same as 'main' already
+  // does. null until a cafe-tv display actually exists for this tenant
+  // (a brand-new tenant, or one that's never used the café screen yet) -
+  // handleApplyTemplateToCafe below creates it on first use via the
+  // same upsert /api/tenant/displays already does for 'main'.
+  const [cafeDisplay, setCafeDisplay] = useState<{ name: string; templateId: string; panelConfig: unknown } | null>(null)
+  const [cafeApplyStatus, setCafeApplyStatus] = useState<ApplyStatus>('idle')
 
   useEffect(() => {
     let cancelled = false
@@ -229,6 +238,8 @@ export default function DesignPage(): JSX.Element {
         if (cancelled || !data) return
         const main = (data.displays ?? []).find((display: { slug: string }) => display.slug === 'main')
         if (main) setMainDisplay({ name: main.name, templateId: main.templateId, panelConfig: main.panelConfig })
+        const cafe = (data.displays ?? []).find((display: { slug: string }) => display.slug === 'cafe-tv')
+        if (cafe) setCafeDisplay({ name: cafe.name, templateId: cafe.templateId, panelConfig: cafe.panelConfig })
       })
       .catch(() => {})
     return () => {
@@ -237,6 +248,7 @@ export default function DesignPage(): JSX.Element {
   }, [])
 
   const activeTemplateId = mainDisplay?.templateId ?? 'classic'
+  const cafeActiveTemplateId = cafeDisplay?.templateId ?? null
 
   // Named distinctly from the pre-existing handleSelectTemplate below
   // (colour-theme templates, unrelated) - a same-named function
@@ -275,6 +287,53 @@ export default function DesignPage(): JSX.Element {
       setTemplateError("Couldn't switch templates - please try again.")
     } finally {
       setTemplateSaving(null)
+    }
+  }
+
+  // Explicitly pushes whichever template is CURRENTLY ACTIVE on the
+  // Dashboard (activeTemplateId, set by the Dashboard Layout grid above -
+  // untouched by this addition) to the separate 'cafe-tv' named display,
+  // independent of it. Investigated first: "Apply to Live Dashboard"
+  // further down this page already has its own window.confirm() (for
+  // the colour theme) and the Dashboard Layout grid's own tile-click
+  // already has a SEPARATE window.confirm() too (for the template) - so
+  // this reuses that exact same confirm() pattern rather than
+  // introducing a new toast-style warning, matching what already
+  // existed rather than inventing a second style. Same
+  // fetch-current-then-upsert shape as handleSelectLayoutTemplate above,
+  // scoped to slug 'cafe-tv' instead of 'main' - genuinely does not
+  // touch the 'main' row (or vice versa - the Dashboard Layout grid's
+  // own apply only ever touches 'main').
+  async function handleApplyTemplateToCafe() {
+    if (activeTemplateId === cafeActiveTemplateId) return
+    if (
+      !window.confirm(
+        'Switch your live café screen to this template? This affects every device that loads it immediately.'
+      )
+    ) {
+      return
+    }
+    setCafeApplyStatus('working')
+    try {
+      const response = await fetch('/api/tenant/displays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: 'cafe-tv',
+          name: cafeDisplay?.name ?? 'Clubhouse Cafe TV',
+          templateId: activeTemplateId,
+          panelConfig: cafeDisplay?.panelConfig ?? null,
+        }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setCafeApplyStatus('error')
+        return
+      }
+      setCafeDisplay({ name: data.name, templateId: data.templateId, panelConfig: data.panelConfig })
+      setCafeApplyStatus('success')
+    } catch {
+      setCafeApplyStatus('error')
     }
   }
 
@@ -651,6 +710,11 @@ export default function DesignPage(): JSX.Element {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
           {TEMPLATE_SLOTS.map((slot) => {
             const isActive = slot.id === activeTemplateId
+            // Independent of isActive (Dashboard) - a template can be
+            // live on one screen, both, or neither, since "Apply to
+            // Live Cafe Screen" below applies to 'cafe-tv' on its own,
+            // separate from this grid's own Dashboard-only apply.
+            const isActiveOnCafe = cafeActiveTemplateId !== null && slot.id === cafeActiveTemplateId
             const isComingSoon = slot.status === 'coming-soon'
             const isSaving = templateSaving === slot.id
             return (
@@ -671,7 +735,12 @@ export default function DesignPage(): JSX.Element {
                   {isComingSoon ? 'Coming soon' : slot.category === 'cafe' ? 'Café' : 'Clubhouse'}
                 </div>
                 <div className="text-xs font-semibold text-primary">{slot.label}</div>
-                {isActive && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active</div>}
+                {isActive && (
+                  <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Dashboard</div>
+                )}
+                {isActiveOnCafe && (
+                  <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Café</div>
+                )}
                 {isComingSoon && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-500">Coming soon</div>}
                 {isSaving && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Switching…</div>}
               </button>
@@ -690,31 +759,62 @@ export default function DesignPage(): JSX.Element {
         <DisplayUrlList />
       </div>
 
-      {/* APPLY TO LIVE DASHBOARD - deliberately separate from the Templates
-          section above: this affects the shared, physically-visible
-          display on every device, not just this browser's local template
-          list, so it gets its own confirm-gated action and its own
-          status feedback rather than being folded into "Save as template". */}
+      {/* APPLY TO LIVE DASHBOARD / CAFE SCREEN - deliberately separate
+          from the Templates section above: this affects a shared,
+          physically-visible display on every device, not just this
+          browser's local template list, so each gets its own confirm-
+          gated action and its own status feedback rather than being
+          folded into "Save as template". Two genuinely different
+          things share this row: "Apply to Live Dashboard" pushes the
+          COLOUR THEME (tenant-wide - there's only one live theme, used
+          by every display); "Apply to Live Cafe Screen" pushes the
+          LAYOUT TEMPLATE currently active above (Dashboard Layout) to
+          the separate 'cafe-tv' display specifically, independent of
+          Dashboard - added so a template can be applied to either
+          screen explicitly, without disturbing how Dashboard Layout's
+          own grid already applies to Dashboard immediately on click. */}
       <section className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
         <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Dashboard</div>
         <p className="mb-4 text-sm text-muted-400">
           Pushes the colours currently shown above to every device that loads the real dashboard - PC2, the
-          clubhouse display, home browsers - within about 15 seconds.
+          clubhouse display, home browsers - within about 15 seconds. "Apply to Live Cafe Screen" alongside it is
+          separate: it pushes whichever template is currently active in Dashboard Layout above to the café screen
+          specifically, on its own.
         </p>
-        <button
-          type="button"
-          onClick={handleApplyToLiveDashboard}
-          disabled={applyStatus === 'working'}
-          className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Dashboard'}
-        </button>
-        {applyStatus === 'success' && (
-          <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
-        )}
-        {applyStatus === 'error' && (
-          <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the theme - check connectivity and try again.</p>
-        )}
+        <div className="flex flex-wrap items-start gap-6">
+          <div>
+            <button
+              type="button"
+              onClick={handleApplyToLiveDashboard}
+              disabled={applyStatus === 'working'}
+              className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Dashboard'}
+            </button>
+            {applyStatus === 'success' && (
+              <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up within ~15 seconds.</p>
+            )}
+            {applyStatus === 'error' && (
+              <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the theme - check connectivity and try again.</p>
+            )}
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={handleApplyTemplateToCafe}
+              disabled={cafeApplyStatus === 'working'}
+              className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {cafeApplyStatus === 'working' ? 'Applying…' : 'Apply to Live Cafe Screen'}
+            </button>
+            {cafeApplyStatus === 'success' && (
+              <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied to the café screen.</p>
+            )}
+            {cafeApplyStatus === 'error' && (
+              <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply the template - check connectivity and try again.</p>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   )
