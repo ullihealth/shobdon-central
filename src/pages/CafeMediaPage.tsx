@@ -51,6 +51,7 @@ function tickerStyleFromApi(data: Record<string, unknown>): TickerStyle {
     fontSizePx: (data.tickerFontSizePx as number) ?? DEFAULT_TICKER_STYLE.fontSizePx,
     fontColor: (data.tickerFontColor as string) ?? DEFAULT_TICKER_STYLE.fontColor,
     scrollSpeedPxPerSec: (data.tickerScrollSpeedPxPerSec as number) ?? DEFAULT_TICKER_STYLE.scrollSpeedPxPerSec,
+    gapPx: (data.tickerGapPx as number) ?? DEFAULT_TICKER_STYLE.gapPx,
   }
 }
 
@@ -63,6 +64,7 @@ function tickerStyleToApi(style: TickerStyle): Record<string, unknown> {
     tickerFontSizePx: style.fontSizePx,
     tickerFontColor: style.fontColor,
     tickerScrollSpeedPxPerSec: style.scrollSpeedPxPerSec,
+    tickerGapPx: style.gapPx,
   }
 }
 
@@ -566,6 +568,24 @@ export default function CafeMediaPage(): JSX.Element {
               onChange={(event) => updateStyle({ scrollSpeedPxPerSec: Number(event.target.value) })}
               className="accent-accent-sky-500"
             />
+          </label>
+
+          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
+            <span className="text-xs uppercase tracking-wide text-muted-400">
+              Gap between messages ({tickerStyle.gapPx === 0 ? 'Tight (default)' : `${tickerStyle.gapPx}px`})
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={2000}
+              value={tickerStyle.gapPx}
+              onChange={(event) => updateStyle({ gapPx: Number(event.target.value) })}
+              className="accent-accent-sky-500"
+            />
+            <span className="text-[11px] text-muted-500">
+              At the high end, one message fully scrolls off-screen before the next appears - that blank moment is
+              expected, not a bug.
+            </span>
           </label>
         </div>
 

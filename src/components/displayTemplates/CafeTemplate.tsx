@@ -45,6 +45,7 @@ const DEFAULT_CAFE_SETTINGS: CafeSettings = {
     fontSizePx: 16,
     fontColor: '#ffffff',
     scrollSpeedPxPerSec: 80,
+    gapPx: 0,
   },
 }
 
@@ -62,6 +63,7 @@ function tickerStyleFromApi(cs: Record<string, unknown>): TickerStyle {
     fontSizePx: (cs.tickerFontSizePx as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.fontSizePx,
     fontColor: (cs.tickerFontColor as string) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.fontColor,
     scrollSpeedPxPerSec: (cs.tickerScrollSpeedPxPerSec as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.scrollSpeedPxPerSec,
+    gapPx: (cs.tickerGapPx as number) ?? DEFAULT_CAFE_SETTINGS.tickerStyle.gapPx,
   }
 }
 

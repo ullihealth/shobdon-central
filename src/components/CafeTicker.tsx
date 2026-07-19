@@ -47,6 +47,13 @@ export interface TickerStyle {
   // unset placeholder. Sufficient stand-in for a separate "static mode"
   // toggle, confirmed against your own live feedback.
   scrollSpeedPxPerSec: number
+  // Horizontal space between consecutive ticker items, applied
+  // uniformly everywhere (between items within one content pass AND
+  // at the wrap-around point between the last item and the repeat) -
+  // 0 is today's default (tight). Large enough and a message can fully
+  // scroll off-screen before the next one appears, which is a valid,
+  // intentional look, not a bug.
+  gapPx: number
 }
 
 const FONT_CSS_STACK: Record<TickerStyle['fontFamily'], string> = {
@@ -149,14 +156,13 @@ function hexToRgba(hex: string, opacityPercent: number): string {
 // deliberately not the discrete dwell-per-slide pattern used everywhere
 // else in this codebase (MediaPanel's carousel, LeftInfoPanel/
 // RightInfoPanel's A/B flips). The segment list is rendered TWICE
-// back-to-back in one continuous flex row, then translated exactly
-// -50% via the always-present `cafe-ticker` keyframe (index.css) - since
-// both halves are identical, the loop point is invisible. Scroll speed
-// is genuinely px/second, not a fixed duration: the first copy's
-// rendered width is measured (ResizeObserver, re-measures if content or
-// speed changes) and converted to a duration in seconds, applied via
-// inline animation-duration. speed <= 0 skips all of this - a single,
-// non-duplicated, non-animated copy of the content is shown instead.
+// back-to-back in one continuous flex row; the --cafe-ticker-distance
+// custom property (see index.css) tells the always-present `cafe-ticker`
+// keyframe exactly how many pixels to translate per loop - the measured
+// width of one copy (gaps included) plus the wrap-around gap to the
+// second copy - so the loop point is invisible regardless of gap size.
+// speed <= 0 skips all animation - a single, non-duplicated, static
+// copy of the content is shown instead.
 export default function CafeTicker(props: CafeTickerProps): JSX.Element {
   const segments = useResolvedSegments(props)
   const content = segments.length > 0 ? segments : ['Ticker has no content configured yet.']
@@ -164,20 +170,54 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
   const isStatic = style.scrollSpeedPxPerSec <= 0
 
   const measureRef = useRef<HTMLDivElement>(null)
-  const [durationSeconds, setDurationSeconds] = useState(30)
+  const [anim, setAnim] = useState({ durationSeconds: 30, distancePx: 0 })
 
+  // Deliberately does NOT depend on `content` (the resolved segment
+  // TEXT). A live clock slot changes that text every second, which
+  // used to sit in this effect's dependency array and retrigger the
+  // whole thing - tearing down and recreating the ResizeObserver and
+  // synchronously remeasuring on a ~1s cadence. Each remeasurement
+  // produced a fresh (often sub-pixel-different, due to
+  // getBoundingClientRect() rounding) duration/distance, which got
+  // reapplied to the CSS animation via animationDuration and the
+  // --cafe-ticker-distance custom property below - and changing either
+  // of those on an ALREADY-RUNNING animation makes the browser
+  // reinterpret its timeline against elapsed real time, producing a
+  // visible jump. That's the periodic stutter that was reported.
+  //
+  // The fix has two parts: (1) this effect only re-runs, and the
+  // ResizeObserver only gets torn down/recreated, when something that
+  // genuinely changes layout inputs changes - isStatic, speed, or gap -
+  // never on a mere content-text change. (2) the ResizeObserver itself
+  // stays attached across content updates (React reuses the same DOM
+  // node via `measureRef`, it never remounts just because a clock tick
+  // changed a <span>'s text), so it still naturally fires when content
+  // genuinely resizes the track (a slot added/removed, a notice/weather
+  // string changing length) - but the resulting measurement is only
+  // applied via setAnim if it differs from the last APPLIED value by
+  // more than 1%, filtering out the sub-pixel noise a ticking clock
+  // produces without ever suppressing a real content-driven resize.
   useLayoutEffect(() => {
     if (isStatic || !measureRef.current) return
     const el = measureRef.current
+    let lastDistance: number | null = null
     const measure = () => {
-      const width = el.getBoundingClientRect().width
-      if (width > 0) setDurationSeconds(width / style.scrollSpeedPxPerSec)
+      const copyWidth = el.getBoundingClientRect().width
+      if (copyWidth <= 0) return
+      // One copy's own rendered width already includes the gaps
+      // BETWEEN its items (CSS `gap` on that flex container, below) -
+      // adding one more gapPx accounts for the wrap-around gap between
+      // this copy's last item and the next copy's first.
+      const distance = copyWidth + style.gapPx
+      if (lastDistance !== null && Math.abs(distance - lastDistance) / lastDistance <= 0.01) return
+      lastDistance = distance
+      setAnim({ durationSeconds: distance / style.scrollSpeedPxPerSec, distancePx: distance })
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [isStatic, style.scrollSpeedPxPerSec, content.join(' ')])
+  }, [isStatic, style.scrollSpeedPxPerSec, style.gapPx])
 
   const textStyle: CSSProperties = {
     fontSize: style.fontSizePx,
@@ -187,9 +227,9 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
 
   function renderSegments(ref?: Ref<HTMLDivElement>) {
     return (
-      <div ref={ref} className="flex shrink-0 items-center">
+      <div ref={ref} className="flex shrink-0 items-center" style={{ gap: style.gapPx }}>
         {content.map((text, index) => (
-          <span key={index} className="whitespace-nowrap px-8 font-semibold uppercase tracking-wide" style={textStyle}>
+          <span key={index} className="whitespace-nowrap font-semibold uppercase tracking-wide" style={textStyle}>
             {text}
           </span>
         ))}
@@ -207,12 +247,16 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
       ) : (
         <div
           className="flex h-full w-max items-center"
-          style={{
-            animationName: 'cafe-ticker',
-            animationTimingFunction: 'linear',
-            animationIterationCount: 'infinite',
-            animationDuration: `${durationSeconds}s`,
-          }}
+          style={
+            {
+              gap: style.gapPx,
+              animationName: 'cafe-ticker',
+              animationTimingFunction: 'linear',
+              animationIterationCount: 'infinite',
+              animationDuration: `${anim.durationSeconds}s`,
+              '--cafe-ticker-distance': `${anim.distancePx}px`,
+            } as CSSProperties
+          }
         >
           {renderSegments(measureRef)}
           {renderSegments()}

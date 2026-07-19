@@ -88,6 +88,7 @@ interface CafeSettingsRow {
   tickerFontSizePx: number;
   tickerFontColor: string;
   tickerScrollSpeedPxPerSec: number;
+  tickerGapPx: number;
 }
 
 export function jsonResponse(body: unknown, status = 200): Response {
@@ -196,7 +197,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
       .prepare(
         `SELECT layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson,
                 tickerBackgroundColor, tickerBackgroundOpacity, tickerHeightPx, tickerFontFamily,
-                tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec
+                tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec, tickerGapPx
          FROM cafe_template_settings WHERE organizationId = ?`
       )
       .bind(organizationId)
@@ -294,6 +295,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     tickerFontSizePx: cafeSettingsRow?.tickerFontSizePx ?? 16,
     tickerFontColor: cafeSettingsRow?.tickerFontColor ?? "#ffffff",
     tickerScrollSpeedPxPerSec: cafeSettingsRow?.tickerScrollSpeedPxPerSec ?? 80,
+    tickerGapPx: cafeSettingsRow?.tickerGapPx ?? 0,
   };
 
   return jsonResponse({

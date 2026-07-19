@@ -30,6 +30,7 @@ interface CafeSettingsRow {
   tickerFontSizePx: number;
   tickerFontColor: string;
   tickerScrollSpeedPxPerSec: number;
+  tickerGapPx: number;
 }
 
 type TickerSlotType = "clock" | "forecast" | "conditions" | "notice";
@@ -57,6 +58,7 @@ interface CafeSettingsInput {
   tickerFontSizePx: number;
   tickerFontColor: string;
   tickerScrollSpeedPxPerSec: number;
+  tickerGapPx: number;
 }
 
 const VALID_LAYOUT_MODES = ["split", "full"];
@@ -77,9 +79,10 @@ interface DefaultSettings {
   tickerFontSizePx: number;
   tickerFontColor: string;
   tickerScrollSpeedPxPerSec: number;
+  tickerGapPx: number;
 }
 
-// Matches migration 0035's own column DEFAULTs and
+// Matches migration 0035/0036's own column DEFAULTs and
 // tickerStyleStore.ts's DEFAULT_TICKER_STYLE exactly - three
 // independent copies of "today's implicit look" (SQL default, this
 // default, the frontend default) would drift; this one is the
@@ -97,6 +100,7 @@ function defaultSettings(): DefaultSettings {
     tickerFontSizePx: 16,
     tickerFontColor: "#ffffff",
     tickerScrollSpeedPxPerSec: 80,
+    tickerGapPx: 0,
   };
 }
 
@@ -122,11 +126,12 @@ function rowToApi(row: CafeSettingsRow) {
     tickerFontSizePx: row.tickerFontSizePx,
     tickerFontColor: row.tickerFontColor,
     tickerScrollSpeedPxPerSec: row.tickerScrollSpeedPxPerSec,
+    tickerGapPx: row.tickerGapPx,
   };
 }
 
 const SELECT_COLUMNS =
-  "layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson, tickerBackgroundColor, tickerBackgroundOpacity, tickerHeightPx, tickerFontFamily, tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec";
+  "layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson, tickerBackgroundColor, tickerBackgroundOpacity, tickerHeightPx, tickerFontFamily, tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec, tickerGapPx";
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
@@ -198,6 +203,12 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     // 0 is valid and deliberate (static) - the lower bound is inclusive.
     return jsonResponse({ error: "tickerScrollSpeedPxPerSec must be an integer 0-500" }, 400);
   }
+  if (body.tickerGapPx !== undefined && (!Number.isInteger(body.tickerGapPx) || body.tickerGapPx < 0 || body.tickerGapPx > 2000)) {
+    // 0 (today's tight default) is valid and inclusive; the upper bound
+    // is generous enough that a message can fully scroll off-screen
+    // before the next appears even on a 4K-wide bar.
+    return jsonResponse({ error: "tickerGapPx must be an integer 0-2000" }, 400);
+  }
 
   // Fetch-current-merge-write-back, same shape as platform/tenants/[id].ts's
   // PATCH - PUT here may only include a subset of fields (e.g. the editor
@@ -226,6 +237,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     tickerFontSizePx: body.tickerFontSizePx ?? currentApi.tickerFontSizePx,
     tickerFontColor: body.tickerFontColor ?? currentApi.tickerFontColor,
     tickerScrollSpeedPxPerSec: body.tickerScrollSpeedPxPerSec ?? currentApi.tickerScrollSpeedPxPerSec,
+    tickerGapPx: body.tickerGapPx ?? currentApi.tickerGapPx,
   };
 
   const nowIso = new Date().toISOString();
@@ -234,9 +246,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       `INSERT INTO cafe_template_settings (
          organizationId, layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson,
          tickerBackgroundColor, tickerBackgroundOpacity, tickerHeightPx, tickerFontFamily,
-         tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec, updatedAt
+         tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec, tickerGapPx, updatedAt
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organizationId) DO UPDATE SET
          layoutMode = excluded.layoutMode,
          adLabelEnabled = excluded.adLabelEnabled,
@@ -249,6 +261,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
          tickerFontSizePx = excluded.tickerFontSizePx,
          tickerFontColor = excluded.tickerFontColor,
          tickerScrollSpeedPxPerSec = excluded.tickerScrollSpeedPxPerSec,
+         tickerGapPx = excluded.tickerGapPx,
          updatedAt = excluded.updatedAt`
     )
     .bind(
@@ -264,6 +277,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       next.tickerFontSizePx,
       next.tickerFontColor,
       next.tickerScrollSpeedPxPerSec,
+      next.tickerGapPx,
       nowIso
     )
     .run();

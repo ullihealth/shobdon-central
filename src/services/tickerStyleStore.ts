@@ -20,6 +20,10 @@ export interface TickerStyle {
   // duplicated track) - the deliberately-sufficient stand-in for a
   // separate "static mode" toggle.
   scrollSpeedPxPerSec: number
+  // Horizontal space between consecutive ticker items - 0 (today's
+  // default) up to wide enough that one message fully scrolls off
+  // before the next appears.
+  gapPx: number
 }
 
 export interface TickerStyleTemplate {
@@ -41,6 +45,7 @@ export const DEFAULT_TICKER_STYLE: TickerStyle = {
   fontSizePx: 16,
   fontColor: '#ffffff',
   scrollSpeedPxPerSec: 80,
+  gapPx: 0,
 }
 
 const now = '2026-07-19T00:00:00.000Z'
@@ -58,6 +63,7 @@ export const BUILT_IN_TICKER_PRESETS: TickerStyleTemplate[] = [
       fontSizePx: 18,
       fontColor: '#ffffff',
       scrollSpeedPxPerSec: 100,
+      gapPx: 0,
     },
   },
   {
@@ -72,6 +78,7 @@ export const BUILT_IN_TICKER_PRESETS: TickerStyleTemplate[] = [
       fontSizePx: 16,
       fontColor: '#fde68a',
       scrollSpeedPxPerSec: 60,
+      gapPx: 0,
     },
   },
   {
@@ -86,6 +93,7 @@ export const BUILT_IN_TICKER_PRESETS: TickerStyleTemplate[] = [
       fontSizePx: 16,
       fontColor: '#ffffff',
       scrollSpeedPxPerSec: 70,
+      gapPx: 0,
     },
   },
   {
@@ -100,6 +108,7 @@ export const BUILT_IN_TICKER_PRESETS: TickerStyleTemplate[] = [
       fontSizePx: 15,
       fontColor: '#e2e8f0',
       scrollSpeedPxPerSec: 65,
+      gapPx: 0,
     },
   },
 ]
@@ -131,6 +140,7 @@ export function isValidTickerStyle(value: unknown): value is TickerStyle {
     typeof v.fontFamily === 'string' &&
     typeof v.fontSizePx === 'number' &&
     typeof v.fontColor === 'string' &&
-    typeof v.scrollSpeedPxPerSec === 'number'
+    typeof v.scrollSpeedPxPerSec === 'number' &&
+    typeof v.gapPx === 'number'
   )
 }

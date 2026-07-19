@@ -122,13 +122,20 @@ body {
    scroll speed is now a runtime, tenant-configurable value applied via
    inline animation-duration, so there's no static `animate-*` class
    name left anywhere in source for Tailwind's JIT scanner to key off
-   of). Content is rendered twice back-to-back and translated exactly
-   -50%, so the loop point is seamless regardless of actual duration. */
+   of). Content is rendered twice back-to-back - translateX used to go
+   to a flat -50%, which only equals "exactly one copy's width" when
+   the two copies sit flush against each other with zero gap between
+   them. Once the ticker gained a configurable gap between messages
+   (including the gap between the end of one copy and the start of the
+   next), -50% of the total width was no longer the correct loop
+   distance, so this now reads a --cafe-ticker-distance custom property
+   (set inline by CafeTicker.tsx to the real measured pixel distance:
+   one copy's rendered width, gap included) instead. */
 @keyframes cafe-ticker {
   from {
     transform: translateX(0);
   }
   to {
-    transform: translateX(-50%);
+    transform: translateX(calc(-1 * var(--cafe-ticker-distance, 50%)));
   }
 }
