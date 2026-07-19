@@ -1048,13 +1048,24 @@ export default function DesignPage(): JSX.Element {
         {/* Part D sticky scrollspy rail - see useScrollSpy's own comment
             for how "currently in view" is determined. top-6 matches this
             page's own py-8 top padding roughly, so the rail doesn't sit
-            flush against the browser chrome. self-start (not
-            stretch, the grid's own default) so sticky positioning has a
-            shorter box to stick within rather than one stretched to the
-            full (very tall) row height, which would otherwise make it
-            "stick" for the entire page and only ever release at the
-            very bottom. */}
-        <nav className="hidden self-start lg:block">
+            flush against the browser chrome.
+            Deliberately relying on the grid's own DEFAULT align-items:
+            stretch here (no self-start/self-auto override) - `sticky`
+            can only travel within its containing block's box, and this
+            <nav> IS that containing block. The nav's own content (a
+            handful of short buttons) is far shorter than the left
+            column's six expanded cards, so if the nav's grid cell were
+            allowed to shrink to fit its own content (self-start), the
+            box the sticky div can stick within would be that same short
+            height - it would run out of room to stick almost
+            immediately and fall back to plain static flow for the rest
+            of the page (confirmed live - this was the actual bug).
+            Stretching the nav's grid cell to match the row's full
+            height (driven by the tall left column) gives the sticky
+            rail a tall-enough box to travel the whole way down,
+            releasing only once the left column - and so the row -
+            actually ends. */}
+        <nav className="hidden lg:block">
           <div className="sticky top-6 flex flex-col gap-1 rounded-2xl border border-border bg-panel/60 p-3">
             {NAV_SECTIONS.map((section) => (
               <button
