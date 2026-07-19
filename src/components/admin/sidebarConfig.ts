@@ -44,7 +44,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     label: 'Settings',
     items: [
       { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'] },
-      { to: '/design', label: 'Dashboard Design', allowedRoles: ['owner', 'admin'] },
+      { to: '/design', label: 'Screens Design', allowedRoles: ['owner', 'admin'] },
       { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
     ],
   },

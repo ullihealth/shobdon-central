@@ -228,7 +228,7 @@ export default function CafeMediaPage(): JSX.Element {
   const [newNoticeText, setNewNoticeText] = useState('')
 
   // Custom "Save as template" presets - personal/browser-local, same
-  // storage convention as Dashboard Design's colour theme templates
+  // storage convention as Screens Design's colour theme templates
   // (src/services/designTemplateStore.ts), not server-synced.
   const [customTemplates, setCustomTemplates] = useState<TickerStyleTemplate[]>(() => loadTickerStyleTemplates())
   const [templateNameInput, setTemplateNameInput] = useState('')

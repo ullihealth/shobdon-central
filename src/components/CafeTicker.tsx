@@ -115,10 +115,21 @@ function useClockText(): string {
 // label - the admin dropdown (CafeMediaPage.tsx's SLOT_TYPE_OPTIONS)
 // already said "6-Hour Met Office Forecast"; this rendered text had
 // drifted from it.
+//
+// Each hour gets its own "+N <icon>" label so it's clear which icon is
+// which offset, not a bare run of symbols. Five NON-BREAKING spaces
+// between groups, not five regular ones - the span this text renders
+// into is `whitespace-nowrap` (CSS `white-space: nowrap`), which only
+// stops wrapping, it does NOT stop the browser's normal whitespace
+// COLLAPSING - a run of regular spaces would still visually collapse to
+// one, silently undoing the "visible gap between hour groups" this was
+// asked for.   doesn't collapse, so the gap survives.
+const HOUR_GROUP_GAP = '     '
+
 function forecastSegmentText(visibilityHours: VisibilityHour[]): string {
   if (visibilityHours.length === 0) return '6-HOUR MET OFFICE FORECAST: Unavailable'
-  const icons = visibilityHours.slice(0, 6).map((hour) => weatherIconFor(hour.weatherCode))
-  return `6-HOUR MET OFFICE FORECAST: ${icons.join('  ')}`
+  const groups = visibilityHours.slice(0, 6).map((hour, index) => `+${index + 1} ${weatherIconFor(hour.weatherCode)}`)
+  return `6-HOUR MET OFFICE FORECAST: ${groups.join(HOUR_GROUP_GAP)}`
 }
 
 function conditionsSegmentText(weather: WeatherData | null, liveDataUnavailable: boolean): string {

@@ -249,8 +249,8 @@ export default function AtcControlPage(): JSX.Element {
   // Deliberately not auto-saved on every toggle/keystroke - everything
   // above is staged local state until this is clicked, giving ATC a
   // clear, single moment where a change is actually published. Same
-  // PUT-then-refresh-trigger flow as /design's "Apply to Live Dashboard"
-  // (handleApplyToLiveDashboard) - reusing that exact mechanism rather
+  // PUT-then-refresh-trigger flow as /design's "Apply to Live Screen"
+  // (handleApplyToLiveScreen) - reusing that exact mechanism rather
   // than building a second one.
   async function handleUpdateDashboard() {
     if (

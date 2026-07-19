@@ -175,7 +175,7 @@ export default function RunwaysPage(): JSX.Element {
   }
 
   // Same PUT-then-refresh-trigger flow as /design's
-  // handleApplyToLiveDashboard - runwayGroups is a full-replace body area
+  // handleApplyToLiveScreen - runwayGroups is a full-replace body area
   // (functions/api/tenant/config.ts DELETEs and re-inserts everything for
   // this org on each call), so the complete staged list is always sent,
   // not a diff. Gated behind confirm() since it affects the shared,
