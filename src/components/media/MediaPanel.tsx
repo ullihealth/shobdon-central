@@ -62,9 +62,23 @@ interface MediaPanelProps {
   // unaffected. Independent of `zone` - café's split-pane zone filtering
   // still applies on top of whichever slot source this selects.
   slotSource?: 'dashboard' | 'cafe'
+  // Bump this (any value that changes counts - a counter is enough) to
+  // force an immediate refetch of the public config this panel renders
+  // from. This component otherwise fetches exactly ONCE, on mount, and
+  // never again - fine for the real public dashboard (nothing else on
+  // that page can change the underlying slots out from under it), but
+  // wrong for a caller that ALSO has its own admin editor mutating the
+  // same slots on the SAME page (Cafe Media's live preview sits right
+  // below its own Carousel Slots section) - without this, a saved slot
+  // edit (e.g. a Zone change) is silently invisible in that preview
+  // until a full page reload, which read as "the Zone dropdown has no
+  // effect" even though the save and the underlying data were both
+  // correct. Every existing caller omits this (stays undefined,
+  // unchanging) and keeps the original fetch-once-on-mount behaviour.
+  refreshSignal?: number
 }
 
-export default function MediaPanel({ item, preferVideo, zone, fill, slotSource = 'dashboard' }: MediaPanelProps): JSX.Element {
+export default function MediaPanel({ item, preferVideo, zone, fill, slotSource = 'dashboard', refreshSignal }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-
@@ -92,7 +106,7 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
     return () => {
       cancelled = true
     }
-  }, [slotSource])
+  }, [slotSource, refreshSignal])
 
   // zone then preferVideo, both independent, optional, and combinable -
   // raw carouselSlots stays the true fetched state throughout; these are

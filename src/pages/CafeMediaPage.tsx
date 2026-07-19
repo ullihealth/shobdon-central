@@ -142,15 +142,30 @@ interface PreviewContentProps {
   tickerSlots: TickerSlot[]
   tickerStyle: TickerStyle
   safetyNotices: SafetyNotice[]
+  // Bumped whenever a Carousel Slots save actually lands server-side -
+  // see MediaPanel.tsx's own comment on refreshSignal. Corrects a real
+  // bug: MediaPanel self-fetches its media from /api/public/config
+  // rather than reading this page's own local `cafeSlots` state, so
+  // WITHOUT this it fetches once on mount and then never again -
+  // editing a slot's Zone (or Source, or anything else) below had zero
+  // visible effect on this preview until a full page reload, even
+  // though the save itself was working correctly.
+  cafeSlotsRefreshSignal: number
 }
 
 // Mirrors CafeTemplate.tsx's own JSX exactly (same grid/gap/zone
-// structure) but driven by this page's locally-edited, not-yet-saved
-// state instead of a fresh fetch - so what's shown here is what saving
-// would actually produce, per your live-preview requirement. Every
-// style control (Part A) and per-slot toggle (Part B) below feeds
-// straight into this same tree via ordinary React state, so a change
-// reflects immediately, exactly like the existing slot/layout controls.
+// structure). Ticker/layout/ad-label props below ARE driven by this
+// page's locally-edited, not-yet-saved state, so those reflect
+// immediately, no fetch involved. The carousel media itself is NOT -
+// MediaPanel self-fetches independently from /api/public/config (same
+// as the real public dashboard does) - so it only reflects whatever was
+// last actually SAVED, and only once cafeSlotsRefreshSignal tells it to
+// re-check (see that prop's own comment). This is a deliberate
+// distinction worth knowing, not an oversight: unlike ticker/layout
+// settings, media-panel content depends on `files` (the media library)
+// as well as `cafeSlots`, joined server-side in publicConfig.ts - a
+// second, meaningfully different data shape from what this page already
+// has as local state.
 function PreviewContent({
   airfieldName,
   logoUrl,
@@ -160,6 +175,7 @@ function PreviewContent({
   tickerSlots,
   tickerStyle,
   safetyNotices,
+  cafeSlotsRefreshSignal,
 }: PreviewContentProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
@@ -175,17 +191,17 @@ function PreviewContent({
           {layoutMode === 'split' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className="relative h-full overflow-hidden">
-              <MediaPanel item={currentMedia} fill slotSource="cafe" />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
@@ -266,6 +282,11 @@ export default function CafeMediaPage(): JSX.Element {
   const [cafeAppearanceEditorOpen, setCafeAppearanceEditorOpen] = useState(false)
   const pendingCafeSavesRef = useRef<Map<number, CarouselSlot>>(new Map())
   const cafeSaveTimerRef = useRef<number | undefined>(undefined)
+  // Bumped once a debounced Carousel Slots save actually completes -
+  // see PreviewContentProps' own comment on why this is needed at all
+  // (MediaPanel self-fetches, so without this the preview below never
+  // learns a save happened).
+  const [cafeSlotsRefreshSignal, setCafeSlotsRefreshSignal] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -495,14 +516,23 @@ export default function CafeMediaPage(): JSX.Element {
   }
 
   // Same debounced-batch-write pattern as MediaManagerPage.tsx's own
-  // saveSlot - local state (and so the live preview) updates
-  // synchronously on every call; the network PUT is batched and
+  // saveSlot - local state (and so the Carousel Slots editor's own
+  // inline appearance preview, via SlotAppearanceEditor/MediaSlotRenderer)
+  // updates synchronously on every call; the network PUT is batched and
   // debounced so dragging a crop/rotation/brightness slider doesn't fire
   // a request per pixel. Independent of handleSave above - carousel
   // slots have always saved themselves immediately on this pattern,
   // never gated behind "Save Settings" (which only covers layout/ad
   // label/ticker), matching Dashboard Manager's own slots-save-
   // immediately behaviour exactly.
+  //
+  // The BIG preview above (PreviewContent) is a separate matter - it
+  // doesn't read this local state at all, MediaPanel self-fetches
+  // instead (see PreviewContentProps' own comment) - so once the PUT
+  // actually resolves, cafeSlotsRefreshSignal is bumped to tell it to
+  // re-check. This was the actual bug behind "the Zone dropdown has no
+  // effect on the preview": the save always worked, the preview just
+  // never knew to look again.
   function saveCafeSlot(updated: CarouselSlot) {
     setCafeSlots((prev) => prev.map((s) => (s.slotNumber === updated.slotNumber ? updated : s)))
     pendingCafeSavesRef.current.set(updated.slotNumber, updated)
@@ -515,7 +545,7 @@ export default function CafeMediaPage(): JSX.Element {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slots: toSave }),
-      })
+      }).then(() => setCafeSlotsRefreshSignal((n) => n + 1))
     }, 300)
   }
 
@@ -585,6 +615,7 @@ export default function CafeMediaPage(): JSX.Element {
               tickerSlots={tickerSlots}
               tickerStyle={tickerStyle}
               safetyNotices={safetyNotices}
+              cafeSlotsRefreshSignal={cafeSlotsRefreshSignal}
             />
           </WeatherProvider>
         </div>
