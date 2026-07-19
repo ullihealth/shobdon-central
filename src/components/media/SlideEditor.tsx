@@ -3,7 +3,7 @@
 // layered images, and positioned/resized/rotated text boxes), then
 // flattening it to a single static PNG uploaded through the existing,
 // unmodified media-library upload endpoint. Only ever loaded via
-// React.lazy() from MediaManagerPage.tsx - this file (and the fabric/
+// React.lazy() from MediaLibraryPage.tsx - this file (and the fabric/
 // @fontsource weight it pulls in) never reaches the public dashboard
 // bundle.
 //
@@ -84,6 +84,16 @@ async function uploadImageFile(file: File): Promise<MediaLibraryFile> {
   })
   const data = await response.json()
   if (!response.ok) throw new Error(data.error ?? 'Upload failed')
+  // folderId/usableOn/orientation all come straight from the upload
+  // endpoint's own response (it echoes back whatever it actually
+  // stored, including its own defaults when a param was omitted, as
+  // this call's params are) - reflects the REAL stored values rather
+  // than a second, potentially-drifting guess at what those defaults
+  // are. This was previously an incomplete object (missing all three,
+  // a pre-existing gap this round's stricter `tsc --noEmit` pass
+  // surfaced, not something introduced by it) - fixed now rather than
+  // left as a type-only patch, since the real data was already sitting
+  // unused in the response.
   return {
     id: data.id,
     filename: data.filename,
@@ -93,6 +103,9 @@ async function uploadImageFile(file: File): Promise<MediaLibraryFile> {
     uploadedAt: data.uploadedAt,
     url: null,
     slideRecipe: null,
+    folderId: data.folderId ?? null,
+    usableOn: data.usableOn,
+    orientation: data.orientation,
   }
 }
 
@@ -201,6 +214,16 @@ interface SlideEditorProps {
   // parent's media library list so the new file is visible there too,
   // independent of whether the slide itself ever gets saved.
   onLibraryChanged: () => void
+  // Which screen tag a BRAND NEW slide's upload should default to -
+  // mirrors MediaLibraryPage.tsx's own Dashboard Media/Cafe Media
+  // toggle, so a slide created while that toggle is on "Cafe Media"
+  // comes out tagged 'cafe' instead of the upload endpoint's own
+  // 'both' default, matching every other new-upload's behaviour on
+  // that page. Deliberately NOT applied when re-editing/replacing an
+  // existing file in place (the useInPlace branch in performSave below)
+  // - that keeps the file's own already-set tag, editing appearance
+  // isn't a retag action.
+  defaultUsableOn?: 'dashboard' | 'cafe' | 'both'
 }
 
 // A brief, non-blocking tip that overlays the modal rather than living
@@ -224,7 +247,7 @@ function SelectionToast({ message }: { message: string | null }): JSX.Element | 
   )
 }
 
-export default function SlideEditor({ files, editingFile, onClose, onSaved, onLibraryChanged }: SlideEditorProps): JSX.Element {
+export default function SlideEditor({ files, editingFile, onClose, onSaved, onLibraryChanged, defaultUsableOn }: SlideEditorProps): JSX.Element {
   const initialRecipe = editingFile?.slideRecipe ?? null
   const editingFileId = editingFile?.id ?? null
 
@@ -578,10 +601,13 @@ export default function SlideEditor({ files, editingFile, onClose, onSaved, onLi
         const existingFilenames = new Set(allFiles.map((f) => f.filename))
         const filename = uniqueSlideFilename(baseName, existingFilenames)
 
-        const uploadResponse = await fetch(
-          `${MEDIA_LIBRARY_UPLOAD_URL}?${new URLSearchParams({ filename, mediaType: 'image' })}`,
-          { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob }
-        )
+        const uploadParams = new URLSearchParams({ filename, mediaType: 'image' })
+        if (defaultUsableOn) uploadParams.set('usableOn', defaultUsableOn)
+        const uploadResponse = await fetch(`${MEDIA_LIBRARY_UPLOAD_URL}?${uploadParams}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/png' },
+          body: blob,
+        })
         const uploaded = await uploadResponse.json()
         if (!uploadResponse.ok) throw new Error(uploaded.error ?? 'Upload failed')
         targetId = uploaded.id
