@@ -5,6 +5,16 @@ import { PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
 
 const TENANTS_URL = '/api/platform/tenants'
 
+interface PlatformDisplay {
+  id: number
+  slug: string
+  name: string
+  templateId: string
+  active: boolean
+  entitled: boolean
+  entitlementTrialExpiresAt: string | null
+}
+
 interface PlatformTenant {
   id: number
   slug: string
@@ -18,6 +28,7 @@ interface PlatformTenant {
   usedBytes: number
   logoUrl: string | null
   createdAt: string
+  displays: PlatformDisplay[]
 }
 
 type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal'
@@ -32,6 +43,21 @@ function formatDate(iso: string): string {
 
 async function patchTenant(id: number, body: Record<string, boolean | number | string>): Promise<PlatformTenant | null> {
   const response = await fetch(`${TENANTS_URL}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return response.ok ? response.json() : null
+}
+
+type DisplayPatchResult = { active: boolean; entitled: boolean; entitlementTrialExpiresAt: string | null }
+
+async function patchDisplay(
+  tenantId: number,
+  displayId: number,
+  body: Partial<DisplayPatchResult>
+): Promise<DisplayPatchResult | null> {
+  const response = await fetch(`${TENANTS_URL}/${tenantId}/displays/${displayId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -186,6 +212,104 @@ function LogoEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (log
   )
 }
 
+// Per-display controls (migration 0034): `active` is Part D's generic
+// force-off, shown for every display slug this tenant has. `entitled` +
+// the trial-expiry date are Part C's café billing gate, shown only for
+// the 'cafe-tv' slug - the only display that mechanism currently gates
+// (functions/api/public/display.ts checks it by slug, not templateId).
+// Same optimistic-toggle-with-revert-on-failure pattern as
+// handleBooleanToggle below, scoped to one display instead of one tenant.
+function DisplayControls({
+  tenantId,
+  display,
+  onSaved,
+}: {
+  tenantId: number
+  display: PlatformDisplay
+  onSaved: (displayId: number, patch: Partial<DisplayPatchResult>) => void
+}): JSX.Element {
+  const [expiryInput, setExpiryInput] = useState(display.entitlementTrialExpiresAt ? display.entitlementTrialExpiresAt.slice(0, 10) : '')
+  const [savingExpiry, setSavingExpiry] = useState(false)
+
+  useEffect(() => {
+    setExpiryInput(display.entitlementTrialExpiresAt ? display.entitlementTrialExpiresAt.slice(0, 10) : '')
+  }, [display.entitlementTrialExpiresAt])
+
+  async function toggleField(field: 'active' | 'entitled', next: boolean) {
+    onSaved(display.id, { [field]: next })
+    const updated = await patchDisplay(tenantId, display.id, { [field]: next })
+    if (!updated) onSaved(display.id, { [field]: !next })
+  }
+
+  async function commitExpiry() {
+    const trimmed = expiryInput.trim()
+    const nextIso = trimmed ? new Date(`${trimmed}T23:59:59.999Z`).toISOString() : null
+    if (nextIso === display.entitlementTrialExpiresAt) return
+    setSavingExpiry(true)
+    const updated = await patchDisplay(tenantId, display.id, { entitlementTrialExpiresAt: nextIso })
+    setSavingExpiry(false)
+    if (updated) onSaved(display.id, { entitlementTrialExpiresAt: updated.entitlementTrialExpiresAt })
+    else setExpiryInput(display.entitlementTrialExpiresAt ? display.entitlementTrialExpiresAt.slice(0, 10) : '')
+  }
+
+  async function clearExpiry() {
+    setExpiryInput('')
+    setSavingExpiry(true)
+    const updated = await patchDisplay(tenantId, display.id, { entitlementTrialExpiresAt: null })
+    setSavingExpiry(false)
+    if (updated) onSaved(display.id, { entitlementTrialExpiresAt: updated.entitlementTrialExpiresAt })
+  }
+
+  const isExpiredTrial = !!display.entitlementTrialExpiresAt && new Date(display.entitlementTrialExpiresAt).getTime() <= Date.now()
+
+  return (
+    <div className="mb-1.5 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5 last:mb-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{display.slug}</span>
+        <label className="flex items-center gap-1 text-[10px] text-muted-400">
+          <input
+            type="checkbox"
+            checked={display.active}
+            onChange={(event) => toggleField('active', event.target.checked)}
+            className="h-3.5 w-3.5"
+          />
+          active
+        </label>
+      </div>
+      {display.slug === 'cafe-tv' && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-1.5">
+          <label className="flex items-center gap-1 text-[10px] text-muted-400">
+            <input
+              type="checkbox"
+              checked={display.entitled}
+              onChange={(event) => toggleField('entitled', event.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            entitled
+          </label>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-500">trial ends</span>
+            <input
+              type="date"
+              value={expiryInput}
+              disabled={savingExpiry}
+              onChange={(event) => setExpiryInput(event.target.value)}
+              onBlur={commitExpiry}
+              className="rounded border border-slate-700 bg-slate-900/80 px-1 py-0.5 text-[10px] text-white focus:border-sky-500 focus:outline-none"
+            />
+            {display.entitlementTrialExpiresAt && (
+              <button type="button" onClick={clearExpiry} className="text-[10px] text-slate-500 hover:text-slate-300">
+                clear
+              </button>
+            )}
+          </div>
+          {isExpiredTrial && <span className="text-[10px] font-bold text-status-bad">expired</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BooleanToggle({
   checked,
   onChange,
@@ -250,6 +374,16 @@ export default function PlatformTenantsPage(): JSX.Element {
 
   function handleLogoSaved(tenantId: number, logoUrl: string) {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, logoUrl } : t)))
+  }
+
+  function handleDisplaySaved(tenantId: number, displayId: number, patch: Partial<DisplayPatchResult>) {
+    setTenants((prev) =>
+      prev.map((t) =>
+        t.id === tenantId
+          ? { ...t, displays: t.displays.map((display) => (display.id === displayId ? { ...display, ...patch } : display)) }
+          : t
+      )
+    )
   }
 
   const [onboarding, setOnboarding] = useState(false)
@@ -318,8 +452,8 @@ export default function PlatformTenantsPage(): JSX.Element {
         </div>
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
           Every tenant, across every organization. Developer-only — controls pause/resume, cross-tenant public
-          visibility, internal/template status, and storage quota for any tenant, regardless of which org you're
-          currently switched to.
+          visibility, internal/template status, storage quota, and per-display active/café-entitlement state for
+          any tenant, regardless of which org you're currently switched to.
         </p>
 
         {onboardError && <p className="mb-4 text-sm font-semibold text-status-bad">{onboardError}</p>}
@@ -354,7 +488,7 @@ export default function PlatformTenantsPage(): JSX.Element {
           <p className="text-sm text-muted-400">Loading…</p>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-border bg-panel">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1100px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs font-semibold uppercase tracking-widest text-muted-400">
                   <th className="px-4 py-3">Tenant</th>
@@ -364,6 +498,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                   <th className="px-4 py-3 text-center">Weather public</th>
                   <th className="px-4 py-3 text-center">Ops public</th>
                   <th className="px-4 py-3 text-center">Internal</th>
+                  <th className="px-4 py-3">Displays</th>
                   <th className="px-4 py-3">Storage</th>
                   <th className="px-4 py-3">Created</th>
                 </tr>
@@ -406,6 +541,20 @@ export default function PlatformTenantsPage(): JSX.Element {
                         onChange={(next) => handleBooleanToggle(tenant, 'isInternal', next)}
                         label={`${tenant.slug} internal`}
                       />
+                    </td>
+                    <td className="min-w-[200px] px-4 py-3">
+                      {tenant.displays.length === 0 ? (
+                        <span className="text-xs text-muted-500">No displays yet</span>
+                      ) : (
+                        tenant.displays.map((display) => (
+                          <DisplayControls
+                            key={display.id}
+                            tenantId={tenant.id}
+                            display={display}
+                            onSaved={(displayId, patch) => handleDisplaySaved(tenant.id, displayId, patch)}
+                          />
+                        ))
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <QuotaEditor tenant={tenant} onSaved={(bytes) => handleQuotaSaved(tenant.id, bytes)} />

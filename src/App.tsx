@@ -3,6 +3,7 @@ import AccountPage from './pages/AccountPage'
 import AtcControlPage from './pages/AtcControlPage'
 import ChecklistPage from './pages/ChecklistPage'
 import ConfigPage from './pages/ConfigPage'
+import CafeMediaPage from './pages/CafeMediaPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
@@ -141,6 +142,17 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin', 'media']}>
                 <MediaManagerPage />
+              </RequireAuth>
+            }
+          />
+          {/* Owner+admin only, same gate as /design - Café Template's
+              layout/ad-label/ticker settings, plus the future ad-slot
+              management surface (not yet built). */}
+          <Route
+            path="/cafe-media"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <CafeMediaPage />
               </RequireAuth>
             }
           />

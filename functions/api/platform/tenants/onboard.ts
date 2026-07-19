@@ -89,6 +89,31 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const tenantRow = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(slug).first<{ id: number }>();
   if (!tenantRow) return jsonResponse({ error: "Failed to provision the new tenant" }, 500);
 
+  // tenant_displays (migration 0027) was never actually auto-created by
+  // any onboarding path before this - confirmed by inspection, not
+  // assumed (publicConfig.ts/DashboardPage.tsx's "missing row defaults
+  // to classic" fallback just made that gap invisible). Both rows are
+  // explicit here now: 'main' with the same panel_config shape migration
+  // 0027's own one-time seed used, and 'cafe-tv' pointed at the new
+  // CafeTemplate ('cafe-1', migration 0034) but starting entitled=0 -
+  // a brand-new signup must never get free café access. created_at/
+  // updated_at are left to the table's own DEFAULT (datetime('now')).
+  await env.DB
+    .prepare(
+      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config)
+       VALUES (?, 'main', 'Main Dashboard', 'classic', ?)`
+    )
+    .bind(tenantRow.id, JSON.stringify({ weather: true, compass: true, media: true, ops: true }))
+    .run();
+
+  await env.DB
+    .prepare(
+      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled)
+       VALUES (?, 'cafe-tv', 'Clubhouse Cafe TV', 'cafe-1', 0)`
+    )
+    .bind(tenantRow.id)
+    .run();
+
   const token = randomToken();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
 

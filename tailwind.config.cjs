@@ -26,7 +26,23 @@ module.exports = {
         'status-warn': 'var(--color-status-warn-text)',
         'status-bad': 'var(--color-status-bad-text)',
         'compass-disc-bg': 'var(--color-compass-disc-bg)',
-      }
+      },
+      // Café Template's footer ticker (CafeTicker.tsx) - a continuous,
+      // seamless loop, not the discrete dwell-per-slide pattern used
+      // elsewhere in this codebase. Fixed default speed for this pass -
+      // speed customization is a deliberate later follow-up, not missing
+      // by accident. The component renders its content track twice
+      // back-to-back and translates exactly -50%, so this animation
+      // never needs to know the actual content width.
+      keyframes: {
+        'cafe-ticker': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+      },
+      animation: {
+        'cafe-ticker': 'cafe-ticker 30s linear infinite',
+      },
     }
   },
   plugins: []

@@ -54,6 +54,7 @@ interface CarouselSlotResolvedRow {
   bannerText: string;
   bannerOpacity: number;
   bannerFontSize: string;
+  zone: string;
 }
 
 interface OpsPanelRow {
@@ -75,6 +76,13 @@ interface SafetyNoticeResolved {
   enabled: boolean;
 }
 
+interface CafeSettingsRow {
+  layoutMode: string;
+  adLabelEnabled: number;
+  tickerEnabled: number;
+  tickerSlotsJson: string;
+}
+
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -83,7 +91,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export async function buildPublicConfigResponse(organizationId: string, env: PublicConfigEnv): Promise<Response> {
-  const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, opsPanelRow, mainDisplayRow] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
@@ -119,6 +127,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
            cs.bannerText AS bannerText,
            cs.bannerOpacity AS bannerOpacity,
            cs.bannerFontSize AS bannerFontSize,
+           cs.zone AS zone,
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
@@ -144,6 +153,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
         bannerText: string;
         bannerOpacity: number;
         bannerFontSize: string;
+        zone: string;
         mp4DurationSeconds: number | null;
         r2Key: string | null;
         mediaUploadedAt: string | null;
@@ -159,13 +169,25 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     // never touched the Dashboard Layout selector) must never 404 here -
     // "/" always has a template, defaulting to 'classic' (Clubhouse
     // Template 1), unlike /api/public/display's strict 404 for named
-    // displays.
+    // displays. `active` (migration 0034, Part D) is the one exception:
+    // a developer can still force '/' itself off for support/
+    // maintenance, same as any named display - DashboardPage.tsx reads
+    // mainDisplayActive below and shows TenantUnavailable, mirroring
+    // exactly how a paused tenant already does.
     env.DB
       .prepare(
-        "SELECT td.template_id AS templateId FROM tenant_displays td JOIN tenants t ON t.id = td.tenant_id WHERE t.organization_id = ? AND td.slug = 'main'"
+        "SELECT td.template_id AS templateId, td.active AS active FROM tenant_displays td JOIN tenants t ON t.id = td.tenant_id WHERE t.organization_id = ? AND td.slug = 'main'"
       )
       .bind(organizationId)
-      .first<{ templateId: string }>(),
+      .first<{ templateId: string; active: number }>(),
+    // Café template's own settings (migration 0033) - missing row (a
+    // tenant that's never visited /cafe-media) must never 404 here,
+    // same "/" resilience posture as mainTemplateId above - defaults
+    // applied below match cafe-settings/index.ts's own defaultSettings().
+    env.DB
+      .prepare("SELECT layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson FROM cafe_template_settings WHERE organizationId = ?")
+      .bind(organizationId)
+      .first<CafeSettingsRow>(),
   ]);
 
   const runwayGroups = runwayRows.results.map((row) => ({
@@ -202,6 +224,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     bannerText: row.bannerText,
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
+    zone: row.zone,
     // The ?v= cache-buster matters now that a slide can be edited IN
     // PLACE (same r2Key, new bytes) - without it, a browser or the R2
     // public bucket's own edge caching could keep serving the pre-edit
@@ -233,6 +256,29 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     : null;
 
   const mainTemplateId = mainDisplayRow?.templateId ?? "classic";
+  // No row = never explicitly disabled -> active, same "missing row is
+  // never a block" posture as mainTemplateId's own default above.
+  const mainDisplayActive = mainDisplayRow ? !!mainDisplayRow.active : true;
 
-  return jsonResponse({ runwayGroups, theme, airfieldName, logoUrl, cameraSlots, carouselSlots, opsPanel, mainTemplateId });
+  const cafeSettings = {
+    layoutMode: cafeSettingsRow?.layoutMode ?? "full",
+    adLabelEnabled: !!cafeSettingsRow?.adLabelEnabled,
+    tickerEnabled: !!cafeSettingsRow?.tickerEnabled,
+    tickerSlots: cafeSettingsRow?.tickerSlotsJson
+      ? JSON.parse(cafeSettingsRow.tickerSlotsJson)
+      : Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null })),
+  };
+
+  return jsonResponse({
+    runwayGroups,
+    theme,
+    airfieldName,
+    logoUrl,
+    cameraSlots,
+    carouselSlots,
+    opsPanel,
+    mainTemplateId,
+    mainDisplayActive,
+    cafeSettings,
+  });
 }

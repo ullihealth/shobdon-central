@@ -60,4 +60,8 @@ export interface CarouselSlot {
   bannerText: string
   bannerOpacity: number
   bannerFontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
+  // Café Template's split-pane assignment - 'both' (default) shows in
+  // both zones when split, and normally in full-16:9 mode. Ignored by
+  // every other template.
+  zone: 'both' | 'left' | 'right'
 }

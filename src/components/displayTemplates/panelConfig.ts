@@ -1,8 +1,12 @@
 // Shared shape for tenant_displays.panel_config (migration 0027) across
 // every template component - which top-level sections a given named
 // display should render. Not every template honours every key (e.g.
-// CafeTvTemplate has no slot for `compass` at all) - a template is free
-// to ignore keys that don't apply to its own layout.
+// ClassicTemplate has no slot for `compass` at all in some panel
+// configs) - a template is free to ignore keys that don't apply to its
+// own layout. CafeTemplate.tsx (registry id 'cafe-1', the '/d/cafe-tv'
+// display's own template since migration 0034) ignores this shape
+// entirely - it has its own richer settings (cafe_template_settings),
+// not panel_config.
 export interface DisplayPanelConfig {
   weather: boolean
   compass: boolean

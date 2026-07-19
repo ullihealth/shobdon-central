@@ -716,6 +716,23 @@ function CarouselSlotEditor({
         </label>
       )}
 
+      {/* Only meaningful for the Café template's split-pane mode - every
+          other template ignores this entirely, so it's harmless to leave
+          visible/settable regardless of which template a tenant currently
+          has selected. */}
+      <label className="mt-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Zone (Café split-pane)</span>
+        <select
+          value={slot.zone}
+          onChange={(event) => onChange({ zone: event.target.value as CarouselSlot['zone'] })}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        >
+          <option value="both">Both</option>
+          <option value="left">Left only</option>
+          <option value="right">Right only</option>
+        </select>
+      </label>
+
       {showAppearanceControls && (
         <button
           type="button"

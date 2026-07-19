@@ -71,6 +71,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 // call creates a brand-new display or updates an existing one's
 // name/template/panel_config; a hand-rolled admin tool has no need for
 // separate POST/PUT verbs to distinguish the two.
+//
+// entitled is explicitly forced to 0 on the INSERT branch below (never
+// left to the column's own DEFAULT 1) - this is an owner-facing, not
+// platform-admin-facing, route. Without this, any tenant owner could
+// POST slug: 'cafe-tv' themselves and get free café entitlement via the
+// column's bare default (which exists only to grandfather rows that
+// already existed before migration 0034, not to grant new entitlement).
+// The ON CONFLICT branch deliberately never touches entitled/active -
+// an owner editing their OWN existing display's template/name must
+// never silently reset a developer-set entitlement or force-off flag.
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
@@ -95,8 +105,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await env.DB
     .prepare(
-      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config, created_at, updated_at, entitled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)
        ON CONFLICT(tenant_id, slug) DO UPDATE SET
          name = excluded.name,
          template_id = excluded.template_id,

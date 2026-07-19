@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useParams } from 'react-router-dom'
-import CafeTvTemplate from '../components/displayTemplates/CafeTvTemplate'
+import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
 import TenantUnavailable from '../components/TenantUnavailable'
@@ -79,8 +79,8 @@ export default function TenantDisplayPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      {display.templateId === 'cafe-tv' ? (
-        <CafeTvTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+      {display.templateId === 'cafe-1' ? (
+        <CafeTemplate themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
       ) : (
         <ClassicTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
       )}

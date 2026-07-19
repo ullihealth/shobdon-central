@@ -21,7 +21,7 @@ interface Clubhouse1TemplateProps {
 // unavailable/WeatherProvider handling only) choosing between this and
 // Clubhouse2Template based on the tenant's mainTemplateId - same dispatch
 // shape TenantDisplayPage.tsx already uses for ClassicTemplate/
-// CafeTvTemplate. No panelConfig prop here (unlike ClassicTemplate) -
+// CafeTemplate. No panelConfig prop here (unlike ClassicTemplate) -
 // this template has never had conditional panels and must not gain any,
 // per the "no visual changes, just formalize it" requirement.
 export default function Clubhouse1Template({ themeOverride, airfieldName, logoUrl }: Clubhouse1TemplateProps): JSX.Element {

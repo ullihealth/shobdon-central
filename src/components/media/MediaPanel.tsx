@@ -7,6 +7,7 @@ interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
   durationSeconds: number
   mp4DurationSeconds: number | null
+  zone: 'both' | 'left' | 'right'
 }
 
 function renderMediaContent(item: MediaItem) {
@@ -32,9 +33,15 @@ interface MediaPanelProps {
   // existing webcam/item fallback tiers below). Default false/undefined
   // - every existing caller (Template 1, Café) is completely unaffected.
   preferVideo?: boolean
+  // Café Template's split-pane mode - filters carouselSlots to
+  // slot.zone === zone || 'both' before the existing cycle/render
+  // logic runs, generalizing the exact pattern preferVideo above
+  // already established. Default undefined = no filtering (every
+  // existing caller, including Café's own full-16:9 mode, unaffected).
+  zone?: 'left' | 'right'
 }
 
-export default function MediaPanel({ item, preferVideo }: MediaPanelProps): JSX.Element {
+export default function MediaPanel({ item, preferVideo, zone }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-
@@ -63,12 +70,12 @@ export default function MediaPanel({ item, preferVideo }: MediaPanelProps): JSX.
     }
   }, [])
 
-  // preferVideo: filters to mp4 slots only when at least one exists,
-  // otherwise falls back to the full mix - raw carouselSlots stays the
-  // true fetched state; this is purely a display-order derivation, not
-  // a second data source.
-  const videoSlots = carouselSlots.filter((slot) => slot.mediaType === 'mp4')
-  const effectiveSlots = preferVideo && videoSlots.length > 0 ? videoSlots : carouselSlots
+  // zone then preferVideo, both independent, optional, and combinable -
+  // raw carouselSlots stays the true fetched state throughout; these are
+  // purely display-order/selection derivations, never a second data source.
+  const zoneFilteredSlots = zone ? carouselSlots.filter((slot) => slot.zone === zone || slot.zone === 'both') : carouselSlots
+  const videoSlots = zoneFilteredSlots.filter((slot) => slot.mediaType === 'mp4')
+  const effectiveSlots = preferVideo && videoSlots.length > 0 ? videoSlots : zoneFilteredSlots
 
   // Cycles through enabled carousel slots in order, each for its own
   // duration (mp4DurationSeconds overrides durationSeconds for mp4),

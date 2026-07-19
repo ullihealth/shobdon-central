@@ -11,6 +11,16 @@
 // the actual weather/ops/theme/carousel data itself (still
 // PUBLIC_CONFIG_URL's job, unchanged) - just which template + which
 // panels this named display should render.
+//
+// Migration 0034 gates: a display can be individually force-disabled
+// (`active`, Part D - support/maintenance, independent of billing) and,
+// for the café display specifically, entitlement-gated (`entitled` +
+// optional trial expiry, Part C). Both cases return the exact same 404
+// shape as "no display named X" - TenantDisplayPage.tsx already treats
+// any non-ok response as "show the clean unavailable state", so this
+// deliberately doesn't need a new response shape or a frontend change,
+// matching TenantUnavailable's own documented stance of never exposing
+// WHICH internal reason produced the unavailable state.
 
 import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantHost";
 
@@ -25,6 +35,9 @@ interface TenantDisplayRow {
   name: string;
   templateId: string;
   panelConfigJson: string | null;
+  active: number;
+  entitled: number;
+  entitlementTrialExpiresAt: string | null;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -32,6 +45,15 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
+}
+
+// Live, read-time check - no background job flips `entitled` back to 0
+// when a trial lapses (same discipline as tenants.active and every
+// other gate in this app: check live, don't maintain derived state).
+function isCurrentlyEntitled(row: Pick<TenantDisplayRow, "entitled" | "entitlementTrialExpiresAt">): boolean {
+  if (!row.entitled) return false;
+  if (row.entitlementTrialExpiresAt && new Date(row.entitlementTrialExpiresAt).getTime() <= Date.now()) return false;
+  return true;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -45,12 +67,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const row = await env.DB
     .prepare(
-      "SELECT slug, name, template_id AS templateId, panel_config AS panelConfigJson FROM tenant_displays WHERE tenant_id = ? AND slug = ?"
+      "SELECT slug, name, template_id AS templateId, panel_config AS panelConfigJson, active, entitled, entitlement_trial_expires_at AS entitlementTrialExpiresAt FROM tenant_displays WHERE tenant_id = ? AND slug = ?"
     )
     .bind(tenant.id, slug)
     .first<TenantDisplayRow>();
 
   if (!row) return jsonResponse({ error: `No display named '${slug}' for this tenant` }, 404);
+  if (!row.active) return jsonResponse({ error: `Display '${slug}' is currently disabled` }, 404);
+  if (row.slug === "cafe-tv" && !isCurrentlyEntitled(row)) {
+    return jsonResponse({ error: `Display '${slug}' is not entitled` }, 404);
+  }
 
   return jsonResponse({
     slug: row.slug,

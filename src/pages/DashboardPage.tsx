@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Template'
 import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
+import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
@@ -13,7 +14,7 @@ import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 // This file keeps only what's genuinely cross-template: the public config
 // fetch, the unavailable/paused-tenant gate, and the WeatherProvider wrap -
 // same shape TenantDisplayPage.tsx already uses to dispatch between
-// ClassicTemplate/CafeTvTemplate for /d/:slug.
+// ClassicTemplate/CafeTemplate for /d/:slug.
 export default function DashboardPage(): JSX.Element {
   // Active theme, synced across every device via the tenant-scoped D1
   // config (was the Worker's global theme KV key - see
@@ -67,6 +68,14 @@ export default function DashboardPage(): JSX.Element {
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.mainTemplateId) setMainTemplateId(data.mainTemplateId as string)
+        // Part D developer override (migration 0034) - a support/
+        // maintenance force-off for '/' itself, independent of both
+        // tenants.active (whole-tenant pause, handled by the !response.ok
+        // branch above) and café entitlement (which only ever gates
+        // /d/cafe-tv, not this main dashboard). Same clean-unavailable
+        // outcome either way - see TenantUnavailable's own comment on
+        // deliberately not distinguishing the reason.
+        if (data?.mainDisplayActive === false) setUnavailable(true)
       })
       .catch(() => {
         // Network failure, not a resolution failure - fall through to
@@ -85,6 +94,8 @@ export default function DashboardPage(): JSX.Element {
     <WeatherProvider>
       {mainTemplateId === 'clubhouse-2' ? (
         <Clubhouse2Template themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+      ) : mainTemplateId === 'cafe-1' ? (
+        <CafeTemplate themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
       ) : (
         <Clubhouse1Template themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
       )}

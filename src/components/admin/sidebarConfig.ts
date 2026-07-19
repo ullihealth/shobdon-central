@@ -24,7 +24,10 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
     id: 'content',
     label: 'Content',
-    items: [{ to: '/media-manager', label: 'Media Manager', allowedRoles: ['owner', 'admin', 'media'] }],
+    items: [
+      { to: '/media-manager', label: 'Media Manager', allowedRoles: ['owner', 'admin', 'media'] },
+      { to: '/cafe-media', label: 'Cafe Media', allowedRoles: ['owner', 'admin'] },
+    ],
   },
   {
     id: 'operations',

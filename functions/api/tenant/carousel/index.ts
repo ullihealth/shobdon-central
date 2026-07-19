@@ -41,6 +41,7 @@ interface CarouselSlotRow {
   bannerText: string;
   bannerOpacity: number;
   bannerFontSize: string;
+  zone: string;
 }
 
 interface CarouselSlotInput {
@@ -57,11 +58,16 @@ interface CarouselSlotInput {
   bannerText?: string;
   bannerOpacity?: number;
   bannerFontSize?: "sm" | "md" | "lg" | "xl" | "xxl";
+  zone?: "both" | "left" | "right";
 }
 
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam"];
 const VALID_FIT_MODES = ["fill", "contain"];
 const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
+// Café Template's split-pane assignment - see migration 0033. Ignored
+// entirely by every other template (Clubhouse 1/2, the existing cafe-tv
+// named display) and by Café's own full-16:9 mode.
+const VALID_ZONES = ["both", "left", "right"];
 
 function defaultSlots(): CarouselSlotRow[] {
   return Array.from({ length: 12 }, (_, i) => ({
@@ -81,6 +87,7 @@ function defaultSlots(): CarouselSlotRow[] {
     bannerText: "",
     bannerOpacity: 70,
     bannerFontSize: "md",
+    zone: "both",
   }));
 }
 
@@ -99,6 +106,7 @@ function rowToApi(row: CarouselSlotRow) {
     bannerText: row.bannerText,
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
+    zone: row.zone,
   };
 }
 
@@ -111,7 +119,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize
+              bannerText, bannerOpacity, bannerFontSize, zone
        FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -170,6 +178,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     if (slot.bannerFontSize !== undefined && !VALID_BANNER_SIZES.includes(slot.bannerFontSize)) {
       return jsonResponse({ error: `bannerFontSize must be one of: ${VALID_BANNER_SIZES.join(", ")}` }, 400);
     }
+    if (slot.zone !== undefined && !VALID_ZONES.includes(slot.zone)) {
+      return jsonResponse({ error: `zone must be one of: ${VALID_ZONES.join(", ")}` }, 400);
+    }
 
     if (slot.mediaType === "webcam") {
       if (!slot.cameraSlotNumber || slot.cameraSlotNumber < 1 || slot.cameraSlotNumber > 3) {
@@ -204,15 +215,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const bannerText = slot.bannerText ?? "";
     const bannerOpacity = slot.bannerOpacity ?? 70;
     const bannerFontSize = slot.bannerFontSize ?? "md";
+    const zone = slot.zone ?? "both";
 
     await env.DB
       .prepare(
         `INSERT INTO carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-           bannerText, bannerOpacity, bannerFontSize, updatedAt
+           bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -229,6 +241,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
            bannerText = excluded.bannerText,
            bannerOpacity = excluded.bannerOpacity,
            bannerFontSize = excluded.bannerFontSize,
+           zone = excluded.zone,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -249,6 +262,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         bannerText,
         bannerOpacity,
         bannerFontSize,
+        zone,
         now
       )
       .run();

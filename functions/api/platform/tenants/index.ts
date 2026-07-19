@@ -45,11 +45,22 @@ interface UsageRow {
   totalBytes: number;
 }
 
+interface DisplayRow {
+  id: number;
+  tenantId: number;
+  slug: string;
+  name: string;
+  templateId: string;
+  active: number;
+  entitled: number;
+  entitlementTrialExpiresAt: string | null;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
   if ("error" in result) return result.error;
 
-  const [{ results: tenants }, { results: usageRows }] = await Promise.all([
+  const [{ results: tenants }, { results: usageRows }, { results: displayRows }] = await Promise.all([
     env.DB
       .prepare(
         `SELECT id, slug, name, subdomain, active,
@@ -63,9 +74,26 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // an N+1 that'd otherwise scale with the number of tenants on this
     // page.
     env.DB.prepare("SELECT organizationId, SUM(sizeBytes) AS totalBytes FROM media_library GROUP BY organizationId").all<UsageRow>(),
+    // Every tenant's displays (Part D active override + Part C café
+    // entitlement, migration 0034) in one query, grouped below - same
+    // N+1 avoidance as usageRows above, needed now that this page also
+    // surfaces per-display controls, not just per-tenant ones.
+    env.DB
+      .prepare(
+        `SELECT id, tenant_id AS tenantId, slug, name, template_id AS templateId, active, entitled,
+                entitlement_trial_expires_at AS entitlementTrialExpiresAt
+         FROM tenant_displays ORDER BY id`
+      )
+      .all<DisplayRow>(),
   ]);
 
   const usageByOrg = new Map(usageRows.map((row) => [row.organizationId, row.totalBytes]));
+  const displaysByTenant = new Map<number, DisplayRow[]>();
+  for (const row of displayRows) {
+    const list = displaysByTenant.get(row.tenantId) ?? [];
+    list.push(row);
+    displaysByTenant.set(row.tenantId, list);
+  }
 
   return jsonResponse({
     tenants: tenants.map((tenant) => ({
@@ -81,6 +109,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       usedBytes: (tenant.organizationId && usageByOrg.get(tenant.organizationId)) || 0,
       logoUrl: tenant.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenant.logoR2Key}` : null,
       createdAt: tenant.createdAt,
+      displays: (displaysByTenant.get(tenant.id) ?? []).map((display) => ({
+        id: display.id,
+        slug: display.slug,
+        name: display.name,
+        templateId: display.templateId,
+        active: !!display.active,
+        entitled: !!display.entitled,
+        entitlementTrialExpiresAt: display.entitlementTrialExpiresAt,
+      })),
     })),
   });
 };
