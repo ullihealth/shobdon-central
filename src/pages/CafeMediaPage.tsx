@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import MediaPanel from '../components/media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
 import VenueCornerBadge from '../components/VenueCornerBadge'
+import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
+import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 import { currentMedia } from '../config/media'
-import { OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { CAFE_CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import {
@@ -111,9 +114,14 @@ function tickerStyleToApi(style: TickerStyle): Record<string, unknown> {
 // preview. Uses WeatherProvider with no forcedConfig (unlike DesignPage's
 // preview), so this shows this tenant's real live weather, matching your
 // instruction that the preview reflect actual data, not placeholders.
+// PREVIEW_DISPLAY_WIDTH matches DesignPage.tsx's own preview size (800,
+// down from 1000 - a 20% reduction applied there first) so both admin
+// pages present their preview at a consistent size - same derivation,
+// width is the only knob, height and scale follow automatically so the
+// aspect ratio (and therefore everything rendered inside) stays exact.
 const PREVIEW_REFERENCE_WIDTH = 1920
 const PREVIEW_REFERENCE_HEIGHT = 1080
-const PREVIEW_DISPLAY_WIDTH = 1000
+const PREVIEW_DISPLAY_WIDTH = 800
 const PREVIEW_SCALE = PREVIEW_DISPLAY_WIDTH / PREVIEW_REFERENCE_WIDTH
 const PREVIEW_DISPLAY_HEIGHT = PREVIEW_REFERENCE_HEIGHT * PREVIEW_SCALE
 
@@ -167,17 +175,17 @@ function PreviewContent({
           {layoutMode === 'split' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="left" fill />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="right" fill />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className="relative h-full overflow-hidden">
-              <MediaPanel item={currentMedia} fill />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
@@ -244,6 +252,21 @@ export default function CafeMediaPage(): JSX.Element {
   // on every visit.
   const [styleExpanded, setStyleExpanded] = useState(false)
 
+  // Café's own, genuinely separate 12-slot carousel (migration 0037,
+  // cafe_carousel_slots) - same shared CarouselSlotList/CarouselSlotEditor
+  // components Dashboard Manager uses, pointed at a different API and a
+  // different (café/both-tagged) slice of the media library. `files` is
+  // the FULL, unfiltered library list (needed for CarouselSlotList's own
+  // label lookups); the editor's own Source dropdown filters it further
+  // via filterAssetsForScreen below.
+  const [files, setFiles] = useState<MediaLibraryFile[]>([])
+  const [cafeSlots, setCafeSlots] = useState<CarouselSlot[]>([])
+  const [cameraOptions, setCameraOptions] = useState<CameraOption[]>([])
+  const [selectedCafeSlotNumber, setSelectedCafeSlotNumber] = useState<number>(1)
+  const [cafeAppearanceEditorOpen, setCafeAppearanceEditorOpen] = useState(false)
+  const pendingCafeSavesRef = useRef<Map<number, CarouselSlot>>(new Map())
+  const cafeSaveTimerRef = useRef<number | undefined>(undefined)
+
   useEffect(() => {
     let cancelled = false
 
@@ -272,7 +295,12 @@ export default function CafeMediaPage(): JSX.Element {
 
     // Same PUBLIC_CONFIG_URL fetch CafeTemplate.tsx itself uses - keeps
     // this preview's branding/notices sourced from the exact same place
-    // the real public dashboard reads them from.
+    // the real public dashboard reads them from. Also the source of
+    // cameraOptions for the Carousel Slots section below (same
+    // "already-public, safe to reuse for both owner and media-role
+    // reads" reasoning MediaManagerPage.tsx's own loadCameraOptions
+    // uses) - piggybacked on this existing fetch rather than a second
+    // request for the same data.
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
@@ -280,6 +308,7 @@ export default function CafeMediaPage(): JSX.Element {
         if (data.airfieldName) setAirfieldName(data.airfieldName as string)
         if (data.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
+        setCameraOptions((data.cameraSlots ?? []).filter((c: CameraOption) => c.url))
       })
       .catch(() => {})
 
@@ -293,6 +322,26 @@ export default function CafeMediaPage(): JSX.Element {
       .then((data) => {
         if (cancelled || !data) return
         if (Array.isArray(data.safetyNotices)) setNotices(data.safetyNotices)
+      })
+      .catch(() => {})
+
+    // Café's own media library view (full, unfiltered list - see
+    // filterAssetsForScreen's own comment for why the editor filters a
+    // separate copy rather than this state itself) and its own,
+    // separate 12-slot carousel (migration 0037).
+    fetch(MEDIA_LIBRARY_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setFiles(data.files ?? [])
+      })
+      .catch(() => {})
+
+    fetch(CAFE_CAROUSEL_SLOTS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setCafeSlots(data.slots ?? [])
       })
       .catch(() => {})
 
@@ -445,6 +494,54 @@ export default function CafeMediaPage(): JSX.Element {
     }
   }
 
+  // Same debounced-batch-write pattern as MediaManagerPage.tsx's own
+  // saveSlot - local state (and so the live preview) updates
+  // synchronously on every call; the network PUT is batched and
+  // debounced so dragging a crop/rotation/brightness slider doesn't fire
+  // a request per pixel. Independent of handleSave above - carousel
+  // slots have always saved themselves immediately on this pattern,
+  // never gated behind "Save Settings" (which only covers layout/ad
+  // label/ticker), matching Dashboard Manager's own slots-save-
+  // immediately behaviour exactly.
+  function saveCafeSlot(updated: CarouselSlot) {
+    setCafeSlots((prev) => prev.map((s) => (s.slotNumber === updated.slotNumber ? updated : s)))
+    pendingCafeSavesRef.current.set(updated.slotNumber, updated)
+    window.clearTimeout(cafeSaveTimerRef.current)
+    cafeSaveTimerRef.current = window.setTimeout(() => {
+      const toSave = Array.from(pendingCafeSavesRef.current.values())
+      pendingCafeSavesRef.current.clear()
+      if (toSave.length === 0) return
+      fetch(CAFE_CAROUSEL_SLOTS_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slots: toSave }),
+      })
+    }, 300)
+  }
+
+  function handleCafeSourceChange(slot: CarouselSlot, value: string) {
+    if (value.startsWith('webcam:')) {
+      const cameraSlotNumber = Number(value.slice('webcam:'.length))
+      saveCafeSlot({ ...slot, mediaType: 'webcam', cameraSlotNumber, mediaLibraryId: null })
+      return
+    }
+    if (value.startsWith('file:')) {
+      const fileId = value.slice('file:'.length)
+      const file = files.find((f) => f.id === fileId)
+      if (!file) return
+      saveCafeSlot({ ...slot, mediaType: file.mediaType, mediaLibraryId: fileId, cameraSlotNumber: null })
+      return
+    }
+    saveCafeSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null })
+  }
+
+  function selectCafeSlot(slotNumber: number) {
+    setSelectedCafeSlotNumber(slotNumber)
+    setCafeAppearanceEditorOpen(false)
+  }
+
+  const selectedCafeSlot = cafeSlots.find((s) => s.slotNumber === selectedCafeSlotNumber) ?? null
+
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl px-6 py-8">
@@ -492,6 +589,49 @@ export default function CafeMediaPage(): JSX.Element {
           </WeatherProvider>
         </div>
       </div>
+
+      {/* CAROUSEL SLOTS - café's own, separate 12-slot carousel
+          (migration 0037), mirroring Dashboard Manager's slot UI exactly
+          via the same shared CarouselSlotList/CarouselSlotEditor
+          components - just pointed at cafe_carousel_slots through
+          CAFE_CAROUSEL_SLOTS_URL instead of the dashboard's table, and
+          filtered to café/both-tagged media (further narrowed to
+          9:16/both-orientation assets when the selected slot's own zone
+          is left/right - split-pane's two side-by-side panels favour
+          portrait-shaped assets; a 'both'-zoned slot stays unfiltered by
+          orientation since it can render in full-16:9 OR either split
+          zone depending on the Layout setting below). Placed right under
+          the preview, before Ticker Style, matching Dashboard Manager's
+          own "slots are the daily-use control" ordering. */}
+      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Carousel Slots</div>
+          <Link to="/media-library" className="text-xs font-semibold text-accent-sky-400 hover:underline">
+            Manage Media Library →
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+          <CarouselSlotList
+            slots={cafeSlots}
+            files={files}
+            cameraOptions={cameraOptions}
+            selectedSlotNumber={selectedCafeSlotNumber}
+            onSelect={selectCafeSlot}
+            onToggleEnabled={(slot, enabled) => saveCafeSlot({ ...slot, enabled })}
+          />
+          {selectedCafeSlot && (
+            <CarouselSlotEditor
+              slot={selectedCafeSlot}
+              files={filterAssetsForScreen(files, 'cafe', selectedCafeSlot.zone)}
+              cameraOptions={cameraOptions}
+              appearanceOpen={cafeAppearanceEditorOpen}
+              onToggleAppearance={() => setCafeAppearanceEditorOpen((prev) => !prev)}
+              onSourceChange={(value) => handleCafeSourceChange(selectedCafeSlot, value)}
+              onChange={(patch) => saveCafeSlot({ ...selectedCafeSlot, ...patch })}
+            />
+          )}
+        </div>
+      </section>
 
       {/* TICKER STYLE - moved directly beneath the preview (was below
           Footer Ticker) and made a collapsible accordion: the header

@@ -53,9 +53,18 @@ interface MediaPanelProps {
   // false - every existing caller (Clubhouse1/2Template,
   // CentreDisplayPanel) is completely unaffected.
   fill?: boolean
+  // Which of the two independent carousels (migration 0037) this panel
+  // reads from - 'dashboard' (default) reads the same public config
+  // `carouselSlots` field every existing caller already used before this
+  // prop existed; 'cafe' reads the new, separate `cafeCarouselSlots`
+  // field instead. Every non-café caller (Template 1, Clubhouse Template
+  // 2, CentreDisplayPanel) omits this entirely and is completely
+  // unaffected. Independent of `zone` - café's split-pane zone filtering
+  // still applies on top of whichever slot source this selects.
+  slotSource?: 'dashboard' | 'cafe'
 }
 
-export default function MediaPanel({ item, preferVideo, zone, fill }: MediaPanelProps): JSX.Element {
+export default function MediaPanel({ item, preferVideo, zone, fill, slotSource = 'dashboard' }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-
@@ -76,13 +85,14 @@ export default function MediaPanel({ item, preferVideo, zone, fill }: MediaPanel
         if (cancelled) return
         const slotOne = data?.cameraSlots?.find((slot: { slot: number; url: string }) => slot.slot === 1)
         if (slotOne?.url) setWebcamUrl(slotOne.url)
-        setCarouselSlots(Array.isArray(data?.carouselSlots) ? data.carouselSlots : [])
+        const rawSlots = slotSource === 'cafe' ? data?.cafeCarouselSlots : data?.carouselSlots
+        setCarouselSlots(Array.isArray(rawSlots) ? rawSlots : [])
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [slotSource])
 
   // zone then preferVideo, both independent, optional, and combinable -
   // raw carouselSlots stays the true fetched state throughout; these are

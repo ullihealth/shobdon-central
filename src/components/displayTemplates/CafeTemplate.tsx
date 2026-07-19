@@ -152,17 +152,17 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
                   within it (the root cause of the reported empty-space bug -
                   see MediaPanel.tsx's own comment on `fill`). */}
               <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
-                <MediaPanel item={currentMedia} zone="left" fill />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
-                <MediaPanel item={currentMedia} zone="right" fill />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className={`relative ${isDesktop ? 'h-full' : ''} overflow-hidden`}>
-              <MediaPanel item={currentMedia} fill />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}

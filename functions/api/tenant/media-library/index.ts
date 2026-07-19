@@ -25,6 +25,8 @@ interface MediaLibraryRow {
   uploadedAt: string;
   slideRecipeJson: string | null;
   folderId: string | null;
+  usableOn: string;
+  orientation: string;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -35,7 +37,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [{ results }, capBytes] = await Promise.all([
     env.DB
       .prepare(
-        "SELECT id, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, slideRecipeJson, folderId FROM media_library WHERE organizationId = ? ORDER BY uploadedAt DESC"
+        "SELECT id, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, slideRecipeJson, folderId, usableOn, orientation FROM media_library WHERE organizationId = ? ORDER BY uploadedAt DESC"
       )
       .bind(organizationId)
       .all<MediaLibraryRow>(),

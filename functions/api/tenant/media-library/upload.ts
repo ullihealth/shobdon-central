@@ -29,6 +29,8 @@ interface Env {
 }
 
 const ALLOWED_MEDIA_TYPES = ["image", "mp4", "pdf"];
+const VALID_USABLE_ON = ["dashboard", "cafe", "both"];
+const VALID_ORIENTATIONS = ["16:9", "9:16", "both"];
 
 function extensionFor(filename: string, mediaType: string): string {
   const dotIndex = filename.lastIndexOf(".");
@@ -53,6 +55,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // in "Uncategorized". Defaults to null (Uncategorized) exactly as
   // before this param existed.
   const folderId = url.searchParams.get("folderId") || null;
+  // usableOn/orientation (migration 0037) - both optional so any other
+  // future caller of this endpoint isn't forced to know about them.
+  // usableOn defaults 'both' (the most permissive/least-surprising
+  // choice for a brand-new upload - unlike the migration's 'dashboard'
+  // default for pre-existing files, there's no "current assignment" to
+  // preserve here). orientation defaults '16:9' - MediaLibraryPage.tsx's
+  // upload handler always computes and sends a real detected value for
+  // image/mp4 (see its own comment for the detection method); this
+  // fallback only matters for pdf uploads (no dimensions to detect) or
+  // a caller that omits it entirely.
+  const usableOnParam = url.searchParams.get("usableOn");
+  const usableOn = usableOnParam && VALID_USABLE_ON.includes(usableOnParam) ? usableOnParam : "both";
+  const orientationParam = url.searchParams.get("orientation");
+  const orientation = orientationParam && VALID_ORIENTATIONS.includes(orientationParam) ? orientationParam : "16:9";
 
   if (!ALLOWED_MEDIA_TYPES.includes(mediaType)) {
     return jsonResponse({ error: `mediaType must be one of: ${ALLOWED_MEDIA_TYPES.join(", ")}` }, 400);
@@ -104,9 +120,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const uploadedAt = new Date().toISOString();
   await env.DB
     .prepare(
-      "INSERT INTO media_library (id, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, folderId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO media_library (id, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, folderId, usableOn, orientation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(fileId, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, folderId)
+    .bind(fileId, organizationId, r2Key, filename, mediaType, sizeBytes, mp4DurationSeconds, uploadedAt, folderId, usableOn, orientation)
     .run();
 
   return jsonResponse({
@@ -117,5 +133,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     mp4DurationSeconds,
     uploadedAt,
     folderId,
+    usableOn,
+    orientation,
   });
 };

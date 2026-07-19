@@ -15,6 +15,23 @@ export interface MediaLibraryFile {
   // Null = the virtual "Uncategorized" bucket, not a real media_folders
   // row - every file defaults here until explicitly moved.
   folderId: string | null
+  // Which carousel(s) this asset can be picked from - Dashboard Manager's
+  // Source dropdown shows 'dashboard'|'both', Cafe Media's shows
+  // 'cafe'|'both'. Existing files migrated to 'dashboard' (migration
+  // 0037) so nothing already assigned to a dashboard slot silently
+  // becomes unavailable there.
+  usableOn: 'dashboard' | 'cafe' | 'both'
+  // Auto-detected from the file's actual pixel dimensions at upload time
+  // (landscape/square -> '16:9', portrait -> '9:16') where possible,
+  // editable afterward on the Media Library page. Used to further filter
+  // a café slot's Source options when that slot's zone is 'left'/'right'
+  // (split-pane wants portrait-shaped assets) - see
+  // CarouselSlotEditor.tsx's filterAssetsForScreen(). Existing files
+  // migrated to '16:9' (migration 0037) - no width/height was ever
+  // stored for them, so genuine detection isn't possible retroactively;
+  // '16:9' matches what every existing dashboard slot was actually
+  // designed for.
+  orientation: '16:9' | '9:16' | 'both'
 }
 
 export interface MediaFolder {

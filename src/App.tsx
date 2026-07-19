@@ -9,6 +9,7 @@ import DeveloperToolsPage from './pages/DeveloperToolsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
 import HelpPage from './pages/HelpPage'
 import LoginPage from './pages/LoginPage'
+import MediaLibraryPage from './pages/MediaLibraryPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
 import OnboardInvitePage from './pages/OnboardInvitePage'
@@ -142,6 +143,19 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin', 'media']}>
                 <MediaManagerPage />
+              </RequireAuth>
+            }
+          />
+          {/* Same role gate as /media-manager (owner/admin/media) - this
+              is where that page's embedded library UI moved to (folders,
+              upload, move-to-folder, Edit Slide, delete, plus the new
+              usableOn/orientation tagging), shared by both Dashboard
+              Manager and Cafe Media's Source dropdowns. */}
+          <Route
+            path="/media-library"
+            element={
+              <RequireAuth requireRole={['owner', 'admin', 'media']}>
+                <MediaLibraryPage />
               </RequireAuth>
             }
           />

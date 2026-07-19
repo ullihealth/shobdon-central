@@ -60,6 +60,7 @@ export const MEDIA_LIBRARY_URL = '/api/tenant/media-library'
 export const MEDIA_LIBRARY_UPLOAD_URL = '/api/tenant/media-library/upload'
 export const BRANDING_LOGO_URL = '/api/tenant/branding/logo'
 export const CAROUSEL_SLOTS_URL = '/api/tenant/carousel'
+export const CAFE_CAROUSEL_SLOTS_URL = '/api/tenant/cafe-carousel'
 // Lightweight, flat (no nesting) per-tenant folders for the media
 // library - functions/api/tenant/media-folders/*.
 export const MEDIA_FOLDERS_URL = '/api/tenant/media-folders'

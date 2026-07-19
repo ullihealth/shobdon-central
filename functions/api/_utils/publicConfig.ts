@@ -101,7 +101,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export async function buildPublicConfigResponse(organizationId: string, env: PublicConfigEnv): Promise<Response> {
-  const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
@@ -143,6 +143,63 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
            ml.uploadedAt AS mediaUploadedAt,
            cam.url AS cameraUrl
          FROM carousel_slots cs
+         LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
+         LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
+         WHERE cs.organizationId = ? AND cs.enabled = 1
+         ORDER BY cs.slotNumber`
+      )
+      .bind(organizationId)
+      .all<{
+        slotNumber: number;
+        mediaType: string;
+        durationSeconds: number;
+        fitMode: string;
+        cropX: number;
+        cropY: number;
+        cropWidth: number;
+        cropHeight: number;
+        rotationDegrees: number;
+        brightnessPercent: number;
+        bannerText: string;
+        bannerOpacity: number;
+        bannerFontSize: string;
+        zone: string;
+        mp4DurationSeconds: number | null;
+        r2Key: string | null;
+        mediaUploadedAt: string | null;
+        cameraUrl: string | null;
+      }>(),
+    // Café's own slot set (migration 0037, cafe_carousel_slots) - same
+    // query shape as the dashboard's carouselRows above, pointed at the
+    // separate table. Read unconditionally regardless of mainTemplateId
+    // (same posture as carouselRows itself, and as opsPanel/cafeSettings
+    // below) - CafeTemplate.tsx is the only consumer that will actually
+    // request this data via MediaPanel's slotSource="cafe" prop, so an
+    // unused query result for a tenant not currently on the café
+    // template costs one extra (cheap, indexed) SELECT, not a real
+    // problem, and keeps this function's own logic template-agnostic.
+    env.DB
+      .prepare(
+        `SELECT
+           cs.slotNumber AS slotNumber,
+           cs.mediaType AS mediaType,
+           cs.durationSeconds AS durationSeconds,
+           cs.fitMode AS fitMode,
+           cs.cropX AS cropX,
+           cs.cropY AS cropY,
+           cs.cropWidth AS cropWidth,
+           cs.cropHeight AS cropHeight,
+           cs.rotationDegrees AS rotationDegrees,
+           cs.brightnessPercent AS brightnessPercent,
+           cs.bannerText AS bannerText,
+           cs.bannerOpacity AS bannerOpacity,
+           cs.bannerFontSize AS bannerFontSize,
+           cs.zone AS zone,
+           ml.mp4DurationSeconds AS mp4DurationSeconds,
+           ml.r2Key AS r2Key,
+           ml.uploadedAt AS mediaUploadedAt,
+           cam.url AS cameraUrl
+         FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
          WHERE cs.organizationId = ? AND cs.enabled = 1
@@ -256,6 +313,28 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
           : null,
   }));
 
+  // Identical mapping to carouselSlots above, applied to café's own rows.
+  const cafeCarouselSlots: CarouselSlotResolvedRow[] = cafeCarouselRows.results.map((row) => ({
+    slotNumber: row.slotNumber,
+    mediaType: row.mediaType,
+    durationSeconds: row.durationSeconds,
+    mp4DurationSeconds: row.mp4DurationSeconds,
+    fitMode: row.fitMode,
+    cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
+    rotationDegrees: row.rotationDegrees,
+    brightnessPercent: row.brightnessPercent,
+    bannerText: row.bannerText,
+    bannerOpacity: row.bannerOpacity,
+    bannerFontSize: row.bannerFontSize,
+    zone: row.zone,
+    resolvedUrl:
+      row.mediaType === "webcam"
+        ? row.cameraUrl
+        : row.r2Key && mediaBaseUrl
+          ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
+          : null,
+  }));
+
   const opsPanel = opsPanelRow
     ? {
         activeRunwayEnd: opsPanelRow.activeRunwayEnd,
@@ -307,6 +386,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     logoUrl,
     cameraSlots,
     carouselSlots,
+    cafeCarouselSlots,
     opsPanel,
     mainTemplateId,
     mainDisplayActive,

@@ -304,17 +304,17 @@ function CafePreview({ airfieldName, logoUrl }: ScreenPreviewProps): JSX.Element
           {layoutMode === 'split' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="left" fill />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="right" fill />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className="relative h-full overflow-hidden">
-              <MediaPanel item={currentMedia} fill />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
@@ -736,7 +736,21 @@ export default function DesignPage(): JSX.Element {
           either moved into the info popover (paragraph) or up onto this
           row (toggle), which is what lets the preview below start right
           under this row instead of two rows further down. */}
-      <div className="mb-6 flex flex-shrink-0 flex-wrap items-center justify-between gap-4">
+      {/* Stacks by default (title+icon row, then toggle below) and only
+          goes side-by-side at the same min-[1800px] threshold the
+          preview/tabs split already uses - deliberately NOT relying on
+          flex-wrap's automatic content-width wrapping here. This page's
+          `html { font-size: clamp(12px, 1.5vmin, 20px) }` global (see
+          index.css) makes every rem-based Tailwind class viewport-height-
+          dependent as well as width-dependent, which makes hand-computed
+          "does this fit at Npx" math unreliable - confirmed the hard way,
+          this row previously overflowed off-canvas at a normal 1568px
+          laptop width despite looking like it should have had room to
+          spare. An explicit min-width breakpoint sidesteps that entirely:
+          Tailwind's breakpoints key off actual viewport width in CSS px,
+          not the rem-scaled content, so "stacked below 1800px" is true
+          regardless of how large the clamp() pushes rem sizing. */}
+      <div className="mb-6 flex flex-shrink-0 flex-col items-start gap-3 min-[1800px]:flex-row min-[1800px]:items-center min-[1800px]:justify-between min-[1800px]:gap-4">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Screens Design</h1>
           <div ref={infoRef} className="relative">
