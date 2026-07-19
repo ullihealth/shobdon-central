@@ -41,9 +41,26 @@ const MOCK_CONFIG = { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'mock' as const
 // size, then scales the whole thing down with a single CSS transform - not
 // a shrunken box with the layout crammed into it. That's what keeps every
 // element (compass included) proportionally correct instead of clipped.
+//
+// PREVIEW_DISPLAY_WIDTH is the ONLY size knob - height and the scale factor
+// are both derived from it below, so shrinking this one number shrinks the
+// whole box uniformly. That matters for the 20% height reduction: dropping
+// only the height while leaving width alone would either letterbox the
+// content (blank space) or force a non-uniform stretch (distorted, and
+// still clips - the inner content is a fixed 1920x1080 canvas transformed
+// by a single scale() with no reflow of its own, so it has no way to
+// "shrink into" a shorter box of the same width without one of those two
+// outcomes). Shrinking width by the same 20% instead keeps the exact
+// 16:9 aspect ratio, so the derived scale factor drops proportionally and
+// everything inside - Weather Summary cards, compass, OPS panel, Media
+// Panel, the café ticker - shrinks together as one image, the same way
+// zooming a browser page out does. Nothing can clip or overlap as a result
+// of this, structurally: transform: scale() never triggers layout reflow.
+// 1000 * 0.8 = 800 (and the derived height, 562.5 * 0.8 = 450, comes out
+// to a round number automatically via the same formula).
 const PREVIEW_REFERENCE_WIDTH = 1920
 const PREVIEW_REFERENCE_HEIGHT = 1080
-const PREVIEW_DISPLAY_WIDTH = 1000
+const PREVIEW_DISPLAY_WIDTH = 800
 const PREVIEW_SCALE = PREVIEW_DISPLAY_WIDTH / PREVIEW_REFERENCE_WIDTH
 const PREVIEW_DISPLAY_HEIGHT = PREVIEW_REFERENCE_HEIGHT * PREVIEW_SCALE
 
@@ -106,21 +123,26 @@ const TABS: { id: TabId; label: string }[] = [
 ]
 
 // The split-screen (pinned preview / scrollable settings pane) layout only
-// engages once there's genuinely enough width for BOTH the preview's fixed
-// 1000px box and a comfortably usable settings pane next to it - sidebar
-// (256px) + page padding + gap + the 1000px preview already eats ~1350px
-// before the right pane gets a single pixel, so a stock Tailwind breakpoint
-// (lg=1024, xl=1280, even 2xl=1536) would engage split mode with the right
-// pane crushed to near-zero width. min-[1800px] (used directly as a literal
+// engages once there's genuinely enough width for BOTH the preview box and
+// a comfortably usable settings pane next to it - sidebar (256px) + page
+// padding + gap + the preview (now 800px, see PREVIEW_DISPLAY_WIDTH's own
+// comment for why it shrank from 1000) already eats ~1150px before the
+// right pane gets a single pixel, so a stock Tailwind breakpoint (lg=1024,
+// xl=1280, even 2xl=1536) would engage split mode with the right pane
+// crushed to near-zero width. min-[1800px] (used directly as a literal
 // class name throughout the JSX below, NOT built via string interpolation -
 // Tailwind's JIT scanner greps source text statically and never evaluates
 // JS template literals, so an interpolated `${CONST}:utility` silently
 // vanishes from the compiled CSS with no build error; confirmed the hard
-// way, see commit history) is sized so the right pane still has ~450px+
-// once split mode turns on - comfortably above "laptop-width" (1440-1728
+// way, see commit history) is sized so the right pane has ~650px+ once
+// split mode turns on - comfortably above "laptop-width" (1440-1728
 // logical px on most laptop screens), which deliberately keeps split mode
 // desktop/large-monitor-only and lets laptops fall back to the stacked
-// layout, exactly as asked for.
+// layout, exactly as asked for. Left unchanged (still more generous than
+// the ~950px strict minimum the smaller preview now needs) since lowering
+// it wasn't asked for and would change which physical devices get split
+// vs. stacked mode - a separate decision from this round's header/preview
+// sizing cleanup.
 
 function labelFor(key: keyof DesignTokens): string {
   return key.replace('--color-', '').replace(/-/g, ' ')
@@ -357,6 +379,27 @@ export default function DesignPage(): JSX.Element {
   // Which of the 6 tabs the right pane currently shows. Branding by
   // default, per this round's instruction.
   const [activeTab, setActiveTab] = useState<TabId>('branding')
+
+  // The former explanatory paragraph, now behind an info icon's popover
+  // instead of sitting permanently on the page. No toast/popover library
+  // exists anywhere in this codebase (window.confirm is the only
+  // established dialog pattern) so this is a small self-contained
+  // implementation: toggled by the icon itself, and dismissed either by
+  // clicking the icon again, the popover's own close button, or clicking
+  // anywhere outside it - the mousedown listener below only attaches while
+  // open, so it costs nothing the rest of the time.
+  const [infoOpen, setInfoOpen] = useState(false)
+  const infoRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!infoOpen) return
+    function handleClickOutside(event: MouseEvent) {
+      if (infoRef.current && !infoRef.current.contains(event.target as Node)) {
+        setInfoOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [infoOpen])
 
   // Branding (name + logo) - self-service editing, no confirm gate
   // (unlike handleApplyToLiveScreen's theme push below, which
@@ -687,47 +730,86 @@ export default function DesignPage(): JSX.Element {
 
   return (
     <div className="mx-auto max-w-[1900px] px-6 py-6 min-[1800px]:flex min-[1800px]:h-screen min-[1800px]:flex-col min-[1800px]:overflow-hidden">
-      <div className="mb-6 flex-shrink-0">
-        <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Screens Design</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-400">
-          Experiment freely - the preview reacts to the colours you pick, and nothing is saved until you choose
-          to. When you're ready, use "Apply to Live Screen" in the Templates tab to push a theme (and, on Café,
-          the current template) to every device that loads the real {activeScreen === 'dashboard' ? 'dashboard' : 'café screen'}.
-        </p>
+      {/* Single header row: title + info icon on the left, toggle on the
+          right - the paragraph that used to sit below the title, and the
+          toggle's own row above the preview, are both gone; their content
+          either moved into the info popover (paragraph) or up onto this
+          row (toggle), which is what lets the preview below start right
+          under this row instead of two rows further down. */}
+      <div className="mb-6 flex flex-shrink-0 flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Screens Design</h1>
+          <div ref={infoRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setInfoOpen((open) => !open)}
+              aria-label="About this page"
+              aria-expanded={infoOpen}
+              className="flex h-5 w-5 items-center justify-center rounded-full border border-border text-[10px] font-bold text-muted-500 transition hover:border-accent-sky-500 hover:text-accent-sky-400"
+            >
+              i
+            </button>
+            {infoOpen && (
+              // top-full + mt-2 anchors this below the icon, not overlapping
+              // the title/toggle row at all; z-20 keeps it above the preview
+              // and tab panel below. Deliberately NOT centered/wide enough
+              // to also spill under the right-aligned toggle at typical
+              // widths - w-80 (320px) starting from the icon's own left
+              // edge stays within the title's side of the row.
+              <div className="absolute left-0 top-full z-20 mt-2 w-80 rounded-lg border border-border bg-slate-900 p-4 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(false)}
+                  aria-label="Close"
+                  className="absolute right-2 top-2 text-sm leading-none text-muted-500 hover:text-primary"
+                >
+                  ×
+                </button>
+                <p className="pr-4 text-sm text-muted-400">
+                  Experiment freely - the preview reacts to the colours you pick, and nothing is saved until you
+                  choose to. When you're ready, use "Apply to Live Screen" in the Templates tab to push a theme
+                  (and, on Café, the current template) to every device that loads the real{' '}
+                  {activeScreen === 'dashboard' ? 'dashboard' : 'café screen'}.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
+          {(['dashboard', 'cafe'] as const).map((screen) => (
+            <button
+              key={screen}
+              type="button"
+              onClick={() => setActiveScreen(screen)}
+              className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition ${
+                activeScreen === screen ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
+              }`}
+            >
+              {screen === 'dashboard' ? 'Dashboard' : 'Cafe'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Split-screen body: left pane (toggle + preview) is pinned and
-          never scrolls; right pane (tabs + content) scrolls internally
-          when a tab's own content runs tall. Below the min-[1800px]
-          breakpoint this is just a normal stacked flex column in the
-          document's own flow - preview on top, tabs+content below, page
-          scrolls normally - a deliberate, expected degradation on
-          laptop-width screens per this round's instruction, not a bug:
-          the "preview never scrolls away" guarantee is specifically a
+      {/* Split-screen body: left pane (preview) is pinned and never
+          scrolls; right pane (tabs + content) scrolls internally when a
+          tab's own content runs tall. Below the min-[1800px] breakpoint
+          this is just a normal stacked flex column in the document's own
+          flow - preview on top, tabs+content below, page scrolls
+          normally - a deliberate, expected degradation on laptop-width
+          screens per the previous round's instruction, not a bug: the
+          "preview never scrolls away" guarantee is specifically a
           split-screen (large monitor) feature. */}
       <div className="flex flex-col gap-6 min-[1800px]:min-h-0 min-[1800px]:flex-1 min-[1800px]:flex-row min-[1800px]:gap-8">
-        {/* LEFT PANE - toggle + live preview. flex-shrink-0 so it keeps
-            its natural (preview-driven) width instead of being squeezed
-            by the right pane; h-full + overflow-hidden only above the
-            breakpoint, where the parent row has a real, screen-derived
-            height to fill - below it, this is just a normal block in
-            the stacked column. */}
+        {/* LEFT PANE - live preview only now; the toggle moved up onto the
+            header row above. flex-shrink-0 so it keeps its natural
+            (preview-driven) width instead of being squeezed by the right
+            pane; h-full + overflow-hidden only above the breakpoint,
+            where the parent row has a real, screen-derived height to
+            fill - below it, this is just a normal block in the stacked
+            column. */}
         <div className="flex-shrink-0 min-[1800px]:h-full min-[1800px]:overflow-hidden">
-          <div className="mb-3 flex w-fit items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
-            {(['dashboard', 'cafe'] as const).map((screen) => (
-              <button
-                key={screen}
-                type="button"
-                onClick={() => setActiveScreen(screen)}
-                className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition ${
-                  activeScreen === screen ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
-                }`}
-              >
-                {screen === 'dashboard' ? 'Dashboard' : 'Cafe'}
-              </button>
-            ))}
-          </div>
-
           {/* Rendered at the real 1920x1080 reference size (matching
               DashboardPage.tsx's own layout, or CafeTemplate.tsx's own
               layout, exactly), then scaled down as one unit via
