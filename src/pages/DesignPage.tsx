@@ -21,6 +21,7 @@ import {
   BRIGHT_BLUE_THEME,
   BRIGHT_BLUE_THEME_ID,
   DESIGN_TOKEN_KEYS,
+  BASE_COLOUR_OPTIONS,
   isValidDesignTokens,
   loadDesignTemplates,
   saveDesignTemplates,
@@ -107,6 +108,12 @@ const TOKEN_GROUPS: { id: string; title: string; keys: (keyof DesignTokens)[] }[
   // (deliberately, post-regression-fix) and doesn't read these tokens, so
   // sliders for them here would silently do nothing.
 ]
+
+// Derived from TOKEN_GROUPS itself (not a second literal copy of the same
+// 10 keys) - the Quick Colours pane renders exactly the Backgrounds
+// group's own keys, so if that group's own key list ever changes, this
+// stays in sync automatically instead of silently drifting from it.
+const BACKGROUND_TOKEN_KEYS = TOKEN_GROUPS.find((group) => group.id === 'backgrounds')!.keys
 
 type TabId = 'branding' | 'backgrounds' | 'text' | 'accent-status' | 'templates' | 'your-displays'
 
@@ -356,6 +363,12 @@ export default function DesignPage(): JSX.Element {
   const [activeTokens, setActiveTokens] = useState<DesignTokens>(CURRENT_LIVE_THEME.tokens)
   const [selectedId, setSelectedId] = useState<string>(CURRENT_LIVE_THEME_ID)
   const [nameInput, setNameInput] = useState('')
+  // Templates list's "base colour" filter chip row - null means no chip
+  // selected, show every template (today's behaviour, unchanged). One of
+  // BASE_COLOUR_OPTIONS' own `id` values when a chip is active. Clicking
+  // the already-active chip again clears back to null (see the chip
+  // row's onClick below) rather than requiring a separate "Clear" control.
+  const [baseColourFilter, setBaseColourFilter] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameInput, setRenameInput] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
@@ -561,6 +574,15 @@ export default function DesignPage(): JSX.Element {
   }
 
   const allTemplates = [CURRENT_LIVE_THEME, BRIGHT_BLUE_THEME, ...templates]
+  // Filters the LIST (colour templates) only - TEMPLATE_SLOTS below (the
+  // Clubhouse/Café LAYOUT grid) is a completely separate concept with no
+  // colour tag of its own and is deliberately untouched. A template with
+  // no baseColour yet (every existing/imported one, until the ~30-preset
+  // import task tags them) simply doesn't match any chip - expected, not
+  // a bug: there's nothing to filter until templates are actually tagged.
+  const visibleTemplates = baseColourFilter
+    ? allTemplates.filter((template) => template.baseColour === baseColourFilter)
+    : allTemplates
 
   function handleTokenChange(key: keyof DesignTokens, value: string) {
     setActiveTokens((prev) => ({ ...prev, [key]: value }))
@@ -878,6 +900,63 @@ export default function DesignPage(): JSX.Element {
           </div>
         </div>
 
+        {/* QUICK COLOURS PANE - the same Backgrounds swatches + a compact
+            "Save as new template" control, positioned in the space beside
+            the preview that was previously empty at this breakpoint.
+            Exists so editing colours and saving a template can happen
+            without scrolling down to the Backgrounds tab, back up to
+            check the preview, then further down to Templates to save -
+            the actual scroll cycle this pane exists to remove. Reads/
+            writes the SAME activeTokens/nameInput state the Backgrounds
+            tab and Templates tab's own controls use (not a separate
+            copy), so an edit here shows up there and vice versa, and the
+            live preview updates identically either way - there is
+            nothing here that's a new, independent source of truth.
+            flex-shrink-0 + a fixed width once split mode engages, same
+            min-[1800px] breakpoint the preview/tabs split already uses
+            (not a new one - see that breakpoint's own comment on why
+            hand-computing a different threshold on this page is
+            unreliable) - below it, this simply sits in-flow in the
+            stacked column, right after the preview and before the tabs
+            pane, exactly the "collapses back to its current below-
+            preview position" fallback asked for. */}
+        <div className="flex-shrink-0 rounded-2xl border border-border bg-panel p-5 min-[1800px]:h-full min-[1800px]:w-[260px] min-[1800px]:overflow-y-auto">
+          <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Quick Colours</div>
+          <div className="grid grid-cols-2 gap-3">
+            {BACKGROUND_TOKEN_KEYS.map((key) => (
+              <label key={key} className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={rgbaToHex(activeTokens[key])}
+                  onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
+                  className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+                />
+                <span className="text-[11px] capitalize leading-tight text-muted-400">{labelFor(key)}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-5 border-t border-border pt-4">
+            <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-400">Save as new template</label>
+            <div className="flex flex-col gap-2">
+              <input
+                value={nameInput}
+                onChange={(event) => setNameInput(event.target.value)}
+                placeholder="Template name"
+                className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+              />
+              <button
+                type="button"
+                onClick={handleSaveAsTemplate}
+                disabled={!nameInput.trim()}
+                className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Save as template
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* RIGHT PANE - vertical tab list + the active tab's content.
             Vertical (not horizontal) tabs are a deliberate choice: this
             pane is comfortably wide on the large monitors split mode
@@ -991,8 +1070,48 @@ export default function DesignPage(): JSX.Element {
               <div>
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Templates</div>
 
+                {/* BASE COLOUR FILTER - ready for the ~30-preset import
+                    task landing separately; today only the two built-in
+                    templates (Current Live Theme, Bright Blue) are
+                    tagged, so most chips show nothing yet until presets
+                    are actually imported and tagged - that's expected,
+                    not a bug in this filter. Clicking the already-active
+                    chip again clears the filter back to "show every
+                    template" rather than needing a separate Clear
+                    button. */}
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {BASE_COLOUR_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setBaseColourFilter((prev) => (prev === option.id ? null : option.id))}
+                      title={option.label}
+                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition ${
+                        baseColourFilter === option.id ? 'border-accent-sky-500 bg-slate-900' : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
+                      }`}
+                    >
+                      <span className="h-3 w-3 shrink-0 rounded-full border border-white/20" style={{ background: option.swatch }} />
+                      {option.label}
+                    </button>
+                  ))}
+                  {baseColourFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setBaseColourFilter(null)}
+                      className="rounded-full border border-border bg-slate-900/80 px-2.5 py-1 text-[11px] font-semibold text-muted-400 transition hover:border-accent-sky-500/60 hover:text-white"
+                    >
+                      Clear filter
+                    </button>
+                  )}
+                </div>
+
                 <ul className="mb-4 flex flex-col gap-2">
-                  {allTemplates.map((template) => (
+                  {visibleTemplates.length === 0 && (
+                    <li className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-500">
+                      No templates tagged "{BASE_COLOUR_OPTIONS.find((o) => o.id === baseColourFilter)?.label}" yet.
+                    </li>
+                  )}
+                  {visibleTemplates.map((template) => (
                     <li
                       key={template.id}
                       className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 ${
@@ -1044,20 +1163,12 @@ export default function DesignPage(): JSX.Element {
                   ))}
                 </ul>
 
+                {/* "Save as new template" itself moved to the Quick
+                    Colours pane beside the preview (see that pane's own
+                    comment) - Export/Import remain here since they're
+                    file-based, not part of the scroll-cycle this rework
+                    targets. */}
                 <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-border pb-6">
-                  <input
-                    value={nameInput}
-                    onChange={(event) => setNameInput(event.target.value)}
-                    placeholder="New template name"
-                    className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveAsTemplate}
-                    className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
-                  >
-                    Save as template
-                  </button>
                   <button
                     type="button"
                     onClick={handleExport}
