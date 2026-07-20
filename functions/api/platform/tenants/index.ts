@@ -34,6 +34,7 @@ interface TenantRow {
   weatherPublic: number;
   opsPublic: number;
   isInternal: number;
+  hasPhysicalAtc: number;
   storageQuotaBytes: number;
   organizationId: string | null;
   logoR2Key: string | null;
@@ -65,7 +66,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .prepare(
         `SELECT id, slug, name, subdomain, active,
                 weather_public AS weatherPublic, ops_public AS opsPublic,
-                is_internal AS isInternal, storage_quota_bytes AS storageQuotaBytes,
+                is_internal AS isInternal, has_physical_atc AS hasPhysicalAtc,
+                storage_quota_bytes AS storageQuotaBytes,
                 organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt
          FROM tenants ORDER BY created_at`
       )
@@ -105,6 +107,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       weatherPublic: !!tenant.weatherPublic,
       opsPublic: !!tenant.opsPublic,
       isInternal: !!tenant.isInternal,
+      hasPhysicalAtc: !!tenant.hasPhysicalAtc,
       storageQuotaBytes: tenant.storageQuotaBytes,
       usedBytes: (tenant.organizationId && usageByOrg.get(tenant.organizationId)) || 0,
       logoUrl: tenant.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenant.logoR2Key}` : null,

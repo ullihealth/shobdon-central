@@ -24,6 +24,7 @@ interface PlatformTenant {
   weatherPublic: boolean
   opsPublic: boolean
   isInternal: boolean
+  hasPhysicalAtc: boolean
   storageQuotaBytes: number
   usedBytes: number
   logoUrl: string | null
@@ -31,7 +32,7 @@ interface PlatformTenant {
   displays: PlatformDisplay[]
 }
 
-type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal'
+type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc'
 
 function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -498,6 +499,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                   <th className="px-4 py-3 text-center">Weather public</th>
                   <th className="px-4 py-3 text-center">Ops public</th>
                   <th className="px-4 py-3 text-center">Internal</th>
+                  <th className="px-4 py-3 text-center">Has ATC</th>
                   <th className="px-4 py-3">Displays</th>
                   <th className="px-4 py-3">Storage</th>
                   <th className="px-4 py-3">Created</th>
@@ -540,6 +542,13 @@ export default function PlatformTenantsPage(): JSX.Element {
                         checked={tenant.isInternal}
                         onChange={(next) => handleBooleanToggle(tenant, 'isInternal', next)}
                         label={`${tenant.slug} internal`}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <BooleanToggle
+                        checked={tenant.hasPhysicalAtc}
+                        onChange={(next) => handleBooleanToggle(tenant, 'hasPhysicalAtc', next)}
+                        label={`${tenant.slug} has physical ATC`}
                       />
                     </td>
                     <td className="min-w-[200px] px-4 py-3">

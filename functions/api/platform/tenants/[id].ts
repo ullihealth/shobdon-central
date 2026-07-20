@@ -35,6 +35,7 @@ interface TenantRow {
   weatherPublic: number;
   opsPublic: number;
   isInternal: number;
+  hasPhysicalAtc: number;
   storageQuotaBytes: number;
 }
 
@@ -44,6 +45,7 @@ interface PatchBody {
   weatherPublic?: boolean;
   opsPublic?: boolean;
   isInternal?: boolean;
+  hasPhysicalAtc?: boolean;
   storageQuotaBytes?: number;
 }
 
@@ -57,14 +59,14 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const body = (await request.json().catch(() => null)) as PatchBody | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
-  const fields: (keyof PatchBody)[] = ["name", "active", "weatherPublic", "opsPublic", "isInternal", "storageQuotaBytes"];
+  const fields: (keyof PatchBody)[] = ["name", "active", "weatherPublic", "opsPublic", "isInternal", "hasPhysicalAtc", "storageQuotaBytes"];
   if (!fields.some((field) => body[field] !== undefined)) {
     return jsonResponse({ error: `Provide at least one of: ${fields.join(", ")}` }, 400);
   }
   if (body.name !== undefined && (typeof body.name !== "string" || !body.name.trim())) {
     return jsonResponse({ error: "name must be a non-empty string" }, 400);
   }
-  for (const field of ["active", "weatherPublic", "opsPublic", "isInternal"] as const) {
+  for (const field of ["active", "weatherPublic", "opsPublic", "isInternal", "hasPhysicalAtc"] as const) {
     if (body[field] !== undefined && typeof body[field] !== "boolean") {
       return jsonResponse({ error: `${field} must be a boolean` }, 400);
     }
@@ -75,7 +77,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const current = await env.DB
     .prepare(
-      "SELECT name, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal, storage_quota_bytes AS storageQuotaBytes FROM tenants WHERE id = ?"
+      "SELECT name, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal, has_physical_atc AS hasPhysicalAtc, storage_quota_bytes AS storageQuotaBytes FROM tenants WHERE id = ?"
     )
     .bind(tenantId)
     .first<TenantRow>();
@@ -87,12 +89,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     weatherPublic: body.weatherPublic ?? !!current.weatherPublic,
     opsPublic: body.opsPublic ?? !!current.opsPublic,
     isInternal: body.isInternal ?? !!current.isInternal,
+    hasPhysicalAtc: body.hasPhysicalAtc ?? !!current.hasPhysicalAtc,
     storageQuotaBytes: body.storageQuotaBytes ?? current.storageQuotaBytes,
   };
 
   await env.DB
     .prepare(
-      `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, storage_quota_bytes = ?, updated_at = ?
+      `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, has_physical_atc = ?, storage_quota_bytes = ?, updated_at = ?
        WHERE id = ?`
     )
     .bind(
@@ -101,6 +104,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.weatherPublic ? 1 : 0,
       next.opsPublic ? 1 : 0,
       next.isInternal ? 1 : 0,
+      next.hasPhysicalAtc ? 1 : 0,
       next.storageQuotaBytes,
       new Date().toISOString(),
       tenantId

@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 
 interface StepProps {
   title: string
@@ -24,6 +26,25 @@ function Code({ children }: { children: ReactNode }): JSX.Element {
 }
 
 export default function ChecklistPage(): JSX.Element {
+  // No RequireAuth on this route - reachable by anyone typing /checklist
+  // directly on any tenant's subdomain. Defaults to false (fail closed)
+  // so a tenant with no physical ATC hardware never gets even a brief
+  // flash of Shobdon-specific PC2 setup content before this resolves.
+  const [hasPhysicalAtc, setHasPhysicalAtc] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setHasPhysicalAtc(!!data.hasPhysicalAtc)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
       <div className="mx-auto max-w-2xl px-5 pb-16 pt-8">
@@ -33,8 +54,15 @@ export default function ChecklistPage(): JSX.Element {
 
         <h1 className="mb-8 mt-3 text-2xl font-black uppercase tracking-wide text-white">ATC Visit Checklist</h1>
 
-        <div className="flex flex-col gap-5">
-          <Step title="Step 1 — Get real data in from PC2">
+        {!hasPhysicalAtc && (
+          <p className="rounded-2xl border border-slate-700 bg-slate-950/85 p-5 text-[15px] leading-relaxed text-slate-300">
+            Not applicable — your airfield doesn't use ATC hardware capture.
+          </p>
+        )}
+
+        {hasPhysicalAtc && (
+          <div className="flex flex-col gap-5">
+            <Step title="Step 1 — Get real data in from PC2">
             <Item>Open Shobdon Central on PC2's browser, go to Config.</Item>
             <Item>
               Click <Code>Download capture-weathercentral.ps1</Code> (save it anywhere, e.g. Desktop).
@@ -109,6 +137,7 @@ export default function ChecklistPage(): JSX.Element {
             </Item>
           </Step>
         </div>
+        )}
       </div>
     </div>
   )

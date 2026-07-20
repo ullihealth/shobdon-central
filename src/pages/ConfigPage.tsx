@@ -7,6 +7,7 @@ import InternetWeatherConfigSection from '../components/config/InternetWeatherCo
 import MockWeatherConfigSection from '../components/config/MockWeatherConfigSection'
 import PC2CaptureSetup from '../components/config/PC2CaptureSetup'
 import StorageUsage from '../components/config/StorageUsage'
+import { TENANT_CONFIG_URL } from '../config/publicApi'
 import { loadWeatherConfig, resolveWeatherConfig, saveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
@@ -20,11 +21,33 @@ export default function ConfigPage(): JSX.Element {
   // - this is a no-op for them, not a behaviour change.
   const [config, setConfig] = useState<WeatherConfig>(() => loadWeatherConfig())
 
+  // Starts false (not null) so a tenant without ATC hardware never gets
+  // even a brief flash of the PC2 setup section/checklist link/weather
+  // "atc" option while this loads - fails closed, matching the same
+  // "hide unless confirmed relevant" posture as the provider-specific
+  // weather sections below. Shobdon (true) pops the section in once the
+  // fetch resolves, same one-render-late pattern config itself already
+  // has via resolveWeatherConfig().
+  const [hasPhysicalAtc, setHasPhysicalAtc] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     resolveWeatherConfig().then((resolved) => {
       if (!cancelled) setConfig(resolved)
     })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(TENANT_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setHasPhysicalAtc(!!data.hasPhysicalAtc)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -50,15 +73,19 @@ export default function ConfigPage(): JSX.Element {
     <div className="mx-auto max-w-7xl px-6 pb-10 pt-10">
       {/* Not part of the sidebar - /checklist is a public, non-role-gated
           route (no RequireAuth), so it doesn't belong in the authenticated
-          admin nav. Kept reachable here as page content instead. */}
-      <div className="mb-6">
-        <Link
-          to="/checklist"
-          className="inline-block rounded-lg border border-border bg-panel px-4 py-2 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
-        >
-          📋 ATC Visit Checklist
-        </Link>
-      </div>
+          admin nav. Kept reachable here as page content instead. Omitted
+          entirely (not shown as a disabled link) for a tenant with no
+          physical ATC hardware - there's nothing behind it to check. */}
+      {hasPhysicalAtc && (
+        <div className="mb-6">
+          <Link
+            to="/checklist"
+            className="inline-block rounded-lg border border-border bg-panel px-4 py-2 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
+          >
+            📋 ATC Visit Checklist
+          </Link>
+        </div>
+      )}
 
       {/* Weather Source and the active provider's own settings are
           independent concerns (which source vs. that source's connection
@@ -66,7 +93,7 @@ export default function ConfigPage(): JSX.Element {
           one column, same content/behaviour as before either way. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20">
-          <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} />
+          <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} hasPhysicalAtc={hasPhysicalAtc} />
         </div>
 
         <div className="rounded-3xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20">
@@ -84,9 +111,15 @@ export default function ConfigPage(): JSX.Element {
         </div>
       </div>
 
-      <div className="mt-6">
-        <PC2CaptureSetup />
-      </div>
+      {/* Omitted entirely (no placeholder) for a tenant with no physical
+          ATC hardware - matches this page's own existing convention of
+          only rendering the sections that apply (see the weather
+          provider sections above, which already do the same). */}
+      {hasPhysicalAtc && (
+        <div className="mt-6">
+          <PC2CaptureSetup />
+        </div>
+      )}
 
       <div className="mt-6">
         <StorageUsage />

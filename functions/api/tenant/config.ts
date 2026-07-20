@@ -72,9 +72,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // avoid falling back to its generic placeholder. logo_r2_key resolved
     // to logoUrl the same way publicConfig.ts does.
     env.DB
-      .prepare("SELECT name, logo_r2_key AS logoR2Key FROM tenants WHERE organization_id = ?")
+      .prepare("SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc FROM tenants WHERE organization_id = ?")
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null }>(),
+      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -95,6 +95,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     theme: themeRow ? JSON.parse(themeRow.tokensJson) : null,
     airfieldName: tenantRow?.name ?? null,
     logoUrl: tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null,
+    hasPhysicalAtc: !!tenantRow?.hasPhysicalAtc,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
   });
 };

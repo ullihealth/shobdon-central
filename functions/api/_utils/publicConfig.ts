@@ -114,9 +114,9 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     // branding audit. logo_r2_key resolved to logoUrl below, same
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
-      .prepare("SELECT name, logo_r2_key AS logoR2Key FROM tenants WHERE organization_id = ?")
+      .prepare("SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc FROM tenants WHERE organization_id = ?")
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null }>(),
+      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -277,6 +277,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
   const theme = themeRow ? JSON.parse(themeRow.tokensJson) : null;
   const airfieldName = tenantRow?.name ?? null;
   const logoUrl = tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null;
+  const hasPhysicalAtc = !!tenantRow?.hasPhysicalAtc;
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -384,6 +385,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     theme,
     airfieldName,
     logoUrl,
+    hasPhysicalAtc,
     cameraSlots,
     carouselSlots,
     cafeCarouselSlots,
