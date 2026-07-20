@@ -40,6 +40,13 @@ export interface DesignTemplate {
   // predate this field and must keep loading exactly as before, not fail
   // validation or get force-migrated.
   baseColour?: string
+  // Whether the Page/Header background slots render as the existing
+  // auto-generated 3-stop gradient (from/via/to) or a flat solid fill
+  // (the `via` stop's own colour, the "main" one of the three) -
+  // DesignPage.tsx's Solid/Gradient toggle. Undefined (every template
+  // saved before this field existed) is treated as 'gradient' - today's
+  // only behaviour, so nothing already saved changes appearance.
+  gradientMode?: 'solid' | 'gradient'
 }
 
 export interface BaseColourOption {

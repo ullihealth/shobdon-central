@@ -61,7 +61,14 @@ const MOCK_CONFIG = { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'mock' as const
 // to a round number automatically via the same formula).
 const PREVIEW_REFERENCE_WIDTH = 1920
 const PREVIEW_REFERENCE_HEIGHT = 1080
-const PREVIEW_DISPLAY_WIDTH = 800
+// Raised from 800 (v1's value) now that the preview is the right
+// column's own sole content (v1 had it sharing that side of the page
+// with a separate Quick Colours pane) - 920 comfortably fits the right
+// column's real available width even at the min-[1800px] breakpoint's
+// own minimum trigger width (left rail ~32% + this + gaps + the admin
+// shell's own sidebar/padding), verified directly against the running
+// dev server at 1800px viewport, not just computed on paper.
+const PREVIEW_DISPLAY_WIDTH = 920
 const PREVIEW_SCALE = PREVIEW_DISPLAY_WIDTH / PREVIEW_REFERENCE_WIDTH
 const PREVIEW_DISPLAY_HEIGHT = PREVIEW_REFERENCE_HEIGHT * PREVIEW_SCALE
 
@@ -115,18 +122,22 @@ const TOKEN_GROUPS: { id: string; title: string; keys: (keyof DesignTokens)[] }[
 // stays in sync automatically instead of silently drifting from it.
 const BACKGROUND_TOKEN_KEYS = TOKEN_GROUPS.find((group) => group.id === 'backgrounds')!.keys
 
-type TabId = 'branding' | 'backgrounds' | 'text' | 'accent-status' | 'templates' | 'your-displays'
+type TabId = 'branding' | 'backgrounds' | 'text' | 'accent-status' | 'templates' | 'your-displays' | 'custom'
 
-// The six tabs, in the exact order they render in the vertical tab list -
-// single source of truth so the list and the conditional content blocks
-// below can never silently drift out of sync or drop an entry.
+// The seven left-rail nav items, in the exact order they render - single
+// source of truth so the nav list and the conditional content blocks
+// below can never silently drift out of sync or drop an entry. 'custom'
+// (was the always-visible "Quick Colours" pane beside the preview) is
+// now just the 7th item here - same activeTab mechanism as every other
+// entry, gated behind selection instead of pinned.
 const TABS: { id: TabId; label: string }[] = [
   { id: 'branding', label: 'Branding' },
   { id: 'backgrounds', label: 'Backgrounds' },
   { id: 'text', label: 'Text' },
   { id: 'accent-status', label: 'Accent & Status' },
   { id: 'templates', label: 'Templates' },
-  { id: 'your-displays', label: 'Your Displays' },
+  { id: 'your-displays', label: 'Displays' },
+  { id: 'custom', label: 'Custom' },
 ]
 
 // The split-screen (pinned preview / scrollable settings pane) layout only
@@ -252,6 +263,7 @@ function cafeTickerStyleFromApi(data: Record<string, unknown>): TickerStyle {
 interface ScreenPreviewProps {
   airfieldName: string | null
   logoUrl: string | null
+  gradientMode: 'solid' | 'gradient'
 }
 
 // Mirrors CafeTemplate.tsx's own JSX (MediaPanel with `fill`, split/full
@@ -263,7 +275,7 @@ interface ScreenPreviewProps {
 // configuration - only the colour theme is the in-progress,
 // not-yet-saved `activeTokens` value (applied via the shared outer
 // preview wrapper's CSS variables, same as the Dashboard preview).
-function CafePreview({ airfieldName, logoUrl }: ScreenPreviewProps): JSX.Element {
+function CafePreview({ airfieldName, logoUrl, gradientMode }: ScreenPreviewProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
   const [settings, setSettings] = useState<CafePreviewSettings>(DEFAULT_CAFE_PREVIEW_SETTINGS)
@@ -299,7 +311,11 @@ function CafePreview({ airfieldName, logoUrl }: ScreenPreviewProps): JSX.Element
   const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots, tickerStyle } = settings
 
   return (
-    <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
+    <div
+      className={`h-full w-full p-10 text-slate-100 ${
+        gradientMode === 'solid' ? 'bg-page-via' : 'bg-gradient-to-b from-page-from via-page-via to-page-to'
+      }`}
+    >
       <div
         style={{ display: 'grid', gridTemplateRows: tickerEnabled ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: '16px', height: '100%' }}
       >
@@ -361,6 +377,12 @@ function CafePreview({ airfieldName, logoUrl }: ScreenPreviewProps): JSX.Element
 export default function DesignPage(): JSX.Element {
   const [templates, setTemplates] = useState<DesignTemplate[]>(() => loadDesignTemplates())
   const [activeTokens, setActiveTokens] = useState<DesignTokens>(CURRENT_LIVE_THEME.tokens)
+  // Solid/Gradient toggle - part of the saved template (DesignTemplate.
+  // gradientMode), not session-only preview state, so it round-trips
+  // through save/export/import. Defaults 'gradient' (today's only
+  // behaviour) both here and for any template saved before this field
+  // existed - see that field's own comment in designTemplateStore.ts.
+  const [activeGradientMode, setActiveGradientMode] = useState<'solid' | 'gradient'>('gradient')
   const [selectedId, setSelectedId] = useState<string>(CURRENT_LIVE_THEME_ID)
   const [nameInput, setNameInput] = useState('')
   // Templates list's "base colour" filter chip row - null means no chip
@@ -591,6 +613,7 @@ export default function DesignPage(): JSX.Element {
 
   function handleSelectTemplate(template: DesignTemplate) {
     setActiveTokens(template.tokens)
+    setActiveGradientMode(template.gradientMode ?? 'gradient')
     setSelectedId(template.id)
   }
 
@@ -606,6 +629,7 @@ export default function DesignPage(): JSX.Element {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name,
       tokens: activeTokens,
+      gradientMode: activeGradientMode,
       createdAt: new Date().toISOString(),
     }
     persistTemplates([...templates, next])
@@ -618,6 +642,7 @@ export default function DesignPage(): JSX.Element {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: `${template.name} (copy)`,
       tokens: template.tokens,
+      gradientMode: template.gradientMode,
       createdAt: new Date().toISOString(),
     }
     persistTemplates([...templates, next])
@@ -641,6 +666,7 @@ export default function DesignPage(): JSX.Element {
     persistTemplates(templates.filter((t) => t.id !== id))
     if (selectedId === id) {
       setActiveTokens(CURRENT_LIVE_THEME.tokens)
+      setActiveGradientMode(CURRENT_LIVE_THEME.gradientMode ?? 'gradient')
       setSelectedId(CURRENT_LIVE_THEME_ID)
     }
   }
@@ -719,7 +745,7 @@ export default function DesignPage(): JSX.Element {
   function handleExport() {
     const activeTemplate = allTemplates.find((t) => t.id === selectedId)
     const exportName = activeTemplate?.name ?? 'Untitled Theme'
-    const blob = new Blob([JSON.stringify({ name: exportName, tokens: activeTokens }, null, 2)], {
+    const blob = new Blob([JSON.stringify({ name: exportName, tokens: activeTokens, gradientMode: activeGradientMode }, null, 2)], {
       type: 'application/json',
     })
     const url = URL.createObjectURL(blob)
@@ -744,14 +770,17 @@ export default function DesignPage(): JSX.Element {
           return
         }
         const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported Theme'
+        const gradientMode = parsed.gradientMode === 'solid' ? 'solid' : 'gradient'
         const next: DesignTemplate = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           name,
           tokens: parsed.tokens,
+          gradientMode,
           createdAt: new Date().toISOString(),
         }
         persistTemplates([...templates, next])
         setActiveTokens(next.tokens)
+        setActiveGradientMode(gradientMode)
         setSelectedId(next.id)
         setImportError(null)
       } catch {
@@ -765,7 +794,17 @@ export default function DesignPage(): JSX.Element {
   const activeTokenGroup = TOKEN_GROUPS.find((group) => group.id === activeTab)
 
   return (
-    <div className="mx-auto max-w-[1900px] px-6 py-6 min-[1800px]:flex min-[1800px]:h-screen min-[1800px]:flex-col min-[1800px]:overflow-hidden">
+    // v1's outer wrapper pinned this whole page to exactly one viewport
+    // height (min-[1800px]:h-screen + overflow-hidden), with the preview
+    // pane never scrolling and only the tabs content area scrolling
+    // internally. That doesn't fit v2's shape: a permanent full-width
+    // footer below the two-column body has nowhere to go inside a
+    // viewport-height-locked page without either clipping it entirely or
+    // stealing height from the body above it. Dropped in favour of the
+    // page just scrolling normally (confirmed across this round's mockup
+    // iterations) - the left rail's own content and the footer both sit
+    // in normal document flow now, not pinned/internally-scrolled panes.
+    <div className="mx-auto max-w-[1900px] px-6 py-6">
       {/* Single header row: title + info icon on the left, toggle on the
           right - the paragraph that used to sit below the title, and the
           toggle's own row above the preview, are both gone; their content
@@ -842,136 +881,26 @@ export default function DesignPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Split-screen body: left pane (preview) is pinned and never
-          scrolls; right pane (tabs + content) scrolls internally when a
-          tab's own content runs tall. Below the min-[1800px] breakpoint
-          this is just a normal stacked flex column in the document's own
-          flow - preview on top, tabs+content below, page scrolls
-          normally - a deliberate, expected degradation on laptop-width
-          screens per the previous round's instruction, not a bug: the
-          "preview never scrolls away" guarantee is specifically a
-          split-screen (large monitor) feature. */}
-      <div className="flex flex-col gap-6 min-[1800px]:min-h-0 min-[1800px]:flex-1 min-[1800px]:flex-row min-[1800px]:gap-8">
-        {/* LEFT PANE - live preview only now; the toggle moved up onto the
-            header row above. flex-shrink-0 so it keeps its natural
-            (preview-driven) width instead of being squeezed by the right
-            pane; h-full + overflow-hidden only above the breakpoint,
-            where the parent row has a real, screen-derived height to
-            fill - below it, this is just a normal block in the stacked
-            column. */}
-        <div className="flex-shrink-0 min-[1800px]:h-full min-[1800px]:overflow-hidden">
-          {/* Rendered at the real 1920x1080 reference size (matching
-              DashboardPage.tsx's own layout, or CafeTemplate.tsx's own
-              layout, exactly), then scaled down as one unit via
-              transform - not squeezed into a shorter box - so every
-              element stays proportionally correct instead of being
-              clipped. Which inner layout renders is the only thing the
-              toggle changes - the outer scaled wrapper, WeatherProvider,
-              and previewStyle CSS variables are shared by both. */}
-          <div
-            className="overflow-hidden rounded-2xl border border-border"
-            style={{ width: PREVIEW_DISPLAY_WIDTH, height: PREVIEW_DISPLAY_HEIGHT, ...previewStyle }}
-          >
-            <div
-              style={{
-                width: PREVIEW_REFERENCE_WIDTH,
-                height: PREVIEW_REFERENCE_HEIGHT,
-                transform: `scale(${PREVIEW_SCALE})`,
-                transformOrigin: 'top left',
-              }}
-            >
-              <WeatherProvider forcedConfig={MOCK_CONFIG}>
-                {activeScreen === 'dashboard' ? (
-                  <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
-                    <div className="grid h-full grid-rows-[7%_1fr] gap-4">
-                      <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
-                      <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
-                        <LeftInfoPanel />
-                        <CentreDisplayPanel />
-                        <RightInfoPanel />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <CafePreview airfieldName={airfieldName} logoUrl={logoUrl} />
-                )}
-              </WeatherProvider>
-            </div>
-          </div>
-        </div>
-
-        {/* QUICK COLOURS PANE - the same Backgrounds swatches + a compact
-            "Save as new template" control, positioned in the space beside
-            the preview that was previously empty at this breakpoint.
-            Exists so editing colours and saving a template can happen
-            without scrolling down to the Backgrounds tab, back up to
-            check the preview, then further down to Templates to save -
-            the actual scroll cycle this pane exists to remove. Reads/
-            writes the SAME activeTokens/nameInput state the Backgrounds
-            tab and Templates tab's own controls use (not a separate
-            copy), so an edit here shows up there and vice versa, and the
-            live preview updates identically either way - there is
-            nothing here that's a new, independent source of truth.
-            flex-shrink-0 + a fixed width once split mode engages, same
-            min-[1800px] breakpoint the preview/tabs split already uses
-            (not a new one - see that breakpoint's own comment on why
-            hand-computing a different threshold on this page is
-            unreliable) - below it, this simply sits in-flow in the
-            stacked column, right after the preview and before the tabs
-            pane, exactly the "collapses back to its current below-
-            preview position" fallback asked for. */}
-        <div className="flex-shrink-0 rounded-2xl border border-border bg-panel p-5 min-[1800px]:h-full min-[1800px]:w-[260px] min-[1800px]:overflow-y-auto">
-          <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Quick Colours</div>
-          <div className="grid grid-cols-2 gap-3">
-            {BACKGROUND_TOKEN_KEYS.map((key) => (
-              <label key={key} className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={rgbaToHex(activeTokens[key])}
-                  onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                  className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-                />
-                <span className="text-[11px] capitalize leading-tight text-muted-400">{labelFor(key)}</span>
-              </label>
-            ))}
-          </div>
-
-          <div className="mt-5 border-t border-border pt-4">
-            <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-400">Save as new template</label>
-            <div className="flex flex-col gap-2">
-              <input
-                value={nameInput}
-                onChange={(event) => setNameInput(event.target.value)}
-                placeholder="Template name"
-                className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
-              />
-              <button
-                type="button"
-                onClick={handleSaveAsTemplate}
-                disabled={!nameInput.trim()}
-                className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Save as template
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT PANE - vertical tab list + the active tab's content.
-            Vertical (not horizontal) tabs are a deliberate choice: this
-            pane is comfortably wide on the large monitors split mode
-            targets, but "Accent & Status" and "Your Displays" would
-            crowd a horizontal bar at the pane widths split mode actually
-            engages at (see the min-[1800px] breakpoint's own comment
-            above for the exact width math) - a fixed ~180px vertical
-            column (same width the previous scrollspy rail already
-            proved comfortably fits every one of these exact labels
-            without wrapping) sidesteps that entirely, at any pane
-            width. rounded-2xl/border/bg-panel wrap the WHOLE pane once,
-            so individual tab content doesn't need its own nested card
-            chrome. */}
-        <div className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-border bg-panel min-[1800px]:h-full min-[1800px]:min-w-[420px]">
-          <nav className="flex w-[180px] flex-shrink-0 flex-col gap-1 border-r border-border p-3">
+      {/* TWO-COLUMN BODY: left rail (~34%, nav + inline expanded section)
+          | right column (~66%, preview only). items-start (not stretch)
+          so each column sizes to its own content - the left rail and the
+          fixed-size preview box are rarely the same height, and forcing
+          them equal would either stretch the rail's border oddly or
+          crop the preview. Reuses the same min-[1800px] breakpoint the
+          rest of this page already keys off (see that breakpoint's own
+          comment above) rather than a new threshold - below it, the rail
+          renders first, preview second, stacked, exactly the "collapses
+          back to its current below-preview position" fallback asked
+          for. */}
+      <div className="flex flex-col gap-6 min-[1800px]:flex-row min-[1800px]:items-start">
+        {/* LEFT RAIL - nav list + whichever section is selected, expanded
+            inline directly below it. Replaces v1's wide horizontal-space
+            tabs pane; single column now (~34% of a much narrower row),
+            so every section's own controls below render one per row, not
+            the multi-column grids v1 used - those don't fit a rail this
+            narrow. */}
+        <div className="w-full flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-panel min-[1800px]:w-[34%]">
+          <nav className="flex flex-col gap-1 border-b border-border p-3">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -986,15 +915,19 @@ export default function DesignPage(): JSX.Element {
             ))}
           </nav>
 
-          {/* Content area - this is the ONLY thing that scrolls
-              internally when a tab's content is tall; the tab list
-              above and the whole left pane never do. */}
-          <div className="min-w-0 flex-1 overflow-y-auto p-6 min-[1800px]:h-full">
+          <div className="p-5">
             {activeTab === 'branding' && (
               <div>
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Branding</div>
-                <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                  <div className="flex-1">
+                {/* Always stacked now (was sm:flex-row, side-by-side name
+                    + logo above the sm breakpoint) - that breakpoint keys
+                    off the VIEWPORT's own width, not this rail's, so on a
+                    genuinely wide device it would still try to go
+                    side-by-side inside a rail that's only ~34% of the
+                    page - forced single-column per this round's own
+                    "one control per row" requirement. */}
+                <div className="flex flex-col gap-6">
+                  <div>
                     <label className="mb-1 block text-xs uppercase tracking-wide text-muted-400">Business name</label>
                     <div className="flex gap-2">
                       <input
@@ -1019,7 +952,7 @@ export default function DesignPage(): JSX.Element {
                     {nameSaveStatus === 'error' && <p className="mt-1 text-xs text-status-bad">Couldn't save - please try again.</p>}
                   </div>
 
-                  <div className="flex-1">
+                  <div>
                     <label className="mb-1 block text-xs uppercase tracking-wide text-muted-400">Logo</label>
                     <div className="flex items-center gap-3">
                       <div className="flex h-12 w-24 items-center justify-center rounded border border-border bg-slate-900">
@@ -1047,19 +980,28 @@ export default function DesignPage(): JSX.Element {
               </div>
             )}
 
+            {/* Backgrounds / Text / Accent & Status - single-column swatch
+                rows (was a multi-column auto-fill grid in v1, sized for
+                a much wider pane than this rail has). Shared row markup
+                with the Custom section below, not a separate component -
+                small enough that extracting one felt like more
+                indirection than the four lines it would save. */}
             {activeTokenGroup && (
               <div>
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{activeTokenGroup.title}</div>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
+                <div className="flex flex-col gap-1">
                   {activeTokenGroup.keys.map((key) => (
-                    <label key={key} className="flex items-center gap-3">
+                    <label
+                      key={key}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-1 py-1.5 hover:border-border"
+                    >
+                      <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
                       <input
                         type="color"
                         value={rgbaToHex(activeTokens[key])}
                         onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                        className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
+                        className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
                       />
-                      <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
                     </label>
                   ))}
                 </div>
@@ -1078,7 +1020,10 @@ export default function DesignPage(): JSX.Element {
                     not a bug in this filter. Clicking the already-active
                     chip again clears the filter back to "show every
                     template" rather than needing a separate Clear
-                    button. */}
+                    button. flex-wrap: all 13 chips render (was truncated
+                    at the first 4 during mockup iteration - fixed there
+                    before this ever reached real code), wrapping across
+                    as many rows as this narrower rail needs. */}
                 <div className="mb-4 flex flex-wrap gap-2">
                   {BASE_COLOUR_OPTIONS.map((option) => (
                     <button
@@ -1105,6 +1050,39 @@ export default function DesignPage(): JSX.Element {
                   )}
                 </div>
 
+                {/* SOLID / GRADIENT - background fill for the Page/Header
+                    slots. Part of DesignTemplate (gradientMode), not
+                    session-only: saving, exporting, importing, and
+                    duplicating a template all carry this choice with it
+                    (see handleSaveAsTemplate/handleDuplicate/handleExport/
+                    handleImportFile). Affects this page's own preview
+                    immediately (Header.tsx and the Café preview's page
+                    background both read it) - does NOT yet affect the
+                    real live dashboard/café templates when applied
+                    (ClassicTemplate.tsx, CafeTemplate.tsx, Clubhouse1/2
+                    Template.tsx all still render the gradient
+                    unconditionally) - flagged explicitly, not silently
+                    left half-done: wiring gradientMode into those is a
+                    separate, larger change touching every display
+                    template, out of this round's scope. */}
+                <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-slate-900/60 px-3 py-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">Background fill</span>
+                  <div className="inline-flex gap-1 rounded-lg border border-border bg-slate-950/60 p-1">
+                    {(['solid', 'gradient'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setActiveGradientMode(mode)}
+                        className={`rounded-md px-3 py-1 text-xs font-bold capitalize transition ${
+                          activeGradientMode === mode ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <ul className="mb-4 flex flex-col gap-2">
                   {visibleTemplates.length === 0 && (
                     <li className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-500">
@@ -1127,6 +1105,16 @@ export default function DesignPage(): JSX.Element {
                           autoFocus
                         />
                       ) : (
+                        // Clicking a template row updates the live preview
+                        // immediately - handleSelectTemplate below sets
+                        // activeTokens/activeGradientMode, which the
+                        // preview already renders from on every render,
+                        // completely independent of "Apply to Live
+                        // Screen" in the footer (that's the only action
+                        // that touches the real, live dashboard).
+                        // Confirmed this was already correct in v1's code
+                        // before touching it, not something that needed
+                        // fixing here.
                         <button
                           type="button"
                           onClick={() => handleSelectTemplate(template)}
@@ -1163,12 +1151,12 @@ export default function DesignPage(): JSX.Element {
                   ))}
                 </ul>
 
-                {/* "Save as new template" itself moved to the Quick
-                    Colours pane beside the preview (see that pane's own
-                    comment) - Export/Import remain here since they're
-                    file-based, not part of the scroll-cycle this rework
-                    targets. */}
-                <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-border pb-6">
+                {/* "Save as new template" lives on the Custom section now
+                    (was here in v1, before that too - moved a second
+                    time to sit with the actual colour-editing controls it
+                    saves) - Export/Import stay here since they're
+                    file-based, not part of the colour-editing flow. */}
+                <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
                     onClick={handleExport}
@@ -1181,87 +1169,7 @@ export default function DesignPage(): JSX.Element {
                     <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
                   </label>
                 </div>
-                {importError && <p className="mb-6 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
-
-                {/* LAYOUT TEMPLATE GRID - which template renders on the
-                    TOGGLED screen. isActive's highlight follows the
-                    toggle; both "Active on Dashboard"/"Active on Café"
-                    badges stay independent of it, showing ground truth
-                    for BOTH screens regardless of which one is toggled. */}
-                <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  Layout - {activeScreen === 'dashboard' ? 'Dashboard' : 'Café'} screen
-                </div>
-                <p className="mb-4 text-xs text-muted-500">
-                  Choose which layout renders on the screen selected above. Switching takes effect immediately on
-                  every device that loads it.
-                </p>
-                {templateError && <p className="mb-3 text-sm font-semibold text-status-bad">{templateError}</p>}
-                <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-                  {TEMPLATE_SLOTS.map((slot) => {
-                    const isActive = slot.id === activeIdForToggledScreen
-                    const isActiveOnDashboard = slot.id === activeTemplateId
-                    const isActiveOnCafe = cafeActiveTemplateId !== null && slot.id === cafeActiveTemplateId
-                    const isComingSoon = slot.status === 'coming-soon'
-                    const isSaving = templateSaving === slot.id
-                    return (
-                      <button
-                        key={slot.id}
-                        type="button"
-                        disabled={isComingSoon || isSaving}
-                        onClick={() => handleSelectLayoutTemplate(slot.id)}
-                        className={`rounded-xl border p-4 text-left transition ${
-                          isComingSoon
-                            ? 'cursor-not-allowed border-border bg-slate-900/40 opacity-50'
-                            : isActive
-                              ? 'border-accent-sky-500 bg-slate-900'
-                              : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
-                        }`}
-                      >
-                        <div className="mb-2 flex aspect-video items-center justify-center rounded-lg border border-border bg-slate-950/60 text-[10px] uppercase tracking-wide text-muted-500">
-                          {isComingSoon ? 'Coming soon' : slot.category === 'cafe' ? 'Café' : 'Clubhouse'}
-                        </div>
-                        <div className="text-xs font-semibold text-primary">{slot.label}</div>
-                        {isActiveOnDashboard && (
-                          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Dashboard</div>
-                        )}
-                        {isActiveOnCafe && (
-                          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Café</div>
-                        )}
-                        {isComingSoon && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-500">Coming soon</div>}
-                        {isSaving && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Switching…</div>}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* APPLY TO LIVE SCREEN - merges the old "Apply to Live
-                    Dashboard" (theme) and "Apply to Live Cafe Screen"
-                    (template) buttons into one, toggle-aware action. See
-                    handleApplyToLiveScreen's own comment for exactly
-                    what it does on each screen. */}
-                <div className="border-t border-accent-sky-500/40 pt-6">
-                  <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Screen</div>
-                  <p className="mb-4 text-sm text-muted-400">
-                    Pushes the colours currently shown in the preview to every device that loads the real
-                    dashboard - PC2, the clubhouse display, home browsers - within about 15 seconds. When toggled
-                    to Café, also switches the café screen to the template currently active on your dashboard, if
-                    it differs.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleApplyToLiveScreen}
-                    disabled={applyStatus === 'working'}
-                    className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Screen'}
-                  </button>
-                  {applyStatus === 'success' && (
-                    <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
-                  )}
-                  {applyStatus === 'error' && (
-                    <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
-                  )}
-                </div>
+                {importError && <p className="mt-4 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
               </div>
             )}
 
@@ -1271,7 +1179,196 @@ export default function DesignPage(): JSX.Element {
                 <DisplayUrlList />
               </div>
             )}
+
+            {activeTab === 'custom' && (
+              <div>
+                {/* Was the always-visible "Quick Colours" pane pinned
+                    beside the preview in v1 - renamed Custom and
+                    demoted to the 7th nav item here, only rendering when
+                    selected like every other section, per this round's
+                    explicit instruction. Same activeTokens/nameInput
+                    state as the Backgrounds tab and Save-as-template
+                    control elsewhere - not a separate copy. */}
+                <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Custom</div>
+                <div className="flex flex-col gap-1">
+                  {BACKGROUND_TOKEN_KEYS.map((key) => (
+                    <label
+                      key={key}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-1 py-1.5 hover:border-border"
+                    >
+                      <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
+                      <input
+                        type="color"
+                        value={rgbaToHex(activeTokens[key])}
+                        onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
+                        className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-5 border-t border-border pt-4">
+                  <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-400">Save as new template</label>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      value={nameInput}
+                      onChange={(event) => setNameInput(event.target.value)}
+                      placeholder="Template name"
+                      className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveAsTemplate}
+                      disabled={!nameInput.trim()}
+                      className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Save as template
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+        </div>
+
+        {/* RIGHT COLUMN - preview only, no longer sharing this side of
+            the page with a separate panel (v1's Quick Colours pane sat
+            here too) - the freed space plus PREVIEW_DISPLAY_WIDTH's own
+            increase (800 -> 920, see that constant's own comment) is
+            what makes this read as the page's visual centerpiece rather
+            than a small box floating in empty space. justify-center
+            below the breakpoint (viewport-width-driven, may be narrower
+            than the preview's own natural size), flex-start above it
+            (this column has real room, no need to center within it). */}
+        <div className="flex min-w-0 flex-1 justify-center min-[1800px]:justify-start">
+          {/* Rendered at the real 1920x1080 reference size (matching
+              DashboardPage.tsx's own layout, or CafeTemplate.tsx's own
+              layout, exactly), then scaled down as one unit via
+              transform - not squeezed into a shorter box - so every
+              element stays proportionally correct instead of being
+              clipped. Which inner layout renders is the only thing the
+              toggle changes - the outer scaled wrapper, WeatherProvider,
+              and previewStyle CSS variables are shared by both. */}
+          <div
+            className="overflow-hidden rounded-2xl border border-border"
+            style={{ width: PREVIEW_DISPLAY_WIDTH, height: PREVIEW_DISPLAY_HEIGHT, ...previewStyle }}
+          >
+            <div
+              style={{
+                width: PREVIEW_REFERENCE_WIDTH,
+                height: PREVIEW_REFERENCE_HEIGHT,
+                transform: `scale(${PREVIEW_SCALE})`,
+                transformOrigin: 'top left',
+              }}
+            >
+              <WeatherProvider forcedConfig={MOCK_CONFIG}>
+                {activeScreen === 'dashboard' ? (
+                  <div
+                    className={`h-full w-full p-10 text-slate-100 ${
+                      activeGradientMode === 'solid' ? 'bg-page-via' : 'bg-gradient-to-b from-page-from via-page-via to-page-to'
+                    }`}
+                  >
+                    <div className="grid h-full grid-rows-[7%_1fr] gap-4">
+                      <Header
+                        airfieldName={airfieldName}
+                        logoUrl={logoUrl}
+                        rightSlot={<WeatherStatusIndicator />}
+                        gradientMode={activeGradientMode}
+                      />
+                      <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
+                        <LeftInfoPanel />
+                        <CentreDisplayPanel />
+                        <RightInfoPanel />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <CafePreview airfieldName={airfieldName} logoUrl={logoUrl} gradientMode={activeGradientMode} />
+                )}
+              </WeatherProvider>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* FOOTER - "Layout - Dashboard/Café screen" (the Clubhouse/Café
+          template-slot picker + Apply to Live Screen), moved out of the
+          Templates section entirely and into a permanent, full-width
+          block below the two-column body. Always rendered regardless of
+          activeTab - selecting Branding/Backgrounds/Custom/anything else
+          in the left rail never hides this. isActive's highlight still
+          follows the Dashboard/Café toggle in the header row above; both
+          "Active on Dashboard"/"Active on Café" badges stay independent
+          of it, showing ground truth for BOTH screens regardless of
+          which one is toggled - unchanged from v1. */}
+      <div className="mt-6 rounded-2xl border border-border bg-panel p-6">
+        <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+          Layout - {activeScreen === 'dashboard' ? 'Dashboard' : 'Café'} screen
+        </div>
+        <p className="mb-4 text-xs text-muted-500">
+          Choose which layout renders on the screen selected above. Switching takes effect immediately on every
+          device that loads it.
+        </p>
+        {templateError && <p className="mb-3 text-sm font-semibold text-status-bad">{templateError}</p>}
+        <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+          {TEMPLATE_SLOTS.map((slot) => {
+            const isActive = slot.id === activeIdForToggledScreen
+            const isActiveOnDashboard = slot.id === activeTemplateId
+            const isActiveOnCafe = cafeActiveTemplateId !== null && slot.id === cafeActiveTemplateId
+            const isComingSoon = slot.status === 'coming-soon'
+            const isSaving = templateSaving === slot.id
+            return (
+              <button
+                key={slot.id}
+                type="button"
+                disabled={isComingSoon || isSaving}
+                onClick={() => handleSelectLayoutTemplate(slot.id)}
+                className={`rounded-xl border p-4 text-left transition ${
+                  isComingSoon
+                    ? 'cursor-not-allowed border-border bg-slate-900/40 opacity-50'
+                    : isActive
+                      ? 'border-accent-sky-500 bg-slate-900'
+                      : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
+                }`}
+              >
+                <div className="mb-2 flex aspect-video items-center justify-center rounded-lg border border-border bg-slate-950/60 text-[10px] uppercase tracking-wide text-muted-500">
+                  {isComingSoon ? 'Coming soon' : slot.category === 'cafe' ? 'Café' : 'Clubhouse'}
+                </div>
+                <div className="text-xs font-semibold text-primary">{slot.label}</div>
+                {isActiveOnDashboard && (
+                  <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Dashboard</div>
+                )}
+                {isActiveOnCafe && (
+                  <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Café</div>
+                )}
+                {isComingSoon && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-500">Coming soon</div>}
+                {isSaving && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Switching…</div>}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="border-t border-accent-sky-500/40 pt-6">
+          <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Screen</div>
+          <p className="mb-4 text-sm text-muted-400">
+            Pushes the colours currently shown in the preview to every device that loads the real dashboard - PC2,
+            the clubhouse display, home browsers - within about 15 seconds. When toggled to Café, also switches the
+            café screen to the template currently active on your dashboard, if it differs.
+          </p>
+          <button
+            type="button"
+            onClick={handleApplyToLiveScreen}
+            disabled={applyStatus === 'working'}
+            className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Screen'}
+          </button>
+          {applyStatus === 'success' && (
+            <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
+          )}
+          {applyStatus === 'error' && (
+            <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
+          )}
         </div>
       </div>
     </div>

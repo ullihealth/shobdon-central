@@ -18,9 +18,14 @@ interface HeaderProps {
   // URL). Null/undefined (no logo set) renders nothing extra - falls
   // back to the text-only layout unchanged.
   logoUrl?: string | null
+  // DesignPage.tsx's Solid/Gradient toggle (DesignTemplate.gradientMode) -
+  // 'solid' swaps the 3-stop from/via/to gradient for a flat fill using
+  // just the `via` stop. Undefined/omitted (every existing caller) keeps
+  // today's gradient unchanged - this is purely additive.
+  gradientMode?: 'solid' | 'gradient'
 }
 
-export default function Header({ rightSlot, airfieldName, logoUrl }: HeaderProps): JSX.Element {
+export default function Header({ rightSlot, airfieldName, logoUrl, gradientMode = 'gradient' }: HeaderProps): JSX.Element {
   const [now, setNow] = useState(new Date())
   const location = useLocation()
   const isConfigPage = location.pathname === '/config'
@@ -82,7 +87,11 @@ export default function Header({ rightSlot, airfieldName, logoUrl }: HeaderProps
   })
 
   return (
-    <div className="relative h-full w-full rounded-xl bg-gradient-to-r from-header-from via-header-via to-header-to p-3 shadow-lg flex items-center justify-between gap-2 px-3 sm:px-5">
+    <div
+      className={`relative h-full w-full rounded-xl p-3 shadow-lg flex items-center justify-between gap-2 px-3 sm:px-5 ${
+        gradientMode === 'solid' ? 'bg-header-via' : 'bg-gradient-to-r from-header-from via-header-via to-header-to'
+      }`}
+    >
       {/* Left - title (doubles as the Configuration nav control) with Last Updated, read as one info block.
           min-w-0 + truncate: a flex child otherwise refuses to shrink below its text's own natural width,
           which is what was pushing the clock (below) into overlapping it at narrow widths. */}
