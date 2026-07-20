@@ -85,24 +85,13 @@ const PREVIEW_DISPLAY_HEIGHT = PREVIEW_REFERENCE_HEIGHT * PREVIEW_SCALE
 
 // `id` doubles as each group's tab id - kept on this same array (not a
 // parallel list) so the tab list and the actual rendered swatches can
-// never drift out of sync with each other.
+// never drift out of sync with each other. No 'backgrounds' entry here
+// any more - the Backgrounds nav item's content is now the merged
+// Templates/Custom section below (see BACKGROUND_TOKEN_KEYS' own
+// comment for where its 10 keys live now), not this generic
+// activeTokenGroup renderer. Only Text and Accent & Status still route
+// through it.
 const TOKEN_GROUPS: { id: string; title: string; keys: (keyof DesignTokens)[] }[] = [
-  {
-    id: 'backgrounds',
-    title: 'Backgrounds',
-    keys: [
-      '--color-page-from',
-      '--color-page-via',
-      '--color-page-to',
-      '--color-header-from',
-      '--color-header-via',
-      '--color-header-to',
-      '--color-panel-bg',
-      '--color-card-bg',
-      '--color-border',
-      '--color-compass-disc-bg',
-    ],
-  },
   {
     id: 'text',
     title: 'Text',
@@ -127,28 +116,43 @@ const TOKEN_GROUPS: { id: string; title: string; keys: (keyof DesignTokens)[] }[
   // sliders for them here would silently do nothing.
 ]
 
-// Derived from TOKEN_GROUPS itself (not a second literal copy of the same
-// 10 keys) - the Quick Colours pane renders exactly the Backgrounds
-// group's own keys, so if that group's own key list ever changes, this
-// stays in sync automatically instead of silently drifting from it.
-const BACKGROUND_TOKEN_KEYS = TOKEN_GROUPS.find((group) => group.id === 'backgrounds')!.keys
+// No longer derived from TOKEN_GROUPS (that array dropped its
+// 'backgrounds' entry - see its own comment) - these are the same 10
+// keys the Custom sub-view inside the merged Backgrounds section
+// renders, now its own standalone source of truth since there's no
+// longer a generic token-group entry to derive them from.
+const BACKGROUND_TOKEN_KEYS: (keyof DesignTokens)[] = [
+  '--color-page-from',
+  '--color-page-via',
+  '--color-page-to',
+  '--color-header-from',
+  '--color-header-via',
+  '--color-header-to',
+  '--color-panel-bg',
+  '--color-card-bg',
+  '--color-border',
+  '--color-compass-disc-bg',
+]
 
-type TabId = 'branding' | 'backgrounds' | 'text' | 'accent-status' | 'templates' | 'your-displays' | 'custom'
+type TabId = 'branding' | 'backgrounds' | 'text' | 'accent-status' | 'your-displays'
 
-// The seven left-rail nav items, in the exact order they render - single
+// The five left-rail nav items, in the exact order they render - single
 // source of truth so the nav list and the conditional content blocks
-// below can never silently drift out of sync or drop an entry. 'custom'
-// (was the always-visible "Quick Colours" pane beside the preview) is
-// now just the 7th item here - same activeTab mechanism as every other
-// entry, gated behind selection instead of pinned.
+// below can never silently drift out of sync or drop an entry.
+// 'templates' and 'custom' used to be separate entries here (7 total) -
+// both are now reachable only via the Templates/Custom toggle inside
+// this 'backgrounds' entry's own content, per the instruction that
+// Templates and Backgrounds "fundamentally edit the same thing... just
+// via different UIs." The 'backgrounds' tab's rendered content is what
+// used to live under 'templates' (the colour-chip browser); the old
+// standalone raw-swatch Backgrounds content is now the Custom sub-view
+// within it instead of its own top-level destination.
 const TABS: { id: TabId; label: string }[] = [
   { id: 'branding', label: 'Branding' },
   { id: 'backgrounds', label: 'Backgrounds' },
   { id: 'text', label: 'Text' },
   { id: 'accent-status', label: 'Accent & Status' },
-  { id: 'templates', label: 'Templates' },
   { id: 'your-displays', label: 'Displays' },
-  { id: 'custom', label: 'Custom' },
 ]
 
 // The two-column (left rail / preview) layout's own breakpoint.
@@ -438,9 +442,19 @@ export default function DesignPage(): JSX.Element {
   // state itself is shared page state, not owned by any one tab.
   const [activeScreen, setActiveScreen] = useState<ScreenId>('dashboard')
 
-  // Which of the 6 tabs the right pane currently shows. Branding by
-  // default, per this round's instruction.
+  // Which of the 5 left-rail items is currently selected. Branding by
+  // default, per an earlier round's instruction (still true after
+  // consolidating Templates/Custom into Backgrounds).
   const [activeTab, setActiveTab] = useState<TabId>('branding')
+  // Inside the merged 'backgrounds' tab specifically: which of the two
+  // sub-views is showing - the colour-chip/template browser (what used
+  // to be the standalone Templates tab's content), or the raw swatch
+  // editor (what used to be the standalone Custom tab's content, itself
+  // originally the standalone Backgrounds tab's content before that).
+  // Resets to 'templates' only on mount, not on every tab switch away
+  // and back - deliberately not reset elsewhere, so leaving Backgrounds
+  // for Text and coming back keeps whichever sub-view was open.
+  const [backgroundsView, setBackgroundsView] = useState<'templates' | 'custom'>('templates')
 
   // The former explanatory paragraph, now behind an info icon's popover
   // instead of sitting permanently on the page. No toast/popover library
@@ -902,7 +916,7 @@ export default function DesignPage(): JSX.Element {
                 </button>
                 <p className="pr-4 text-sm text-muted-400">
                   Experiment freely - the preview reacts to the colours you pick, and nothing is saved until you
-                  choose to. When you're ready, use "Apply" in the Templates tab to push a theme
+                  choose to. When you're ready, use "Apply" in the Backgrounds tab to push a theme
                   (and, on Café, the current template) to every device that loads the real{' '}
                   {activeScreen === 'dashboard' ? 'dashboard' : 'café screen'}.
                 </p>
@@ -1054,198 +1068,255 @@ export default function DesignPage(): JSX.Element {
               </div>
             )}
 
-            {activeTab === 'templates' && (
+            {activeTab === 'backgrounds' && (
               <div>
-                <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Templates</div>
-
-                {/* BASE COLOUR FILTER - ready for the ~30-preset import
-                    task landing separately; today only the two built-in
-                    templates (Current Live Theme, Bright Blue) are
-                    tagged, so most chips fall back to an on-the-fly
-                    preview generated from that chip's own anchor colour
-                    (deriveBackgroundTokensFromAnchor) instead of
-                    matching a real saved template - see
-                    handleSelectBaseColourChip's own comment. Clicking
-                    the already-active chip again clears the filter back
-                    to "show every template" rather than needing a
-                    separate Clear button. flex-wrap: all 13 chips render
-                    (was truncated at the first 4 during mockup iteration
-                    - fixed there before this ever reached real code),
-                    wrapping across as many rows as this narrower rail
-                    needs. */}
-                <div className="mb-4 flex flex-wrap gap-2">
-                  {BASE_COLOUR_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => handleSelectBaseColourChip(option.id)}
-                      title={option.label}
-                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition ${
-                        baseColourFilter === option.id ? 'border-accent-sky-500 bg-slate-900' : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
-                      }`}
-                    >
-                      <span className="h-3 w-3 shrink-0 rounded-full border border-white/20" style={{ background: option.swatch }} />
-                      {option.label}
-                    </button>
-                  ))}
-                  {baseColourFilter && (
-                    <button
-                      type="button"
-                      onClick={() => setBaseColourFilter(null)}
-                      className="rounded-full border border-border bg-slate-900/80 px-2.5 py-1 text-[11px] font-semibold text-muted-400 transition hover:border-accent-sky-500/60 hover:text-white"
-                    >
-                      Clear filter
-                    </button>
-                  )}
-                </div>
-
-                {/* SOLID / GRADIENT - background fill for the Page/Header
-                    slots. Part of DesignTemplate (gradientMode), not
-                    session-only: saving, exporting, importing, and
-                    duplicating a template all carry this choice with it
-                    (see handleSaveAsTemplate/handleDuplicate/handleExport/
-                    handleImportFile). Affects this page's own preview
-                    immediately (Header.tsx and the Café preview's page
-                    background both read it) - does NOT yet affect the
-                    real live dashboard/café templates when applied
-                    (ClassicTemplate.tsx, CafeTemplate.tsx, Clubhouse1/2
-                    Template.tsx all still render the gradient
-                    unconditionally) - flagged explicitly, not silently
-                    left half-done: wiring gradientMode into those is a
-                    separate, larger change touching every display
-                    template, out of this round's scope. */}
-                <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-slate-900/60 px-3 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">Background fill</span>
-                  <div className="inline-flex gap-1 rounded-lg border border-border bg-slate-950/60 p-1">
-                    {(['solid', 'gradient'] as const).map((mode) => (
+                {/* Templates and Custom used to be separate top-level
+                    nav items (7 total) - merged here per instruction,
+                    since they "fundamentally edit the same thing... just
+                    via different UIs." This heading row's own toggle
+                    (Templates/Custom) swaps which of the two sub-views
+                    renders below; the "Templates" heading text itself is
+                    unchanged, left exactly as it read before. */}
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Templates</div>
+                  <div className="inline-flex gap-1 rounded-lg border border-border bg-slate-900/60 p-1">
+                    {(['templates', 'custom'] as const).map((view) => (
                       <button
-                        key={mode}
+                        key={view}
                         type="button"
-                        onClick={() => setActiveGradientMode(mode)}
+                        onClick={() => setBackgroundsView(view)}
                         className={`rounded-md px-3 py-1 text-xs font-bold capitalize transition ${
-                          activeGradientMode === mode ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
+                          backgroundsView === view ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
                         }`}
                       >
-                        {mode}
+                        {view}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <ul className="mb-4 flex flex-col gap-2">
-                  {visibleTemplates.length === 0 && (
-                    <li className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-500">
-                      No templates tagged "{BASE_COLOUR_OPTIONS.find((o) => o.id === baseColourFilter)?.label}" yet.
-                    </li>
-                  )}
-                  {visibleTemplates.map((template) => (
-                    <li
-                      key={template.id}
-                      className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 ${
-                        selectedId === template.id ? 'border-accent-sky-500' : 'border-border'
-                      }`}
-                    >
-                      {renamingId === template.id ? (
-                        <input
-                          value={renameInput}
-                          onChange={(event) => setRenameInput(event.target.value)}
-                          onKeyDown={(event) => event.key === 'Enter' && handleConfirmRename()}
-                          className="rounded border border-border bg-slate-900 px-2 py-1 text-sm text-primary"
-                          autoFocus
-                        />
-                      ) : (
-                        // Clicking a template row updates the live preview
-                        // immediately - handleSelectTemplate below sets
-                        // activeTokens/activeGradientMode, which the
-                        // preview already renders from on every render,
-                        // completely independent of "Apply to Live
-                        // Screen" in the footer (that's the only action
-                        // that touches the real, live dashboard).
-                        // Confirmed this was already correct in v1's code
-                        // before touching it, not something that needed
-                        // fixing here.
+                {backgroundsView === 'templates' ? (
+                  <>
+                    {/* BASE COLOUR FILTER - ready for the ~30-preset import
+                        task landing separately; today only the two built-in
+                        templates (Current Live Theme, Bright Blue) are
+                        tagged, so most chips fall back to an on-the-fly
+                        preview generated from that chip's own anchor colour
+                        (deriveBackgroundTokensFromAnchor) instead of
+                        matching a real saved template - see
+                        handleSelectBaseColourChip's own comment. Clicking
+                        the already-active chip again clears the filter back
+                        to "show every template" rather than needing a
+                        separate Clear button. flex-wrap: all 13 chips render
+                        (was truncated at the first 4 during mockup iteration
+                        - fixed there before this ever reached real code),
+                        wrapping across as many rows as this narrower rail
+                        needs. */}
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {BASE_COLOUR_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleSelectBaseColourChip(option.id)}
+                          title={option.label}
+                          className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition ${
+                            baseColourFilter === option.id ? 'border-accent-sky-500 bg-slate-900' : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
+                          }`}
+                        >
+                          <span className="h-3 w-3 shrink-0 rounded-full border border-white/20" style={{ background: option.swatch }} />
+                          {option.label}
+                        </button>
+                      ))}
+                      {baseColourFilter && (
                         <button
                           type="button"
-                          onClick={() => handleSelectTemplate(template)}
-                          className="text-left text-sm font-semibold text-primary"
+                          onClick={() => setBaseColourFilter(null)}
+                          className="rounded-full border border-border bg-slate-900/80 px-2.5 py-1 text-[11px] font-semibold text-muted-400 transition hover:border-accent-sky-500/60 hover:text-white"
                         >
-                          {template.name}
+                          Clear filter
                         </button>
                       )}
+                    </div>
 
-                      <div className="flex shrink-0 gap-3 text-xs">
-                        {renamingId === template.id ? (
-                          <button type="button" onClick={handleConfirmRename} className="text-accent-sky-400">
-                            Save
+                    {/* SOLID / GRADIENT - background fill for the Page/Header
+                        slots. Part of DesignTemplate (gradientMode), not
+                        session-only: saving, exporting, importing, and
+                        duplicating a template all carry this choice with it
+                        (see handleSaveAsTemplate/handleDuplicate/handleExport/
+                        handleImportFile). Affects this page's own preview
+                        immediately (Header.tsx and the Café preview's page
+                        background both read it) - does NOT yet affect the
+                        real live dashboard/café templates when applied
+                        (ClassicTemplate.tsx, CafeTemplate.tsx, Clubhouse1/2
+                        Template.tsx all still render the gradient
+                        unconditionally) - flagged explicitly, not silently
+                        left half-done: wiring gradientMode into those is a
+                        separate, larger change touching every display
+                        template, out of this round's scope. */}
+                    <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-slate-900/60 px-3 py-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">Background fill</span>
+                      <div className="inline-flex gap-1 rounded-lg border border-border bg-slate-950/60 p-1">
+                        {(['solid', 'gradient'] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setActiveGradientMode(mode)}
+                            className={`rounded-md px-3 py-1 text-xs font-bold capitalize transition ${
+                              activeGradientMode === mode ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
+                            }`}
+                          >
+                            {mode}
                           </button>
-                        ) : (
-                          <>
-                            {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
-                              <button type="button" onClick={() => handleStartRename(template)} className="text-muted-400 hover:text-primary">
-                                Rename
-                              </button>
-                            )}
-                            <button type="button" onClick={() => handleDuplicate(template)} className="text-muted-400 hover:text-primary">
-                              Duplicate
-                            </button>
-                            {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
-                              <button type="button" onClick={() => handleDelete(template.id)} className="text-status-bad">
-                                Delete
-                              </button>
-                            )}
-                          </>
-                        )}
+                        ))}
                       </div>
-                    </li>
-                  ))}
-                </ul>
+                    </div>
 
-                {/* "Save as new template" lives on the Custom section now
-                    (was here in v1, before that too - moved a second
-                    time to sit with the actual colour-editing controls it
-                    saves) - Export/Import stay here since they're
-                    file-based, not part of the colour-editing flow.
-                    "Apply" (was "Apply to Live Screen", sitting in the
-                    unrelated Layout footer card below, disconnected from
-                    the colour controls that actually drive what it
-                    pushes) moved here instead - same handler
-                    (handleApplyToLiveScreen), same confirm/15-second-
-                    propagation/Café-template-sync behaviour, unchanged,
-                    just relocated + renamed for this context. The
-                    footer's own layout-slot cards apply their own
-                    selection immediately on click via
-                    handleSelectLayoutTemplate's own POST - confirmed by
-                    reading that handler directly before moving this -
-                    so nothing there depended on this button and nothing
-                    is left needing its own apply action now that it's
-                    gone from that card. */}
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleExport}
-                    className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
-                  >
-                    Export JSON
-                  </button>
-                  <label className="cursor-pointer rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white">
-                    Import JSON
-                    <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleApplyToLiveScreen}
-                    disabled={applyStatus === 'working'}
-                    className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {applyStatus === 'working' ? 'Applying…' : 'Apply'}
-                  </button>
-                </div>
-                {importError && <p className="mt-4 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
-                {applyStatus === 'success' && (
-                  <p className="mt-4 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
-                )}
-                {applyStatus === 'error' && (
-                  <p className="mt-4 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
+                    <ul className="mb-4 flex flex-col gap-2">
+                      {visibleTemplates.length === 0 && (
+                        <li className="rounded-lg border border-dashed border-border px-4 py-3 text-xs text-muted-500">
+                          No templates tagged "{BASE_COLOUR_OPTIONS.find((o) => o.id === baseColourFilter)?.label}" yet.
+                        </li>
+                      )}
+                      {visibleTemplates.map((template) => (
+                        <li
+                          key={template.id}
+                          className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-2 ${
+                            selectedId === template.id ? 'border-accent-sky-500' : 'border-border'
+                          }`}
+                        >
+                          {renamingId === template.id ? (
+                            <input
+                              value={renameInput}
+                              onChange={(event) => setRenameInput(event.target.value)}
+                              onKeyDown={(event) => event.key === 'Enter' && handleConfirmRename()}
+                              className="rounded border border-border bg-slate-900 px-2 py-1 text-sm text-primary"
+                              autoFocus
+                            />
+                          ) : (
+                            // Clicking a template row updates the live preview
+                            // immediately - handleSelectTemplate below sets
+                            // activeTokens/activeGradientMode, which the
+                            // preview already renders from on every render,
+                            // completely independent of "Apply" further down
+                            // (that's the only action that touches the real,
+                            // live dashboard).
+                            <button
+                              type="button"
+                              onClick={() => handleSelectTemplate(template)}
+                              className="text-left text-sm font-semibold text-primary"
+                            >
+                              {template.name}
+                            </button>
+                          )}
+
+                          <div className="flex shrink-0 gap-3 text-xs">
+                            {renamingId === template.id ? (
+                              <button type="button" onClick={handleConfirmRename} className="text-accent-sky-400">
+                                Save
+                              </button>
+                            ) : (
+                              <>
+                                {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
+                                  <button type="button" onClick={() => handleStartRename(template)} className="text-muted-400 hover:text-primary">
+                                    Rename
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => handleDuplicate(template)} className="text-muted-400 hover:text-primary">
+                                  Duplicate
+                                </button>
+                                {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
+                                  <button type="button" onClick={() => handleDelete(template.id)} className="text-status-bad">
+                                    Delete
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {/* "Save as new template" lives on the Custom sub-view
+                        now (see below) - Export/Import stay here since
+                        they're file-based, not part of the colour-editing
+                        flow. Apply sits alongside them - same handler
+                        (handleApplyToLiveScreen), same confirm/15-second-
+                        propagation/Café-template-sync behaviour as
+                        always. */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleExport}
+                        className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white"
+                      >
+                        Export JSON
+                      </button>
+                      <label className="cursor-pointer rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white">
+                        Import JSON
+                        <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleApplyToLiveScreen}
+                        disabled={applyStatus === 'working'}
+                        className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {applyStatus === 'working' ? 'Applying…' : 'Apply'}
+                      </button>
+                    </div>
+                    {importError && <p className="mt-4 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
+                    {applyStatus === 'success' && (
+                      <p className="mt-4 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
+                    )}
+                    {applyStatus === 'error' && (
+                      <p className="mt-4 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* CUSTOM sub-view - the raw swatch editor, originally
+                        the standalone Backgrounds tab's own content, then
+                        briefly its own standalone "Custom" tab, now this
+                        toggle's second state. Same activeTokens/nameInput
+                        state the template browser above and Save-as-
+                        template both use - not a separate copy. */}
+                    <div className="flex flex-col gap-1">
+                      {BACKGROUND_TOKEN_KEYS.map((key) => (
+                        <label
+                          key={key}
+                          className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-1 py-1.5 hover:border-border"
+                        >
+                          <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
+                          <input
+                            type="color"
+                            value={rgbaToHex(activeTokens[key])}
+                            onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
+                            className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+                          />
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="mt-5 border-t border-border pt-4">
+                      <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-400">Save as new template</label>
+                      <div className="flex flex-col gap-2">
+                        <input
+                          value={nameInput}
+                          onChange={(event) => setNameInput(event.target.value)}
+                          placeholder="Template name"
+                          className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveAsTemplate}
+                          disabled={!nameInput.trim()}
+                          className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Save as template
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -1254,55 +1325,6 @@ export default function DesignPage(): JSX.Element {
               <div>
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Your Displays</div>
                 <DisplayUrlList />
-              </div>
-            )}
-
-            {activeTab === 'custom' && (
-              <div>
-                {/* Was the always-visible "Quick Colours" pane pinned
-                    beside the preview in v1 - renamed Custom and
-                    demoted to the 7th nav item here, only rendering when
-                    selected like every other section, per this round's
-                    explicit instruction. Same activeTokens/nameInput
-                    state as the Backgrounds tab and Save-as-template
-                    control elsewhere - not a separate copy. */}
-                <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Custom</div>
-                <div className="flex flex-col gap-1">
-                  {BACKGROUND_TOKEN_KEYS.map((key) => (
-                    <label
-                      key={key}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-1 py-1.5 hover:border-border"
-                    >
-                      <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
-                      <input
-                        type="color"
-                        value={rgbaToHex(activeTokens[key])}
-                        onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                        className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-                      />
-                    </label>
-                  ))}
-                </div>
-
-                <div className="mt-5 border-t border-border pt-4">
-                  <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-400">Save as new template</label>
-                  <div className="flex flex-col gap-2">
-                    <input
-                      value={nameInput}
-                      onChange={(event) => setNameInput(event.target.value)}
-                      placeholder="Template name"
-                      className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveAsTemplate}
-                      disabled={!nameInput.trim()}
-                      className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Save as template
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
           </div>
