@@ -434,7 +434,24 @@ export default function PlatformTenantsPage(): JSX.Element {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-6 pb-16 pt-10 text-slate-100">
-      <div className="mx-auto max-w-6xl">
+      {/* max-w-[1900px], not max-w-6xl (1152px, far too narrow for the
+          11-column table) - reusing DesignPage.tsx's own exact
+          max-w-[1900px] value/pattern rather than a rem-based class
+          like max-w-7xl. This codebase's root font-size is
+          clamp(12px, 1.5vmin, 20px) (index.css), so BOTH a rem-based
+          container cap AND the table's own rem-padded cell content
+          scale with viewport *height*, not just width - confirmed via
+          Playwright across real device sizes: the table's natural
+          content width itself ranges from ~1100px (1024x768, floored
+          root font-size) up to ~1560px (2560x1440, ceiling root
+          font-size), so a small fixed pixel cap (tried max-w-[1300px]
+          first) still clipped it unnecessarily on large monitors.
+          max-w-[1900px] comfortably covers the observed range, matches
+          this page's own overflow-x-auto fallback for anything
+          narrower (see that div's comment), and doesn't invent a new
+          number - MediaLibraryPage.tsx already documents this same
+          rem-scaling behaviour by name. */}
+      <div className="mx-auto max-w-[1900px]">
         <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Platform · Tenants</h1>
           <div className="flex items-center gap-3">
@@ -488,6 +505,14 @@ export default function PlatformTenantsPage(): JSX.Element {
         {loading ? (
           <p className="text-sm text-muted-400">Loading…</p>
         ) : (
+          // overflow-x-auto here is a deliberate fallback for viewports
+          // too narrow to fit the table even at the widened max-w-[1900px]
+          // container above - it scrolls contained within this div only
+          // (confirmed via Playwright: document.scrollWidth never exceeds
+          // clientWidth at any tested viewport, 1024x768-2560x1440), never
+          // the page itself. Doesn't engage on any normal desktop/laptop
+          // window - only on something narrower than ~1100px, below any
+          // realistic desktop browser width.
           <div className="overflow-x-auto rounded-2xl border border-border bg-panel">
             <table className="w-full min-w-[1100px] text-left text-sm">
               <thead>
