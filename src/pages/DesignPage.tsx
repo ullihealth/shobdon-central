@@ -296,7 +296,9 @@ function CafePreview({ airfieldName, logoUrl }: ScreenPreviewProps): JSX.Element
       <div
         style={{ display: 'grid', gridTemplateRows: tickerEnabled ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: '16px', height: '100%' }}
       >
-        <div className="relative min-h-0">
+        {/* min-w-0: see the ticker wrapper's own comment below - same
+            grid-item min-width:auto blowout risk applies here too. */}
+        <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
           </div>
@@ -320,8 +322,20 @@ function CafePreview({ airfieldName, logoUrl }: ScreenPreviewProps): JSX.Element
           )}
         </div>
 
+        {/* overflow-hidden + min-w-0: this wrapper, not CafeTicker's own
+            inner box, is the actual grid item in the single-column grid
+            above - grid items default to min-width:auto (content-based),
+            so without this the ticker's deliberately-wider-than-viewport
+            marquee track (duplicated content for a seamless loop) wins
+            the grid track's width calculation and inflates every row in
+            this grid, including the media panel's. Same fix as
+            CafeTemplate.tsx and CafeMediaPage.tsx's own ticker wrappers -
+            this is the third hand-maintained mirror of that same JSX
+            (Screens Design's own café preview), which is why this exact
+            bug kept resurfacing in a new place each time only one copy
+            got fixed. */}
         {tickerEnabled && (
-          <div className="flex-shrink-0">
+          <div className="min-w-0 overflow-hidden">
             <CafeTicker
               slots={tickerSlots}
               weather={weather}
