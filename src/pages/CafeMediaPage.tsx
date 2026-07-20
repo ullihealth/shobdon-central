@@ -183,7 +183,9 @@ function PreviewContent({
   return (
     <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
       <div style={{ display: 'grid', gridTemplateRows: tickerEnabled ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
-        <div className="relative min-h-0">
+        {/* min-w-0: see the ticker wrapper's own comment below - same
+            grid-item min-width:auto blowout risk applies here too. */}
+        <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
           </div>
@@ -207,8 +209,27 @@ function PreviewContent({
           )}
         </div>
 
+        {/* overflow-hidden + min-w-0: this wrapper, not CafeTicker's own
+            inner box, is the actual grid item in the single-column grid
+            above - grid items default to min-width:auto (content-based),
+            so without this the ticker's deliberately-wider-than-viewport
+            marquee track (duplicated content for a seamless loop) wins
+            the grid track's width calculation and inflates every row in
+            this grid, including the media panel's. Same fix as
+            CafeTemplate.tsx's own ticker wrapper (see that file's
+            comment for the full mechanism and how it was confirmed live)
+            - this file wasn't touched in that round since it's a
+            separate, hand-maintained mirror of that JSX for the preview,
+            not the same component reused. Here it read as the media
+            panel going completely blank rather than "cut off on the
+            right", because this preview additionally sits inside a
+            fixed-size clipped/scaled-down box - the blown-out grid made
+            MediaPanel's own `fill` box roughly double width, and its
+            image (object-contain, centered by default) re-centered
+            around that wider box's midpoint, landing outside or at the
+            extreme edge of the small clipped preview viewport. */}
         {tickerEnabled && (
-          <div className="flex-shrink-0">
+          <div className="min-w-0 overflow-hidden">
             <CafeTicker
               slots={tickerSlots}
               weather={weather}
