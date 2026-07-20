@@ -165,17 +165,23 @@ export default function AtcControlPage(): JSX.Element {
     })
   }, [])
 
-  // Matched by POSITION (runwayEnds[0]/[1], i.e. endAIdentifier/
-  // endBIdentifier) rather than hardcoded literal '08'/'26' strings -
-  // those are admin-typed free text, not a fixed enum (see runwayEnds'
-  // own loading comment above), so a literal-string match would silently
-  // do nothing for any tenant whose runway isn't numbered exactly that
-  // way, or worse, match the wrong physical end for a tenant that
-  // happens to also use 08/26 but with the opposite real circuit
-  // convention. runwayEnds[0] <-> left, runwayEnds[1] <-> right
-  // reproduces the requested 26->Left/08->Right behaviour for Shobdon's
-  // actual real config (endAIdentifier '26', endBIdentifier '08') while
-  // staying correct for any other tenant's own two ends.
+  // Hardcoded literal '26'/'08', NOT matched by position (runwayEnds[0]/
+  // [1], i.e. endAIdentifier/endBIdentifier) - this used to match by
+  // position on the theory that identifiers are admin-typed free text,
+  // not a fixed enum, so a literal match would silently break for any
+  // tenant numbered differently. In practice that made this auto-link
+  // mapping silently depend on which of endA/endB happened to hold "26"
+  // vs "08" - correct only as an accident of data ordering, and it
+  // flipped (Left<->08, Right<->26, backwards) the moment
+  // endAIdentifier/endBIdentifier were corrected for the unrelated
+  // headwind-calculation bug (CompassPanel.tsx), since that fix swapped
+  // which end was endA vs endB without changing which end was
+  // physically 26 vs 08. Per explicit instruction: Left<->26, Right<->08
+  // is Shobdon's actual physical/fixed pairing, not something that
+  // varies with admin data entry - this app is also still genuinely
+  // single-tenant (see PUBLIC_CONFIG_URL's own comment), so there is no
+  // other tenant's convention this could silently break for. Revisit
+  // with a real per-tenant mapping if/when a second tenant is onboarded.
   //
   // Only auto-fires when Auto-link is ON - this is what makes the link
   // avoidable rather than unconditional: with it OFF these two setters
@@ -184,14 +190,14 @@ export default function AtcControlPage(): JSX.Element {
   function handleRunwayEndChange(end: string) {
     setActiveRunwayEnd(end)
     if (!autoLinkRunwayCircuit) return
-    if (end === runwayEnds[0]) setCircuitDirection('left')
-    else if (end === runwayEnds[1]) setCircuitDirection('right')
+    if (end === '26') setCircuitDirection('left')
+    else if (end === '08') setCircuitDirection('right')
   }
 
   function handleCircuitDirectionChange(direction: CircuitDirection) {
     setCircuitDirection(direction)
     if (!autoLinkRunwayCircuit) return
-    setActiveRunwayEnd(direction === 'left' ? runwayEnds[0] : runwayEnds[1])
+    setActiveRunwayEnd(direction === 'left' ? '26' : '08')
   }
 
   function handleAirfieldInfoChange(event: ChangeEvent<HTMLInputElement>) {
