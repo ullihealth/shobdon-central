@@ -532,9 +532,14 @@ export default function CompassPanel(): JSX.Element {
   // - never to compassState.windDirection, headwind, or crosswind, which
   // stay driven purely by calculateWindComponents() on the raw reported
   // wind direction, completely independent of this flag.
-  const [clubProfile, setClubProfile] = useState<{ runwayGroups: RunwayGroup[]; reverseCompassNeedle: boolean }>({
+  const [clubProfile, setClubProfile] = useState<{
+    runwayGroups: RunwayGroup[]
+    reverseCompassNeedle: boolean
+    activeRunwayEnd: string
+  }>({
     runwayGroups: [],
     reverseCompassNeedle: false,
+    activeRunwayEnd: '',
   })
 
   useEffect(() => {
@@ -546,6 +551,7 @@ export default function CompassPanel(): JSX.Element {
           setClubProfile({
             runwayGroups: data.runwayGroups,
             reverseCompassNeedle: !!data?.opsPanel?.reverseCompassNeedle,
+            activeRunwayEnd: data?.opsPanel?.activeRunwayEnd ?? '',
           })
         }
       })
@@ -558,7 +564,22 @@ export default function CompassPanel(): JSX.Element {
   const compassState = useMemo<CompassState | null>(() => {
     if (!weather || clubProfile.runwayGroups.length === 0) return null
 
-    const activeRunwayHeading = clubProfile.runwayGroups[0].headingDegrees
+    // headingDegrees on a RunwayGroup is only ever the endAIdentifier
+    // end's heading (see types/clubProfile.ts) - endB is always its
+    // reciprocal (+180), never stored separately. This was previously
+    // read unconditionally as "the" runway heading with no regard for
+    // which end ATC Control has actually marked active - correct only
+    // when endA happens to be in use, and silently 180° wrong (a
+    // headwind/tailwind sign inversion, correct-looking crosswind)
+    // every time endB is active instead. Match against endBIdentifier
+    // specifically (not "!== endAIdentifier") so an empty/not-yet-loaded
+    // activeRunwayEnd falls back to endA, the same value this always
+    // used before this fix.
+    const activeGroup = clubProfile.runwayGroups[0]
+    const activeRunwayHeading =
+      clubProfile.activeRunwayEnd === activeGroup.endBIdentifier
+        ? (activeGroup.headingDegrees + 180) % 360
+        : activeGroup.headingDegrees
     const { headwind, crosswind } = calculateWindComponents(
       weather.windSpeed,
       weather.windDirection,
@@ -619,6 +640,18 @@ export default function CompassPanel(): JSX.Element {
   const headwindColour = useMemo(() => {
     return (compassState?.headwind ?? 0) > 0 ? 'text-green-500' : 'text-red-500'
   }, [compassState])
+
+  // Aviation terminology never says "negative headwind" - a negative
+  // component IS a tailwind, so the label itself flips rather than the
+  // readout showing a signed number under a fixed "Headwind" label.
+  // Rounded to the same 1-decimal precision as the displayed value
+  // before comparing against zero, so a near-perpendicular wind
+  // (headwind component genuinely ~0) can't flicker between the two
+  // labels from floating-point noise alone (e.g. -0.04 rounding to
+  // display "0.0" while still separately testing as negative).
+  const headwindRounded = useMemo(() => Math.round((compassState?.headwind ?? 0) * 10) / 10, [compassState])
+  const headwindLabel = headwindRounded < 0 ? 'Tailwind' : 'Headwind'
+  const headwindMagnitude = Math.abs(headwindRounded)
 
   const arrowColourClass = useMemo(() => {
     switch (compassState?.arrowColour) {
@@ -838,8 +871,8 @@ export default function CompassPanel(): JSX.Element {
           valueClassName={compassState.windGust && !liveDataUnavailable ? 'text-amber-500' : 'text-slate-500'}
         />
         <ReadoutRow
-          label="Headwind"
-          value={liveDataUnavailable ? 'N/A' : `${compassState.headwind > 0 ? '+' : ''}${compassState.headwind.toFixed(1)} kt`}
+          label={liveDataUnavailable ? 'Headwind' : headwindLabel}
+          value={liveDataUnavailable ? 'N/A' : `${headwindMagnitude.toFixed(1)} kt`}
           valueClassName={liveDataUnavailable ? 'text-slate-500' : headwindColour}
         />
         <ReadoutRow
