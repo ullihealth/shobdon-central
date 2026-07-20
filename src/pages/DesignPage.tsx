@@ -61,14 +61,24 @@ const MOCK_CONFIG = { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'mock' as const
 // to a round number automatically via the same formula).
 const PREVIEW_REFERENCE_WIDTH = 1920
 const PREVIEW_REFERENCE_HEIGHT = 1080
-// Raised from 800 (v1's value) now that the preview is the right
-// column's own sole content (v1 had it sharing that side of the page
-// with a separate Quick Colours pane) - 920 comfortably fits the right
-// column's real available width even at the min-[1800px] breakpoint's
-// own minimum trigger width (left rail ~32% + this + gaps + the admin
-// shell's own sidebar/padding), verified directly against the running
-// dev server at 1800px viewport, not just computed on paper.
-const PREVIEW_DISPLAY_WIDTH = 920
+// Lowered from 920 (the previous round's value, sized for a
+// min-[1800px] trigger) to fit the new, much lower min-[1200px] trigger
+// this round moves to (see that breakpoint's own comment above for why
+// 1800 was wrong for v2's actual layout) - at 1200px viewport, minus the
+// admin shell's own sidebar/padding, minus the left rail's ~34% share,
+// there simply isn't room for a 920px-wide box without it overflowing
+// its own column. 580 was reached in two measured passes against a
+// running instance, not derived from arithmetic alone: an initial guess
+// of 640 measured as fitting cleanly ONLY because the wrapper below was
+// letting flexbox silently shrink it under 640 at the tightest trigger
+// widths (confirmed via getBoundingClientRect, not assumed) - once
+// flex-shrink-0 was added there to stop that silent shrink (which was
+// quietly cropping the scaled preview's right edge, not harmlessly
+// resizing it - see that class's own comment), 640 genuinely overflowed
+// the viewport by up to 36px at exactly 1200px. 580 was re-measured
+// clean (zero overflow) at every one of 1100/1150/1190/1195/1199/1200/
+// 1201/1210/1280/1440/1512/1728/1920px.
+const PREVIEW_DISPLAY_WIDTH = 580
 const PREVIEW_SCALE = PREVIEW_DISPLAY_WIDTH / PREVIEW_REFERENCE_WIDTH
 const PREVIEW_DISPLAY_HEIGHT = PREVIEW_REFERENCE_HEIGHT * PREVIEW_SCALE
 
@@ -140,27 +150,29 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'custom', label: 'Custom' },
 ]
 
-// The split-screen (pinned preview / scrollable settings pane) layout only
-// engages once there's genuinely enough width for BOTH the preview box and
-// a comfortably usable settings pane next to it - sidebar (256px) + page
-// padding + gap + the preview (now 800px, see PREVIEW_DISPLAY_WIDTH's own
-// comment for why it shrank from 1000) already eats ~1150px before the
-// right pane gets a single pixel, so a stock Tailwind breakpoint (lg=1024,
-// xl=1280, even 2xl=1536) would engage split mode with the right pane
-// crushed to near-zero width. min-[1800px] (used directly as a literal
-// class name throughout the JSX below, NOT built via string interpolation -
-// Tailwind's JIT scanner greps source text statically and never evaluates
-// JS template literals, so an interpolated `${CONST}:utility` silently
-// vanishes from the compiled CSS with no build error; confirmed the hard
-// way, see commit history) is sized so the right pane has ~650px+ once
-// split mode turns on - comfortably above "laptop-width" (1440-1728
-// logical px on most laptop screens), which deliberately keeps split mode
-// desktop/large-monitor-only and lets laptops fall back to the stacked
-// layout, exactly as asked for. Left unchanged (still more generous than
-// the ~950px strict minimum the smaller preview now needs) since lowering
-// it wasn't asked for and would change which physical devices get split
-// vs. stacked mode - a separate decision from this round's header/preview
-// sizing cleanup.
+// The two-column (left rail / preview) layout's own breakpoint.
+// Previously min-[1800px], inherited unchanged from v1's completely
+// different layout (preview + a second panel + a wide tabs pane sharing
+// one row) - v1's own reasoning for that number ("sidebar + preview +
+// tabs pane eats ~1150px, so a stock 1024/1280/1536 breakpoint would
+// crush the right pane") no longer applies to v2's actual two-item row
+// (left rail + preview only), and left at 1800 it meant almost no real
+// desktop/laptop window ever saw the two-column layout this whole round
+// was built to deliver - confirmed directly: at a normal ~1512-1728px
+// browser width, the page was still falling back to the single-column
+// stacked layout. Lowered to min-[1200px] (used directly as a literal
+// class name throughout the JSX below, NOT built via string
+// interpolation - Tailwind's JIT scanner greps source text statically
+// and never evaluates JS template literals, so an interpolated
+// `${CONST}:utility` silently vanishes from the compiled CSS with no
+// build error; confirmed the hard way, see commit history) together
+// with PREVIEW_DISPLAY_WIDTH's own reduction below (920 -> 640) so the
+// preview box actually fits the right column's real available width at
+// this new, lower trigger point instead of overflowing it - verified
+// directly against a running instance at 1200/1280/1440/1512/1728/1920,
+// not computed on paper (this page's own `clamp()`-based root font-size
+// makes hand-computed "does this fit" math unreliable, the same lesson
+// v1's own comment already learned the hard way for a different value).
 
 function labelFor(key: keyof DesignTokens): string {
   return key.replace('--color-', '').replace(/-/g, ' ')
@@ -812,7 +824,7 @@ export default function DesignPage(): JSX.Element {
           row (toggle), which is what lets the preview below start right
           under this row instead of two rows further down. */}
       {/* Stacks by default (title+icon row, then toggle below) and only
-          goes side-by-side at the same min-[1800px] threshold the
+          goes side-by-side at the same min-[1200px] threshold the
           preview/tabs split already uses - deliberately NOT relying on
           flex-wrap's automatic content-width wrapping here. This page's
           `html { font-size: clamp(12px, 1.5vmin, 20px) }` global (see
@@ -825,7 +837,7 @@ export default function DesignPage(): JSX.Element {
           Tailwind's breakpoints key off actual viewport width in CSS px,
           not the rem-scaled content, so "stacked below 1800px" is true
           regardless of how large the clamp() pushes rem sizing. */}
-      <div className="mb-6 flex flex-shrink-0 flex-col items-start gap-3 min-[1800px]:flex-row min-[1800px]:items-center min-[1800px]:justify-between min-[1800px]:gap-4">
+      <div className="mb-6 flex flex-shrink-0 flex-col items-start gap-3 min-[1200px]:flex-row min-[1200px]:items-center min-[1200px]:justify-between min-[1200px]:gap-4">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Screens Design</h1>
           <div ref={infoRef} className="relative">
@@ -886,20 +898,20 @@ export default function DesignPage(): JSX.Element {
           so each column sizes to its own content - the left rail and the
           fixed-size preview box are rarely the same height, and forcing
           them equal would either stretch the rail's border oddly or
-          crop the preview. Reuses the same min-[1800px] breakpoint the
+          crop the preview. Reuses the same min-[1200px] breakpoint the
           rest of this page already keys off (see that breakpoint's own
           comment above) rather than a new threshold - below it, the rail
           renders first, preview second, stacked, exactly the "collapses
           back to its current below-preview position" fallback asked
           for. */}
-      <div className="flex flex-col gap-6 min-[1800px]:flex-row min-[1800px]:items-start">
+      <div className="flex flex-col gap-6 min-[1200px]:flex-row min-[1200px]:items-start">
         {/* LEFT RAIL - nav list + whichever section is selected, expanded
             inline directly below it. Replaces v1's wide horizontal-space
             tabs pane; single column now (~34% of a much narrower row),
             so every section's own controls below render one per row, not
             the multi-column grids v1 used - those don't fit a rail this
             narrow. */}
-        <div className="w-full flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-panel min-[1800px]:w-[34%]">
+        <div className="w-full flex-shrink-0 overflow-hidden rounded-2xl border border-border bg-panel min-[1200px]:w-[34%]">
           <nav className="flex flex-col gap-1 border-b border-border p-3">
             {TABS.map((tab) => (
               <button
@@ -1240,7 +1252,7 @@ export default function DesignPage(): JSX.Element {
             below the breakpoint (viewport-width-driven, may be narrower
             than the preview's own natural size), flex-start above it
             (this column has real room, no need to center within it). */}
-        <div className="flex min-w-0 flex-1 justify-center min-[1800px]:justify-start">
+        <div className="flex min-w-0 flex-1 justify-center min-[1200px]:justify-start">
           {/* Rendered at the real 1920x1080 reference size (matching
               DashboardPage.tsx's own layout, or CafeTemplate.tsx's own
               layout, exactly), then scaled down as one unit via
@@ -1249,8 +1261,20 @@ export default function DesignPage(): JSX.Element {
               clipped. Which inner layout renders is the only thing the
               toggle changes - the outer scaled wrapper, WeatherProvider,
               and previewStyle CSS variables are shared by both. */}
+          {/* flex-shrink-0: without this, this flex item's own default
+              shrink behaviour let the browser render it NARROWER than
+              its own explicit width style under space pressure near the
+              breakpoint's minimum trigger width - confirmed directly via
+              measurement (581-588px rendered vs the 640px specified at
+              1200-1210px). That's silent content clipping, not a
+              harmless resize: the inner canvas below is scaled by
+              PREVIEW_SCALE, a fixed JS constant computed from this exact
+              width, with no knowledge that flexbox shrank its own
+              container - the scaled content stays full width while the
+              clipping box around it shrinks, cropping the preview's
+              right edge with no visual indication anything was cut off. */}
           <div
-            className="overflow-hidden rounded-2xl border border-border"
+            className="flex-shrink-0 overflow-hidden rounded-2xl border border-border"
             style={{ width: PREVIEW_DISPLAY_WIDTH, height: PREVIEW_DISPLAY_HEIGHT, ...previewStyle }}
           >
             <div
