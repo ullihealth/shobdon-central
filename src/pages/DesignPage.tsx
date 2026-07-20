@@ -22,6 +22,7 @@ import {
   BRIGHT_BLUE_THEME_ID,
   DESIGN_TOKEN_KEYS,
   BASE_COLOUR_OPTIONS,
+  deriveBackgroundTokensFromAnchor,
   isValidDesignTokens,
   loadDesignTemplates,
   saveDesignTemplates,
@@ -629,6 +630,39 @@ export default function DesignPage(): JSX.Element {
     setSelectedId(template.id)
   }
 
+  // Chip click now does three things, not just filtering: toggles the
+  // filter itself (unchanged), then updates the live preview immediately
+  // - either by auto-selecting the first matching template (same
+  // instant-preview path a direct template-row click already uses), or,
+  // when nothing is tagged with that colour yet (true for most of the 13
+  // chips today), generating an on-the-fly preview from that chip's own
+  // anchor colour. The synthetic case deliberately does NOT touch
+  // selectedId (nothing was actually selected) or activeGradientMode
+  // (respects whatever Solid/Gradient the user currently has toggled,
+  // per instruction, rather than forcing a value) - only the derived
+  // background tokens are merged onto whatever's already active, since
+  // the anchor list only defines the 10 Backgrounds-tab tokens, not a
+  // complete theme. Clicking the already-active chip again clears the
+  // filter and leaves the preview exactly as it was - only a genuine
+  // colour change (a different chip) updates the preview, matching
+  // "clicking a chip updates the preview," not "clearing a filter
+  // randomly changes what's on screen."
+  function handleSelectBaseColourChip(colourId: string) {
+    const next = baseColourFilter === colourId ? null : colourId
+    setBaseColourFilter(next)
+    if (!next) return
+
+    const matches = allTemplates.filter((template) => template.baseColour === next)
+    if (matches.length > 0) {
+      handleSelectTemplate(matches[0])
+      return
+    }
+
+    const derived = deriveBackgroundTokensFromAnchor(next)
+    if (!derived) return
+    setActiveTokens((prev) => ({ ...prev, ...derived }))
+  }
+
   function persistTemplates(next: DesignTemplate[]) {
     setTemplates(next)
     saveDesignTemplates(next)
@@ -868,7 +902,7 @@ export default function DesignPage(): JSX.Element {
                 </button>
                 <p className="pr-4 text-sm text-muted-400">
                   Experiment freely - the preview reacts to the colours you pick, and nothing is saved until you
-                  choose to. When you're ready, use "Apply to Live Screen" in the Templates tab to push a theme
+                  choose to. When you're ready, use "Apply" in the Templates tab to push a theme
                   (and, on Café, the current template) to every device that loads the real{' '}
                   {activeScreen === 'dashboard' ? 'dashboard' : 'café screen'}.
                 </p>
@@ -1027,21 +1061,24 @@ export default function DesignPage(): JSX.Element {
                 {/* BASE COLOUR FILTER - ready for the ~30-preset import
                     task landing separately; today only the two built-in
                     templates (Current Live Theme, Bright Blue) are
-                    tagged, so most chips show nothing yet until presets
-                    are actually imported and tagged - that's expected,
-                    not a bug in this filter. Clicking the already-active
-                    chip again clears the filter back to "show every
-                    template" rather than needing a separate Clear
-                    button. flex-wrap: all 13 chips render (was truncated
-                    at the first 4 during mockup iteration - fixed there
-                    before this ever reached real code), wrapping across
-                    as many rows as this narrower rail needs. */}
+                    tagged, so most chips fall back to an on-the-fly
+                    preview generated from that chip's own anchor colour
+                    (deriveBackgroundTokensFromAnchor) instead of
+                    matching a real saved template - see
+                    handleSelectBaseColourChip's own comment. Clicking
+                    the already-active chip again clears the filter back
+                    to "show every template" rather than needing a
+                    separate Clear button. flex-wrap: all 13 chips render
+                    (was truncated at the first 4 during mockup iteration
+                    - fixed there before this ever reached real code),
+                    wrapping across as many rows as this narrower rail
+                    needs. */}
                 <div className="mb-4 flex flex-wrap gap-2">
                   {BASE_COLOUR_OPTIONS.map((option) => (
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => setBaseColourFilter((prev) => (prev === option.id ? null : option.id))}
+                      onClick={() => handleSelectBaseColourChip(option.id)}
                       title={option.label}
                       className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition ${
                         baseColourFilter === option.id ? 'border-accent-sky-500 bg-slate-900' : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
@@ -1167,7 +1204,21 @@ export default function DesignPage(): JSX.Element {
                     (was here in v1, before that too - moved a second
                     time to sit with the actual colour-editing controls it
                     saves) - Export/Import stay here since they're
-                    file-based, not part of the colour-editing flow. */}
+                    file-based, not part of the colour-editing flow.
+                    "Apply" (was "Apply to Live Screen", sitting in the
+                    unrelated Layout footer card below, disconnected from
+                    the colour controls that actually drive what it
+                    pushes) moved here instead - same handler
+                    (handleApplyToLiveScreen), same confirm/15-second-
+                    propagation/Café-template-sync behaviour, unchanged,
+                    just relocated + renamed for this context. The
+                    footer's own layout-slot cards apply their own
+                    selection immediately on click via
+                    handleSelectLayoutTemplate's own POST - confirmed by
+                    reading that handler directly before moving this -
+                    so nothing there depended on this button and nothing
+                    is left needing its own apply action now that it's
+                    gone from that card. */}
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
@@ -1180,8 +1231,22 @@ export default function DesignPage(): JSX.Element {
                     Import JSON
                     <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
                   </label>
+                  <button
+                    type="button"
+                    onClick={handleApplyToLiveScreen}
+                    disabled={applyStatus === 'working'}
+                    className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {applyStatus === 'working' ? 'Applying…' : 'Apply'}
+                  </button>
                 </div>
                 {importError && <p className="mt-4 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
+                {applyStatus === 'success' && (
+                  <p className="mt-4 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
+                )}
+                {applyStatus === 'error' && (
+                  <p className="mt-4 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
+                )}
               </div>
             )}
 
@@ -1316,15 +1381,20 @@ export default function DesignPage(): JSX.Element {
       </div>
 
       {/* FOOTER - "Layout - Dashboard/Café screen" (the Clubhouse/Café
-          template-slot picker + Apply to Live Screen), moved out of the
-          Templates section entirely and into a permanent, full-width
-          block below the two-column body. Always rendered regardless of
-          activeTab - selecting Branding/Backgrounds/Custom/anything else
-          in the left rail never hides this. isActive's highlight still
-          follows the Dashboard/Café toggle in the header row above; both
+          template-slot picker), moved out of the Templates section
+          entirely and into a permanent, full-width block below the
+          two-column body. Always rendered regardless of activeTab -
+          selecting Branding/Backgrounds/Custom/anything else in the
+          left rail never hides this. isActive's highlight still follows
+          the Dashboard/Café toggle in the header row above; both
           "Active on Dashboard"/"Active on Café" badges stay independent
           of it, showing ground truth for BOTH screens regardless of
-          which one is toggled - unchanged from v1. */}
+          which one is toggled - unchanged from v1. Apply itself no
+          longer lives here - it moved into the Templates card, next to
+          Import JSON, since that's where the colours it pushes are
+          actually picked (see that button's own comment) - this card's
+          own layout-slot cards already apply their own selection
+          instantly on click regardless, so nothing here depended on it. */}
       <div className="mt-6 rounded-2xl border border-border bg-panel p-6">
         <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
           Layout - {activeScreen === 'dashboard' ? 'Dashboard' : 'Café'} screen
@@ -1370,29 +1440,6 @@ export default function DesignPage(): JSX.Element {
               </button>
             )
           })}
-        </div>
-
-        <div className="border-t border-accent-sky-500/40 pt-6">
-          <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Apply to Live Screen</div>
-          <p className="mb-4 text-sm text-muted-400">
-            Pushes the colours currently shown in the preview to every device that loads the real dashboard - PC2,
-            the clubhouse display, home browsers - within about 15 seconds. When toggled to Café, also switches the
-            café screen to the template currently active on your dashboard, if it differs.
-          </p>
-          <button
-            type="button"
-            onClick={handleApplyToLiveScreen}
-            disabled={applyStatus === 'working'}
-            className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {applyStatus === 'working' ? 'Applying…' : 'Apply to Live Screen'}
-          </button>
-          {applyStatus === 'success' && (
-            <p className="mt-3 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
-          )}
-          {applyStatus === 'error' && (
-            <p className="mt-3 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
-          )}
         </div>
       </div>
     </div>

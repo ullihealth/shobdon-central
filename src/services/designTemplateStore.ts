@@ -79,6 +79,84 @@ export const BASE_COLOUR_OPTIONS: BaseColourOption[] = [
   { id: 'signature', label: 'Signature', swatch: 'linear-gradient(135deg, #d4af37, #a855f7)' },
 ]
 
+// Per-chip anchor colour(s) for the on-the-fly preview DesignPage.tsx
+// generates when a base-colour chip has zero tagged templates (true for
+// most of these 13 today - only Current Live Theme and Bright Blue are
+// tagged so far). `accent` is only set for the chips the anchor list was
+// explicitly given two colours for (Black & Grey, and the Mixed/
+// Signature placeholder pairing - both are stand-ins until the real
+// curated presets from the colour-library task land, not final
+// designs); every other chip derives its border/accent tone
+// mechanically from its own single primary colour instead.
+interface BaseColourAnchor {
+  primary: string
+  accent?: string
+}
+
+const BASE_COLOUR_ANCHORS: Record<string, BaseColourAnchor> = {
+  blue: { primary: '#2563EB' },
+  green: { primary: '#16A34A' },
+  red: { primary: '#DC2626' },
+  brown: { primary: '#92400E' },
+  yellow: { primary: '#EAB308' },
+  gold: { primary: '#D4AF37' },
+  silver: { primary: '#94A3B8' },
+  orange: { primary: '#EA580C' },
+  purple: { primary: '#7C3AED' },
+  grey: { primary: '#6B7280' },
+  'black-grey': { primary: '#111827', accent: '#374151' },
+  mixed: { primary: '#D4AF37', accent: '#78350F' },
+  signature: { primary: '#D4AF37', accent: '#78350F' },
+}
+
+function hexToRgbTuple(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '')
+  return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)]
+}
+
+function rgbTupleToHex([r, g, b]: [number, number, number]): string {
+  const byte = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+  return `#${byte(r)}${byte(g)}${byte(b)}`
+}
+
+function scaleRgb([r, g, b]: [number, number, number], factor: number): [number, number, number] {
+  return [r * factor, g * factor, b * factor]
+}
+
+// Derives the 10 Backgrounds-tab tokens from one anchor colour (plus its
+// own optional distinct accent for the border, see BaseColourAnchor's
+// own comment). Mechanically applies the same "darker variants of the
+// exact same hue, channels scaled down, not desaturated" principle
+// BRIGHT_BLUE_THEME's own tokens above were hand-tuned around (see that
+// theme's own comment) - not a literal port of its exact numbers, which
+// were individually eyeballed for one specific colour, but the same
+// reusable technique applied uniformly so all 13 base-colour chips get a
+// directionally-consistent, good-enough live preview without needing 13
+// more hand-tuned themes. Returns null for an unrecognised id rather
+// than throwing - callers treat that as "nothing to preview."
+export function deriveBackgroundTokensFromAnchor(colourId: string): Partial<DesignTokens> | null {
+  const anchor = BASE_COLOUR_ANCHORS[colourId]
+  if (!anchor) return null
+
+  const rgb = hexToRgbTuple(anchor.primary)
+  const [r, g, b] = rgb
+  const [panelR, panelG, panelB] = scaleRgb(rgb, 0.4)
+  const [cardR, cardG, cardB] = scaleRgb(rgb, 0.6)
+
+  return {
+    '--color-page-from': rgbTupleToHex(scaleRgb(rgb, 0.5)),
+    '--color-page-via': anchor.primary,
+    '--color-page-to': rgbTupleToHex(scaleRgb(rgb, 0.3)),
+    '--color-header-from': `rgba(${r}, ${g}, ${b}, 0.6)`,
+    '--color-header-via': `rgba(${Math.round(r * 0.5)}, ${Math.round(g * 0.5)}, ${Math.round(b * 0.5)}, 0.5)`,
+    '--color-header-to': `rgba(${r}, ${g}, ${b}, 0.5)`,
+    '--color-panel-bg': `rgba(${Math.round(panelR)}, ${Math.round(panelG)}, ${Math.round(panelB)}, 0.85)`,
+    '--color-card-bg': `rgba(${Math.round(cardR)}, ${Math.round(cardG)}, ${Math.round(cardB)}, 0.9)`,
+    '--color-border': anchor.accent ?? rgbTupleToHex(scaleRgb(rgb, 0.75)),
+    '--color-compass-disc-bg': rgbTupleToHex(scaleRgb(rgb, 0.25)),
+  }
+}
+
 const STORAGE_KEY = 'shobdon-central.design-templates.v1'
 
 export const CURRENT_LIVE_THEME_ID = 'current-live-theme'
