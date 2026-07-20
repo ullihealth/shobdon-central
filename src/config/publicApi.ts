@@ -48,6 +48,19 @@ export const WEATHER_DEFAULT_URL = `/api/public/weather-default`
 // resolution as PUBLIC_CONFIG_URL above.
 export const INGESTED_WEATHER_LATEST_URL = `/api/public/weather-latest`
 
+// Served by functions/api/public/weather-metoffice.ts - a server-side
+// proxy to the Met Office Weather DataHub Site Specific Forecast API.
+// Deliberately proxied rather than called directly from the browser like
+// internetProviders/openMeteo.ts does: DataHub requires a secret API key
+// (env.MET_OFFICE_DATAHUB_KEY), and Open-Meteo's direct-fetch pattern
+// only works because that API is free/keyless - a client-side fetch here
+// would put the key in every viewer's network tab. Consumed by the
+// ATC-primary/internet-fallback auto-switch in WeatherContext.tsx, not
+// registered as a selectable 'internet' provider option (see that
+// file's own comment on why this is a dedicated fallback, not a fourth
+// radio choice).
+export const MET_OFFICE_WEATHER_URL = `/api/public/weather-metoffice`
+
 // Authenticated read/write for the management pages - functions/api/
 // tenant/config.ts. Requires a valid BetterAuth session cookie, which a
 // same-origin fetch() sends automatically; no extra credential handling

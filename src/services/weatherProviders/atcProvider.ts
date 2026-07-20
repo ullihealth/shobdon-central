@@ -13,10 +13,20 @@ import { LATEST_READING_URL } from '../../config/captureEndpoint'
  * the station.
  */
 
-// Capture cadence is 60s (capture-weathercentral.ps1's $IntervalSeconds).
-// Allow a few missed cycles of grace before treating a reading as too old
-// to trust, rather than failing on every single delayed capture.
-const STALE_THRESHOLD_MS = 3 * 60 * 1000
+// Capture cadence is 60s (capture-weathercentral.ps1's $IntervalSeconds,
+// confirmed directly against that script - not assumed). This throw is
+// what WeatherContext.tsx's ATC-primary/internet-fallback auto-switch
+// treats as "ATC is stale, switch to the Met Office fallback" - tightened
+// from a prior 3x-cadence (180s) threshold to 2x-cadence (120s), the
+// smallest value that still tolerates one full missed capture cycle plus
+// ordinary network/poll-timing jitter without flapping on every isolated
+// delayed capture. A flat 60s (1x cadence, the auto-switch's original
+// ~1-minute target) was rejected: the client's own poll and PC2's capture
+// are not synchronized, so on a completely healthy feed the age of the
+// "latest" reading at any given poll moment is routinely already 0-60s
+// old before any delay at all - a 60s threshold would false-positive into
+// fallback during entirely normal operation, not just genuine outages.
+const STALE_THRESHOLD_MS = 2 * 60 * 1000
 
 interface LatestReadingResponse {
   receivedAt: string

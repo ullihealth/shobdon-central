@@ -46,6 +46,22 @@ export default function AtcWeatherConfigSection({ config, onChange }: AtcWeather
           <span className="text-slate-400">ms</span>
         </div>
       </ConfigField>
+
+      <ConfigField label="Auto-reconnect to ATC">
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={config.autoReconnectEnabled}
+            onChange={(event) => onChange({ ...config, autoReconnectEnabled: event.target.checked })}
+            className="h-5 w-5 accent-sky-500"
+          />
+          <span className="text-sm text-slate-300">
+            {config.autoReconnectEnabled
+              ? 'On - switches back to Live ATC automatically once it recovers'
+              : 'Off - stays on the internet fallback until manually reconnected'}
+          </span>
+        </label>
+      </ConfigField>
     </div>
   )
 }

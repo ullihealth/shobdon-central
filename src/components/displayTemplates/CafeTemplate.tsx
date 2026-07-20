@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import MediaPanel from '../media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerStyle } from '../CafeTicker'
 import VenueCornerBadge from '../VenueCornerBadge'
+import WeatherStatusIndicator from '../WeatherStatusIndicator'
 import { currentMedia } from '../../config/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import { useWeather } from '../../context/WeatherContext'
@@ -166,6 +167,14 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
         <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
+          </div>
+          {/* Café previously had NO weather-source badge at all (unlike
+              ClassicTemplate/Clubhouse1Template/Clubhouse2Template, which
+              already render WeatherStatusIndicator) - added here so the
+              Live ATC / Fallback indicator is visible on every display
+              template, not just three of the four. */}
+          <div className="absolute right-0 top-0 z-10 rounded-xl border border-border bg-panel/90 px-3 py-2 shadow-lg shadow-slate-950/30">
+            <WeatherStatusIndicator />
           </div>
 
           {layoutMode === 'split' ? (

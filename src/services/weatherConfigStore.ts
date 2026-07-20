@@ -15,6 +15,7 @@ export const DEFAULT_WEATHER_CONFIG: WeatherConfig = {
     stationUrl: WEATHER_STATION_URL,
     refreshIntervalSeconds: WEATHER_POLL_INTERVAL_MS / 1000,
     connectionTimeoutMs: 5000,
+    autoReconnectEnabled: true,
   },
   internet: {
     provider: 'open-meteo',
