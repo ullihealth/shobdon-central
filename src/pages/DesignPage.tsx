@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
+import ColorField from '../components/ColorField'
 import DisplayUrlList from '../components/config/DisplayUrlList'
 import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Template'
 import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
@@ -444,6 +445,13 @@ export default function DesignPage(): JSX.Element {
   const [brandMain, setBrandMain] = useState<BrandDisplaySettings>(DEFAULT_BRAND_DISPLAY_SETTINGS)
   const [brandCafe, setBrandCafe] = useState<BrandDisplaySettings>(DEFAULT_BRAND_DISPLAY_SETTINGS)
   const [brandSaveStatus, setBrandSaveStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
+  // Migration 0040 - up to 5 reusable brand colours, shared/global
+  // across every ColorField instance on this page (Text, Accent &
+  // Status, Backgrounds/Custom all read/write this SAME array, not
+  // three separate copies) - see ColorField.tsx's own comment for the
+  // full reasoning on why this lives here rather than per-picker state.
+  const [savedSwatches, setSavedSwatches] = useState<string[]>([])
+  const [swatchError, setSwatchError] = useState(false)
   useEffect(() => {
     let cancelled = false
     fetch(TENANT_CONFIG_URL)
@@ -454,6 +462,7 @@ export default function DesignPage(): JSX.Element {
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.brandDisplay?.main) setBrandMain(data.brandDisplay.main)
         if (data?.brandDisplay?.cafe) setBrandCafe(data.brandDisplay.cafe)
+        if (Array.isArray(data?.savedSwatches)) setSavedSwatches(data.savedSwatches)
       })
       .catch(() => {})
     return () => {
@@ -472,6 +481,42 @@ export default function DesignPage(): JSX.Element {
     })
       .then((response) => setBrandSaveStatus(response.ok ? 'success' : 'error'))
       .catch(() => setBrandSaveStatus('error'))
+  }
+
+  // Immediate PUT, no confirm, no applyStatus/Apply-to-live-screen gate -
+  // saving/clearing a swatch never changes anything rendered anywhere
+  // (it's just a reusable colour sitting in a palette), unlike an actual
+  // token edit. Optimistic local update first (every ColorField instance
+  // re-renders from the same savedSwatches state immediately), reverted
+  // if the PUT fails.
+  function persistSavedSwatches(next: string[]) {
+    const previous = savedSwatches
+    setSavedSwatches(next)
+    setSwatchError(false)
+    fetch(TENANT_CONFIG_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ savedSwatches: next }),
+    })
+      .then((response) => {
+        if (!response.ok) {
+          setSavedSwatches(previous)
+          setSwatchError(true)
+        }
+      })
+      .catch(() => {
+        setSavedSwatches(previous)
+        setSwatchError(true)
+      })
+  }
+
+  function handleCaptureSwatch(hex: string) {
+    if (savedSwatches.includes(hex) || savedSwatches.length >= 5) return
+    persistSavedSwatches([...savedSwatches, hex])
+  }
+
+  function handleClearSwatch(hex: string) {
+    persistSavedSwatches(savedSwatches.filter((s) => s !== hex))
   }
 
   // Which screen the preview panel shows, and which screen the grid-tile-
@@ -1192,20 +1237,19 @@ export default function DesignPage(): JSX.Element {
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{activeTokenGroup.title}</div>
                 <div className="flex flex-col gap-1">
                   {activeTokenGroup.keys.map((key) => (
-                    <label
+                    <ColorField
                       key={key}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-1 py-1.5 hover:border-border"
-                    >
-                      <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
-                      <input
-                        type="color"
-                        value={rgbaToHex(activeTokens[key])}
-                        onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                        className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-                      />
-                    </label>
+                      label={labelFor(key)}
+                      value={activeTokens[key]}
+                      onChange={(hex) => handleTokenChange(key, hexToRgbaPreservingAlpha(hex, activeTokens[key]))}
+                      toHex={rgbaToHex}
+                      savedSwatches={savedSwatches}
+                      onCaptureSwatch={() => handleCaptureSwatch(rgbaToHex(activeTokens[key]))}
+                      onClearSwatch={handleClearSwatch}
+                    />
                   ))}
                 </div>
+                {swatchError && <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save swatch - please try again.</p>}
               </div>
             )}
 
@@ -1409,20 +1453,19 @@ export default function DesignPage(): JSX.Element {
                         template both use - not a separate copy. */}
                     <div className="flex flex-col gap-1">
                       {BACKGROUND_TOKEN_KEYS.map((key) => (
-                        <label
+                        <ColorField
                           key={key}
-                          className="flex items-center justify-between gap-3 rounded-lg border border-transparent px-1 py-1.5 hover:border-border"
-                        >
-                          <span className="text-xs capitalize text-muted-400">{labelFor(key)}</span>
-                          <input
-                            type="color"
-                            value={rgbaToHex(activeTokens[key])}
-                            onChange={(event) => handleTokenChange(key, hexToRgbaPreservingAlpha(event.target.value, activeTokens[key]))}
-                            className="h-8 w-8 shrink-0 cursor-pointer rounded border border-border bg-transparent"
-                          />
-                        </label>
+                          label={labelFor(key)}
+                          value={activeTokens[key]}
+                          onChange={(hex) => handleTokenChange(key, hexToRgbaPreservingAlpha(hex, activeTokens[key]))}
+                          toHex={rgbaToHex}
+                          savedSwatches={savedSwatches}
+                          onCaptureSwatch={() => handleCaptureSwatch(rgbaToHex(activeTokens[key]))}
+                          onClearSwatch={handleClearSwatch}
+                        />
                       ))}
                     </div>
+                    {swatchError && <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save swatch - please try again.</p>}
 
                     <div className="mt-5 border-t border-border pt-4">
                       <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-400">Save as new template</label>

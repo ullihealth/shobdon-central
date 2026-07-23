@@ -97,6 +97,27 @@ function isValidBrandDisplaySettings(value: unknown): value is BrandDisplaySetti
   return typeof v.showLogo === "boolean" && typeof v.showName === "boolean" && typeof v.nameFontSize === "string" && VALID_FONT_SIZES.has(v.nameFontSize);
 }
 
+// Migration 0040 - up to 5 reusable brand colours, admin-only (never
+// exposed via publicConfig.ts - see that migration's own comment for
+// the full reasoning). Parse failure/missing column falls back to an
+// empty palette rather than breaking the whole GET response.
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const MAX_SAVED_SWATCHES = 5;
+
+function parseSavedSwatches(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string" && HEX_COLOR_PATTERN.test(v)).slice(0, MAX_SAVED_SWATCHES) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isValidSavedSwatches(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= MAX_SAVED_SWATCHES && value.every((v) => typeof v === "string" && HEX_COLOR_PATTERN.test(v));
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
@@ -107,7 +128,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
       .all<RunwayGroupRow>(),
-    env.DB.prepare("SELECT tokensJson FROM club_theme WHERE organizationId = ?").bind(organizationId).first<{ tokensJson: string }>(),
+    env.DB
+      .prepare("SELECT tokensJson, saved_swatches_json AS savedSwatchesJson FROM club_theme WHERE organizationId = ?")
+      .bind(organizationId)
+      .first<{ tokensJson: string; savedSwatchesJson: string | null }>(),
     // Same airfieldName field as the public config response - DesignPage.tsx's
     // preview renders the real Header component, which now needs this to
     // avoid falling back to its generic placeholder. logo_r2_key resolved
@@ -136,6 +160,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       strips: JSON.parse(row.stripsJson),
     })),
     theme: themeRow ? JSON.parse(themeRow.tokensJson) : null,
+    savedSwatches: parseSavedSwatches(themeRow?.savedSwatchesJson),
     airfieldName: tenantRow?.name ?? null,
     logoUrl: tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null,
     hasPhysicalAtc: !!tenantRow?.hasPhysicalAtc,
@@ -159,6 +184,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     cameraSlots?: CameraSlotInput[];
     airfieldName?: string;
     brandDisplay?: { main?: unknown; cafe?: unknown };
+    savedSwatches?: unknown;
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -183,6 +209,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare("UPDATE tenants SET brand_display_json = ?, updated_at = ? WHERE organization_id = ?")
       .bind(JSON.stringify({ main: body.brandDisplay.main, cafe: body.brandDisplay.cafe }), now, organizationId)
+      .run();
+  }
+
+  // Plain UPDATE, not an upsert - club_theme always has a row for a real
+  // tenant by this point (every onboarding path clones/seeds one, see
+  // migration 0040's own comment), same assumption brandDisplay's write
+  // above already relies on for tenants. Deliberately independent of the
+  // theme write below - saving a swatch must never require also having
+  // an in-progress theme edit pending.
+  if (isValidSavedSwatches(body.savedSwatches)) {
+    await env.DB
+      .prepare("UPDATE club_theme SET saved_swatches_json = ?, updatedAt = ? WHERE organizationId = ?")
+      .bind(JSON.stringify(body.savedSwatches), now, organizationId)
       .run();
   }
 

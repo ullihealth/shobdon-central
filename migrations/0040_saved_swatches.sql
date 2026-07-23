@@ -1,0 +1,23 @@
+-- Up to 5 reusable brand colours a tenant can save once from any of
+-- Screens Design's colour pickers and re-apply to any other picker,
+-- instead of re-entering RGB values by hand each time. Same table as
+-- tokensJson (not a new table) - club_theme is already the tenant-wide,
+-- single-row-per-organization home for design/colour settings, and this
+-- is small enough (a handful of hex strings) not to warrant a separate
+-- table. Kept as its OWN column rather than folded into tokensJson:
+-- tokensJson is a fixed-shape object with specific named CSS-variable
+-- keys, whereas this is a free list with no fixed keys - mixing the two
+-- shapes in one JSON blob would need extra logic everywhere tokensJson
+-- is read to distinguish "a real token" from "a saved swatch slot".
+--
+-- Admin-only, by design: this column is read/written only via the
+-- authenticated functions/api/tenant/config.ts GET/PUT (Screens
+-- Design's own data source) - deliberately never added to
+-- publicConfig.ts's response. The live dashboard/café screen has no use
+-- for a tenant's saved-but-not-yet-applied swatch palette; only the
+-- admin editing colours needs to see it.
+--
+-- Default '[]' (empty) - every existing tenant starts with no saved
+-- swatches, exactly today's behaviour (the feature doesn't exist yet
+-- for them), not a new default that would need explaining.
+ALTER TABLE club_theme ADD COLUMN saved_swatches_json TEXT NOT NULL DEFAULT '[]';
