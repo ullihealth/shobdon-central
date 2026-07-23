@@ -6,6 +6,7 @@ import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 
 // Thin dispatcher over the tenant's selected dashboard template - the
 // actual layout JSX lives entirely in Clubhouse1Template.tsx (an exact,
@@ -16,6 +17,10 @@ import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 // same shape TenantDisplayPage.tsx already uses to dispatch between
 // ClassicTemplate/CafeTemplate for /d/:slug.
 export default function DashboardPage(): JSX.Element {
+  // display_visits heartbeat (migration 0041) - slug 'main' since this is
+  // the '/' dashboard, matching the tenant_displays 'main' row this same
+  // page's own config fetch already resolves against.
+  useDisplayHeartbeat('main')
   // Active theme, synced across every device via the tenant-scoped D1
   // config (was the Worker's global theme KV key - see
   // functions/api/public/[tenant]/config.ts). Absent a fetched override,

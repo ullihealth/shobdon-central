@@ -7,6 +7,7 @@ import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } f
 import TenantUnavailable from '../components/TenantUnavailable'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 
 interface DisplayMeta {
   templateId: string
@@ -23,6 +24,11 @@ interface DisplayMeta {
 export default function TenantDisplayPage(): JSX.Element {
   const { displaySlug } = useParams<{ displaySlug: string }>()
   const slug = displaySlug || 'main'
+
+  // display_visits heartbeat (migration 0041) - same slug this page
+  // already resolves its own display metadata against, so a visit here
+  // logs under the actual named display, not lumped under 'main'.
+  useDisplayHeartbeat(slug)
 
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
   const [airfieldName, setAirfieldName] = useState<string | null>(null)

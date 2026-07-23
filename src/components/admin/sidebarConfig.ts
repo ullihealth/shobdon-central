@@ -56,13 +56,31 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
     ],
   },
+  // Cross-tenant, requireDeveloper-only pages - previously scattered
+  // (Developer Tools was the only one with any nav entry at all;
+  // /platform/tenants and /platform/onboarding-content existed in code,
+  // properly gated server-side, but had zero sidebar entry anywhere, so
+  // reaching them meant already knowing the exact URL). Grouped here
+  // instead of left as standalone items: AdminSidebar.tsx's own
+  // visibleGroups filter already drops a group entirely once every one
+  // of its items fails isItemVisible, so this whole group correctly
+  // disappears for a non-developer user with no code beyond this list -
+  // same per-item requireDeveloper flag Developer Tools already used,
+  // not a new gating mechanism.
+  {
+    id: 'platform',
+    label: 'Platform Admin',
+    items: [
+      { to: '/platform/tenants', label: 'Platform Tenants', requireDeveloper: true },
+      { to: '/platform/onboarding-content', label: 'Onboarding Content', requireDeveloper: true },
+      { to: '/platform/visits', label: 'Visit Log', requireDeveloper: true },
+      { to: '/developertools', label: 'Developer Tools', requireDeveloper: true },
+    ],
+  },
 ]
 
 // Rendered below a divider, outside any group - isDeveloper is orthogonal
 // to the role/group system, so it doesn't belong inside one. Help has
 // neither allowedRoles nor requireDeveloper - visible to every logged-in
 // role (isItemVisible's default), matching /help's own bare <RequireAuth>.
-export const STANDALONE_ITEMS: SidebarItem[] = [
-  { to: '/help', label: 'Help' },
-  { to: '/developertools', label: 'Developer Tools', requireDeveloper: true },
-]
+export const STANDALONE_ITEMS: SidebarItem[] = [{ to: '/help', label: 'Help' }]

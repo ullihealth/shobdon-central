@@ -16,6 +16,7 @@ import OnboardInvitePage from './pages/OnboardInvitePage'
 import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
+import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
@@ -87,6 +88,17 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformOnboardingContentPage />
+            </RequireAuth>
+          }
+        />
+        {/* Same standalone-outside-AdminLayout treatment as the two
+            routes above - a reverse-chronological log viewer over
+            display_visits (migration 0041), gated the same way. */}
+        <Route
+          path="/platform/visits"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformVisitsPage />
             </RequireAuth>
           }
         />
