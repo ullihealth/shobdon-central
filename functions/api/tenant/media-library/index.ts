@@ -1,4 +1,4 @@
-// Owner/admin/media-role: list the tenant's uploaded media library files plus
+// Owner/admin/media/cafe-role: list the tenant's uploaded media library files plus
 // running usage vs. this tenant's own storage_quota_bytes (migration
 // 0028, defaults to 100MB - see mediaQuota.ts). Upload/delete are
 // separate routes (upload.ts, [id].ts) - this one is read-only.
@@ -30,7 +30,7 @@ interface MediaLibraryRow {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

@@ -1,4 +1,4 @@
-// Owner/admin/media-role: PUT /api/tenant/media-library/:id/replace
+// Owner/admin/media/cafe-role: PUT /api/tenant/media-library/:id/replace
 // Body: raw file bytes (same convention as upload.ts).
 //
 // Overwrites an EXISTING file's content IN PLACE - same id, same
@@ -33,7 +33,7 @@ interface Env {
 }
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

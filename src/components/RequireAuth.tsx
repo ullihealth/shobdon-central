@@ -88,7 +88,15 @@ export default function RequireAuth({ children, requireRole, requireDeveloper, s
     // call - only shown when we actually know a real, recognized role
     // to send them to, so this can't itself become a second dead end.
     const ownLandingPage =
-      meCheck.role === 'atc' ? '/atc-control' : meCheck.role === 'media' ? '/media-manager' : meCheck.role === 'owner' || meCheck.role === 'admin' ? '/config' : null
+      meCheck.role === 'atc'
+        ? '/atc-control'
+        : meCheck.role === 'media'
+          ? '/media-manager'
+          : meCheck.role === 'cafe'
+            ? '/cafe-media'
+            : meCheck.role === 'owner' || meCheck.role === 'admin'
+              ? '/config'
+              : null
 
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">

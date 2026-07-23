@@ -29,7 +29,7 @@ interface MemberRow {
   name: string | null;
 }
 
-const ADDABLE_ROLES = ["admin", "atc", "media"];
+const ADDABLE_ROLES = ["admin", "atc", "media", "cafe"];
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);

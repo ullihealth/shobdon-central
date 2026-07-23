@@ -164,26 +164,29 @@ export default function App(): JSX.Element {
               </RequireAuth>
             }
           />
-          {/* Same role gate as /media-manager (owner/admin/media) - this
-              is where that page's embedded library UI moved to (folders,
-              upload, move-to-folder, Edit Slide, delete, plus the new
-              usableOn/orientation tagging), shared by both Dashboard
-              Manager and Cafe Media's Source dropdowns. */}
+          {/* Same role gate as /media-manager (owner/admin/media), plus
+              'cafe' - this is where that page's embedded library UI moved
+              to (folders, upload, move-to-folder, Edit Slide, delete,
+              plus the new usableOn/orientation tagging), shared by both
+              Dashboard Manager and Cafe Media's Source dropdowns. cafe
+              role is scoped to exactly this + /cafe-media, nothing else -
+              not even Dashboard Manager itself. */}
           <Route
             path="/media-library"
             element={
-              <RequireAuth requireRole={['owner', 'admin', 'media']}>
+              <RequireAuth requireRole={['owner', 'admin', 'media', 'cafe']}>
                 <MediaLibraryPage />
               </RequireAuth>
             }
           />
-          {/* Owner+admin only, same gate as /design - Café Template's
+          {/* Owner+admin, same gate as /design - Café Template's
               layout/ad-label/ticker settings, plus the future ad-slot
-              management surface (not yet built). */}
+              management surface (not yet built) - plus 'cafe', the new
+              role scoped to exactly this + /media-library. */}
           <Route
             path="/cafe-media"
             element={
-              <RequireAuth requireRole={['owner', 'admin']}>
+              <RequireAuth requireRole={['owner', 'admin', 'cafe']}>
                 <CafeMediaPage />
               </RequireAuth>
             }

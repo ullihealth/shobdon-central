@@ -1,13 +1,17 @@
-// Owner-only: GET/PUT /api/tenant/cafe-settings - the Café template's
-// own settings row (migration 0033, extended by 0035): split/full
-// layout mode, the advertisement label toggle, the 10-slot footer
-// ticker configuration (each slot independently enabled, migration
-// 0035's Part B), and the ticker's own active style (background/font/
-// height/scroll-speed, migration 0035's Part A). requireOwner, matching
-// /design and /config's exact gate - this is tenant-wide display
-// configuration, same category as those pages, not an ATC/media-role
-// concern.
-import { requireOwner, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+// Owner/admin/cafe: GET/PUT /api/tenant/cafe-settings - the Café
+// template's own settings row (migration 0033, extended by 0035):
+// split/full layout mode, the advertisement label toggle, the 10-slot
+// footer ticker configuration (each slot independently enabled,
+// migration 0035's Part B), and the ticker's own active style
+// (background/font/height/scroll-speed, migration 0035's Part A).
+// Was requireOwner (matching /design and /config's exact gate) until
+// the cafe role was added - CafeMediaPage.tsx's own layout/ad-label/
+// ticker editor calls this endpoint directly, so a cafe-role user
+// reaching that page needs this too, or half the page 403s despite
+// loading. Switched to requireRoles so 'cafe' can be added alongside
+// owner/admin without granting it the same generic requireOwner used
+// by unrelated owner-only pages elsewhere in the app.
+import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -134,7 +138,7 @@ const SELECT_COLUMNS =
   "layoutMode, adLabelEnabled, tickerEnabled, tickerSlotsJson, tickerBackgroundColor, tickerBackgroundOpacity, tickerHeightPx, tickerFontFamily, tickerFontSizePx, tickerFontColor, tickerScrollSpeedPxPerSec, tickerGapPx";
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireOwner(request, env);
+  const result = await requireRoles(request, env, ["owner", "admin", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -149,7 +153,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireOwner(request, env);
+  const result = await requireRoles(request, env, ["owner", "admin", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

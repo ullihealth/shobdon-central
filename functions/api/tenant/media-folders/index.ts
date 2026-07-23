@@ -1,4 +1,4 @@
-// Owner/admin/media-role: GET/POST /api/tenant/media-folders
+// Owner/admin/media/cafe-role: GET/POST /api/tenant/media-folders
 //
 // A flat, user-defined list of folders per tenant - no nesting. The
 // "Uncategorized" bucket shown in the UI is virtual (media_library rows
@@ -25,7 +25,7 @@ interface FolderRow {
 const MAX_NAME_LENGTH = 60;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -47,7 +47,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

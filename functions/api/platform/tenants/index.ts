@@ -13,6 +13,13 @@
 // + user.developer, with zero dependency on org state - see its own
 // comment in tenantAuth.ts for the disposable-account test that caught
 // this distinction mattering in practice.
+//
+// Migration 0044 - archived tenants (deleted_at IS NOT NULL) are
+// excluded from this list by default, same as they're excluded from
+// public resolution (piggybacking on the existing active=1 gate - see
+// that migration's own comment). No "show archived" toggle yet - out of
+// scope for this round; reaching an archived tenant again today means
+// direct D1 access, same as before this feature existed.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -96,7 +103,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                 storage_quota_bytes AS storageQuotaBytes,
                 organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt,
                 subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes
-         FROM tenants ORDER BY created_at`
+         FROM tenants WHERE deleted_at IS NULL ORDER BY created_at`
       )
       .all<TenantRow>(),
     // One grouped query rather than one usage lookup per tenant - avoids

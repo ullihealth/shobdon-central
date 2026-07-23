@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MemberRole, TenantMember } from '../types/member'
 
-const ADDABLE_ROLES: MemberRole[] = ['admin', 'atc', 'media']
+const ADDABLE_ROLES: MemberRole[] = ['admin', 'atc', 'media', 'cafe']
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -106,9 +106,10 @@ export default function MembersPage(): JSX.Element {
     <div className="mx-auto max-w-2xl px-5 pb-16 pt-10">
       <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Members</h1>
       <p className="mb-8 max-w-2xl text-sm text-muted-400">
-        Add or remove admin, ATC, and media accounts for this tenant. Admin has full owner-level access
+        Add or remove admin, ATC, media, and cafe accounts for this tenant. Admin has full owner-level access
         (including this page) plus Dashboard Manager. ATC lands on ATC Control after login; media lands on
-        Dashboard Manager. Owner accounts aren't managed here.
+        Dashboard Manager; cafe lands on Cafe Media, with access to Media Library too and nothing else. Owner
+        accounts aren't managed here.
       </p>
 
       {revealedPassword && (

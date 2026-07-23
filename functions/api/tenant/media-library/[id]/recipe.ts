@@ -1,4 +1,4 @@
-// Owner/admin/media-role: PUT /api/tenant/media-library/:id/recipe
+// Owner/admin/media/cafe-role: PUT /api/tenant/media-library/:id/recipe
 //
 // Attaches (or replaces) the slide "recipe" JSON on an existing
 // media_library row - narrow, single-purpose endpoint, deliberately
@@ -22,7 +22,7 @@ interface Env {
 }
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

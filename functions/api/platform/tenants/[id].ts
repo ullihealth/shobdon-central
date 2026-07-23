@@ -39,6 +39,7 @@ interface TenantRow {
   storageQuotaBytes: number;
   subscriptionStatus: string;
   subscriptionNotes: string;
+  deletedAt: string | null;
 }
 
 interface PatchBody {
@@ -51,6 +52,15 @@ interface PatchBody {
   storageQuotaBytes?: number;
   subscriptionStatus?: string;
   subscriptionNotes?: string;
+  // Migration 0044 - true archives (see this file's own handling below,
+  // which also forces active false in the same write); false explicitly
+  // un-archives (restores deleted_at to NULL, but deliberately does NOT
+  // also restore active - re-enabling public visibility is a separate,
+  // deliberate decision via the Suspend toggle, not an automatic side
+  // effect of undoing an archive). No UI reaches the false case yet
+  // (there's no "show archived tenants" view in this round) - it exists
+  // so undoing an archive never requires a second endpoint later.
+  archived?: boolean;
 }
 
 // Migration 0043 - keep this list small and meaningful rather than
@@ -81,6 +91,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "storageQuotaBytes",
     "subscriptionStatus",
     "subscriptionNotes",
+    "archived",
   ];
   if (!fields.some((field) => body[field] !== undefined)) {
     return jsonResponse({ error: `Provide at least one of: ${fields.join(", ")}` }, 400);
@@ -102,21 +113,32 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.subscriptionNotes !== undefined && typeof body.subscriptionNotes !== "string") {
     return jsonResponse({ error: "subscriptionNotes must be a string" }, 400);
   }
+  if (body.archived !== undefined && typeof body.archived !== "boolean") {
+    return jsonResponse({ error: "archived must be a boolean" }, 400);
+  }
 
   const current = await env.DB
     .prepare(
       `SELECT name, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal,
               has_physical_atc AS hasPhysicalAtc, storage_quota_bytes AS storageQuotaBytes,
-              subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes
+              subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
+              deleted_at AS deletedAt
        FROM tenants WHERE id = ?`
     )
     .bind(tenantId)
     .first<TenantRow>();
   if (!current) return jsonResponse({ error: "Tenant not found" }, 404);
 
+  const now = new Date().toISOString();
+
   const next = {
     name: body.name?.trim() ?? current.name,
-    active: body.active ?? !!current.active,
+    // archived:true forces active false in the same write, regardless
+    // of any `active` value also present in this body - an archived
+    // tenant is never simultaneously "live", see migration 0044's own
+    // comment. archived:false (un-archive) does NOT touch active - see
+    // PatchBody's own comment on why that stays a separate decision.
+    active: body.archived === true ? false : (body.active ?? !!current.active),
     weatherPublic: body.weatherPublic ?? !!current.weatherPublic,
     opsPublic: body.opsPublic ?? !!current.opsPublic,
     isInternal: body.isInternal ?? !!current.isInternal,
@@ -124,14 +146,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     storageQuotaBytes: body.storageQuotaBytes ?? current.storageQuotaBytes,
     subscriptionStatus: body.subscriptionStatus ?? current.subscriptionStatus,
     subscriptionNotes: body.subscriptionNotes ?? current.subscriptionNotes,
+    deletedAt: body.archived === true ? now : body.archived === false ? null : current.deletedAt,
   };
-
-  const now = new Date().toISOString();
 
   await env.DB
     .prepare(
       `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, has_physical_atc = ?, storage_quota_bytes = ?,
-              subscription_status = ?, subscription_notes = ?, updated_at = ?
+              subscription_status = ?, subscription_notes = ?, deleted_at = ?, updated_at = ?
        WHERE id = ?`
     )
     .bind(
@@ -144,6 +165,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.storageQuotaBytes,
       next.subscriptionStatus,
       next.subscriptionNotes,
+      next.deletedAt,
       now,
       tenantId
     )

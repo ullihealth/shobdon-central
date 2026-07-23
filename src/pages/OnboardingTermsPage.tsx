@@ -52,7 +52,8 @@ export default function OnboardingTermsPage(): JSX.Element {
     const me = await fetch('/api/tenant/me')
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
-    const landingPage = me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : '/config'
+    const landingPage =
+      me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : me?.role === 'cafe' ? '/cafe-media' : '/config'
     navigate(landingPage)
   }
 

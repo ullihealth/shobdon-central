@@ -1,4 +1,4 @@
-// Owner/admin/media-role: DELETE /api/tenant/media-library/:id
+// Owner/admin/media/cafe-role: DELETE /api/tenant/media-library/:id
 //
 // Deletion protection: before touching R2 or the media_library row,
 // check whether any carousel_slots OR cafe_carousel_slots row for this
@@ -29,7 +29,7 @@ interface Env {
 }
 
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -84,7 +84,7 @@ const MAX_FILENAME_LENGTH = 200;
 const VALID_USABLE_ON = ["dashboard", "cafe", "both"];
 const VALID_ORIENTATIONS = ["16:9", "9:16", "both"];
 
-// Owner/admin/media-role: PATCH /api/tenant/media-library/:id - a small
+// Owner/admin/media/cafe-role: PATCH /api/tenant/media-library/:id - a small
 // partial-update endpoint, covering four independent fields:
 //   - folderId: moves the file into a folder (or back to "Uncategorized"
 //     via folderId: null).
@@ -100,7 +100,7 @@ const VALID_ORIENTATIONS = ["16:9", "9:16", "both"];
 // assignment, and the file's public URL (built from r2Key) is
 // unaffected too.
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

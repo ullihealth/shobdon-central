@@ -1,4 +1,4 @@
-// Owner/admin/media-role: GET /api/tenant/media-library/:id/image
+// Owner/admin/media/cafe-role: GET /api/tenant/media-library/:id/image
 //
 // Same-origin passthrough of an R2 object's bytes, used ONLY by the
 // slide composer to load an existing library image as a canvas
@@ -33,7 +33,7 @@ interface Env {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

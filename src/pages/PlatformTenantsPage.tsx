@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
+import type { MemberRole } from '../types/member'
 
 const TENANTS_URL = '/api/platform/tenants'
+
+// 'owner' deliberately excluded - not addable via this flow, same as
+// MembersPage.tsx's own ADDABLE_ROLES (owner is set once at tenant
+// creation, never added later). Kept in sync with that file's list and
+// functions/api/platform/tenants/[id]/members/index.ts's own server-side
+// allowlist - 'cafe' added to all three together this round.
+const PLATFORM_ADDABLE_ROLES: MemberRole[] = ['admin', 'atc', 'media', 'cafe']
 
 interface PlatformDisplay {
   id: number
@@ -170,7 +178,7 @@ function QuotaEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (by
 // deliberate discrete action, same as the BooleanToggle checkboxes
 // elsewhere on this page) - notes save on blur, matching NameEditor's
 // free-text convention below. onSaved takes no argument and just
-// triggers a full tenant-list refetch (see handleSubscriptionSaved) -
+// triggers a full tenant-list refetch (see refreshTenants) -
 // unlike the other *Saved callbacks, the PATCH response doesn't include
 // the newly-appended subscription_history row, so a targeted local
 // patch can't reflect it; a refetch is simpler and correct rather than
@@ -481,7 +489,15 @@ function SettingsToggleRow({
 // action can be wired in later without another rework. disabled + a
 // title tooltip communicates "not available here yet" rather than the
 // button silently doing nothing on click.
-function MemberRow({ member }: { member: PlatformMember }): JSX.Element {
+function MemberRow({
+  member,
+  onResetPassword,
+  onRemove,
+}: {
+  member: PlatformMember
+  onResetPassword: () => void
+  onRemove: () => void
+}): JSX.Element {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <div>
@@ -492,19 +508,186 @@ function MemberRow({ member }: { member: PlatformMember }): JSX.Element {
       </div>
       {member.role !== 'owner' && (
         <div className="flex gap-3">
-          <button
-            type="button"
-            disabled
-            title="Not available from here yet"
-            className="cursor-not-allowed text-xs font-semibold text-accent-sky-400 opacity-40"
-          >
+          <button type="button" onClick={onResetPassword} className="text-xs font-semibold text-accent-sky-400 hover:text-accent-sky-500">
             Reset password
           </button>
-          <button type="button" disabled title="Not available from here yet" className="cursor-not-allowed text-xs font-semibold text-status-bad opacity-40">
+          <button type="button" onClick={onRemove} className="text-xs font-semibold text-status-bad hover:opacity-80">
             Remove
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// Same clipboard-copy pattern as MembersPage.tsx's own CopyButton -
+// navigator.clipboard.writeText can reject (permissions, non-secure
+// context), silently no-op rather than showing a broken error state
+// since the password text is still visible to select/copy by hand.
+function CopyButton({ text }: { text: string }): JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // no-op, see comment above
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-sky-500"
+    >
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  )
+}
+
+// Cross-tenant member management for the selected tenant - mirrors
+// MembersPage.tsx's own add/remove/reset-password flow and styling
+// exactly, just pointed at the new requirePlatformAdmin-gated endpoints
+// (functions/api/platform/tenants/[id]/members/*) instead of the
+// owner-scoped tenant-facing ones, since those can't be called on an
+// arbitrary tenant. onChanged triggers the same full-refetch pattern
+// already used elsewhere on this page (subscription save, archive) -
+// simplest way to get the server's own member id/timestamp into view
+// after an add, rather than hand-constructing the new row client-side.
+function MembersSection({ tenant, onChanged }: { tenant: PlatformTenant; onChanged: () => void }): JSX.Element {
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<MemberRole>('admin')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [revealedPassword, setRevealedPassword] = useState<{ email: string; password: string } | null>(null)
+
+  // Resets the form/reveal state when switching to a different tenant -
+  // a temp password revealed for tenant A must never linger on screen
+  // after selecting tenant B.
+  useEffect(() => {
+    setEmail('')
+    setRole('admin')
+    setError(null)
+    setRevealedPassword(null)
+  }, [tenant.id])
+
+  async function handleAddMember(event: FormEvent) {
+    event.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    setRevealedPassword(null)
+    try {
+      const response = await fetch(`${TENANTS_URL}/${tenant.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setError(data?.error ?? 'Failed to add member')
+        return
+      }
+      if (data?.temporaryPassword) setRevealedPassword({ email: data.email, password: data.temporaryPassword })
+      setEmail('')
+      onChanged()
+    } catch {
+      setError('Failed to add member')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleRemove(member: PlatformMember) {
+    if (!window.confirm(`Remove ${member.email}'s access to ${tenant.name}? This takes effect immediately.`)) return
+    const response = await fetch(`${TENANTS_URL}/${tenant.id}/members/${member.id}`, { method: 'DELETE' })
+    if (response.ok) onChanged()
+  }
+
+  async function handleResetPassword(member: PlatformMember) {
+    if (
+      !window.confirm(`Generate a new temporary password for ${member.email}? Their current password stops working immediately.`)
+    ) {
+      return
+    }
+    const response = await fetch(`${TENANTS_URL}/${tenant.id}/members/${member.id}/reset-password`, { method: 'POST' })
+    const data = await response.json().catch(() => null)
+    if (response.ok && data?.temporaryPassword) setRevealedPassword({ email: member.email, password: data.temporaryPassword })
+  }
+
+  return (
+    <div>
+      {revealedPassword && (
+        <div className="mb-4 rounded-xl border border-accent-sky-500 bg-panel p-4">
+          <div className="mb-1 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
+            Temporary password for {revealedPassword.email}
+          </div>
+          <div className="mb-2 flex items-center gap-3">
+            <div className="font-mono text-xl text-white">{revealedPassword.password}</div>
+            <CopyButton text={revealedPassword.password} />
+          </div>
+          <p className="text-xs text-status-bad">Copy this now — it won't be shown again.</p>
+          <button
+            type="button"
+            onClick={() => setRevealedPassword(null)}
+            className="mt-2 text-xs font-semibold text-muted-400 hover:text-white"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {tenant.members.length === 0 ? (
+        <span className="text-xs text-muted-500">No members yet</span>
+      ) : (
+        <div className="mb-4 flex flex-col gap-3">
+          {tenant.members.map((member) => (
+            <MemberRow
+              key={member.id}
+              member={member}
+              onResetPassword={() => handleResetPassword(member)}
+              onRemove={() => handleRemove(member)}
+            />
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={handleAddMember} className="flex flex-wrap items-end gap-3 border-t border-border/60 pt-4">
+        <label className="flex min-w-[180px] flex-1 flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Email</span>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Role</span>
+          <select
+            value={role}
+            onChange={(event) => setRole(event.target.value as MemberRole)}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+          >
+            {PLATFORM_ADDABLE_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+        >
+          {submitting ? 'Adding…' : 'Add member'}
+        </button>
+      </form>
+      {error && <p className="mt-2 text-sm font-semibold text-status-bad">{error}</p>}
     </div>
   )
 }
@@ -552,7 +735,7 @@ export default function PlatformTenantsPage(): JSX.Element {
       .then((data) => {
         if (cancelled) return
         const role = data?.role
-        setDashboardLandingPage(role === 'atc' ? '/atc-control' : role === 'media' ? '/media-manager' : '/config')
+        setDashboardLandingPage(role === 'atc' ? '/atc-control' : role === 'media' ? '/media-manager' : role === 'cafe' ? '/cafe-media' : '/config')
       })
       .catch(() => {})
     return () => {
@@ -638,14 +821,47 @@ export default function PlatformTenantsPage(): JSX.Element {
     )
   }
 
-  // Full refetch, not a targeted local patch - the PATCH response
-  // doesn't carry the newly-appended subscription_history row (see
-  // SubscriptionEditor's own comment), so this is the simplest way to
-  // get the new entry (and its server-assigned id/timestamp) into view.
-  async function handleSubscriptionSaved() {
+  // Full refetch, not a targeted local patch - both subscription saves
+  // (the PATCH response doesn't carry the newly-appended
+  // subscription_history row - see SubscriptionEditor's own comment) and
+  // member add/remove/reset (the server assigns the member id, and a
+  // removal needs the row gone from local state too) are simplest to
+  // just re-fetch from source rather than hand-reconstructing the
+  // resulting shape client-side.
+  async function refreshTenants() {
     const response = await fetch(TENANTS_URL)
     const data = response.ok ? await response.json() : null
     if (data) setTenants(data.tenants ?? [])
+  }
+
+  // Confirm-gated, reuses the existing generic optimistic toggle -
+  // relabeled "Suspend"/"Resume" in the UI, but this is exactly today's
+  // `active` flag, unchanged (see resolveTenantHost.ts's own comment on
+  // what it does/doesn't affect - unlike Archive below, this leaves the
+  // tenant's own back-office reachable).
+  function handleSuspendToggle(tenant: PlatformTenant) {
+    const next = !tenant.active
+    const message = next
+      ? `Resume ${tenant.name}? Their public dashboard becomes reachable again immediately.`
+      : `Suspend ${tenant.name}? Their public dashboard stops resolving immediately - their own team can still log in and manage settings, same as today.`
+    if (!window.confirm(message)) return
+    handleBooleanToggle(tenant, 'active', next)
+  }
+
+  // Migration 0044 - archiving is a full refetch + clear-selection, not
+  // a local patch, since the archived tenant vanishes entirely from
+  // /platform/tenants's own list (deleted_at IS NOT NULL is excluded
+  // server-side) - there's nothing left to optimistically update in
+  // place. Stronger confirm wording than Suspend's, since this also
+  // locks the tenant's own team out of their back-office (requireTenant's
+  // new deleted_at check) - a meaningfully bigger action than pausing.
+  async function handleArchiveTenant(tenant: PlatformTenant) {
+    const message = `Archive ${tenant.name}? This goes further than suspending - their own team will be locked out of their back-office immediately too, not just the public dashboard. This can be undone later, but only via direct database access right now.`
+    if (!window.confirm(message)) return
+    const updated = await patchTenant(tenant.id, { archived: true })
+    if (!updated) return
+    setSelectedTenantId(null)
+    await refreshTenants()
   }
 
   const [onboarding, setOnboarding] = useState(false)
@@ -729,9 +945,9 @@ export default function PlatformTenantsPage(): JSX.Element {
           </div>
         </div>
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
-          Every tenant, across every organization. Developer-only — controls pause/resume, cross-tenant public
-          visibility, internal/template status, storage quota, and per-display active/café-entitlement state for
-          any tenant, regardless of which org you're currently switched to.
+          Every tenant, across every organization. Developer-only — controls suspend/resume, archive, cross-tenant
+          public visibility, internal/template status, storage quota, subscription status, members, and per-display
+          active/café-entitlement state for any tenant, regardless of which org you're currently switched to.
         </p>
 
         {onboardError && <p className="mb-4 text-sm font-semibold text-status-bad">{onboardError}</p>}
@@ -797,7 +1013,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                   >
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${tenant.active ? 'bg-status-good' : 'bg-status-bad'}`}
-                      title={tenant.active ? 'Active' : 'Paused'}
+                      title={tenant.active ? 'Live' : 'Suspended'}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{tenant.name}</span>
@@ -825,11 +1041,6 @@ export default function PlatformTenantsPage(): JSX.Element {
                   </div>
                   <div className="overflow-hidden rounded-xl border border-border/60">
                     <SettingsToggleRow
-                      label="Active"
-                      checked={selectedTenant.active}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'active', next)}
-                    />
-                    <SettingsToggleRow
                       label="Weather public"
                       checked={selectedTenant.weatherPublic}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'weatherPublic', next)}
@@ -853,6 +1064,28 @@ export default function PlatformTenantsPage(): JSX.Element {
                   <div className="mt-4">
                     <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
                   </div>
+
+                  {/* Suspend + Archive, grouped and visually separated
+                      from the four unrelated checkboxes above - both are
+                      "make this tenant go away" actions (one temporary,
+                      one meant to be permanent), not a settings toggle
+                      like weather/ops/internal/ATC. */}
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border/60 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSuspendToggle(selectedTenant)}
+                      className="rounded-lg border border-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-status-bad transition hover:bg-status-bad/10"
+                    >
+                      {selectedTenant.active ? 'Suspend tenant' : 'Resume tenant'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleArchiveTenant(selectedTenant)}
+                      className="rounded-lg bg-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:opacity-90"
+                    >
+                      Archive tenant
+                    </button>
+                  </div>
                 </section>
 
                 <section className="rounded-2xl border border-border bg-panel p-5">
@@ -875,15 +1108,7 @@ export default function PlatformTenantsPage(): JSX.Element {
 
                 <section className="rounded-2xl border border-border bg-panel p-5">
                   <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Members</div>
-                  {selectedTenant.members.length === 0 ? (
-                    <span className="text-xs text-muted-500">No members yet</span>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {selectedTenant.members.map((member) => (
-                        <MemberRow key={member.id} member={member} />
-                      ))}
-                    </div>
-                  )}
+                  <MembersSection tenant={selectedTenant} onChanged={refreshTenants} />
                 </section>
 
                 {/* Migration 0043 - manual placeholder ahead of real
@@ -895,7 +1120,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                     stage, which is what this is for. */}
                 <section className="rounded-2xl border border-border bg-panel p-5">
                   <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Subscription</div>
-                  <SubscriptionEditor tenant={selectedTenant} onSaved={handleSubscriptionSaved} />
+                  <SubscriptionEditor tenant={selectedTenant} onSaved={refreshTenants} />
                   <div className="mt-4 flex flex-col gap-2">
                     {selectedTenant.subscriptionHistory.length === 0 ? (
                       <span className="text-xs text-muted-500">No status changes recorded yet</span>

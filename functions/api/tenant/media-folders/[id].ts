@@ -1,4 +1,4 @@
-// Owner/admin/media-role: PATCH/DELETE /api/tenant/media-folders/:id
+// Owner/admin/media/cafe-role: PATCH/DELETE /api/tenant/media-folders/:id
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -14,7 +14,7 @@ interface Env {
 const MAX_NAME_LENGTH = 60;
 
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -45,7 +45,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 // window where a file's folderId points at a folder that no longer
 // exists.
 export const onRequestDelete: PagesFunction<Env> = async ({ request, env, params }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "media"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "media", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

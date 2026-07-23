@@ -17,6 +17,12 @@
 // pre-existing notice that predates this field (see ensureNoticeShape
 // below), so nothing already saved is lost or requires a manual data
 // migration.
+//
+// 'cafe' role added to both role lists below (not just 'atc') for
+// exactly the reason above - CafeMediaPage.tsx's notice editor calls
+// this same endpoint directly, so a cafe-role user reaching that page
+// needs write access here too, or the ticker's Notice-slot editing
+// silently 403s despite the rest of the page working.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -112,7 +118,7 @@ function neededHealing(raw: SafetyNoticeInput[]): boolean {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "atc"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "atc", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -166,7 +172,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin", "atc"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "atc", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

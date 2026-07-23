@@ -95,7 +95,7 @@ export default function LoginPage(): JSX.Element {
     ).catch(() => null)
     setSubmitting(false)
     const landingPage =
-      me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : '/config'
+      me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : me?.role === 'cafe' ? '/cafe-media' : '/config'
     navigate(landingPage)
   }
 

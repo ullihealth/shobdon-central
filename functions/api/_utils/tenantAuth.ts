@@ -130,29 +130,47 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
   const userId = await getSessionUserId(request);
   if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) };
 
+  let membership: TenantMembership | null;
+
   // Explicit ?org= is a direct-link override (bookmarks, pasted URLs) and
   // keeps its existing hard-403-if-not-a-member behaviour untouched.
   const explicitOrgSlug = new URL(request.url).searchParams.get("org");
   if (explicitOrgSlug) {
-    const membership = await resolveTenantMembership(env.DB, userId, explicitOrgSlug);
+    membership = await resolveTenantMembership(env.DB, userId, explicitOrgSlug);
     if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
-    return { membership, userId };
+  } else {
+    // No ?org= - try the switcher's remembered choice next, but fall back
+    // to the original default (earliest membership by createdAt) if the
+    // cookie is missing or stale (e.g. access to that org was revoked
+    // after the cookie was set). A stale cookie should never lock someone
+    // out entirely; it should just behave as if it weren't there.
+    const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
+    membership = cookieOrgSlug ? await resolveTenantMembership(env.DB, userId, cookieOrgSlug) : null;
+    if (!membership) {
+      membership = await resolveTenantMembership(env.DB, userId, null);
+      if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
+    }
   }
 
-  // No ?org= - try the switcher's remembered choice next, but fall back
-  // to the original default (earliest membership by createdAt) if the
-  // cookie is missing or stale (e.g. access to that org was revoked
-  // after the cookie was set). A stale cookie should never lock someone
-  // out entirely; it should just behave as if it weren't there.
-  const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
-  if (cookieOrgSlug) {
-    const membership = await resolveTenantMembership(env.DB, userId, cookieOrgSlug);
-    if (membership) return { membership, userId };
-  }
+  // Migration 0044 - archived tenant. A single choke point applied
+  // regardless of which branch above resolved membership, same
+  // reasoning as resolveTenantHost.ts's own active=1 check being the
+  // one place that gates the public dashboard. Deliberately stronger
+  // than pause (active=0 alone, which this function never checked at
+  // all before this) - resolveTenantHost.ts's own comment already
+  // documents that a paused tenant's back-office stays reachable; an
+  // archived one should not, since archiving is meant to mean "this
+  // tenant is genuinely gone," not "temporarily off." Treated
+  // identically to "not a member" (403) - an archived tenant's own
+  // logged-in users see the same outcome as someone who was never a
+  // member at all.
+  const tenantRow = await env.DB
+    .prepare("SELECT deleted_at AS deletedAt FROM tenants WHERE organization_id = ?")
+    .bind(membership.organizationId)
+    .first<{ deletedAt: string | null }>();
+  if (tenantRow?.deletedAt) return { error: jsonResponse({ error: "Forbidden" }, 403) };
 
-  const defaultMembership = await resolveTenantMembership(env.DB, userId, null);
-  if (!defaultMembership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
-  return { membership: defaultMembership, userId };
+  return { membership, userId };
 }
 
 // Same as requireTenant, but additionally requires the caller's role to

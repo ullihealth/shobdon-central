@@ -113,7 +113,7 @@ function rowToApi(row: CafeCarouselSlotRow) {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
@@ -134,7 +134,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
-  const result = await requireRoles(request, env, ["owner", "admin"]);
+  const result = await requireRoles(request, env, ["owner", "admin", "cafe"]);
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 

@@ -1,0 +1,26 @@
+-- Reversible tenant archive (soft-delete), not a hard delete - several
+-- tenant-scoped tables (tenant_displays, tenant_api_keys, tenant_invites)
+-- reference tenants(id) with no ON DELETE CASCADE at all, so a real
+-- DELETE FROM tenants would either be blocked or leave orphaned rows
+-- depending on FK enforcement - genuinely inconsistent cascade behavior
+-- across this schema, confirmed by inspection this round. A hard-delete
+-- path, if ever needed, is a separate, rarer, more deliberate action to
+-- design later - out of scope here.
+--
+-- NULL (the default, and every existing tenant's state) = not archived.
+-- "Archive tenant" (functions/api/platform/tenants/[id].ts) sets this
+-- AND active = 0 together in the same request - active = 1 is already
+-- the single chokepoint resolveTenantHost.ts and public/tenants.ts gate
+-- on for public-facing visibility, so archiving piggybacks on that
+-- existing gate for free rather than adding a second "is this tenant
+-- publicly reachable" check that could disagree with the first.
+--
+-- What archiving adds beyond plain pause (active = 0 alone): pause
+-- deliberately leaves a tenant's own authenticated back-office reachable
+-- (resolveTenantHost.ts's own comment: "admin access to a paused tenant
+-- is unaffected by this check" - requireTenant never queried the tenants
+-- table at all, before this migration). Archive is a strictly stronger
+-- cutoff - see requireTenant's new deleted_at check in tenantAuth.ts -
+-- since an archived tenant is meant to be genuinely gone, not merely
+-- paused.
+ALTER TABLE tenants ADD COLUMN deleted_at TEXT;
