@@ -39,6 +39,8 @@ interface TenantRow {
   organizationId: string | null;
   logoR2Key: string | null;
   createdAt: string;
+  subscriptionStatus: string;
+  subscriptionNotes: string;
 }
 
 interface UsageRow {
@@ -66,18 +68,34 @@ interface MemberRow {
   name: string;
 }
 
+interface SubscriptionHistoryRow {
+  id: number;
+  tenantId: number;
+  status: string;
+  note: string;
+  changedByUserId: string | null;
+  changedAt: string;
+}
+
+interface DeveloperUserRow {
+  id: string;
+  email: string;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
   if ("error" in result) return result.error;
 
-  const [{ results: tenants }, { results: usageRows }, { results: displayRows }, { results: memberRows }] = await Promise.all([
+  const [{ results: tenants }, { results: usageRows }, { results: displayRows }, { results: memberRows }, { results: historyRows }, { results: developerRows }] =
+    await Promise.all([
     env.DB
       .prepare(
         `SELECT id, slug, name, subdomain, active,
                 weather_public AS weatherPublic, ops_public AS opsPublic,
                 is_internal AS isInternal, has_physical_atc AS hasPhysicalAtc,
                 storage_quota_bytes AS storageQuotaBytes,
-                organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt
+                organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt,
+                subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes
          FROM tenants ORDER BY created_at`
       )
       .all<TenantRow>(),
@@ -110,6 +128,29 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
          ORDER BY m.createdAt`
       )
       .all<MemberRow>(),
+    // Migration 0043 - grouped below by tenant_id, same N+1 avoidance as
+    // every other per-tenant query above. Ordered newest-first here
+    // (unlike the others, which are chronological) since the detail
+    // pane's own history list wants to read top-to-bottom as "most
+    // recent change first," matching /platform/visits's own reverse-
+    // chronological convention.
+    env.DB
+      .prepare(
+        `SELECT id, tenant_id AS tenantId, status, note, changed_by_user_id AS changedByUserId, changed_at AS changedAt
+         FROM subscription_history ORDER BY changed_at DESC`
+      )
+      .all<SubscriptionHistoryRow>(),
+    // Resolves subscription_history.changed_by_user_id to an email for
+    // display - scoped to developer=1 rather than every user, since
+    // that column can only ever hold a platform admin's id (this whole
+    // endpoint is requirePlatformAdmin-gated and the only writer,
+    // functions/api/platform/tenants/[id].ts, always binds
+    // result.userId, which requirePlatformAdmin already confirmed has
+    // developer=1). A future Stripe-webhook writer would store a
+    // non-user string here instead (e.g. 'stripe-webhook'), which
+    // simply won't match any id in this map - handled below by falling
+    // back to the raw id rather than erroring.
+    env.DB.prepare("SELECT id, email FROM user WHERE developer = 1").all<DeveloperUserRow>(),
   ]);
 
   const usageByOrg = new Map(usageRows.map((row) => [row.organizationId, row.totalBytes]));
@@ -125,6 +166,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     list.push(row);
     membersByOrg.set(row.organizationId, list);
   }
+  const historyByTenant = new Map<number, SubscriptionHistoryRow[]>();
+  for (const row of historyRows) {
+    const list = historyByTenant.get(row.tenantId) ?? [];
+    list.push(row);
+    historyByTenant.set(row.tenantId, list);
+  }
+  const emailByUserId = new Map(developerRows.map((row) => [row.id, row.email]));
 
   return jsonResponse({
     tenants: tenants.map((tenant) => ({
@@ -157,6 +205,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         role: member.role,
         createdAt: member.createdAt,
       })) ?? [],
+      subscriptionStatus: tenant.subscriptionStatus,
+      subscriptionNotes: tenant.subscriptionNotes,
+      subscriptionHistory: (historyByTenant.get(tenant.id) ?? []).map((entry) => ({
+        id: entry.id,
+        status: entry.status,
+        note: entry.note,
+        changedByEmail: entry.changedByUserId ? (emailByUserId.get(entry.changedByUserId) ?? entry.changedByUserId) : null,
+        changedAt: entry.changedAt,
+      })),
     })),
   });
 };

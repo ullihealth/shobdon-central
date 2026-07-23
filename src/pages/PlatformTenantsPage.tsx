@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
@@ -23,6 +23,26 @@ interface PlatformMember {
   createdAt: string
 }
 
+// Migration 0043 - keep in sync with SUBSCRIPTION_STATUSES in
+// functions/api/platform/tenants/[id].ts (that file is the source of
+// truth/validation; this is just the matching client-side option list).
+type SubscriptionStatus = 'trial' | 'active' | 'past_due' | 'cancelled' | 'comped'
+const SUBSCRIPTION_STATUS_OPTIONS: { value: SubscriptionStatus; label: string }[] = [
+  { value: 'trial', label: 'Trial' },
+  { value: 'active', label: 'Active' },
+  { value: 'past_due', label: 'Past due' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'comped', label: 'Comped' },
+]
+
+interface SubscriptionHistoryEntry {
+  id: number
+  status: string
+  note: string
+  changedByEmail: string | null
+  changedAt: string
+}
+
 interface PlatformTenant {
   id: number
   slug: string
@@ -39,9 +59,13 @@ interface PlatformTenant {
   createdAt: string
   displays: PlatformDisplay[]
   members: PlatformMember[]
+  subscriptionStatus: SubscriptionStatus
+  subscriptionNotes: string
+  subscriptionHistory: SubscriptionHistoryEntry[]
 }
 
 type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc'
+type SortOrder = 'name-asc' | 'date-desc' | 'date-asc'
 
 function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -49,6 +73,19 @@ function formatMb(bytes: number): string {
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// Includes time (unlike formatDate above) - subscription history can
+// plausibly get more than one entry on the same day, and "when exactly"
+// is the whole point of this log existing.
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 async function patchTenant(id: number, body: Record<string, boolean | number | string>): Promise<PlatformTenant | null> {
@@ -129,6 +166,79 @@ function QuotaEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (by
 // Same inline-edit-on-blur pattern as QuotaEditor above - a developer
 // customer-service fix (e.g. a tenant's name has a typo or their logo
 // was uploaded badly-sized) shouldn't need a separate "Edit" mode.
+// Status saves immediately on change (a <select> choice is already a
+// deliberate discrete action, same as the BooleanToggle checkboxes
+// elsewhere on this page) - notes save on blur, matching NameEditor's
+// free-text convention below. onSaved takes no argument and just
+// triggers a full tenant-list refetch (see handleSubscriptionSaved) -
+// unlike the other *Saved callbacks, the PATCH response doesn't include
+// the newly-appended subscription_history row, so a targeted local
+// patch can't reflect it; a refetch is simpler and correct rather than
+// hand-constructing a history entry client-side without the server's
+// own timestamp/id.
+function SubscriptionEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: () => void }): JSX.Element {
+  const [status, setStatus] = useState<SubscriptionStatus>(tenant.subscriptionStatus)
+  const [notes, setNotes] = useState(tenant.subscriptionNotes)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setStatus(tenant.subscriptionStatus)
+    setNotes(tenant.subscriptionNotes)
+  }, [tenant.subscriptionStatus, tenant.subscriptionNotes])
+
+  async function commitStatus(next: SubscriptionStatus) {
+    if (next === tenant.subscriptionStatus) return
+    const previous = status
+    setStatus(next)
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { subscriptionStatus: next })
+    setSaving(false)
+    if (updated) onSaved()
+    else setStatus(previous)
+  }
+
+  async function commitNotes() {
+    if (notes === tenant.subscriptionNotes) return
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { subscriptionNotes: notes })
+    setSaving(false)
+    if (updated) onSaved()
+    else setNotes(tenant.subscriptionNotes)
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <label className="flex items-center gap-3">
+        <span className="w-16 shrink-0 text-xs uppercase tracking-wide text-muted-400">Status</span>
+        <select
+          value={status}
+          disabled={saving}
+          onChange={(event) => commitStatus(event.target.value as SubscriptionStatus)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        >
+          {SUBSCRIPTION_STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-start gap-3">
+        <span className="w-16 shrink-0 pt-2 text-xs uppercase tracking-wide text-muted-400">Notes</span>
+        <textarea
+          value={notes}
+          disabled={saving}
+          onChange={(event) => setNotes(event.target.value)}
+          onBlur={commitNotes}
+          rows={2}
+          placeholder="e.g. paying by bank transfer quarterly, next review March"
+          className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+      </label>
+    </div>
+  )
+}
+
 function NameEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (name: string) => void }): JSX.Element {
   const [name, setName] = useState(tenant.name)
   const [saving, setSaving] = useState(false)
@@ -399,6 +509,24 @@ function MemberRow({ member }: { member: PlatformMember }): JSX.Element {
   )
 }
 
+// Plain reverse-chronological list row, matching /platform/visits's own
+// plain-list convention for this kind of log rather than inventing a
+// third one. Server already sorts newest-first (see this endpoint's own
+// ORDER BY changed_at DESC), so no client-side sort needed here.
+function HistoryEntryRow({ entry }: { entry: SubscriptionHistoryEntry }): JSX.Element {
+  const label = SUBSCRIPTION_STATUS_OPTIONS.find((option) => option.value === entry.status)?.label ?? entry.status
+  return (
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-white">{label}</span>
+        <span className="text-xs text-muted-500">{formatDateTime(entry.changedAt)}</span>
+      </div>
+      {entry.note && <div className="mt-1 text-xs text-muted-400">{entry.note}</div>}
+      {entry.changedByEmail && <div className="mt-1 text-xs text-muted-500">by {entry.changedByEmail}</div>}
+    </div>
+  )
+}
+
 export default function PlatformTenantsPage(): JSX.Element {
   const [tenants, setTenants] = useState<PlatformTenant[]>([])
   const [loading, setLoading] = useState(true)
@@ -439,6 +567,7 @@ export default function PlatformTenantsPage(): JSX.Element {
   // one" state; MediaLibraryPage.tsx's own null-until-clicked precedent
   // suits a much longer, unbounded file list better than it suits this).
   const [selectedTenantId, setSelectedTenantId] = useState<number | null>(null)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('name-asc')
 
   useEffect(() => {
     fetch(TENANTS_URL)
@@ -460,6 +589,20 @@ export default function PlatformTenantsPage(): JSX.Element {
   }, [])
 
   const selectedTenant = tenants.find((t) => t.id === selectedTenantId) ?? null
+
+  // Left-list display order only - doesn't touch `tenants` itself or the
+  // auto-select-first-on-load effect above, which both still key off the
+  // server's own created_at-ascending order. 'date-desc' rather than
+  // relying on the backend's ORDER BY (already oldest-first) so "newest
+  // first" doesn't silently mean "reverse of whatever the API happens to
+  // return."
+  const sortedTenants = useMemo(() => {
+    const copy = [...tenants]
+    if (sortOrder === 'name-asc') copy.sort((a, b) => a.name.localeCompare(b.name))
+    else if (sortOrder === 'date-desc') copy.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    else copy.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    return copy
+  }, [tenants, sortOrder])
 
   function handleBooleanToggle(tenant: PlatformTenant, field: BooleanField, next: boolean) {
     setTenants((prev) => prev.map((t) => (t.id === tenant.id ? { ...t, [field]: next } : t)))
@@ -493,6 +636,16 @@ export default function PlatformTenantsPage(): JSX.Element {
           : t
       )
     )
+  }
+
+  // Full refetch, not a targeted local patch - the PATCH response
+  // doesn't carry the newly-appended subscription_history row (see
+  // SubscriptionEditor's own comment), so this is the simplest way to
+  // get the new entry (and its server-assigned id/timestamp) into view.
+  async function handleSubscriptionSaved() {
+    const response = await fetch(TENANTS_URL)
+    const data = response.ok ? await response.json() : null
+    if (data) setTenants(data.tenants ?? [])
   }
 
   const [onboarding, setOnboarding] = useState(false)
@@ -620,28 +773,41 @@ export default function PlatformTenantsPage(): JSX.Element {
           // FileInspector) + flex-1 right pane, min-h so a short tenant
           // list doesn't collapse the detail pane's vertical rhythm.
           <div className="flex min-h-[600px] flex-col gap-4 lg:flex-row">
-            <div className="flex max-h-[75vh] w-full shrink-0 flex-col gap-1 overflow-y-auto rounded-2xl border border-border bg-panel p-2 lg:w-72">
-              {tenants.map((tenant) => (
-                <button
-                  key={tenant.id}
-                  type="button"
-                  onClick={() => setSelectedTenantId(tenant.id)}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
-                    tenant.id === selectedTenantId
-                      ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
-                      : 'border-transparent text-muted-300 hover:bg-slate-800/60'
-                  }`}
-                >
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${tenant.active ? 'bg-status-good' : 'bg-status-bad'}`}
-                    title={tenant.active ? 'Active' : 'Paused'}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{tenant.name}</span>
-                    <span className="block truncate text-xs text-muted-500">{tenant.slug}</span>
-                  </span>
-                </button>
-              ))}
+            <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
+              <select
+                value={sortOrder}
+                onChange={(event) => setSortOrder(event.target.value as SortOrder)}
+                className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-white focus:border-sky-500 focus:outline-none"
+              >
+                <option value="name-asc">Name A-Z</option>
+                <option value="date-desc">Newest first</option>
+                <option value="date-asc">Oldest first</option>
+              </select>
+              <div className="flex max-h-[75vh] flex-col gap-1 overflow-y-auto rounded-2xl border border-border bg-panel p-2">
+                {sortedTenants.map((tenant) => (
+                  <button
+                    key={tenant.id}
+                    type="button"
+                    onClick={() => setSelectedTenantId(tenant.id)}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                      tenant.id === selectedTenantId
+                        ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
+                        : 'border-transparent text-muted-300 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${tenant.active ? 'bg-status-good' : 'bg-status-bad'}`}
+                      title={tenant.active ? 'Active' : 'Paused'}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{tenant.name}</span>
+                      <span className="block truncate text-xs text-muted-500">
+                        {tenant.slug} · Joined {formatDate(tenant.createdAt)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {selectedTenant && (
@@ -718,6 +884,25 @@ export default function PlatformTenantsPage(): JSX.Element {
                       ))}
                     </div>
                   )}
+                </section>
+
+                {/* Migration 0043 - manual placeholder ahead of real
+                    Stripe integration (see this page's own history: no
+                    billing table existed before this). Separate from
+                    the Tenant settings section's `active` toggle
+                    (pause/resume) and Displays' `entitled` flag (café
+                    add-on) - neither represents customer lifecycle
+                    stage, which is what this is for. */}
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Subscription</div>
+                  <SubscriptionEditor tenant={selectedTenant} onSaved={handleSubscriptionSaved} />
+                  <div className="mt-4 flex flex-col gap-2">
+                    {selectedTenant.subscriptionHistory.length === 0 ? (
+                      <span className="text-xs text-muted-500">No status changes recorded yet</span>
+                    ) : (
+                      selectedTenant.subscriptionHistory.map((entry) => <HistoryEntryRow key={entry.id} entry={entry} />)
+                    )}
+                  </div>
                 </section>
               </div>
             )}
