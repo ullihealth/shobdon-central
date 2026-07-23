@@ -958,7 +958,7 @@ export default function DesignPage(): JSX.Element {
                 </button>
                 <p className="pr-4 text-sm text-muted-400">
                   Experiment freely - the preview reacts to the colours you pick, and nothing is saved until you
-                  choose to. When you're ready, use "Apply" in the Backgrounds tab to push a theme
+                  choose to. When you're ready, use "Apply to live screen" above to push a theme
                   (and, on Café, the current template) to every device that loads the real{' '}
                   {activeScreen === 'dashboard' ? 'dashboard' : 'café screen'}.
                 </p>
@@ -967,21 +967,49 @@ export default function DesignPage(): JSX.Element {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
-          {(['dashboard', 'cafe'] as const).map((screen) => (
-            <button
-              key={screen}
-              type="button"
-              onClick={() => setActiveScreen(screen)}
-              className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition ${
-                activeScreen === screen ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
-              }`}
-            >
-              {screen === 'dashboard' ? 'Dashboard' : 'Cafe'}
-            </button>
-          ))}
+        <div className="flex shrink-0 flex-wrap items-center gap-3">
+          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
+            {(['dashboard', 'cafe'] as const).map((screen) => (
+              <button
+                key={screen}
+                type="button"
+                onClick={() => setActiveScreen(screen)}
+                className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition ${
+                  activeScreen === screen ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
+                }`}
+              >
+                {screen === 'dashboard' ? 'Dashboard' : 'Cafe'}
+              </button>
+            ))}
+          </div>
+
+          {/* Pinned here (this row renders regardless of which tab is
+              active below) rather than duplicated into Backgrounds/
+              Custom/Text/Accent & Status separately - all four edit the
+              same activeTokens state, so one reachable-from-anywhere
+              button is simpler than four copies of the same handler.
+              Previously only existed inside Backgrounds > Templates,
+              which meant editing colour in any OTHER tab left no visible
+              way to actually publish it without first switching tabs.
+              Same handleApplyToLiveScreen/confirm()/15-second-
+              propagation behaviour as always - only the location and
+              label changed, not the safety gate itself. */}
+          <button
+            type="button"
+            onClick={handleApplyToLiveScreen}
+            disabled={applyStatus === 'working'}
+            className="shrink-0 rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applyStatus === 'working' ? 'Applying…' : 'Apply to live screen'}
+          </button>
         </div>
       </div>
+      {applyStatus === 'success' && (
+        <p className="-mt-4 mb-6 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
+      )}
+      {applyStatus === 'error' && (
+        <p className="-mt-4 mb-6 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
+      )}
 
       {/* TWO-COLUMN BODY: left rail (~34%, nav + inline expanded section)
           | right column (~66%, preview only). items-start (not stretch)
@@ -1350,10 +1378,10 @@ export default function DesignPage(): JSX.Element {
                     {/* "Save as new template" lives on the Custom sub-view
                         now (see below) - Export/Import stay here since
                         they're file-based, not part of the colour-editing
-                        flow. Apply sits alongside them - same handler
-                        (handleApplyToLiveScreen), same confirm/15-second-
-                        propagation/Café-template-sync behaviour as
-                        always. */}
+                        flow. Apply itself moved to the persistent header
+                        row (next to the Dashboard/Cafe toggle) so it's
+                        reachable from every tab that edits activeTokens,
+                        not just this one. */}
                     <div className="flex flex-wrap items-center gap-3">
                       <button
                         type="button"
@@ -1366,22 +1394,8 @@ export default function DesignPage(): JSX.Element {
                         Import JSON
                         <input type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
                       </label>
-                      <button
-                        type="button"
-                        onClick={handleApplyToLiveScreen}
-                        disabled={applyStatus === 'working'}
-                        className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-accent-sky-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {applyStatus === 'working' ? 'Applying…' : 'Apply'}
-                      </button>
                     </div>
                     {importError && <p className="mt-4 text-sm font-semibold text-status-bad">⚠️ {importError}</p>}
-                    {applyStatus === 'success' && (
-                      <p className="mt-4 text-sm font-semibold text-status-good">✅ Applied - devices will pick it up shortly.</p>
-                    )}
-                    {applyStatus === 'error' && (
-                      <p className="mt-4 text-sm font-semibold text-status-bad">❌ Could not apply - check connectivity and try again.</p>
-                    )}
                   </>
                 ) : (
                   <>
@@ -1525,11 +1539,10 @@ export default function DesignPage(): JSX.Element {
           the Dashboard/Café toggle in the header row above; both
           "Active on Dashboard"/"Active on Café" badges stay independent
           of it, showing ground truth for BOTH screens regardless of
-          which one is toggled - unchanged from v1. Apply itself no
-          longer lives here - it moved into the Templates card, next to
-          Import JSON, since that's where the colours it pushes are
-          actually picked (see that button's own comment) - this card's
-          own layout-slot cards already apply their own selection
+          which one is toggled - unchanged from v1. Apply itself doesn't
+          live here either - it's pinned in the header row next to that
+          same toggle now (reachable from every tab, not just one) - this
+          card's own layout-slot cards already apply their own selection
           instantly on click regardless, so nothing here depended on it. */}
       <div className="mt-6 rounded-2xl border border-border bg-panel p-6">
         <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
