@@ -6,16 +6,31 @@
 // /api/auth/get-session route internally, forwarding the incoming
 // request's cookies, rather than re-implementing session/cookie parsing.
 
+// Named (not inline) so functions/api/platform/tenants/[id]/hard-delete.ts
+// can type its own batch() array against exactly what .prepare().bind()
+// already returns - structurally identical to the previous inline
+// shape, so every existing .prepare().bind().run()/first()/all() caller
+// is unaffected.
+export type D1BoundStatement = {
+  run: () => Promise<{ success: boolean }>;
+  first: <T = Record<string, unknown>>() => Promise<T | null>;
+  all: <T = unknown>() => Promise<{ results: T[] }>;
+};
+
 export type D1Database = {
   prepare: (query: string) => {
-    bind: (...values: unknown[]) => {
-      run: () => Promise<{ success: boolean }>;
-      first: <T = Record<string, unknown>>() => Promise<T | null>;
-      all: <T = unknown>() => Promise<{ results: T[] }>;
-    };
+    bind: (...values: unknown[]) => D1BoundStatement;
     first: <T = Record<string, unknown>>() => Promise<T | null>;
     all: <T = unknown>() => Promise<{ results: T[] }>;
   };
+  // Optional, not required - other files declare their own structurally-
+  // similar-but-narrower local D1Database type and pass env.DB into
+  // shared helpers typed against THIS one (e.g. ingest/weather.ts's own
+  // Env.DB into resolveApiKey), so a required new field here would
+  // break those call sites even though they never touch batch()
+  // themselves. Only added for hard-delete.ts's atomic multi-table
+  // delete - every other route still uses individual .run() calls.
+  batch?: (statements: D1BoundStatement[]) => Promise<unknown[]>;
 };
 
 interface SessionResponse {

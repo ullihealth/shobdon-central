@@ -70,6 +70,13 @@ interface PlatformTenant {
   subscriptionStatus: SubscriptionStatus
   subscriptionNotes: string
   subscriptionHistory: SubscriptionHistoryEntry[]
+  // Migration 0044 - deliberately absent from GET /platform/tenants's own
+  // response (every tenant that endpoint returns already has deleted_at
+  // IS NULL by construction, so there'd be nothing to carry), only ever
+  // populated client-side via handleArchiveTenant's own local patch
+  // after a successful archive. Undefined (the GET-response case) and
+  // null are both treated as "not archived" everywhere this is read.
+  deletedAt?: string | null
 }
 
 type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc'
@@ -692,6 +699,79 @@ function MembersSection({ tenant, onChanged }: { tenant: PlatformTenant; onChang
   )
 }
 
+// Genuine, irreversible deletion (functions/api/platform/tenants/[id]/
+// hard-delete.ts) - explicitly a developer/testing tool for disposing
+// of throwaway tenants created while testing "Onboard New Tenant", NOT
+// a customer-offboarding feature (see that endpoint's own comment).
+// Only ever rendered for an already-archived tenant (selectedTenant.
+// deletedAt truthy - enforced by this section's own caller, not
+// re-checked here), matching the same "follow-up action on something
+// already disposed of" framing Archive itself uses. Confirm-by-typing,
+// not window.confirm - this needs the tenant's exact slug or name typed
+// (matches the server's own check), a meaningfully higher bar than a
+// single OK-click for an action this permanent.
+function HardDeleteSection({ tenant, onDeleted }: { tenant: PlatformTenant; onDeleted: () => void }): JSX.Element {
+  const [confirmText, setConfirmText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const matches = confirmText.trim() === tenant.slug || confirmText.trim() === tenant.name
+
+  async function handleDelete() {
+    if (!matches) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const response = await fetch(`${TENANTS_URL}/${tenant.id}/hard-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: confirmText.trim() }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setError(data?.error ?? 'Failed to permanently delete this tenant')
+        return
+      }
+      onDeleted()
+    } catch {
+      setError('Failed to permanently delete this tenant')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border-2 border-status-bad bg-status-bad/5 p-4">
+      <div className="mb-1 text-xs font-bold uppercase tracking-widest text-status-bad">
+        Permanently delete — for test/dev tenants only
+      </div>
+      <p className="mb-3 text-xs text-muted-400">
+        Irreversible. Removes every row and uploaded file for {tenant.name} completely - not another archive, an
+        actual deletion. Only use this for throwaway tenants created while testing, never for a real customer who
+        left.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          value={confirmText}
+          disabled={submitting}
+          onChange={(event) => setConfirmText(event.target.value)}
+          placeholder={`Type "${tenant.slug}" to confirm`}
+          className="min-w-[220px] flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-status-bad focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={!matches || submitting}
+          className="rounded-lg bg-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {submitting ? 'Deleting…' : 'Permanently delete'}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-sm font-semibold text-status-bad">{error}</p>}
+    </div>
+  )
+}
+
 // Plain reverse-chronological list row, matching /platform/visits's own
 // plain-list convention for this kind of log rather than inventing a
 // third one. Server already sorts newest-first (see this endpoint's own
@@ -848,20 +928,32 @@ export default function PlatformTenantsPage(): JSX.Element {
     handleBooleanToggle(tenant, 'active', next)
   }
 
-  // Migration 0044 - archiving is a full refetch + clear-selection, not
-  // a local patch, since the archived tenant vanishes entirely from
-  // /platform/tenants's own list (deleted_at IS NOT NULL is excluded
-  // server-side) - there's nothing left to optimistically update in
-  // place. Stronger confirm wording than Suspend's, since this also
-  // locks the tenant's own team out of their back-office (requireTenant's
-  // new deleted_at check) - a meaningfully bigger action than pausing.
+  // Migration 0044 - archiving is a LOCAL patch, deliberately not an
+  // immediate refetch/deselect - GET /platform/tenants excludes
+  // deleted_at IS NOT NULL going forward, so a real refetch would
+  // remove this tenant from the list right away, and with it the only
+  // way to reach the new hard-delete sub-panel below (that panel only
+  // renders for an already-selected, already-archived tenant - see its
+  // own comment). Keeping it selected in local state for the rest of
+  // this session is what makes "archive, then immediately permanently
+  // delete if you want to" possible in one sitting; a fresh page load
+  // afterward won't show it again, matching the "excluded by default"
+  // design unchanged from last round.
   async function handleArchiveTenant(tenant: PlatformTenant) {
-    const message = `Archive ${tenant.name}? This goes further than suspending - their own team will be locked out of their back-office immediately too, not just the public dashboard. This can be undone later, but only via direct database access right now.`
+    const message = `Archive ${tenant.name}? This goes further than suspending - their own team will be locked out of their back-office immediately too, not just the public dashboard. A "Permanently delete" option will appear below once this completes.`
     if (!window.confirm(message)) return
     const updated = await patchTenant(tenant.id, { archived: true })
     if (!updated) return
-    setSelectedTenantId(null)
-    await refreshTenants()
+    setTenants((prev) => prev.map((t) => (t.id === tenant.id ? { ...t, active: false, deletedAt: updated.deletedAt } : t)))
+  }
+
+  // Unlike archive, a successful hard-delete really does mean this
+  // tenant is gone - remove it from local state and clear selection,
+  // rather than the archive path's "keep it around for this session"
+  // treatment.
+  function handleHardDeleted(tenantId: number) {
+    setTenants((prev) => prev.filter((t) => t.id !== tenantId))
+    setSelectedTenantId((prev) => (prev === tenantId ? null : prev))
   }
 
   const [onboarding, setOnboarding] = useState(false)
@@ -1069,22 +1161,44 @@ export default function PlatformTenantsPage(): JSX.Element {
                       from the four unrelated checkboxes above - both are
                       "make this tenant go away" actions (one temporary,
                       one meant to be permanent), not a settings toggle
-                      like weather/ops/internal/ATC. */}
-                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border/60 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSuspendToggle(selectedTenant)}
-                      className="rounded-lg border border-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-status-bad transition hover:bg-status-bad/10"
-                    >
-                      {selectedTenant.active ? 'Suspend tenant' : 'Resume tenant'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleArchiveTenant(selectedTenant)}
-                      className="rounded-lg bg-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:opacity-90"
-                    >
-                      Archive tenant
-                    </button>
+                      like weather/ops/internal/ATC. Once archived, these
+                      two buttons are replaced entirely by an "Archived"
+                      indicator + the hard-delete sub-panel below -
+                      un-archiving isn't part of this round's scope, and
+                      leaving Suspend/Resume live here would let active
+                      get toggled back on while deleted_at stays set, a
+                      genuinely broken half-state (publicly reachable
+                      again per resolveTenantHost.ts's active=1 check,
+                      but still locked out of its own back-office per
+                      requireTenant's deleted_at check, and still hidden
+                      from this very list on next reload). */}
+                  <div className="mt-4 border-t border-border/60 pt-4">
+                    {selectedTenant.deletedAt ? (
+                      <>
+                        <p className="text-xs text-muted-500">
+                          Archived {formatDate(selectedTenant.deletedAt)}. Suspend/Resume is unavailable while
+                          archived.
+                        </p>
+                        <HardDeleteSection tenant={selectedTenant} onDeleted={() => handleHardDeleted(selectedTenant.id)} />
+                      </>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleSuspendToggle(selectedTenant)}
+                          className="rounded-lg border border-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-status-bad transition hover:bg-status-bad/10"
+                        >
+                          {selectedTenant.active ? 'Suspend tenant' : 'Resume tenant'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleArchiveTenant(selectedTenant)}
+                          className="rounded-lg bg-status-bad px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:opacity-90"
+                        >
+                          Archive tenant
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </section>
 
