@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
-import Header from '../components/Header'
 import DisplayUrlList from '../components/config/DisplayUrlList'
-import LeftInfoPanel from '../components/LeftInfoPanel'
-import CentreDisplayPanel from '../components/CentreDisplayPanel'
-import RightInfoPanel from '../components/RightInfoPanel'
-import WeatherStatusIndicator from '../components/WeatherStatusIndicator'
+import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Template'
+import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
+import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import MediaPanel from '../components/media/MediaPanel'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import CafeTicker, { type TickerSlot, type TickerStyle } from '../components/CafeTicker'
@@ -593,8 +591,17 @@ export default function DesignPage(): JSX.Element {
   // the endpoint's own upsert semantics already work.
   const [mainDisplay, setMainDisplay] = useState<DisplayInfo | null>(null)
   const [cafeDisplay, setCafeDisplay] = useState<DisplayInfo | null>(null)
-  const [templateSaving, setTemplateSaving] = useState<string | null>(null)
-  const [templateError, setTemplateError] = useState<string | null>(null)
+  // Pending (not-yet-applied) template selection per screen - separate
+  // from mainDisplay/cafeDisplay above, which stay the genuinely LIVE
+  // record (last fetched, or last successfully applied). Selecting a
+  // template card only ever updates these two; nothing reaches the
+  // server until "Apply to live screen" is clicked, matching exactly
+  // how colour edits already work via activeTokens. null until the
+  // initial fetch resolves, then seeded to match whatever's live -
+  // same "no behaviour change before the fetch resolves" stance
+  // activeTokens' own CURRENT_LIVE_THEME seed already has.
+  const [pendingMainTemplateId, setPendingMainTemplateId] = useState<string | null>(null)
+  const [pendingCafeTemplateId, setPendingCafeTemplateId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -603,9 +610,15 @@ export default function DesignPage(): JSX.Element {
       .then((data) => {
         if (cancelled || !data) return
         const main = (data.displays ?? []).find((display: { slug: string }) => display.slug === 'main')
-        if (main) setMainDisplay({ name: main.name, templateId: main.templateId, panelConfig: main.panelConfig })
+        if (main) {
+          setMainDisplay({ name: main.name, templateId: main.templateId, panelConfig: main.panelConfig })
+          setPendingMainTemplateId(main.templateId)
+        }
         const cafe = (data.displays ?? []).find((display: { slug: string }) => display.slug === 'cafe-tv')
-        if (cafe) setCafeDisplay({ name: cafe.name, templateId: cafe.templateId, panelConfig: cafe.panelConfig })
+        if (cafe) {
+          setCafeDisplay({ name: cafe.name, templateId: cafe.templateId, panelConfig: cafe.panelConfig })
+          setPendingCafeTemplateId(cafe.templateId)
+        }
       })
       .catch(() => {})
     return () => {
@@ -613,55 +626,32 @@ export default function DesignPage(): JSX.Element {
     }
   }, [])
 
+  // Genuinely LIVE ids - drive the "Active on Dashboard"/"Active on
+  // Café" badges only. Never used for the grid's selection highlight or
+  // the preview pane anymore - see pendingMainId/pendingCafeId below.
   const activeTemplateId = mainDisplay?.templateId ?? 'classic'
   const cafeActiveTemplateId = cafeDisplay?.templateId ?? null
-  // Whichever of the two the toggle currently points at - the single
-  // source of truth both the grid's tile-click and the merged Apply
-  // button key off, so neither can drift out of sync with what the
-  // preview panel is actually showing.
-  const activeIdForToggledScreen = activeScreen === 'dashboard' ? activeTemplateId : cafeActiveTemplateId
 
-  // Toggle-aware: dynamic slug/confirm-text/no-op-guard/state-update
-  // target, all reading whichever screen is currently toggled.
-  async function handleSelectLayoutTemplate(templateId: string) {
-    const isDashboard = activeScreen === 'dashboard'
-    if (templateId === activeIdForToggledScreen) return
-    if (
-      !window.confirm(
-        isDashboard
-          ? 'Switch your live dashboard to this template? This affects every device that loads it (PC2, clubhouse display, etc.) immediately.'
-          : 'Switch your live café screen to this template? This affects every device that loads it immediately.'
-      )
-    ) {
-      return
-    }
-    setTemplateSaving(templateId)
-    setTemplateError(null)
-    try {
-      const targetDisplay = isDashboard ? mainDisplay : cafeDisplay
-      const response = await fetch('/api/tenant/displays', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          slug: isDashboard ? 'main' : 'cafe-tv',
-          name: targetDisplay?.name ?? (isDashboard ? 'Main Dashboard' : 'Clubhouse Cafe TV'),
-          templateId,
-          panelConfig: targetDisplay?.panelConfig ?? (isDashboard ? { weather: true, compass: true, media: true, ops: true } : null),
-        }),
-      })
-      const data = await response.json().catch(() => null)
-      if (!response.ok) {
-        setTemplateError(data?.error || "Couldn't switch templates - please try again.")
-        return
-      }
-      const nextDisplay = { name: data.name, templateId: data.templateId, panelConfig: data.panelConfig }
-      if (isDashboard) setMainDisplay(nextDisplay)
-      else setCafeDisplay(nextDisplay)
-    } catch {
-      setTemplateError("Couldn't switch templates - please try again.")
-    } finally {
-      setTemplateSaving(null)
-    }
+  // PENDING ids - what's currently selected in the UI, defaulting to
+  // live once fetched. These drive the grid's highlight border and the
+  // preview pane's template dispatch below - the whole point being
+  // that they can differ from the live ids above until Apply is
+  // clicked. Café's fallback ('cafe-1') matches the only built,
+  // selectable café option today rather than leaving it null with
+  // nothing sensible to highlight/preview for a tenant that's never
+  // touched the café screen.
+  const pendingMainId = pendingMainTemplateId ?? activeTemplateId
+  const pendingCafeId = pendingCafeTemplateId ?? cafeActiveTemplateId ?? 'cafe-1'
+  const pendingIdForToggledScreen = activeScreen === 'dashboard' ? pendingMainId : pendingCafeId
+
+  // Selecting a card only updates the pending selection for whichever
+  // screen is currently toggled - no confirm(), no network write.
+  // Exactly mirrors handleSelectTemplate above (colour templates):
+  // the preview reacts immediately, nothing is live until "Apply to
+  // live screen" is clicked.
+  function handleSelectLayoutTemplate(templateId: string) {
+    if (activeScreen === 'dashboard') setPendingMainTemplateId(templateId)
+    else setPendingCafeTemplateId(templateId)
   }
 
   const allTemplates = [CURRENT_LIVE_THEME, BRIGHT_BLUE_THEME, ...templates]
@@ -773,31 +763,41 @@ export default function DesignPage(): JSX.Element {
     }
   }
 
-  // Merges the old "Apply to Live Dashboard" (theme) and "Apply to Live
-  // Cafe Screen" (template) buttons into one, toggle-aware action. The
-  // colour theme is tenant-wide (there's only ONE live theme, shared by
-  // every display) so it always pushes regardless of the toggle - "which
-  // screen" only meaningfully changes the TEMPLATE half of this action.
-  // When toggled to Dashboard, the template half is inherently a no-op:
-  // the grid's own tile-click is the only way Dashboard's template ever
-  // changes, and it already applies immediately, so there's nothing
-  // "selected but not yet pushed" to send - this button then behaves
-  // exactly like the old "Apply to Live Dashboard" (theme only). When
-  // toggled to Café, it also pushes the Dashboard's current template to
-  // 'cafe-tv' if that differs - exactly the old "Apply to Live Cafe
-  // Screen" behaviour. Same window.confirm() pattern both old buttons
-  // already used, not a new style.
+  // Single toggle-aware action pushing everything pending for whichever
+  // screen is currently toggled. The colour theme is tenant-wide (one
+  // shared club_theme record) so it always pushes regardless of the
+  // toggle; the template push is scoped ONLY to the toggled screen's
+  // own pending selection now - no more cross-screen sync. Previously,
+  // applying while toggled to Café also silently copied Dashboard's
+  // template onto café if they differed ("switches the café screen to
+  // the template currently active on your dashboard") - removed
+  // entirely, since template selection is genuinely independent per
+  // screen now, same as every other setting on this page. Applying
+  // Café's pending template no longer touches Dashboard's live
+  // template, and vice versa.
   async function handleApplyToLiveScreen() {
     const isDashboard = activeScreen === 'dashboard'
-    const needsTemplatePush = !isDashboard && activeTemplateId !== cafeActiveTemplateId
+    const targetDisplay = isDashboard ? mainDisplay : cafeDisplay
+    const liveTemplateId = isDashboard ? activeTemplateId : cafeActiveTemplateId
+    const pendingTemplateId = isDashboard ? pendingMainId : pendingCafeId
+    const needsTemplatePush = pendingTemplateId !== liveTemplateId
 
-    if (
-      !window.confirm(
-        isDashboard
-          ? 'Apply this theme to the live dashboard? This affects every device that loads it (PC2, clubhouse display, etc.) within about 15 seconds.'
-          : `Apply this design to the live café screen? This updates the shared colour theme everywhere it's used${needsTemplatePush ? ', and switches the café screen to the template currently active on your dashboard' : ''} - devices pick up the colour change within about 15 seconds, the template change immediately.`
-      )
-    ) {
+    // Same conditional-text pattern the old café-sync case already
+    // used, generalized to "does THIS screen's own pending template
+    // differ from live" instead of "does café differ from dashboard".
+    // The no-template-change branch is byte-for-byte the original
+    // dashboard/café confirm text - zero wording change for the common
+    // case where only colour is being applied.
+    const screenLabel = isDashboard ? 'live dashboard' : 'live café screen'
+    const confirmMessage = isDashboard
+      ? `Apply this theme${needsTemplatePush ? ' and layout template' : ''} to the ${screenLabel}? This affects every device that loads it (PC2, clubhouse display, etc.)${
+          needsTemplatePush ? ' - the colour change within about 15 seconds, the template change immediately.' : ' within about 15 seconds.'
+        }`
+      : `Apply this design to the ${screenLabel}? This updates the shared colour theme everywhere it's used${
+          needsTemplatePush ? ", and switches this screen's own layout template" : ''
+        } - devices pick up the colour change within about 15 seconds${needsTemplatePush ? ', the template change immediately' : ''}.`
+
+    if (!window.confirm(confirmMessage)) {
       return
     }
 
@@ -825,10 +825,10 @@ export default function DesignPage(): JSX.Element {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            slug: 'cafe-tv',
-            name: cafeDisplay?.name ?? 'Clubhouse Cafe TV',
-            templateId: activeTemplateId,
-            panelConfig: cafeDisplay?.panelConfig ?? null,
+            slug: isDashboard ? 'main' : 'cafe-tv',
+            name: targetDisplay?.name ?? (isDashboard ? 'Main Dashboard' : 'Clubhouse Cafe TV'),
+            templateId: pendingTemplateId,
+            panelConfig: targetDisplay?.panelConfig ?? (isDashboard ? { weather: true, compass: true, media: true, ops: true } : null),
           }),
         })
         const data = await response.json().catch(() => null)
@@ -836,7 +836,9 @@ export default function DesignPage(): JSX.Element {
           setApplyStatus('error')
           return
         }
-        setCafeDisplay({ name: data.name, templateId: data.templateId, panelConfig: data.panelConfig })
+        const nextDisplay = { name: data.name, templateId: data.templateId, panelConfig: data.panelConfig }
+        if (isDashboard) setMainDisplay(nextDisplay)
+        else setCafeDisplay(nextDisplay)
       }
       setApplyStatus('success')
     } catch {
@@ -1499,28 +1501,52 @@ export default function DesignPage(): JSX.Element {
             >
               <WeatherProvider forcedConfig={MOCK_CONFIG}>
                 {activeScreen === 'dashboard' ? (
-                  <div
-                    className={`h-full w-full p-10 text-slate-100 ${
-                      activeGradientMode === 'solid' ? 'bg-page-via' : 'bg-gradient-to-b from-page-from via-page-via to-page-to'
-                    }`}
-                  >
-                    <div className="grid h-full grid-rows-[7%_1fr] gap-4">
-                      <Header
-                        airfieldName={airfieldName}
-                        logoUrl={logoUrl}
-                        showLogo={brandMain.showLogo}
-                        showName={brandMain.showName}
-                        nameFontSize={brandMain.nameFontSize}
-                        rightSlot={<WeatherStatusIndicator />}
-                        gradientMode={activeGradientMode}
-                      />
-                      <div className="grid h-full grid-cols-[23%_54%_23%] gap-4">
-                        <LeftInfoPanel />
-                        <CentreDisplayPanel />
-                        <RightInfoPanel />
-                      </div>
-                    </div>
-                  </div>
+                  // Dispatches on pendingMainId (the STAGED selection, not
+                  // necessarily live yet) to the exact same real template
+                  // components DashboardPage.tsx itself renders - a genuine
+                  // preview of what Apply would actually publish, not a
+                  // fixed Clubhouse-1-shaped lookalike regardless of which
+                  // card is selected. isPreview on each makes them size to
+                  // this scaled box instead of the real viewport (see each
+                  // component's own comment). activeGradientMode (the
+                  // Solid/Gradient preview toggle) isn't threaded through
+                  // here - confirmed in an earlier round that it was
+                  // already never applied to the real live dashboard
+                  // either way (template-library-only, dead outside this
+                  // page's own preview), so this isn't a live-behaviour
+                  // regression, just a cosmetic preview-only detail that
+                  // stops applying once a genuine template renders.
+                  pendingMainId === 'clubhouse-2' ? (
+                    <Clubhouse2Template
+                      themeOverride={previewStyle}
+                      airfieldName={airfieldName}
+                      logoUrl={logoUrl}
+                      showLogo={brandMain.showLogo}
+                      showName={brandMain.showName}
+                      nameFontSize={brandMain.nameFontSize}
+                      isPreview
+                    />
+                  ) : pendingMainId === 'cafe-1' ? (
+                    <CafeTemplate
+                      themeOverride={previewStyle}
+                      airfieldName={airfieldName}
+                      logoUrl={logoUrl}
+                      showLogo={brandMain.showLogo}
+                      showName={brandMain.showName}
+                      nameFontSize={brandMain.nameFontSize}
+                      isPreview
+                    />
+                  ) : (
+                    <Clubhouse1Template
+                      themeOverride={previewStyle}
+                      airfieldName={airfieldName}
+                      logoUrl={logoUrl}
+                      showLogo={brandMain.showLogo}
+                      showName={brandMain.showName}
+                      nameFontSize={brandMain.nameFontSize}
+                      isPreview
+                    />
+                  )
                 ) : (
                   <CafePreview airfieldName={airfieldName} logoUrl={logoUrl} gradientMode={activeGradientMode} brandCafe={brandCafe} />
                 )}
@@ -1549,27 +1575,27 @@ export default function DesignPage(): JSX.Element {
           Layout - {activeScreen === 'dashboard' ? 'Dashboard' : 'Café'} screen
         </div>
         <p className="mb-4 text-xs text-muted-500">
-          Choose which layout renders on the screen selected above. Switching takes effect immediately on every
-          device that loads it.
+          Choose which layout renders on the screen selected above - the preview reacts immediately, but nothing
+          is live until you click "Apply to live screen".
         </p>
-        {templateError && <p className="mb-3 text-sm font-semibold text-status-bad">{templateError}</p>}
         <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
           {TEMPLATE_SLOTS.map((slot) => {
-            const isActive = slot.id === activeIdForToggledScreen
+            const toggledScreenLiveId = activeScreen === 'dashboard' ? activeTemplateId : cafeActiveTemplateId
+            const isPendingSelection = slot.id === pendingIdForToggledScreen
             const isActiveOnDashboard = slot.id === activeTemplateId
             const isActiveOnCafe = cafeActiveTemplateId !== null && slot.id === cafeActiveTemplateId
+            const isPendingNotYetLive = isPendingSelection && slot.id !== toggledScreenLiveId
             const isComingSoon = slot.status === 'coming-soon'
-            const isSaving = templateSaving === slot.id
             return (
               <button
                 key={slot.id}
                 type="button"
-                disabled={isComingSoon || isSaving}
+                disabled={isComingSoon}
                 onClick={() => handleSelectLayoutTemplate(slot.id)}
                 className={`rounded-xl border p-4 text-left transition ${
                   isComingSoon
                     ? 'cursor-not-allowed border-border bg-slate-900/40 opacity-50'
-                    : isActive
+                    : isPendingSelection
                       ? 'border-accent-sky-500 bg-slate-900'
                       : 'border-border bg-slate-900/80 hover:border-accent-sky-500/60'
                 }`}
@@ -1584,8 +1610,14 @@ export default function DesignPage(): JSX.Element {
                 {isActiveOnCafe && (
                   <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Active on Café</div>
                 )}
+                {/* Distinct colour (status-warn, not the same accent-sky-400
+                    "Active on..." uses) - this card is only SELECTED for
+                    preview/pending-apply, genuinely different from actually
+                    live, and needs to read as unambiguous at a glance. */}
+                {isPendingNotYetLive && (
+                  <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-status-warn">Selected - not yet live</div>
+                )}
                 {isComingSoon && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted-500">Coming soon</div>}
-                {isSaving && <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-accent-sky-400">Switching…</div>}
               </button>
             )
           })}

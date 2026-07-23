@@ -22,6 +22,12 @@ interface Clubhouse2TemplateProps {
   showLogo?: boolean
   showName?: boolean
   nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
+  // See Clubhouse1Template.tsx's own comment - same preview-mode sizing
+  // swap (w-full/h-full instead of w-screen/h-screen, forced desktop
+  // layout), needed for Screens Design's live preview to embed this
+  // exact component inside its fixed-size scaled box. Defaults false
+  // for every real caller - no behaviour change on the live dashboard.
+  isPreview?: boolean
 }
 
 // "Clubhouse Template 2" - a fixed (not carousel), upper/lower split
@@ -41,8 +47,10 @@ export default function Clubhouse2Template({
   showLogo,
   showName,
   nameFontSize,
+  isPreview = false,
 }: Clubhouse2TemplateProps): JSX.Element {
-  const isDesktop = useIsDesktopLayout()
+  const detectedDesktop = useIsDesktopLayout()
+  const isDesktop = isPreview || detectedDesktop
 
   // Same small derivation LeftInfoPanel.tsx already does to feed its own
   // internal CloudVisibilityChart instance (State B) - reused directly
@@ -60,9 +68,9 @@ export default function Clubhouse2Template({
 
   return (
     <div
-      className={`w-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100 ${
-        isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'
-      }`}
+      className={`${
+        isPreview ? 'h-full w-full overflow-hidden' : `w-screen ${isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'}`
+      } bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100`}
       style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
     >
       <div

@@ -19,6 +19,14 @@ interface CafeTemplateProps {
   showLogo?: boolean
   showName?: boolean
   nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
+  // See Clubhouse1Template.tsx's own comment - same preview-mode sizing
+  // swap, needed so Screens Design's Dashboard-screen preview can
+  // render this exact component when 'cafe-1' is the pending/live main
+  // template (DashboardPage.tsx allows a café template on '/' too, not
+  // just on the named /d/cafe-tv display). Defaults false for every
+  // real caller - no behaviour change on the live dashboard or café
+  // screen.
+  isPreview?: boolean
 }
 
 interface SafetyNotice {
@@ -94,8 +102,10 @@ export default function CafeTemplate({
   showLogo,
   showName,
   nameFontSize,
+  isPreview = false,
 }: CafeTemplateProps): JSX.Element {
-  const isDesktop = useIsDesktopLayout()
+  const detectedDesktop = useIsDesktopLayout()
+  const isDesktop = isPreview || detectedDesktop
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
 
@@ -150,16 +160,21 @@ export default function CafeTemplate({
   // white flash), just without the grid/panels yet - avoids a jarring
   // colour flash on top of avoiding the wrong-content flash above.
   if (!cafeSettings) {
-    return <div className="h-screen w-screen bg-gradient-to-b from-page-from via-page-via to-page-to" style={themeOverride} />
+    return (
+      <div
+        className={`${isPreview ? 'h-full w-full' : 'h-screen w-screen'} bg-gradient-to-b from-page-from via-page-via to-page-to`}
+        style={themeOverride}
+      />
+    )
   }
 
   const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots, tickerStyle } = cafeSettings
 
   return (
     <div
-      className={`w-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100 ${
-        isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'
-      }`}
+      className={`${
+        isPreview ? 'h-full w-full overflow-hidden' : `w-screen ${isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'}`
+      } bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100`}
       style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
     >
       <div

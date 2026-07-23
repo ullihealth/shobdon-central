@@ -16,6 +16,17 @@ interface Clubhouse1TemplateProps {
   showLogo?: boolean
   showName?: boolean
   nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
+  // Screens Design's live preview renders this exact component (not a
+  // lookalike) inside a fixed-size scaled box, not the real page -
+  // w-screen/h-screen would size against the actual browser viewport
+  // instead of that box, breaking the scale-transform the preview
+  // relies on. true swaps to w-full/h-full and forces the desktop
+  // (3-column) branch regardless of the real viewport width - matching
+  // what the preview's own reference dimensions already assume, since
+  // there's no "mobile preview" mode today. Defaults false/undefined
+  // for every real caller (DashboardPage.tsx) - zero behaviour change
+  // on the actual live dashboard.
+  isPreview?: boolean
 }
 
 // "Clubhouse Template 1" - the dashboard layout that was DashboardPage.tsx's
@@ -37,14 +48,16 @@ export default function Clubhouse1Template({
   showLogo,
   showName,
   nameFontSize,
+  isPreview = false,
 }: Clubhouse1TemplateProps): JSX.Element {
-  const isDesktop = useIsDesktopLayout()
+  const detectedDesktop = useIsDesktopLayout()
+  const isDesktop = isPreview || detectedDesktop
 
   return (
     <div
-      className={`w-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100 ${
-        isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'
-      }`}
+      className={`${
+        isPreview ? 'h-full w-full overflow-hidden' : `w-screen ${isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'}`
+      } bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100`}
       // Safe-area/overscan margin, not a design choice - TVs commonly
       // crop a few percent off every edge of what the browser reports
       // as "the viewport" (overscan), and this varies by TV model/
