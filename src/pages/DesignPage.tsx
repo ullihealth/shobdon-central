@@ -1154,19 +1154,28 @@ export default function DesignPage(): JSX.Element {
                     {logoError && <p className="mt-1 text-xs text-status-bad">{logoError}</p>}
                   </div>
 
-                  {/* Logo/name display - migration 0039. Root cause this
-                      round: a real club logo (e.g. Shobdon's own) often
-                      already has the club name baked into the artwork,
-                      so showing a separate text label right next to it
-                      reads as redundant/cluttered rather than a genuine
-                      CSS overlap (confirmed via Playwright: the two
-                      elements never actually collide in the DOM). Two
-                      independent blocks, not one shared control - the
-                      main Dashboard and the Café display are different
-                      physical screens that may need different answers
-                      (e.g. Shobdon's dashboard could keep both, while
-                      its café screen - same logo, same redundancy -
-                      turns the text off). */}
+                  {/* Logo/name display - migration 0039. Root cause: a real
+                      club logo (e.g. Shobdon's own) often already has the
+                      club name baked into the artwork, so showing a
+                      separate text label right next to it reads as
+                      redundant/cluttered rather than a genuine CSS overlap
+                      (confirmed via Playwright: the two elements never
+                      actually collide in the DOM) - but for any tenant
+                      whose logo does NOT bake in their name, two
+                      independently-checkable boxes could produce a real
+                      visual overlap, which is what this round's radio-style
+                      rework prevents structurally rather than relying on
+                      an admin noticing. Two independent groups, not one
+                      shared control - the main Dashboard and the Café
+                      display are different physical screens that may need
+                      different answers (e.g. logo on the dashboard, name
+                      text on the café screen). Within each group, exactly
+                      one of the two is ever true - selected below by
+                      deriving it from value.showLogo rather than trusting
+                      both fields independently, so a legacy row with both
+                      (or neither) true/false still renders exactly one
+                      radio selected instead of a browser-dependent
+                      double-checked group. */}
                   {(
                     [
                       { key: 'main' as const, label: 'Main Dashboard', value: brandMain, setValue: setBrandMain },
@@ -1178,10 +1187,11 @@ export default function DesignPage(): JSX.Element {
                       <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
                         <label className="flex items-center gap-2 text-sm text-primary">
                           <input
-                            type="checkbox"
+                            type="radio"
+                            name={`brand-display-${key}`}
                             checked={value.showLogo}
-                            onChange={(event) => {
-                              const next = { ...value, showLogo: event.target.checked }
+                            onChange={() => {
+                              const next = { ...value, showLogo: true, showName: false }
                               setValue(next)
                               handleSaveBrandDisplay(key === 'main' ? next : brandMain, key === 'cafe' ? next : brandCafe)
                             }}
@@ -1190,10 +1200,11 @@ export default function DesignPage(): JSX.Element {
                         </label>
                         <label className="flex items-center gap-2 text-sm text-primary">
                           <input
-                            type="checkbox"
-                            checked={value.showName}
-                            onChange={(event) => {
-                              const next = { ...value, showName: event.target.checked }
+                            type="radio"
+                            name={`brand-display-${key}`}
+                            checked={!value.showLogo}
+                            onChange={() => {
+                              const next = { ...value, showLogo: false, showName: true }
                               setValue(next)
                               handleSaveBrandDisplay(key === 'main' ? next : brandMain, key === 'cafe' ? next : brandCafe)
                             }}

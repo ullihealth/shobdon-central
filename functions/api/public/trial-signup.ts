@@ -119,11 +119,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .run();
 
   try {
+    // brand_display_json explicit here, not left to the column's own
+    // DEFAULT (both showLogo/showName true) - a freshly signed-up club
+    // hasn't uploaded a logo yet, so name-text-only is the sane starting
+    // point; showing an unbaked-in logo alongside redundant name text is
+    // exactly the overlap risk this round's Branding-tab rework
+    // addresses. See DesignPage.tsx's own comment on why the two are now
+    // mutually exclusive rather than independent checkboxes.
     await env.DB
       .prepare(
-        "INSERT INTO tenants (slug, name, subdomain, organization_id, weather_public, ops_public, active) VALUES (?, ?, ?, ?, 0, 0, 1)"
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, weather_public, ops_public, active, brand_display_json)
+         VALUES (?, ?, ?, ?, 0, 0, 1, ?)`
       )
-      .bind(slug, clubName, subdomain, organizationId)
+      .bind(
+        slug,
+        clubName,
+        subdomain,
+        organizationId,
+        JSON.stringify({ main: { showLogo: false, showName: true, nameFontSize: "md" }, cafe: { showLogo: false, showName: true, nameFontSize: "md" } })
+      )
       .run();
   } catch {
     // Slug was taken between the check above and this insert (race) -

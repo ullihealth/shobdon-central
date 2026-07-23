@@ -76,12 +76,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .bind(organizationId, placeholderName, slug, now)
     .run();
 
+  // brand_display_json explicit here, not left to the column's own
+  // DEFAULT (both showLogo/showName true) - same reasoning as
+  // trial-signup.ts's own tenant INSERT: a brand-new tenant hasn't
+  // uploaded a logo yet, so name-text-only is the sane starting point,
+  // and the two are now mutually exclusive in the Branding tab UI
+  // anyway (DesignPage.tsx) rather than independently checkable.
+  const defaultBrandDisplay = JSON.stringify({
+    main: { showLogo: false, showName: true, nameFontSize: "md" },
+    cafe: { showLogo: false, showName: true, nameFontSize: "md" },
+  });
+
   await env.DB
     .prepare(
-      `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key)
-       VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL)`
+      `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json)
+       VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL, ?)`
     )
-    .bind(slug, placeholderName, subdomain, organizationId)
+    .bind(slug, placeholderName, subdomain, organizationId, defaultBrandDisplay)
     .run();
 
   await cloneTenantTemplate(env.DB, template.organizationId, organizationId, slug);
