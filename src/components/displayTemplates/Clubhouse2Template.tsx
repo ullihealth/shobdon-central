@@ -16,6 +16,12 @@ interface Clubhouse2TemplateProps {
   themeOverride: CSSProperties
   airfieldName?: string | null
   logoUrl?: string | null
+  // Migration 0039 (Screens Design's Branding tab) - the 'main'
+  // brandDisplay slice, passed straight through to Header.tsx. See that
+  // file's own comment for the full reasoning.
+  showLogo?: boolean
+  showName?: boolean
+  nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
 // "Clubhouse Template 2" - a fixed (not carousel), upper/lower split
@@ -28,7 +34,14 @@ interface Clubhouse2TemplateProps {
 // per its own layout spec. Built entirely from existing components via
 // small additive props (preferVideo/notamsOnly/disableChartFlip - see
 // each component's own comment), no new data plumbing.
-export default function Clubhouse2Template({ themeOverride, airfieldName, logoUrl }: Clubhouse2TemplateProps): JSX.Element {
+export default function Clubhouse2Template({
+  themeOverride,
+  airfieldName,
+  logoUrl,
+  showLogo,
+  showName,
+  nameFontSize,
+}: Clubhouse2TemplateProps): JSX.Element {
   const isDesktop = useIsDesktopLayout()
 
   // Same small derivation LeftInfoPanel.tsx already does to feed its own
@@ -61,7 +74,14 @@ export default function Clubhouse2Template({ themeOverride, airfieldName, logoUr
         }
       >
         <div style={isDesktop ? undefined : { height: '64px', flexShrink: 0 }}>
-          <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
+          <Header
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={showLogo}
+            showName={showName}
+            nameFontSize={nameFontSize}
+            rightSlot={<WeatherStatusIndicator />}
+          />
         </div>
 
         {/* BODY - upper half / fixed divider / lower half. minmax(0,1fr) on

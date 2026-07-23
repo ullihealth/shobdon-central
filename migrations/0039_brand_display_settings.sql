@@ -1,0 +1,23 @@
+-- Per-tenant control over how the airfield logo/name badge renders,
+-- independently for the two places it appears: the main
+-- Dashboard/Clubhouse templates (Header.tsx) and the Café template
+-- (VenueCornerBadge.tsx). Confirmed root cause this round: on a real
+-- club logo that already has the club name baked into the artwork
+-- (Shobdon's own logo does), rendering the SEPARATE "Shobdon Airfield"
+-- text label right next to it is redundant and visually cluttered -
+-- not a CSS/DOM overlap bug (verified via Playwright: the two elements
+-- never actually collide in the DOM), but a content-design problem
+-- that needs an admin-facing choice, not a layout fix.
+--
+-- One JSON column, not several flat ones - matches this app's own
+-- established pattern for small structured per-tenant settings blobs
+-- (ops_panel_state.safetyNoticesJson, club_theme.tokensJson,
+-- cafe_template_settings.tickerSlotsJson), and keeps room to add a
+-- third "page" context later (e.g. Clubhouse2's notamsOnly variant)
+-- without another migration.
+--
+-- Default covers both keys explicitly (main + cafe), matching today's
+-- unconditional "always show both, small fixed size" behaviour exactly -
+-- purely additive, no existing tenant's dashboard changes appearance
+-- until an admin visits Screens Design and changes this.
+ALTER TABLE tenants ADD COLUMN brand_display_json TEXT NOT NULL DEFAULT '{"main":{"showLogo":true,"showName":true,"nameFontSize":"md"},"cafe":{"showLogo":true,"showName":true,"nameFontSize":"md"}}';

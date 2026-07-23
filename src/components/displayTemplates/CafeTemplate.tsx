@@ -3,7 +3,6 @@ import type { CSSProperties } from 'react'
 import MediaPanel from '../media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerStyle } from '../CafeTicker'
 import VenueCornerBadge from '../VenueCornerBadge'
-import WeatherStatusIndicator from '../WeatherStatusIndicator'
 import { currentMedia } from '../../config/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import { useWeather } from '../../context/WeatherContext'
@@ -14,6 +13,12 @@ interface CafeTemplateProps {
   themeOverride: CSSProperties
   airfieldName?: string | null
   logoUrl?: string | null
+  // Migration 0039 (Screens Design's Branding tab) - the 'cafe'
+  // brandDisplay slice, passed straight through to VenueCornerBadge.tsx.
+  // See that file's own comment for the full reasoning.
+  showLogo?: boolean
+  showName?: boolean
+  nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
 interface SafetyNotice {
@@ -82,7 +87,14 @@ function AdLabel(): JSX.Element {
 // cafeSettings/safetyNotices, matching MediaPanel.tsx/LeftInfoPanel.tsx's
 // already-established "each panel independently fetches what it needs"
 // convention rather than threading more props through DashboardPage.tsx.
-export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: CafeTemplateProps): JSX.Element {
+export default function CafeTemplate({
+  themeOverride,
+  airfieldName,
+  logoUrl,
+  showLogo,
+  showName,
+  nameFontSize,
+}: CafeTemplateProps): JSX.Element {
   const isDesktop = useIsDesktopLayout()
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
@@ -166,16 +178,25 @@ export default function CafeTemplate({ themeOverride, airfieldName, logoUrl }: C
             required on the ticker wrapper below. */}
         <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
-            <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
+            <VenueCornerBadge
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={showLogo}
+              showName={showName}
+              nameFontSize={nameFontSize}
+            />
           </div>
-          {/* Café previously had NO weather-source badge at all (unlike
-              ClassicTemplate/Clubhouse1Template/Clubhouse2Template, which
-              already render WeatherStatusIndicator) - added here so the
-              Live ATC / Fallback indicator is visible on every display
-              template, not just three of the four. */}
-          <div className="absolute right-0 top-0 z-10 rounded-xl border border-border bg-panel/90 px-3 py-2 shadow-lg shadow-slate-950/30">
-            <WeatherStatusIndicator />
-          </div>
+          {/* No weather-source badge here, unlike ClassicTemplate/
+              Clubhouse1Template/Clubhouse2Template (which render
+              WeatherStatusIndicator via Header's rightSlot) - it was
+              added here once, briefly, "so every template shows it,"
+              but that's exactly wrong for this one: it's diagnostic/
+              internal information (which weather data source is live -
+              ATC station vs internet fallback), useful for whoever
+              operates the dashboard, not for a visitor or pilot glancing
+              at the clubhouse TV. Removed deliberately, not an oversight -
+              café is the one display template this should never appear
+              on. */}
 
           {layoutMode === 'split' ? (
             <div

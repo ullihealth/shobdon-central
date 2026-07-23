@@ -70,6 +70,46 @@ interface OpsPanelRow {
   weatherSummaryStateBDurationSeconds: number;
 }
 
+// Migration 0039 - independent logo/name display settings for the two
+// places a tenant's branding badge renders (Header.tsx on the
+// dashboard-style templates, VenueCornerBadge.tsx on the Café
+// template). Duplicated (not imported) in tenant/config.ts - this
+// repo's own established convention of not sharing types across the
+// functions/src boundary (see e.g. SafetyNotice, duplicated privately
+// in three places already).
+interface BrandDisplaySettings {
+  showLogo: boolean;
+  showName: boolean;
+  nameFontSize: "sm" | "md" | "lg" | "xl";
+}
+
+interface BrandDisplayConfig {
+  main: BrandDisplaySettings;
+  cafe: BrandDisplaySettings;
+}
+
+const DEFAULT_BRAND_DISPLAY: BrandDisplayConfig = {
+  main: { showLogo: true, showName: true, nameFontSize: "md" },
+  cafe: { showLogo: true, showName: true, nameFontSize: "md" },
+};
+
+// Tolerates a missing/malformed column value (shouldn't happen given
+// the migration's own NOT NULL DEFAULT, but a parse failure here must
+// never break the whole public config response) by falling back to
+// today's unconditional "show both, medium size" behaviour.
+function parseBrandDisplay(json: string | null | undefined): BrandDisplayConfig {
+  if (!json) return DEFAULT_BRAND_DISPLAY;
+  try {
+    const parsed = JSON.parse(json);
+    return {
+      main: { ...DEFAULT_BRAND_DISPLAY.main, ...(parsed?.main ?? {}) },
+      cafe: { ...DEFAULT_BRAND_DISPLAY.cafe, ...(parsed?.cafe ?? {}) },
+    };
+  } catch {
+    return DEFAULT_BRAND_DISPLAY;
+  }
+}
+
 interface SafetyNoticeResolved {
   id: string;
   name: string;
@@ -114,9 +154,11 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     // branding audit. logo_r2_key resolved to logoUrl below, same
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
-      .prepare("SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc FROM tenants WHERE organization_id = ?")
+      .prepare(
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson FROM tenants WHERE organization_id = ?"
+      )
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number }>(),
+      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number; brandDisplayJson: string | null }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -278,6 +320,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
   const airfieldName = tenantRow?.name ?? null;
   const logoUrl = tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null;
   const hasPhysicalAtc = !!tenantRow?.hasPhysicalAtc;
+  const brandDisplay = parseBrandDisplay(tenantRow?.brandDisplayJson);
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -386,6 +429,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     airfieldName,
     logoUrl,
     hasPhysicalAtc,
+    brandDisplay,
     cameraSlots,
     carouselSlots,
     cafeCarouselSlots,

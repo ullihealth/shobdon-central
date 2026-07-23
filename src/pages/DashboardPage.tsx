@@ -35,6 +35,16 @@ export default function DashboardPage(): JSX.Element {
   // row's template_id, resolved server-side in publicConfig.ts - never
   // missing/null in the response itself, always at least 'classic').
   const [mainTemplateId, setMainTemplateId] = useState('classic')
+  // Migration 0039 (Screens Design's Branding tab) - null until the
+  // fetch resolves, same stance as airfieldName/logoUrl above. Header.tsx/
+  // VenueCornerBadge.tsx both default every one of these props to
+  // true/true/'md' on their own, so passing undefined (the null case
+  // here) during the brief pre-fetch window is already exactly today's
+  // unconditional behaviour, not a separate fallback to maintain.
+  const [brandDisplay, setBrandDisplay] = useState<{
+    main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
+    cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
+  } | null>(null)
   // Set only on a genuine resolution failure (config.ts 404s - unknown
   // host, or the tenant is paused: tenants.active = 0, see
   // resolveTenantHost.ts). A transient network hiccup that still
@@ -68,6 +78,7 @@ export default function DashboardPage(): JSX.Element {
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.mainTemplateId) setMainTemplateId(data.mainTemplateId as string)
+        if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
         // Part D developer override (migration 0034) - a support/
         // maintenance force-off for '/' itself, independent of both
         // tenants.active (whole-tenant pause, handled by the !response.ok
@@ -93,11 +104,32 @@ export default function DashboardPage(): JSX.Element {
   return (
     <WeatherProvider>
       {mainTemplateId === 'clubhouse-2' ? (
-        <Clubhouse2Template themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+        <Clubhouse2Template
+          themeOverride={themeOverride}
+          airfieldName={airfieldName}
+          logoUrl={logoUrl}
+          showLogo={brandDisplay?.main.showLogo}
+          showName={brandDisplay?.main.showName}
+          nameFontSize={brandDisplay?.main.nameFontSize}
+        />
       ) : mainTemplateId === 'cafe-1' ? (
-        <CafeTemplate themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+        <CafeTemplate
+          themeOverride={themeOverride}
+          airfieldName={airfieldName}
+          logoUrl={logoUrl}
+          showLogo={brandDisplay?.cafe.showLogo}
+          showName={brandDisplay?.cafe.showName}
+          nameFontSize={brandDisplay?.cafe.nameFontSize}
+        />
       ) : (
-        <Clubhouse1Template themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+        <Clubhouse1Template
+          themeOverride={themeOverride}
+          airfieldName={airfieldName}
+          logoUrl={logoUrl}
+          showLogo={brandDisplay?.main.showLogo}
+          showName={brandDisplay?.main.showName}
+          nameFontSize={brandDisplay?.main.nameFontSize}
+        />
       )}
     </WeatherProvider>
   )

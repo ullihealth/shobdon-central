@@ -22,6 +22,8 @@ interface TenantDisplayRow {
   templateId: string;
   panelConfigJson: string | null;
   updatedAt: string;
+  entitled: number;
+  entitlementTrialExpiresAt: string | null;
 }
 
 interface TenantIdentity {
@@ -50,7 +52,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await env.DB
     .prepare(
-      "SELECT slug, name, template_id AS templateId, panel_config AS panelConfigJson, updated_at AS updatedAt FROM tenant_displays WHERE tenant_id = ? ORDER BY id"
+      "SELECT slug, name, template_id AS templateId, panel_config AS panelConfigJson, updated_at AS updatedAt, entitled, entitlement_trial_expires_at AS entitlementTrialExpiresAt FROM tenant_displays WHERE tenant_id = ? ORDER BY id"
     )
     .bind(tenant.id)
     .all<TenantDisplayRow>();
@@ -63,6 +65,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       templateId: row.templateId,
       panelConfig: row.panelConfigJson ? JSON.parse(row.panelConfigJson) : null,
       updatedAt: row.updatedAt,
+      // Read-only here - this route is owner-facing (see this file's own
+      // header comment) and entitlement is granted only by the platform-
+      // admin toggle or, eventually, Stripe (see the café-display upsell
+      // investigation) - never by an owner PATCHing their own row.
+      // Exposed so CafeMediaPage.tsx can show its FeatureUpsellPanel
+      // instead of the slot editor for a not-yet-entitled tenant, same
+      // live "entitled AND not expired" semantics as the public route
+      // (functions/api/public/display.ts's isCurrentlyEntitled).
+      entitled: !!row.entitled,
+      entitlementTrialExpiresAt: row.entitlementTrialExpiresAt,
     })),
   });
 };

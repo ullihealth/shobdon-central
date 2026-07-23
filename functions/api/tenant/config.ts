@@ -56,6 +56,47 @@ interface CameraSlotInput {
   url: string;
 }
 
+// Migration 0039 - see publicConfig.ts's own copy of this same shape/
+// helper for the full reasoning (independent logo/name display
+// settings for Header.tsx vs VenueCornerBadge.tsx). Duplicated, not
+// imported - this repo's established functions/src boundary convention.
+interface BrandDisplaySettings {
+  showLogo: boolean;
+  showName: boolean;
+  nameFontSize: "sm" | "md" | "lg" | "xl";
+}
+
+interface BrandDisplayConfig {
+  main: BrandDisplaySettings;
+  cafe: BrandDisplaySettings;
+}
+
+const DEFAULT_BRAND_DISPLAY: BrandDisplayConfig = {
+  main: { showLogo: true, showName: true, nameFontSize: "md" },
+  cafe: { showLogo: true, showName: true, nameFontSize: "md" },
+};
+
+function parseBrandDisplay(json: string | null | undefined): BrandDisplayConfig {
+  if (!json) return DEFAULT_BRAND_DISPLAY;
+  try {
+    const parsed = JSON.parse(json);
+    return {
+      main: { ...DEFAULT_BRAND_DISPLAY.main, ...(parsed?.main ?? {}) },
+      cafe: { ...DEFAULT_BRAND_DISPLAY.cafe, ...(parsed?.cafe ?? {}) },
+    };
+  } catch {
+    return DEFAULT_BRAND_DISPLAY;
+  }
+}
+
+const VALID_FONT_SIZES = new Set(["sm", "md", "lg", "xl"]);
+
+function isValidBrandDisplaySettings(value: unknown): value is BrandDisplaySettings {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.showLogo === "boolean" && typeof v.showName === "boolean" && typeof v.nameFontSize === "string" && VALID_FONT_SIZES.has(v.nameFontSize);
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
@@ -72,9 +113,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // avoid falling back to its generic placeholder. logo_r2_key resolved
     // to logoUrl the same way publicConfig.ts does.
     env.DB
-      .prepare("SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc FROM tenants WHERE organization_id = ?")
+      .prepare(
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson FROM tenants WHERE organization_id = ?"
+      )
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number }>(),
+      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number; brandDisplayJson: string | null }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -96,6 +139,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     airfieldName: tenantRow?.name ?? null,
     logoUrl: tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null,
     hasPhysicalAtc: !!tenantRow?.hasPhysicalAtc,
+    brandDisplay: parseBrandDisplay(tenantRow?.brandDisplayJson),
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
   });
 };
@@ -114,6 +158,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     theme?: Record<string, string>;
     cameraSlots?: CameraSlotInput[];
     airfieldName?: string;
+    brandDisplay?: { main?: unknown; cafe?: unknown };
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -127,6 +172,17 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare("UPDATE tenants SET name = ?, updated_at = ? WHERE organization_id = ?")
       .bind(body.airfieldName.trim(), now, organizationId)
+      .run();
+  }
+
+  // Both main and cafe must be present and valid - a partial/malformed
+  // object is rejected rather than silently merged with defaults, since
+  // this would otherwise let a client accidentally reset the other
+  // page's settings back to defaults by omission.
+  if (body.brandDisplay && isValidBrandDisplaySettings(body.brandDisplay.main) && isValidBrandDisplaySettings(body.brandDisplay.cafe)) {
+    await env.DB
+      .prepare("UPDATE tenants SET brand_display_json = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(JSON.stringify({ main: body.brandDisplay.main, cafe: body.brandDisplay.cafe }), now, organizationId)
       .run();
   }
 

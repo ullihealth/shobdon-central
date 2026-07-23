@@ -10,6 +10,12 @@ interface Clubhouse1TemplateProps {
   themeOverride: CSSProperties
   airfieldName?: string | null
   logoUrl?: string | null
+  // Migration 0039 (Screens Design's Branding tab) - the 'main'
+  // brandDisplay slice, passed straight through to Header.tsx. See that
+  // file's own comment for the full reasoning.
+  showLogo?: boolean
+  showName?: boolean
+  nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
 // "Clubhouse Template 1" - the dashboard layout that was DashboardPage.tsx's
@@ -24,7 +30,14 @@ interface Clubhouse1TemplateProps {
 // CafeTemplate. No panelConfig prop here (unlike ClassicTemplate) -
 // this template has never had conditional panels and must not gain any,
 // per the "no visual changes, just formalize it" requirement.
-export default function Clubhouse1Template({ themeOverride, airfieldName, logoUrl }: Clubhouse1TemplateProps): JSX.Element {
+export default function Clubhouse1Template({
+  themeOverride,
+  airfieldName,
+  logoUrl,
+  showLogo,
+  showName,
+  nameFontSize,
+}: Clubhouse1TemplateProps): JSX.Element {
   const isDesktop = useIsDesktopLayout()
 
   return (
@@ -56,7 +69,14 @@ export default function Clubhouse1Template({ themeOverride, airfieldName, logoUr
             otherwise gives it only as much height as its content
             strictly needs, which clipped the clock in testing. */}
         <div style={isDesktop ? undefined : { height: '64px', flexShrink: 0 }}>
-          <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
+          <Header
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={showLogo}
+            showName={showName}
+            nameFontSize={nameFontSize}
+            rightSlot={<WeatherStatusIndicator />}
+          />
         </div>
 
         {/* BODY (90%) - three columns left/center/right. */}

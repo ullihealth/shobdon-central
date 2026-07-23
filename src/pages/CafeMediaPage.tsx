@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import MediaPanel from '../components/media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
 import VenueCornerBadge from '../components/VenueCornerBadge'
+import FeatureUpsellPanel from '../components/FeatureUpsellPanel'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
 import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 import { currentMedia } from '../config/media'
@@ -255,6 +256,19 @@ export default function CafeMediaPage(): JSX.Element {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [loadError, setLoadError] = useState(false)
 
+  // Whether THIS tenant's cafe-tv display is currently entitled
+  // (tenant_displays.entitled, migration 0034 - a paid feature, not a
+  // generic "published" flag - see the café-display upsell
+  // investigation). The default value here never actually gets
+  // rendered against real content either way: this fetch is folded
+  // into the same `loading` gate as everything else below (Promise.all),
+  // so the page shows "Loading…" until entitlement is genuinely known,
+  // rather than briefly flashing the editor OR the upsell panel first.
+  // Read from /api/tenant/displays (functions/api/tenant/displays.ts),
+  // the same owner-facing endpoint /config's "Your displays" list
+  // already uses - not a new route.
+  const [cafeTvEntitled, setCafeTvEntitled] = useState(true)
+
   const [airfieldName, setAirfieldName] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   // Preview-only mirror of the public dashboard's own opsPanel.safetyNotices
@@ -312,7 +326,7 @@ export default function CafeMediaPage(): JSX.Element {
   useEffect(() => {
     let cancelled = false
 
-    fetch(CAFE_SETTINGS_URL)
+    const cafeSettingsLoaded = fetch(CAFE_SETTINGS_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return
@@ -331,9 +345,32 @@ export default function CafeMediaPage(): JSX.Element {
       .catch(() => {
         if (!cancelled) setLoadError(true)
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+
+    // Folded into the same loading gate as cafeSettingsLoaded above
+    // (Promise.all below) rather than resolving independently - so the
+    // page never briefly shows the slot editor to a not-yet-entitled
+    // tenant, or the FeatureUpsellPanel to an entitled one, before this
+    // is actually known.
+    const entitlementLoaded = fetch('/api/tenant/displays')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        const cafeTv = (data.displays ?? []).find((d: { slug: string }) => d.slug === 'cafe-tv')
+        // No cafe-tv row at all yet (never onboarded/visited) is treated
+        // the same as not entitled - there's nothing to edit either way,
+        // and showing the upsell is more honest than a blank editor for
+        // a display that doesn't exist yet.
+        setCafeTvEntitled(!!cafeTv?.entitled)
       })
+      .catch(() => {
+        // Network/parse failure - fail closed (not entitled) rather than
+        // silently granting access to the editor on an error.
+        if (!cancelled) setCafeTvEntitled(false)
+      })
+
+    Promise.all([cafeSettingsLoaded, entitlementLoaded]).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
 
     // Same PUBLIC_CONFIG_URL fetch CafeTemplate.tsx itself uses - keeps
     // this preview's branding/notices sourced from the exact same place
@@ -605,6 +642,24 @@ export default function CafeMediaPage(): JSX.Element {
     return (
       <div className="mx-auto max-w-6xl px-6 py-8">
         <p className="text-sm text-muted-400">Loading…</p>
+      </div>
+    )
+  }
+
+  // Whole feature is gated, not just the slot editor - none of this
+  // page's other settings (layout, ticker, notices) are useful for a
+  // display the tenant can't turn on, so there's nothing worth showing
+  // alongside the upsell panel.
+  if (!cafeTvEntitled) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        <h1 className="mb-6 text-2xl font-black uppercase tracking-wide text-primary">Cafe Media</h1>
+        <FeatureUpsellPanel
+          title="Café/Clubhouse Screen Display"
+          description="Café and clubhouse screen displays (including advertising) are an additional, separate subscription feature and aren't included on your current plan."
+          ctaLabel="Learn more / upgrade"
+          ctaHref="/upgrade/cafe-display"
+        />
       </div>
     )
   }

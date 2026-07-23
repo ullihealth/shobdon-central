@@ -277,10 +277,22 @@ function cafeTickerStyleFromApi(data: Record<string, unknown>): TickerStyle {
   }
 }
 
+// Migration 0039 - see Header.tsx/VenueCornerBadge.tsx's own copies of
+// this same shape for the full reasoning (independent logo/name
+// display settings for the two places branding renders).
+interface BrandDisplaySettings {
+  showLogo: boolean
+  showName: boolean
+  nameFontSize: 'sm' | 'md' | 'lg' | 'xl'
+}
+
+const DEFAULT_BRAND_DISPLAY_SETTINGS: BrandDisplaySettings = { showLogo: true, showName: true, nameFontSize: 'md' }
+
 interface ScreenPreviewProps {
   airfieldName: string | null
   logoUrl: string | null
   gradientMode: 'solid' | 'gradient'
+  brandCafe: BrandDisplaySettings
 }
 
 // Mirrors CafeTemplate.tsx's own JSX (MediaPanel with `fill`, split/full
@@ -292,7 +304,7 @@ interface ScreenPreviewProps {
 // configuration - only the colour theme is the in-progress,
 // not-yet-saved `activeTokens` value (applied via the shared outer
 // preview wrapper's CSS variables, same as the Dashboard preview).
-function CafePreview({ airfieldName, logoUrl, gradientMode }: ScreenPreviewProps): JSX.Element {
+function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe }: ScreenPreviewProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
   const [settings, setSettings] = useState<CafePreviewSettings>(DEFAULT_CAFE_PREVIEW_SETTINGS)
@@ -340,7 +352,13 @@ function CafePreview({ airfieldName, logoUrl, gradientMode }: ScreenPreviewProps
             grid-item min-width:auto blowout risk applies here too. */}
         <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
-            <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
+            <VenueCornerBadge
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandCafe.showLogo}
+              showName={brandCafe.showName}
+              nameFontSize={brandCafe.nameFontSize}
+            />
           </div>
 
           {layoutMode === 'split' ? (
@@ -419,6 +437,15 @@ export default function DesignPage(): JSX.Element {
   // owner was previewing their own design.
   const [airfieldName, setAirfieldName] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  // Migration 0039 - independent logo/name display settings for
+  // Header.tsx ('main', the Dashboard preview below) vs
+  // VenueCornerBadge.tsx ('cafe', CafePreview below). Defaults match
+  // the same "show both, medium size" behaviour Header.tsx/
+  // VenueCornerBadge.tsx themselves default to - a no-op appearance
+  // until this fetch resolves or an admin actually changes something.
+  const [brandMain, setBrandMain] = useState<BrandDisplaySettings>(DEFAULT_BRAND_DISPLAY_SETTINGS)
+  const [brandCafe, setBrandCafe] = useState<BrandDisplaySettings>(DEFAULT_BRAND_DISPLAY_SETTINGS)
+  const [brandSaveStatus, setBrandSaveStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
   useEffect(() => {
     let cancelled = false
     fetch(TENANT_CONFIG_URL)
@@ -427,12 +454,27 @@ export default function DesignPage(): JSX.Element {
         if (cancelled) return
         if (data?.airfieldName) setAirfieldName(data.airfieldName as string)
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
+        if (data?.brandDisplay?.main) setBrandMain(data.brandDisplay.main)
+        if (data?.brandDisplay?.cafe) setBrandCafe(data.brandDisplay.cafe)
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [])
+
+  function handleSaveBrandDisplay(nextMain: BrandDisplaySettings, nextCafe: BrandDisplaySettings) {
+    setBrandMain(nextMain)
+    setBrandCafe(nextCafe)
+    setBrandSaveStatus('working')
+    fetch(TENANT_CONFIG_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brandDisplay: { main: nextMain, cafe: nextCafe } }),
+    })
+      .then((response) => setBrandSaveStatus(response.ok ? 'success' : 'error'))
+      .catch(() => setBrandSaveStatus('error'))
+  }
 
   // Which screen the preview panel shows, and which screen the grid-tile-
   // click / merged Apply button target. Dashboard by default. Lives at the
@@ -1036,6 +1078,75 @@ export default function DesignPage(): JSX.Element {
                     <p className="mt-1 text-xs text-muted-500">PNG, JPG, SVG, or WebP, up to 2MB.</p>
                     {logoError && <p className="mt-1 text-xs text-status-bad">{logoError}</p>}
                   </div>
+
+                  {/* Logo/name display - migration 0039. Root cause this
+                      round: a real club logo (e.g. Shobdon's own) often
+                      already has the club name baked into the artwork,
+                      so showing a separate text label right next to it
+                      reads as redundant/cluttered rather than a genuine
+                      CSS overlap (confirmed via Playwright: the two
+                      elements never actually collide in the DOM). Two
+                      independent blocks, not one shared control - the
+                      main Dashboard and the Café display are different
+                      physical screens that may need different answers
+                      (e.g. Shobdon's dashboard could keep both, while
+                      its café screen - same logo, same redundancy -
+                      turns the text off). */}
+                  {(
+                    [
+                      { key: 'main' as const, label: 'Main Dashboard', value: brandMain, setValue: setBrandMain },
+                      { key: 'cafe' as const, label: 'Café Display', value: brandCafe, setValue: setBrandCafe },
+                    ]
+                  ).map(({ key, label, value, setValue }) => (
+                    <div key={key}>
+                      <label className="mb-2 block text-xs uppercase tracking-wide text-muted-400">{label}</label>
+                      <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                        <label className="flex items-center gap-2 text-sm text-primary">
+                          <input
+                            type="checkbox"
+                            checked={value.showLogo}
+                            onChange={(event) => {
+                              const next = { ...value, showLogo: event.target.checked }
+                              setValue(next)
+                              handleSaveBrandDisplay(key === 'main' ? next : brandMain, key === 'cafe' ? next : brandCafe)
+                            }}
+                          />
+                          Show logo
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-primary">
+                          <input
+                            type="checkbox"
+                            checked={value.showName}
+                            onChange={(event) => {
+                              const next = { ...value, showName: event.target.checked }
+                              setValue(next)
+                              handleSaveBrandDisplay(key === 'main' ? next : brandMain, key === 'cafe' ? next : brandCafe)
+                            }}
+                          />
+                          Show brand name text
+                        </label>
+                        <label className="flex items-center justify-between gap-2 text-sm text-primary">
+                          <span>Name size</span>
+                          <select
+                            value={value.nameFontSize}
+                            onChange={(event) => {
+                              const next = { ...value, nameFontSize: event.target.value as BrandDisplaySettings['nameFontSize'] }
+                              setValue(next)
+                              handleSaveBrandDisplay(key === 'main' ? next : brandMain, key === 'cafe' ? next : brandCafe)
+                            }}
+                            className="rounded border border-border bg-slate-900 px-2 py-1 text-xs text-primary"
+                          >
+                            <option value="sm">Small</option>
+                            <option value="md">Medium</option>
+                            <option value="lg">Large</option>
+                            <option value="xl">Extra large</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                  {brandSaveStatus === 'success' && <p className="text-xs text-status-good">Saved.</p>}
+                  {brandSaveStatus === 'error' && <p className="text-xs text-status-bad">Couldn't save - please try again.</p>}
                 </div>
               </div>
             )}
@@ -1383,6 +1494,9 @@ export default function DesignPage(): JSX.Element {
                       <Header
                         airfieldName={airfieldName}
                         logoUrl={logoUrl}
+                        showLogo={brandMain.showLogo}
+                        showName={brandMain.showName}
+                        nameFontSize={brandMain.nameFontSize}
                         rightSlot={<WeatherStatusIndicator />}
                         gradientMode={activeGradientMode}
                       />
@@ -1394,7 +1508,7 @@ export default function DesignPage(): JSX.Element {
                     </div>
                   </div>
                 ) : (
-                  <CafePreview airfieldName={airfieldName} logoUrl={logoUrl} gradientMode={activeGradientMode} />
+                  <CafePreview airfieldName={airfieldName} logoUrl={logoUrl} gradientMode={activeGradientMode} brandCafe={brandCafe} />
                 )}
               </WeatherProvider>
             </div>

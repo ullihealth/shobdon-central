@@ -29,6 +29,15 @@ export default function TenantDisplayPage(): JSX.Element {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [display, setDisplay] = useState<DisplayMeta>({ templateId: 'classic', panelConfig: DEFAULT_PANEL_CONFIG })
   const [unavailable, setUnavailable] = useState(false)
+  // Migration 0039 (Screens Design's Branding tab) - null until the
+  // fetch resolves, same stance as airfieldName/logoUrl above. Header.tsx/
+  // VenueCornerBadge.tsx both default every one of these props to
+  // true/true/'md' on their own, so undefined during the brief
+  // pre-fetch window is already exactly today's unconditional behaviour.
+  const [brandDisplay, setBrandDisplay] = useState<{
+    main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
+    cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
+  } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -42,6 +51,7 @@ export default function TenantDisplayPage(): JSX.Element {
           document.title = `${data.airfieldName} — Airfield Central`
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
+        if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
       })
       .catch(() => {})
     return () => {
@@ -80,9 +90,24 @@ export default function TenantDisplayPage(): JSX.Element {
   return (
     <WeatherProvider>
       {display.templateId === 'cafe-1' ? (
-        <CafeTemplate themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+        <CafeTemplate
+          themeOverride={themeOverride}
+          airfieldName={airfieldName}
+          logoUrl={logoUrl}
+          showLogo={brandDisplay?.cafe.showLogo}
+          showName={brandDisplay?.cafe.showName}
+          nameFontSize={brandDisplay?.cafe.nameFontSize}
+        />
       ) : (
-        <ClassicTemplate panelConfig={display.panelConfig} themeOverride={themeOverride} airfieldName={airfieldName} logoUrl={logoUrl} />
+        <ClassicTemplate
+          panelConfig={display.panelConfig}
+          themeOverride={themeOverride}
+          airfieldName={airfieldName}
+          logoUrl={logoUrl}
+          showLogo={brandDisplay?.main.showLogo}
+          showName={brandDisplay?.main.showName}
+          nameFontSize={brandDisplay?.main.nameFontSize}
+        />
       )}
     </WeatherProvider>
   )

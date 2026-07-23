@@ -14,6 +14,12 @@ interface ClassicTemplateProps {
   themeOverride: CSSProperties
   airfieldName?: string | null
   logoUrl?: string | null
+  // Migration 0039 (Screens Design's Branding tab) - the 'main'
+  // brandDisplay slice, passed straight through to Header.tsx. See that
+  // file's own comment for the full reasoning.
+  showLogo?: boolean
+  showName?: boolean
+  nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
 // The 'classic' template (tenant_displays.template_id) - the same
@@ -24,7 +30,15 @@ interface ClassicTemplateProps {
 // extraction, so '/' - the live production kiosk route - carries zero
 // risk from this feature: DashboardPage.tsx is not imported by or
 // changed for this file at all.
-export default function ClassicTemplate({ panelConfig, themeOverride, airfieldName, logoUrl }: ClassicTemplateProps): JSX.Element {
+export default function ClassicTemplate({
+  panelConfig,
+  themeOverride,
+  airfieldName,
+  logoUrl,
+  showLogo,
+  showName,
+  nameFontSize,
+}: ClassicTemplateProps): JSX.Element {
   const isDesktop = useIsDesktopLayout()
 
   const showLeft = panelConfig.weather
@@ -57,7 +71,14 @@ export default function ClassicTemplate({ panelConfig, themeOverride, airfieldNa
             much height as its content strictly needs, which clipped the
             clock in testing. */}
         <div style={isDesktop ? undefined : { height: '64px', flexShrink: 0 }}>
-          <Header airfieldName={airfieldName} logoUrl={logoUrl} rightSlot={<WeatherStatusIndicator />} />
+          <Header
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={showLogo}
+            showName={showName}
+            nameFontSize={nameFontSize}
+            rightSlot={<WeatherStatusIndicator />}
+          />
         </div>
 
         <div

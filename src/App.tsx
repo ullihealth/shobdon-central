@@ -18,6 +18,7 @@ import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
+import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
 import RootRoute from './components/RootRoute'
@@ -30,6 +31,11 @@ export default function App(): JSX.Element {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/checklist" element={<ChecklistPage />} />
+        {/* Placeholder CTA destination for CafeMediaPage's FeatureUpsellPanel
+            (cafe-tv entitled=0 case) - no real checkout/marketing content
+            yet, see UpgradeCafeDisplayPage.tsx's own comment. Bare route,
+            same "no RequireAuth" posture as /checklist above. */}
+        <Route path="/upgrade/cafe-display" element={<UpgradeCafeDisplayPage />} />
         {/* Public, unauthenticated invite-link account setup - the entry
             point of the onboarding pipeline. Path-based, not tied to the
             new tenant's own (not-yet-DNS-provisioned) subdomain - runs

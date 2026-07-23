@@ -23,9 +23,45 @@ interface HeaderProps {
   // just the `via` stop. Undefined/omitted (every existing caller) keeps
   // today's gradient unchanged - this is purely additive.
   gradientMode?: 'solid' | 'gradient'
+  // Migration 0039 (Screens Design's Branding tab) - independent
+  // logo/name visibility for THIS badge specifically (the 'main'
+  // brandDisplay slice; VenueCornerBadge.tsx has its own 'cafe' slice).
+  // Both default true - unchanged from today's unconditional "always
+  // show both" behaviour for any caller not yet passing these.
+  showLogo?: boolean
+  showName?: boolean
+  // Root cause this round: a real club logo (Shobdon's own) often
+  // already has the club name baked into the artwork, making the
+  // separate text label below redundant/visually cluttered next to it -
+  // not a CSS overlap, a content-design one. showLogo/showName let an
+  // admin pick just one; nameFontSize (separate from that) addresses
+  // the "text reads too small" half of the same report. 'md' matches
+  // today's hardcoded text-lg sm:text-3xl exactly - default is a no-op.
+  nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
-export default function Header({ rightSlot, airfieldName, logoUrl, gradientMode = 'gradient' }: HeaderProps): JSX.Element {
+// Responsive pairs, not flat sizes - preserves this component's own
+// documented narrow-viewport handling (the title needs to stay
+// readable at both the /config admin chrome's typical widths and this
+// same component's use in Screens Design's own preview rail). 'md' is
+// exactly today's previous hardcoded text-lg sm:text-3xl - unchanged
+// default for every caller not yet passing nameFontSize.
+const NAME_FONT_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
+  sm: 'text-sm sm:text-xl',
+  md: 'text-lg sm:text-3xl',
+  lg: 'text-xl sm:text-4xl',
+  xl: 'text-2xl sm:text-5xl',
+}
+
+export default function Header({
+  rightSlot,
+  airfieldName,
+  logoUrl,
+  gradientMode = 'gradient',
+  showLogo = true,
+  showName = true,
+  nameFontSize = 'md',
+}: HeaderProps): JSX.Element {
   const [now, setNow] = useState(new Date())
   const location = useLocation()
   const isConfigPage = location.pathname === '/config'
@@ -101,7 +137,7 @@ export default function Header({ rightSlot, airfieldName, logoUrl, gradientMode 
         title={isConfigPage ? 'Back to Dashboard' : 'Weather Config'}
       >
         <div className="flex min-w-0 items-center gap-2">
-          {logoUrl && (
+          {showLogo && logoUrl && (
             // shrink-0 + capped max-width: a logo of any aspect ratio must
             // never be allowed to grow and push the centred clock (below)
             // out of position - the exact narrow-width collision this
@@ -113,9 +149,13 @@ export default function Header({ rightSlot, airfieldName, logoUrl, gradientMode 
               <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
             </div>
           )}
-          <div className="truncate text-lg font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 sm:text-3xl">
-            {airfieldName || 'AIRFIELD CENTRAL'}
-          </div>
+          {showName && (
+            <div
+              className={`truncate font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 ${NAME_FONT_SIZE_CLASSES[nameFontSize]}`}
+            >
+              {airfieldName || 'AIRFIELD CENTRAL'}
+            </div>
+          )}
         </div>
         {/* Hidden below sm - at that width there isn't room for a second line
             alongside the clock and status slot without forcing the title to
