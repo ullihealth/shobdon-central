@@ -586,9 +586,17 @@ export default function CafeMediaPage(): JSX.Element {
     saveCafeSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null })
   }
 
+  // Deliberately does NOT touch cafeAppearanceEditorOpen - it used to
+  // force-close it on every selection, which unmounted the appearance
+  // editor (and its preview <img>) the instant you picked a different
+  // slot while it was already open, until you manually reopened it. The
+  // editor's own open/closed state and which slot is selected are
+  // independent: leaving it alone means an already-open editor simply
+  // keeps showing whatever slot is now selected, immediately - it was
+  // never the preview itself going stale (resolveSlotVisual/
+  // MediaSlotRenderer already recompute correctly on every render).
   function selectCafeSlot(slotNumber: number) {
     setSelectedCafeSlotNumber(slotNumber)
-    setCafeAppearanceEditorOpen(false)
   }
 
   const selectedCafeSlot = cafeSlots.find((s) => s.slotNumber === selectedCafeSlotNumber) ?? null

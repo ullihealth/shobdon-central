@@ -89,9 +89,15 @@ export default function MediaManagerPage(): JSX.Element {
     saveSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null })
   }
 
+  // Deliberately does NOT touch appearanceEditorOpen - same fix as
+  // CafeMediaPage.tsx's selectCafeSlot (shared CarouselSlotEditor
+  // component, same defect): force-closing it here unmounted the
+  // appearance editor's preview <img> the instant a different slot was
+  // picked while it was already open, requiring a manual reopen to see
+  // the new slot. Leaving the open/closed state alone lets an
+  // already-open editor keep showing whatever slot is now selected.
   function selectSlot(slotNumber: number) {
     setSelectedSlotNumber(slotNumber)
-    setAppearanceEditorOpen(false)
   }
 
   const selectedSlot = slots.find((s) => s.slotNumber === selectedSlotNumber) ?? null
