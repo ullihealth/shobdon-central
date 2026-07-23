@@ -140,7 +140,16 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-export async function buildPublicConfigResponse(organizationId: string, env: PublicConfigEnv): Promise<Response> {
+// Split from buildPublicConfigResponse below (this round) so
+// functions/api/tenant/config.ts's session-scoped route can merge
+// carouselSlots/cafeCarouselSlots/opsPanel into its OWN response using
+// the exact same query/mapping logic, instead of a second copy to keep
+// in sync - the SQL here (especially the media_library JOIN and the
+// resolvedUrl cache-busting logic) is exactly the kind of thing that
+// silently drifts between two hand-maintained copies. Every existing
+// caller of buildPublicConfigResponse is unaffected - that function
+// below is now a thin wrapper over this one.
+export async function buildPublicConfigData(organizationId: string, env: PublicConfigEnv) {
   const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
@@ -423,7 +432,7 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     tickerGapPx: cafeSettingsRow?.tickerGapPx ?? 0,
   };
 
-  return jsonResponse({
+  return {
     runwayGroups,
     theme,
     airfieldName,
@@ -437,5 +446,12 @@ export async function buildPublicConfigResponse(organizationId: string, env: Pub
     mainTemplateId,
     mainDisplayActive,
     cafeSettings,
-  });
+  };
+}
+
+// Thin wrapper - every existing caller (functions/api/public/config.ts,
+// functions/api/public/[tenant]/config.ts) gets the exact same Response
+// as before this split, unchanged.
+export async function buildPublicConfigResponse(organizationId: string, env: PublicConfigEnv): Promise<Response> {
+  return jsonResponse(await buildPublicConfigData(organizationId, env));
 }

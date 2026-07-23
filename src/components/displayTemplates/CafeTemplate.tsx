@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import MediaPanel from '../media/MediaPanel'
+import MediaPanel, { type MediaPanelSourceData } from '../media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerStyle } from '../CafeTicker'
 import VenueCornerBadge from '../VenueCornerBadge'
 import { currentMedia } from '../../config/media'
@@ -27,6 +27,20 @@ interface CafeTemplateProps {
   // real caller - no behaviour change on the live dashboard or café
   // screen.
   isPreview?: boolean
+  // Passed straight through to each MediaPanel call's own `data` prop -
+  // see MediaPanel.tsx's own comment for the full story (an
+  // authenticated admin preview's session-switched org can differ from
+  // the browser's current subdomain). Every existing caller (the real
+  // public dashboard/café display) omits this and is unaffected.
+  mediaData?: MediaPanelSourceData
+  // Same reasoning, scoped to just the ticker's safetyNotices - this
+  // component's OTHER self-fetched data (cafeSettings: layout mode, ad
+  // label, ticker style) is left on its existing self-fetch for now,
+  // out of this round's scope (a lower-stakes layout/style setting, not
+  // real identifying tenant content like a photo or a safety notice).
+  // undefined (every real public caller) leaves the self-fetched
+  // notices untouched.
+  safetyNoticesData?: SafetyNotice[]
 }
 
 interface SafetyNotice {
@@ -103,6 +117,8 @@ export default function CafeTemplate({
   showName,
   nameFontSize,
   isPreview = false,
+  mediaData,
+  safetyNoticesData,
 }: CafeTemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
@@ -122,7 +138,7 @@ export default function CafeTemplate({
   // content at all removes that transition entirely instead of
   // papering over its symptoms.
   const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null)
-  const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
+  const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>(safetyNoticesData ?? [])
 
   useEffect(() => {
     let cancelled = false
@@ -146,7 +162,11 @@ export default function CafeTemplate({
           // forever.
           setCafeSettings(DEFAULT_CAFE_SETTINGS)
         }
-        if (data?.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
+        // Only apply the self-fetched (Host-resolved) notices when
+        // safetyNoticesData wasn't explicitly provided - see that
+        // prop's own comment. cafeSettings itself is deliberately still
+        // always self-fetched here, out of this round's scope.
+        if (safetyNoticesData === undefined && data?.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
       })
       .catch(() => {
         if (!cancelled) setCafeSettings(DEFAULT_CAFE_SETTINGS)
@@ -154,7 +174,16 @@ export default function CafeTemplate({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [safetyNoticesData])
+
+  // Keeps safetyNotices in sync if a parent's own already-fetched data
+  // changes after this component's initial mount (e.g. DesignPage.tsx's
+  // own TENANT_CONFIG_URL refetch) - the effect above only re-reads
+  // safetyNoticesData on mount/dependency change via its own closure,
+  // this covers the same case explicitly and cheaply.
+  useEffect(() => {
+    if (safetyNoticesData !== undefined) setSafetyNotices(safetyNoticesData)
+  }, [safetyNoticesData])
 
   // Same background gradient as the real content below (not a blank/
   // white flash), just without the grid/panels yet - avoids a jarring
@@ -245,11 +274,11 @@ export default function CafeTemplate({
                   real width) width instead, sidestepping the percentage-
                   height chain entirely. */}
               <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
-                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" data={mediaData} />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
-                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" data={mediaData} />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
@@ -276,7 +305,7 @@ export default function CafeTemplate({
             // earned one. Split-pane above is untouched and still uses
             // `fill` - explicitly out of scope this round.
             <div className="relative flex items-center justify-center overflow-hidden" style={isDesktop ? { height: '100%' } : undefined}>
-              <MediaPanel item={currentMedia} slotSource="cafe" />
+              <MediaPanel item={currentMedia} slotSource="cafe" data={mediaData} />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}

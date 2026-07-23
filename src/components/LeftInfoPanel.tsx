@@ -6,7 +6,7 @@ import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import CloudVisibilityChart from './CloudVisibilityChart'
 
-interface OpsPanelChartConfig {
+export interface OpsPanelChartConfig {
   weatherSummaryChartEnabled: boolean
   weatherSummaryStateADurationSeconds: number
   weatherSummaryStateBDurationSeconds: number
@@ -72,19 +72,33 @@ interface LeftInfoPanelProps {
   // default floor. Default false/undefined - Template 1/Café's sizing
   // is completely unaffected.
   compactStats?: boolean
+  // When provided, skips the self-fetch below entirely and uses this -
+  // same reasoning/story as RightInfoPanel.tsx's own opsPanelData prop
+  // (PUBLIC_CONFIG_URL resolves by Host header, wrong for an
+  // authenticated admin preview where the session may be switched to a
+  // different org than the current subdomain). Lower-stakes than
+  // RightInfoPanel's leak in practice (only chart-flip timing, not real
+  // tenant content), but fixed for the same reason and the same way.
+  // Every existing caller (the real public dashboard) omits this and is
+  // unaffected.
+  opsPanelChartData?: OpsPanelChartConfig | null
 }
 
-export default function LeftInfoPanel({ disableChartFlip, compactStats }: LeftInfoPanelProps = {}): JSX.Element {
+export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanelChartData }: LeftInfoPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
   const { hours: visibilityHours, fetchedAt: visibilityFetchedAt } = useVisibilityForecast()
 
   // Self-contained fetch of the public config, matching RightInfoPanel's
   // established pattern - only the three chart-rotation fields are used
   // here, everything else in the response is RightInfoPanel/MediaPanel's
-  // concern.
-  const [chartConfig, setChartConfig] = useState<OpsPanelChartConfig | null>(null)
+  // concern. Skipped entirely when opsPanelChartData is provided.
+  const [chartConfig, setChartConfig] = useState<OpsPanelChartConfig | null>(opsPanelChartData ?? null)
 
   useEffect(() => {
+    if (opsPanelChartData !== undefined) {
+      setChartConfig(opsPanelChartData)
+      return
+    }
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
@@ -101,7 +115,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats }: LeftIn
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [opsPanelChartData])
 
   // liveDataUnavailable: the selected source's fetch failed and weather
   // is actually the substituted mock fixture - show N/A rather than

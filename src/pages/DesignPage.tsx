@@ -5,7 +5,9 @@ import DisplayUrlList from '../components/config/DisplayUrlList'
 import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Template'
 import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
 import CafeTemplate from '../components/displayTemplates/CafeTemplate'
-import MediaPanel from '../components/media/MediaPanel'
+import MediaPanel, { type MediaPanelSourceData } from '../components/media/MediaPanel'
+import type { OpsPanelPublic } from '../components/RightInfoPanel'
+import type { OpsPanelChartConfig } from '../components/LeftInfoPanel'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import CafeTicker, { type TickerSlot, type TickerStyle } from '../components/CafeTicker'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
@@ -292,6 +294,12 @@ interface ScreenPreviewProps {
   logoUrl: string | null
   gradientMode: 'solid' | 'gradient'
   brandCafe: BrandDisplaySettings
+  // Passed straight through to each MediaPanel call's own `data` prop -
+  // see MediaPanel.tsx's own comment for the full story (this preview's
+  // session may be switched to a different org than the browser's
+  // current subdomain, which is what MediaPanel's self-fetch otherwise
+  // resolves by).
+  mediaData?: MediaPanelSourceData
 }
 
 // Mirrors CafeTemplate.tsx's own JSX (MediaPanel with `fill`, split/full
@@ -303,7 +311,7 @@ interface ScreenPreviewProps {
 // configuration - only the colour theme is the in-progress,
 // not-yet-saved `activeTokens` value (applied via the shared outer
 // preview wrapper's CSS variables, same as the Dashboard preview).
-function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe }: ScreenPreviewProps): JSX.Element {
+function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData }: ScreenPreviewProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
   const [settings, setSettings] = useState<CafePreviewSettings>(DEFAULT_CAFE_PREVIEW_SETTINGS)
@@ -363,17 +371,17 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe }: ScreenP
           {layoutMode === 'split' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" data={mediaData} />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" data={mediaData} />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className="relative h-full overflow-hidden">
-              <MediaPanel item={currentMedia} fill slotSource="cafe" />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" data={mediaData} />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
@@ -452,6 +460,22 @@ export default function DesignPage(): JSX.Element {
   // full reasoning on why this lives here rather than per-picker state.
   const [savedSwatches, setSavedSwatches] = useState<string[]>([])
   const [swatchError, setSwatchError] = useState(false)
+  // Session-scoped carousel/ops-panel data for this page's own admin
+  // previews (Clubhouse1Template/Clubhouse2Template/CafeTemplate/
+  // CafePreview all render MediaPanel/RightInfoPanel/LeftInfoPanel) -
+  // sourced from the SAME TENANT_CONFIG_URL fetch below, which resolves
+  // by session/org-switcher state, not by Host header. Fixes a real
+  // cross-tenant leak: those components previously self-fetched
+  // /api/public/config (Host-resolved), so an admin whose session was
+  // switched to a different org than the current subdomain would see
+  // that OTHER org's real carousel slides/safety notices here. Stays
+  // undefined until the fetch below resolves - see each component's own
+  // `data`/`opsPanelData`/`opsPanelChartData` prop comment for why a
+  // brief undefined window (falling back to self-fetch) is safe and
+  // self-corrects once real data arrives.
+  const [mediaData, setMediaData] = useState<MediaPanelSourceData | undefined>(undefined)
+  const [opsPanelData, setOpsPanelData] = useState<OpsPanelPublic | null | undefined>(undefined)
+  const [opsPanelChartData, setOpsPanelChartData] = useState<OpsPanelChartConfig | null | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
     fetch(TENANT_CONFIG_URL)
@@ -463,6 +487,19 @@ export default function DesignPage(): JSX.Element {
         if (data?.brandDisplay?.main) setBrandMain(data.brandDisplay.main)
         if (data?.brandDisplay?.cafe) setBrandCafe(data.brandDisplay.cafe)
         if (Array.isArray(data?.savedSwatches)) setSavedSwatches(data.savedSwatches)
+        if (data) {
+          setMediaData({
+            cameraSlots: Array.isArray(data.cameraSlots) ? data.cameraSlots : [],
+            carouselSlots: Array.isArray(data.carouselSlots) ? data.carouselSlots : [],
+            cafeCarouselSlots: Array.isArray(data.cafeCarouselSlots) ? data.cafeCarouselSlots : [],
+          })
+          setOpsPanelData(data.opsPanel ?? null)
+          setOpsPanelChartData({
+            weatherSummaryChartEnabled: !!data.opsPanel?.weatherSummaryChartEnabled,
+            weatherSummaryStateADurationSeconds: data.opsPanel?.weatherSummaryStateADurationSeconds ?? 8,
+            weatherSummaryStateBDurationSeconds: data.opsPanel?.weatherSummaryStateBDurationSeconds ?? 5,
+          })
+        }
       })
       .catch(() => {})
     return () => {
@@ -1579,6 +1616,9 @@ export default function DesignPage(): JSX.Element {
                       showName={brandMain.showName}
                       nameFontSize={brandMain.nameFontSize}
                       isPreview
+                      mediaData={mediaData}
+                      opsPanelData={opsPanelData}
+                      opsPanelChartData={opsPanelChartData}
                     />
                   ) : pendingMainId === 'cafe-1' ? (
                     <CafeTemplate
@@ -1589,6 +1629,8 @@ export default function DesignPage(): JSX.Element {
                       showName={brandMain.showName}
                       nameFontSize={brandMain.nameFontSize}
                       isPreview
+                      mediaData={mediaData}
+                      safetyNoticesData={opsPanelData?.safetyNotices}
                     />
                   ) : (
                     <Clubhouse1Template
@@ -1599,10 +1641,19 @@ export default function DesignPage(): JSX.Element {
                       showName={brandMain.showName}
                       nameFontSize={brandMain.nameFontSize}
                       isPreview
+                      mediaData={mediaData}
+                      opsPanelData={opsPanelData}
+                      opsPanelChartData={opsPanelChartData}
                     />
                   )
                 ) : (
-                  <CafePreview airfieldName={airfieldName} logoUrl={logoUrl} gradientMode={activeGradientMode} brandCafe={brandCafe} />
+                  <CafePreview
+                    airfieldName={airfieldName}
+                    logoUrl={logoUrl}
+                    gradientMode={activeGradientMode}
+                    brandCafe={brandCafe}
+                    mediaData={mediaData}
+                  />
                 )}
               </WeatherProvider>
             </div>

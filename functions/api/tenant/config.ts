@@ -10,6 +10,7 @@
 // matches functions/api/public/[tenant]/config.ts exactly.
 
 import { requireOwner, jsonResponse, type D1Database } from "../_utils/tenantAuth";
+import { buildPublicConfigData } from "../_utils/publicConfig";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -123,7 +124,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
-  const [runwayRows, themeRow, tenantRow, cameraRows] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, publicConfigData] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
@@ -146,6 +147,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
       .all<CameraSlotRow>(),
+    // carouselSlots/cafeCarouselSlots/opsPanel - reuses the exact same
+    // query/mapping logic the public (Host-resolved) config route uses,
+    // just resolved via THIS request's own session/org-switcher instead
+    // of the browser's current Host header. Added this round so
+    // DesignPage.tsx/CafeMediaPage.tsx's MediaPanel previews can stop
+    // self-fetching the Host-resolved public endpoint (see MediaPanel's
+    // own `data` prop) - an admin viewing a DIFFERENT tenant's preview
+    // than whatever subdomain they happen to be on was silently seeing
+    // that OTHER tenant's real carousel/ops-panel content, not the one
+    // their session was actually switched to. Some overlap with the
+    // queries above (runwayGroups/theme/tenant/cameraSlots get
+    // re-fetched inside this call too) - accepted as a cheap, indexed,
+    // one-extra-round-trip cost rather than further splitting
+    // buildPublicConfigData just to avoid it.
+    buildPublicConfigData(organizationId, env),
   ]);
 
   return jsonResponse({
@@ -166,6 +182,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     hasPhysicalAtc: !!tenantRow?.hasPhysicalAtc,
     brandDisplay: parseBrandDisplay(tenantRow?.brandDisplayJson),
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
+    carouselSlots: publicConfigData.carouselSlots,
+    cafeCarouselSlots: publicConfigData.cafeCarouselSlots,
+    opsPanel: publicConfigData.opsPanel,
   });
 };
 

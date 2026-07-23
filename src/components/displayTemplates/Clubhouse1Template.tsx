@@ -1,9 +1,10 @@
 import type { CSSProperties } from 'react'
 import CentreDisplayPanel from '../CentreDisplayPanel'
 import Header from '../Header'
-import LeftInfoPanel from '../LeftInfoPanel'
-import RightInfoPanel from '../RightInfoPanel'
+import LeftInfoPanel, { type OpsPanelChartConfig } from '../LeftInfoPanel'
+import RightInfoPanel, { type OpsPanelPublic } from '../RightInfoPanel'
 import WeatherStatusIndicator from '../WeatherStatusIndicator'
+import type { MediaPanelSourceData } from '../media/MediaPanel'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
 interface Clubhouse1TemplateProps {
@@ -27,6 +28,16 @@ interface Clubhouse1TemplateProps {
   // for every real caller (DashboardPage.tsx) - zero behaviour change
   // on the actual live dashboard.
   isPreview?: boolean
+  // Passed straight through to CentreDisplayPanel/RightInfoPanel/
+  // LeftInfoPanel's own equivalent props - see MediaPanel.tsx's `data`
+  // prop comment for the full story (an authenticated admin preview's
+  // session-switched org can differ from the browser's current
+  // subdomain, which is what these components' self-fetches otherwise
+  // resolve by). Every existing caller (DashboardPage.tsx, the real
+  // public dashboard) omits all three and is unaffected.
+  mediaData?: MediaPanelSourceData
+  opsPanelData?: OpsPanelPublic | null
+  opsPanelChartData?: OpsPanelChartConfig | null
 }
 
 // "Clubhouse Template 1" - the dashboard layout that was DashboardPage.tsx's
@@ -49,6 +60,9 @@ export default function Clubhouse1Template({
   showName,
   nameFontSize,
   isPreview = false,
+  mediaData,
+  opsPanelData,
+  opsPanelChartData,
 }: Clubhouse1TemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
@@ -113,15 +127,15 @@ export default function Clubhouse1Template({
           }
         >
           <div className={isDesktop ? 'h-full' : ''}>
-            <LeftInfoPanel />
+            <LeftInfoPanel opsPanelChartData={opsPanelChartData} />
           </div>
 
           <div className={isDesktop ? 'h-full' : ''}>
-            <CentreDisplayPanel />
+            <CentreDisplayPanel mediaData={mediaData} />
           </div>
 
           <div className={isDesktop ? 'h-full' : ''}>
-            <RightInfoPanel />
+            <RightInfoPanel opsPanelData={opsPanelData} />
           </div>
         </div>
 

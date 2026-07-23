@@ -10,6 +10,18 @@ interface CarouselSlotResolved extends MediaSlotVisual {
   zone: 'both' | 'left' | 'right'
 }
 
+// Exported (not just the local MediaPanelProps['data'] shape) so the
+// template components that thread this through to MediaPanel
+// (CentreDisplayPanel, Clubhouse1Template, Clubhouse2Template) can type
+// their own pass-through props against it directly, instead of each
+// re-declaring the same shape or reaching for an awkward indexed-access
+// type off MediaPanelProps itself.
+export interface MediaPanelSourceData {
+  cameraSlots?: { slot: number; url: string }[]
+  carouselSlots?: CarouselSlotResolved[]
+  cafeCarouselSlots?: CarouselSlotResolved[]
+}
+
 function renderMediaContent(item: MediaItem) {
   switch (item.type) {
     case 'image':
@@ -75,10 +87,28 @@ interface MediaPanelProps {
   // effect" even though the save and the underlying data were both
   // correct. Every existing caller omits this (stays undefined,
   // unchanging) and keeps the original fetch-once-on-mount behaviour.
+  // Ignored entirely when `data` (below) is provided - a parent passing
+  // its own fetched data is already responsible for refetching and
+  // handing this component a new object when it changes.
   refreshSignal?: number
+  // When provided, MediaPanel uses this instead of self-fetching
+  // PUBLIC_CONFIG_URL - added this round after tracing a real cross-
+  // tenant leak: PUBLIC_CONFIG_URL resolves its tenant from the
+  // request's Host header, which is correct for the actual public kiosk
+  // dashboard (no session exists there at all) but wrong for an
+  // authenticated admin preview (DesignPage.tsx, CafeMediaPage.tsx) -
+  // an admin who switches their session to a DIFFERENT org via the
+  // org-switcher, while staying on their default tenant's own
+  // subdomain, would silently see THAT subdomain's real carousel/
+  // webcam data instead of the org their session actually switched to.
+  // Every existing caller (the real public dashboard templates -
+  // Clubhouse1/2Template, CafeTemplate, ClassicTemplate as rendered on
+  // "/" and "/d/:slug") omits this and keeps today's self-fetch-by-Host
+  // behaviour completely unchanged.
+  data?: MediaPanelSourceData
 }
 
-export default function MediaPanel({ item, preferVideo, zone, fill, slotSource = 'dashboard', refreshSignal }: MediaPanelProps): JSX.Element {
+export default function MediaPanel({ item, preferVideo, zone, fill, slotSource = 'dashboard', refreshSignal, data }: MediaPanelProps): JSX.Element {
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-
@@ -92,6 +122,17 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
   const timerRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
+    // Pre-fetched, session-scoped data takes over entirely - no self-
+    // fetch, no dependency on refreshSignal (the parent already owns
+    // refetching and hands this a new `data` object when it changes).
+    if (data) {
+      const slotOne = data.cameraSlots?.find((slot) => slot.slot === 1)
+      setWebcamUrl(slotOne?.url || '')
+      const rawSlots = slotSource === 'cafe' ? data.cafeCarouselSlots : data.carouselSlots
+      setCarouselSlots(Array.isArray(rawSlots) ? rawSlots : [])
+      return
+    }
+
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => {
@@ -108,11 +149,11 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
         }
         return response.json()
       })
-      .then((data) => {
+      .then((responseData) => {
         if (cancelled) return
-        const slotOne = data?.cameraSlots?.find((slot: { slot: number; url: string }) => slot.slot === 1)
+        const slotOne = responseData?.cameraSlots?.find((slot: { slot: number; url: string }) => slot.slot === 1)
         if (slotOne?.url) setWebcamUrl(slotOne.url)
-        const rawSlots = slotSource === 'cafe' ? data?.cafeCarouselSlots : data?.carouselSlots
+        const rawSlots = slotSource === 'cafe' ? responseData?.cafeCarouselSlots : responseData?.carouselSlots
         setCarouselSlots(Array.isArray(rawSlots) ? rawSlots : [])
       })
       .catch((err) => {
@@ -121,7 +162,7 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
     return () => {
       cancelled = true
     }
-  }, [slotSource, refreshSignal])
+  }, [data, slotSource, refreshSignal])
 
   // zone then preferVideo, both independent, optional, and combinable -
   // raw carouselSlots stays the true fetched state throughout; these are

@@ -2,9 +2,9 @@ import type { CSSProperties } from 'react'
 import CloudVisibilityChart from '../CloudVisibilityChart'
 import CompassPanel from '../CompassPanel'
 import Header from '../Header'
-import LeftInfoPanel from '../LeftInfoPanel'
-import MediaPanel from '../media/MediaPanel'
-import RightInfoPanel from '../RightInfoPanel'
+import LeftInfoPanel, { type OpsPanelChartConfig } from '../LeftInfoPanel'
+import MediaPanel, { type MediaPanelSourceData } from '../media/MediaPanel'
+import RightInfoPanel, { type OpsPanelPublic } from '../RightInfoPanel'
 import WeatherStatusIndicator from '../WeatherStatusIndicator'
 import { currentMedia } from '../../config/media'
 import { useWeather } from '../../context/WeatherContext'
@@ -28,6 +28,12 @@ interface Clubhouse2TemplateProps {
   // exact component inside its fixed-size scaled box. Defaults false
   // for every real caller - no behaviour change on the live dashboard.
   isPreview?: boolean
+  // See Clubhouse1Template.tsx's own comment on these three - same
+  // pass-through-to-avoid-self-fetch reasoning, same components
+  // (MediaPanel, RightInfoPanel, LeftInfoPanel) rendered here too.
+  mediaData?: MediaPanelSourceData
+  opsPanelData?: OpsPanelPublic | null
+  opsPanelChartData?: OpsPanelChartConfig | null
 }
 
 // "Clubhouse Template 2" - a fixed (not carousel), upper/lower split
@@ -48,6 +54,9 @@ export default function Clubhouse2Template({
   showName,
   nameFontSize,
   isPreview = false,
+  mediaData,
+  opsPanelData,
+  opsPanelChartData,
 }: Clubhouse2TemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
@@ -135,11 +144,11 @@ export default function Clubhouse2Template({
             </div>
 
             <div className={`flex items-center justify-center overflow-hidden ${isDesktop ? 'h-full' : ''}`}>
-              <MediaPanel item={currentMedia} preferVideo />
+              <MediaPanel item={currentMedia} preferVideo data={mediaData} />
             </div>
 
             <div className={isDesktop ? 'h-full' : ''}>
-              <RightInfoPanel notamsOnly />
+              <RightInfoPanel notamsOnly opsPanelData={opsPanelData} />
             </div>
           </div>
 
@@ -160,7 +169,7 @@ export default function Clubhouse2Template({
             }
           >
             <div className={isDesktop ? 'h-full' : ''}>
-              <LeftInfoPanel disableChartFlip compactStats />
+              <LeftInfoPanel disableChartFlip compactStats opsPanelChartData={opsPanelChartData} />
             </div>
 
             <div className={isDesktop ? 'h-full' : ''}>

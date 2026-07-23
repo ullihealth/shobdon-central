@@ -10,7 +10,7 @@ interface SafetyNotice {
   enabled: boolean
 }
 
-interface OpsPanelPublic {
+export interface OpsPanelPublic {
   activeRunwayEnd: string
   circuitDirection: string
   airfieldInfoText: string
@@ -102,9 +102,21 @@ interface RightInfoPanelProps {
   // statically displayed rather than rotating". Default false/undefined
   // - Template 1/Café's existing full flip behaviour is unaffected.
   notamsOnly?: boolean
+  // When provided, skips the self-fetch below entirely and uses this
+  // instead - added this round after tracing a real cross-tenant leak
+  // traced to this exact pattern (see MediaPanel.tsx's own `data` prop
+  // comment for the full story). PUBLIC_CONFIG_URL resolves by Host
+  // header, correct for the real public dashboard but wrong for an
+  // authenticated admin preview (DesignPage.tsx renders this component
+  // via Clubhouse1Template/Clubhouse2Template) where the admin's session
+  // may be switched to a different org than whatever subdomain they're
+  // actually on - this is exactly the component that showed another
+  // tenant's real safety notices in that scenario. Every existing
+  // caller (the real public dashboard) omits this and is unaffected.
+  opsPanelData?: OpsPanelPublic | null
 }
 
-export default function RightInfoPanel({ notamsOnly }: RightInfoPanelProps = {}): JSX.Element {
+export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
 
   // Self-contained fetch of the public config, matching MediaPanel.tsx's
@@ -112,9 +124,15 @@ export default function RightInfoPanel({ notamsOnly }: RightInfoPanelProps = {})
   // rather than threading props down from DashboardPage) - a null
   // opsPanel (e.g. a tenant that's never used /atc-control) falls back
   // to sensible static defaults below rather than rendering blank cards.
-  const [opsPanel, setOpsPanel] = useState<OpsPanelPublic | null>(null)
+  // Skipped entirely when opsPanelData is provided (see that prop's own
+  // comment).
+  const [opsPanel, setOpsPanel] = useState<OpsPanelPublic | null>(opsPanelData ?? null)
 
   useEffect(() => {
+    if (opsPanelData !== undefined) {
+      setOpsPanel(opsPanelData)
+      return
+    }
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
@@ -125,7 +143,7 @@ export default function RightInfoPanel({ notamsOnly }: RightInfoPanelProps = {})
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [opsPanelData])
 
   // Plain 2-state flip, not a carousel - MediaPanel.tsx's per-slot
   // recursive setTimeout exists to support independently-durationed

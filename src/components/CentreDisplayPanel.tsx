@@ -1,9 +1,19 @@
 import CompassPanel from './CompassPanel'
-import MediaPanel from './media/MediaPanel'
+import MediaPanel, { type MediaPanelSourceData } from './media/MediaPanel'
 import { currentMedia } from '../config/media'
 import { useIsDesktopLayout } from '../hooks/useIsDesktopLayout'
 
-export default function CentreDisplayPanel(): JSX.Element {
+interface CentreDisplayPanelProps {
+  // Passed straight through to MediaPanel's own `data` prop - see that
+  // component's comment for why this exists (an authenticated admin
+  // preview's session-switched org can differ from the browser's
+  // current subdomain, which is what MediaPanel's own self-fetch
+  // resolves by). Every existing caller (the real public dashboard, via
+  // Clubhouse1Template) omits this and is unaffected.
+  mediaData?: MediaPanelSourceData
+}
+
+export default function CentreDisplayPanel({ mediaData }: CentreDisplayPanelProps = {}): JSX.Element {
   const isDesktop = useIsDesktopLayout()
 
   return (
@@ -25,7 +35,7 @@ export default function CentreDisplayPanel(): JSX.Element {
         className="flex items-center justify-center overflow-hidden"
         style={isDesktop ? { flex: 3, minHeight: 0 } : undefined}
       >
-        <MediaPanel item={currentMedia} />
+        <MediaPanel item={currentMedia} data={mediaData} />
       </div>
 
       <div className="rounded-xl" style={isDesktop ? { flex: 2, minHeight: 0, overflow: 'hidden' } : undefined}>

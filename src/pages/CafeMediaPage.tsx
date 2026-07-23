@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import MediaPanel from '../components/media/MediaPanel'
+import MediaPanel, { type MediaPanelSourceData } from '../components/media/MediaPanel'
 import CafeTicker, { type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import FeatureUpsellPanel from '../components/FeatureUpsellPanel'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
 import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 import { currentMedia } from '../config/media'
-import { CAFE_CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { CAFE_CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, TENANT_CONFIG_URL } from '../config/publicApi'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import {
@@ -152,6 +152,13 @@ interface PreviewContentProps {
   // visible effect on this preview until a full page reload, even
   // though the save itself was working correctly.
   cafeSlotsRefreshSignal: number
+  // Passed straight through to each MediaPanel call's own `data` prop -
+  // see MediaPanel.tsx's own comment for the full story (this page's
+  // own admin session may be switched to a different org than the
+  // browser's current subdomain, which is what MediaPanel's self-fetch
+  // otherwise resolves by - the exact cross-tenant leak this round
+  // fixes).
+  mediaData?: MediaPanelSourceData
 }
 
 // Mirrors CafeTemplate.tsx's own JSX exactly (same grid/gap/zone
@@ -177,6 +184,7 @@ function PreviewContent({
   tickerStyle,
   safetyNotices,
   cafeSlotsRefreshSignal,
+  mediaData,
 }: PreviewContentProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
@@ -194,17 +202,17 @@ function PreviewContent({
           {layoutMode === 'split' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className="relative h-full overflow-hidden">
-              <MediaPanel item={currentMedia} fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
@@ -271,11 +279,22 @@ export default function CafeMediaPage(): JSX.Element {
 
   const [airfieldName, setAirfieldName] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
-  // Preview-only mirror of the public dashboard's own opsPanel.safetyNotices
-  // (fetched from PUBLIC_CONFIG_URL below, same as CafeTemplate.tsx itself
-  // reads at render time) - kept in sync with `notices` after any CRUD
-  // action below so the preview never lags what was just saved.
+  // Preview-only mirror of this tenant's own opsPanel.safetyNotices
+  // (fetched from TENANT_CONFIG_URL below, session-scoped) - kept in
+  // sync with `notices` after any CRUD action below so the preview
+  // never lags what was just saved.
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
+  // Passed to PreviewContent's MediaPanel calls via their `data` prop -
+  // see that prop's own comment. Sourced from the TENANT_CONFIG_URL
+  // fetch below (session-scoped), not PUBLIC_CONFIG_URL (Host-resolved) -
+  // this page used to read airfieldName/logoUrl/safetyNotices/
+  // cameraOptions from the Host-resolved endpoint too, which had the
+  // exact same cross-tenant leak as MediaPanel's own self-fetch whenever
+  // this admin's session was switched to a different org than the
+  // current subdomain (including which cameras appear as selectable
+  // webcam sources in the Carousel Slots editor below - a functional
+  // bug, not just a cosmetic preview one).
+  const [mediaData, setMediaData] = useState<MediaPanelSourceData | undefined>(undefined)
 
   // Part C: the tenant's own manageable notices - loaded from
   // /api/tenant/ops-panel, the SAME endpoint (and SAME underlying
@@ -372,15 +391,14 @@ export default function CafeMediaPage(): JSX.Element {
       if (!cancelled) setLoading(false)
     })
 
-    // Same PUBLIC_CONFIG_URL fetch CafeTemplate.tsx itself uses - keeps
-    // this preview's branding/notices sourced from the exact same place
-    // the real public dashboard reads them from. Also the source of
-    // cameraOptions for the Carousel Slots section below (same
-    // "already-public, safe to reuse for both owner and media-role
-    // reads" reasoning MediaManagerPage.tsx's own loadCameraOptions
-    // uses) - piggybacked on this existing fetch rather than a second
-    // request for the same data.
-    fetch(PUBLIC_CONFIG_URL)
+    // Session-scoped fetch, not the Host-resolved PUBLIC_CONFIG_URL this
+    // used to call - keeps this preview's branding/notices, and the
+    // camera list offered in the Carousel Slots editor's Source dropdown
+    // below, correct for whatever org this admin's session is actually
+    // switched to (see the leak this replaces in mediaData's own
+    // comment above). Also the source of mediaData for PreviewContent's
+    // MediaPanel calls.
+    fetch(TENANT_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled || !data) return
@@ -388,6 +406,11 @@ export default function CafeMediaPage(): JSX.Element {
         if (data.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
         setCameraOptions((data.cameraSlots ?? []).filter((c: CameraOption) => c.url))
+        setMediaData({
+          cameraSlots: Array.isArray(data.cameraSlots) ? data.cameraSlots : [],
+          carouselSlots: Array.isArray(data.carouselSlots) ? data.carouselSlots : [],
+          cafeCarouselSlots: Array.isArray(data.cafeCarouselSlots) ? data.cafeCarouselSlots : [],
+        })
       })
       .catch(() => {})
 
@@ -700,6 +723,7 @@ export default function CafeMediaPage(): JSX.Element {
               tickerStyle={tickerStyle}
               safetyNotices={safetyNotices}
               cafeSlotsRefreshSignal={cafeSlotsRefreshSignal}
+              mediaData={mediaData}
             />
           </WeatherProvider>
         </div>
