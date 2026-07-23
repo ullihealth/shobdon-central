@@ -57,11 +57,20 @@ interface DisplayRow {
   entitlementTrialExpiresAt: string | null;
 }
 
+interface MemberRow {
+  organizationId: string;
+  id: string;
+  role: string;
+  createdAt: string;
+  email: string;
+  name: string;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
   if ("error" in result) return result.error;
 
-  const [{ results: tenants }, { results: usageRows }, { results: displayRows }] = await Promise.all([
+  const [{ results: tenants }, { results: usageRows }, { results: displayRows }, { results: memberRows }] = await Promise.all([
     env.DB
       .prepare(
         `SELECT id, slug, name, subdomain, active,
@@ -87,6 +96,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
          FROM tenant_displays ORDER BY id`
       )
       .all<DisplayRow>(),
+    // Same join shape already proven by functions/api/tenant/members/index.ts,
+    // generalized across every org instead of one - grouped below by
+    // organizationId exactly like usageByOrg above. u.developer = 0 filters
+    // out the cross-tenant developer account, matching that same file's own
+    // "display-only, not a permissions change" reasoning.
+    env.DB
+      .prepare(
+        `SELECT m.organizationId AS organizationId, m.id AS id, m.role AS role, m.createdAt AS createdAt,
+                u.email AS email, u.name AS name
+         FROM member m JOIN user u ON u.id = m.userId
+         WHERE u.developer = 0
+         ORDER BY m.createdAt`
+      )
+      .all<MemberRow>(),
   ]);
 
   const usageByOrg = new Map(usageRows.map((row) => [row.organizationId, row.totalBytes]));
@@ -95,6 +118,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const list = displaysByTenant.get(row.tenantId) ?? [];
     list.push(row);
     displaysByTenant.set(row.tenantId, list);
+  }
+  const membersByOrg = new Map<string, MemberRow[]>();
+  for (const row of memberRows) {
+    const list = membersByOrg.get(row.organizationId) ?? [];
+    list.push(row);
+    membersByOrg.set(row.organizationId, list);
   }
 
   return jsonResponse({
@@ -121,6 +150,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         entitled: !!display.entitled,
         entitlementTrialExpiresAt: display.entitlementTrialExpiresAt,
       })),
+      members: (tenant.organizationId ? membersByOrg.get(tenant.organizationId) : undefined)?.map((member) => ({
+        id: member.id,
+        email: member.email,
+        name: member.name,
+        role: member.role,
+        createdAt: member.createdAt,
+      })) ?? [],
     })),
   });
 };

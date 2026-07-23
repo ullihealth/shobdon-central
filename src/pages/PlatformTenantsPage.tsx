@@ -15,6 +15,14 @@ interface PlatformDisplay {
   entitlementTrialExpiresAt: string | null
 }
 
+interface PlatformMember {
+  id: string
+  email: string
+  name: string
+  role: string
+  createdAt: string
+}
+
 interface PlatformTenant {
   id: number
   slug: string
@@ -30,6 +38,7 @@ interface PlatformTenant {
   logoUrl: string | null
   createdAt: string
   displays: PlatformDisplay[]
+  members: PlatformMember[]
 }
 
 type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc'
@@ -333,10 +342,103 @@ function BooleanToggle({
   )
 }
 
+// A settings-list row - visible text label + BooleanToggle, replacing
+// the old table's column-header-as-label convention now that these
+// live in the detail pane's stacked sections instead of table cells.
+function SettingsToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (next: boolean) => void
+}): JSX.Element {
+  return (
+    <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5 last:border-0">
+      <span className="text-sm text-muted-300">{label}</span>
+      <BooleanToggle checked={checked} onChange={onChange} label={label} />
+    </div>
+  )
+}
+
+// Members list for the selected tenant's detail pane - same row shape/
+// styling as MembersPage.tsx's own "Current members" rows (email, role,
+// joined date, action buttons), reused here for a familiar look rather
+// than inventing a second member-row style. Actions are deliberately
+// display-only for now (not wired to real remove/reset endpoints) - per
+// this round's own scope, this just reserves the layout slot so a real
+// action can be wired in later without another rework. disabled + a
+// title tooltip communicates "not available here yet" rather than the
+// button silently doing nothing on click.
+function MemberRow({ member }: { member: PlatformMember }): JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <div>
+        <div className="text-sm font-semibold text-white">{member.email}</div>
+        <div className="text-xs text-muted-500">
+          {member.role} · joined {formatDate(member.createdAt)}
+        </div>
+      </div>
+      {member.role !== 'owner' && (
+        <div className="flex gap-3">
+          <button
+            type="button"
+            disabled
+            title="Not available from here yet"
+            className="cursor-not-allowed text-xs font-semibold text-accent-sky-400 opacity-40"
+          >
+            Reset password
+          </button>
+          <button type="button" disabled title="Not available from here yet" className="cursor-not-allowed text-xs font-semibold text-status-bad opacity-40">
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function PlatformTenantsPage(): JSX.Element {
   const [tenants, setTenants] = useState<PlatformTenant[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
+
+  // Role-aware title link, same lookup/mapping Header.tsx already uses for
+  // its own title-click behaviour (/api/tenant/me -> role -> landing
+  // page), reused here rather than inventing a second convention. This
+  // page is cross-tenant/org-independent (requirePlatformAdmin, not
+  // requireTenant - see this file's own top-of-file comment), so "back to
+  // dashboard" can only ever mean "wherever /api/tenant/me resolves for
+  // whichever org this developer's session/switcher currently points at" -
+  // there's no single tenant this page is scoped to. Defaults to '/config'
+  // (the owner/admin landing page) rather than Header's own '/login'
+  // default, since reaching this page at all already requires a real
+  // logged-in developer session - '/login' would only ever flash briefly
+  // before the fetch resolves, same as everywhere else this pattern is used.
+  const [dashboardLandingPage, setDashboardLandingPage] = useState('/config')
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tenant/me')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const role = data?.role
+        setDashboardLandingPage(role === 'atc' ? '/atc-control' : role === 'media' ? '/media-manager' : '/config')
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Left-pane selection, CRM-style - null until the first successful
+  // fetch resolves, at which point the effect below auto-selects the
+  // first tenant (a short list, 5 today, so an initially-empty detail
+  // pane would just read as broken rather than an intentional "pick
+  // one" state; MediaLibraryPage.tsx's own null-until-clicked precedent
+  // suits a much longer, unbounded file list better than it suits this).
+  const [selectedTenantId, setSelectedTenantId] = useState<number | null>(null)
 
   useEffect(() => {
     fetch(TENANTS_URL)
@@ -348,10 +450,16 @@ export default function PlatformTenantsPage(): JSX.Element {
         return response.ok ? response.json() : null
       })
       .then((data) => {
-        if (data) setTenants(data.tenants ?? [])
+        if (data) {
+          const loaded: PlatformTenant[] = data.tenants ?? []
+          setTenants(loaded)
+          setSelectedTenantId((prev) => prev ?? loaded[0]?.id ?? null)
+        }
       })
       .finally(() => setLoading(false))
   }, [])
+
+  const selectedTenant = tenants.find((t) => t.id === selectedTenantId) ?? null
 
   function handleBooleanToggle(tenant: PlatformTenant, field: BooleanField, next: boolean) {
     setTenants((prev) => prev.map((t) => (t.id === tenant.id ? { ...t, [field]: next } : t)))
@@ -434,26 +542,25 @@ export default function PlatformTenantsPage(): JSX.Element {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-6 pb-16 pt-10 text-slate-100">
-      {/* max-w-[1900px], not max-w-6xl (1152px, far too narrow for the
-          11-column table) - reusing DesignPage.tsx's own exact
-          max-w-[1900px] value/pattern rather than a rem-based class
-          like max-w-7xl. This codebase's root font-size is
-          clamp(12px, 1.5vmin, 20px) (index.css), so BOTH a rem-based
-          container cap AND the table's own rem-padded cell content
-          scale with viewport *height*, not just width - confirmed via
-          Playwright across real device sizes: the table's natural
-          content width itself ranges from ~1100px (1024x768, floored
-          root font-size) up to ~1560px (2560x1440, ceiling root
-          font-size), so a small fixed pixel cap (tried max-w-[1300px]
-          first) still clipped it unnecessarily on large monitors.
-          max-w-[1900px] comfortably covers the observed range, matches
-          this page's own overflow-x-auto fallback for anything
-          narrower (see that div's comment), and doesn't invent a new
-          number - MediaLibraryPage.tsx already documents this same
-          rem-scaling behaviour by name. */}
+      {/* max-w-[1900px], not max-w-6xl (1152px, far too narrow once the
+          right-hand detail pane's settings/displays/members sections are
+          all open at once) - reusing DesignPage.tsx's own exact
+          max-w-[1900px] value/pattern rather than a rem-based class like
+          max-w-7xl. This codebase's root font-size is clamp(12px, 1.5vmin,
+          20px) (index.css), so a rem-based container cap scales with
+          viewport *height*, not just width - MediaLibraryPage.tsx already
+          documents this same rem-scaling behaviour by name, and this page
+          previously confirmed it via Playwright when it was still a
+          table (see git history) - unchanged now that it's a two-pane
+          layout, since the underlying font-size behaviour is unaffected
+          by that rewrite. */}
       <div className="mx-auto max-w-[1900px]">
         <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
-          <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Platform · Tenants</h1>
+          <h1 className="text-2xl font-black uppercase tracking-wide text-primary">
+            <Link to={dashboardLandingPage} className="transition-colors hover:text-accent-sky-400" title="Back to Dashboard">
+              Platform · Tenants
+            </Link>
+          </h1>
           <div className="flex items-center gap-3">
             <Link to="/platform/onboarding-content" className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
               Edit onboarding content →
@@ -505,99 +612,115 @@ export default function PlatformTenantsPage(): JSX.Element {
         {loading ? (
           <p className="text-sm text-muted-400">Loading…</p>
         ) : (
-          // overflow-x-auto here is a deliberate fallback for viewports
-          // too narrow to fit the table even at the widened max-w-[1900px]
-          // container above - it scrolls contained within this div only
-          // (confirmed via Playwright: document.scrollWidth never exceeds
-          // clientWidth at any tested viewport, 1024x768-2560x1440), never
-          // the page itself. Doesn't engage on any normal desktop/laptop
-          // window - only on something narrower than ~1100px, below any
-          // realistic desktop browser width.
-          <div className="overflow-x-auto rounded-2xl border border-border bg-panel">
-            <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  <th className="px-4 py-3">Tenant</th>
-                  <th className="px-4 py-3">Logo</th>
-                  <th className="px-4 py-3">Subdomain</th>
-                  <th className="px-4 py-3 text-center">Active</th>
-                  <th className="px-4 py-3 text-center">Weather public</th>
-                  <th className="px-4 py-3 text-center">Ops public</th>
-                  <th className="px-4 py-3 text-center">Internal</th>
-                  <th className="px-4 py-3 text-center">Has ATC</th>
-                  <th className="px-4 py-3">Displays</th>
-                  <th className="px-4 py-3">Storage</th>
-                  <th className="px-4 py-3">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tenants.map((tenant) => (
-                  <tr key={tenant.id} className="border-b border-border/60 last:border-0">
-                    <td className="px-4 py-3">
-                      <NameEditor tenant={tenant} onSaved={(name) => handleNameSaved(tenant.id, name)} />
-                      <div className="mt-1 text-xs text-muted-500">{tenant.slug}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <LogoEditor tenant={tenant} onSaved={(logoUrl) => handleLogoSaved(tenant.id, logoUrl)} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-400">{tenant.subdomain}</td>
-                    <td className="px-4 py-3">
-                      <BooleanToggle
-                        checked={tenant.active}
-                        onChange={(next) => handleBooleanToggle(tenant, 'active', next)}
-                        label={`${tenant.slug} active`}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <BooleanToggle
-                        checked={tenant.weatherPublic}
-                        onChange={(next) => handleBooleanToggle(tenant, 'weatherPublic', next)}
-                        label={`${tenant.slug} weather public`}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <BooleanToggle
-                        checked={tenant.opsPublic}
-                        onChange={(next) => handleBooleanToggle(tenant, 'opsPublic', next)}
-                        label={`${tenant.slug} ops public`}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <BooleanToggle
-                        checked={tenant.isInternal}
-                        onChange={(next) => handleBooleanToggle(tenant, 'isInternal', next)}
-                        label={`${tenant.slug} internal`}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <BooleanToggle
-                        checked={tenant.hasPhysicalAtc}
-                        onChange={(next) => handleBooleanToggle(tenant, 'hasPhysicalAtc', next)}
-                        label={`${tenant.slug} has physical ATC`}
-                      />
-                    </td>
-                    <td className="min-w-[200px] px-4 py-3">
-                      {tenant.displays.length === 0 ? (
-                        <span className="text-xs text-muted-500">No displays yet</span>
-                      ) : (
-                        tenant.displays.map((display) => (
-                          <DisplayControls
-                            key={display.id}
-                            tenantId={tenant.id}
-                            display={display}
-                            onSaved={(displayId, patch) => handleDisplaySaved(tenant.id, displayId, patch)}
-                          />
-                        ))
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <QuotaEditor tenant={tenant} onSaved={(bytes) => handleQuotaSaved(tenant.id, bytes)} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-400">{formatDate(tenant.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          // CRM-style two-pane layout, mirroring MediaLibraryPage.tsx's
+          // own list+detail interaction convention (selected-id state,
+          // a row class keyed off it, a conditionally-rendered detail
+          // panel) rather than inventing a second one. Fixed-width left
+          // pane (w-72, same fixed-width idiom as that file's own
+          // FileInspector) + flex-1 right pane, min-h so a short tenant
+          // list doesn't collapse the detail pane's vertical rhythm.
+          <div className="flex min-h-[600px] flex-col gap-4 lg:flex-row">
+            <div className="flex max-h-[75vh] w-full shrink-0 flex-col gap-1 overflow-y-auto rounded-2xl border border-border bg-panel p-2 lg:w-72">
+              {tenants.map((tenant) => (
+                <button
+                  key={tenant.id}
+                  type="button"
+                  onClick={() => setSelectedTenantId(tenant.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    tenant.id === selectedTenantId
+                      ? 'border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
+                      : 'border-transparent text-muted-300 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${tenant.active ? 'bg-status-good' : 'bg-status-bad'}`}
+                    title={tenant.active ? 'Active' : 'Paused'}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{tenant.name}</span>
+                    <span className="block truncate text-xs text-muted-500">{tenant.slug}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {selectedTenant && (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Tenant settings</div>
+                  <div className="mb-4 flex flex-wrap items-start gap-4">
+                    <div className="min-w-[220px] flex-1">
+                      <NameEditor tenant={selectedTenant} onSaved={(name) => handleNameSaved(selectedTenant.id, name)} />
+                      <div className="mt-1 text-xs text-muted-500">
+                        {selectedTenant.subdomain} · created {formatDate(selectedTenant.createdAt)}
+                      </div>
+                    </div>
+                    <LogoEditor tenant={selectedTenant} onSaved={(logoUrl) => handleLogoSaved(selectedTenant.id, logoUrl)} />
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-border/60">
+                    <SettingsToggleRow
+                      label="Active"
+                      checked={selectedTenant.active}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'active', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Weather public"
+                      checked={selectedTenant.weatherPublic}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'weatherPublic', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Ops public"
+                      checked={selectedTenant.opsPublic}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'opsPublic', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Internal"
+                      checked={selectedTenant.isInternal}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'isInternal', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Has physical ATC"
+                      checked={selectedTenant.hasPhysicalAtc}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'hasPhysicalAtc', next)}
+                    />
+                  </div>
+                  <div className="mt-4">
+                    <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Displays</div>
+                  {selectedTenant.displays.length === 0 ? (
+                    <span className="text-xs text-muted-500">No displays yet</span>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {selectedTenant.displays.map((display) => (
+                        <DisplayControls
+                          key={display.id}
+                          tenantId={selectedTenant.id}
+                          display={display}
+                          onSaved={(displayId, patch) => handleDisplaySaved(selectedTenant.id, displayId, patch)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Members</div>
+                  {selectedTenant.members.length === 0 ? (
+                    <span className="text-xs text-muted-500">No members yet</span>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {selectedTenant.members.map((member) => (
+                        <MemberRow key={member.id} member={member} />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
           </div>
         )}
       </div>
