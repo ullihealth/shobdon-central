@@ -10,7 +10,7 @@
 // of an unrelated save action, not a user-facing link/button of their own)
 // are out of scope for this change and still call the worker directly.
 
-import { requireOwner, type D1Database } from "../_utils/tenantAuth";
+import { requireOwner, jsonResponse, type D1Database } from "../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -25,9 +25,19 @@ interface Env {
 const CAPTURE_WORKER_BASE = "https://shobdon-central-capture.jeffthompson.workers.dev";
 const FALLBACK_CAPTURE_KEY = "49f761797d8e1fe76898e079b997980f";
 
+// Same fix/reasoning as capture-logs.ts's own comment - requireOwner only
+// confirms an owner/admin role on the CALLER's own tenant, not that the
+// caller's tenant IS Shobdon, whose hardware this pipeline hardcodes
+// above. Without this, any owner/admin on any other tenant could trigger
+// a real refresh cycle against Shobdon's actual physical PC2 machine.
+const REQUIRED_TENANT_SLUG = "shobdon";
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const auth = await requireOwner(request, env);
   if ("error" in auth) return auth.error;
+  if (auth.membership.slug !== REQUIRED_TENANT_SLUG) {
+    return jsonResponse({ error: "This capture pipeline belongs to a different tenant" }, 403);
+  }
 
   const key = env.CAPTURE_KEY || FALLBACK_CAPTURE_KEY;
   const upstream = await fetch(`${CAPTURE_WORKER_BASE}/refresh?key=${key}`).catch(() => null);

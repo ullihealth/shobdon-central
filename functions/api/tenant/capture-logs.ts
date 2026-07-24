@@ -12,7 +12,7 @@
 // proxied through directly instead, so the address bar stays on this
 // route's own URL throughout.
 
-import { requireOwner, type D1Database } from "../_utils/tenantAuth";
+import { requireOwner, jsonResponse, type D1Database } from "../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -33,9 +33,24 @@ interface Env {
 const CAPTURE_WORKER_BASE = "https://shobdon-central-capture.jeffthompson.workers.dev";
 const FALLBACK_CAPTURE_KEY = "49f761797d8e1fe76898e079b997980f";
 
+// This whole capture pipeline is Shobdon's own physical PC2/WeatherLink
+// hardware, hardcoded above - there is no generic/multi-tenant version
+// of it (see functions/api/ingest/weather.ts for the one that is). Bug
+// found during the ingest-pipeline investigation: requireOwner only
+// confirms the CALLER has an owner/admin role on WHATEVER tenant their
+// own session is scoped to - it says nothing about which tenant that
+// is. Without this check, any owner/admin on ANY tenant (demo,
+// newcustomer, or a real future customer) could view Shobdon's live
+// capture logs or trigger "Refresh PC2 Now" against Shobdon's actual
+// physical machine from their own unrelated tenant's /config page.
+const REQUIRED_TENANT_SLUG = "shobdon";
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const auth = await requireOwner(request, env);
   if ("error" in auth) return auth.error;
+  if (auth.membership.slug !== REQUIRED_TENANT_SLUG) {
+    return jsonResponse({ error: "This capture pipeline belongs to a different tenant" }, 403);
+  }
 
   const key = env.CAPTURE_KEY || FALLBACK_CAPTURE_KEY;
   const upstream = await fetch(`${CAPTURE_WORKER_BASE}/?key=${key}`).catch(() => null);
