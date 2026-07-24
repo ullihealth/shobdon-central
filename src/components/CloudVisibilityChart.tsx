@@ -27,6 +27,30 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: AIRFIELD_TIMEZONE })
 }
 
+// How often the "+Nh" labels below re-derive from the real clock - see
+// hourLabelFor's own comment for why this exists at all. 1 minute, not
+// Header.tsx's 1-second clock tick: these labels round to whole hours,
+// so nothing they'd display can change faster than that; a slower tick
+// is just cheaper for the same visible result.
+const LABEL_TICK_MS = 60 * 1000
+
+// Was previously just the array index (`+${i + 1}h`) - looked plausible
+// but was silently wrong by up to just under an hour, growing worse the
+// longer this data's 60-minute server-side cache had been sitting: the
+// label claimed "distance from now", but was actually always "distance
+// from whenever this was fetched". Found investigating a reported
+// forecast discrepancy - this labelling gap wasn't the actual cause
+// that time (the cache was fresh when it was reported), but is a real,
+// separate inaccuracy in its own right. Rounds to the nearest hour
+// (not floor/ceil) so a step that's, say, 26 minutes away doesn't read
+// as a full "+1h" out - "Now" covers anything that rounds to zero or
+// (rarely, right before this cache's own 60-minute TTL expires) has
+// already slipped a few minutes into the past.
+function hourLabelFor(forecastForUtc: string, nowMs: number): string {
+  const deltaHours = Math.round((Date.parse(forecastForUtc) - nowMs) / (60 * 60 * 1000))
+  return deltaHours <= 0 ? 'Now' : `+${deltaHours}h`
+}
+
 // Previously a FIXED viewBox (220x300, a portrait ratio picked as "close
 // to the middle of the real observed range" across a handful of measured
 // resolutions) uniformly scaled via preserveAspectRatio="xMidYMid meet".
@@ -125,6 +149,16 @@ export default function CloudVisibilityChart({
   // replaced a fixed-ratio viewBox.
   const plotWrapperRef = useRef<HTMLDivElement>(null)
   const [viewWidth, setViewWidth] = useState(FALLBACK_VIEW_WIDTH)
+
+  // See hourLabelFor's own comment - ticks independently of
+  // visibilityHours (which only changes every 15 minutes, or whenever
+  // the server-side cache refreshes) so the labels keep correcting
+  // themselves against the real clock in between.
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), LABEL_TICK_MS)
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const el = plotWrapperRef.current
@@ -251,7 +285,7 @@ export default function CloudVisibilityChart({
             {visibilityHours.map((hour, i) => (
               <div key={i} className="flex flex-col items-center">
                 <span className="text-xl leading-none">{weatherIconFor(hour.weatherCode)}</span>
-                <span className="mt-1.5 text-xs font-semibold text-muted-500">+{i + 1}h</span>
+                <span className="mt-1.5 text-xs font-semibold text-muted-500">{hourLabelFor(hour.forecastForUtc, nowMs)}</span>
               </div>
             ))}
           </div>
