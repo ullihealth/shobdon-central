@@ -56,10 +56,21 @@ interface IngestBody {
   dewpointC?: unknown;
   visibilityM?: unknown;
   rawSnapshotId?: unknown;
+  // Optional - a source with no NOTAMs concept at all (most third-party
+  // vendor APIs) simply omits this, stored as '[]'. See migration 0045's
+  // own comment for why this was missing entirely until now.
+  notams?: unknown;
 }
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+// Anything not cleanly a string[] is treated as "no notams" rather than
+// rejecting the whole ingest - matches atcProvider.ts's own
+// stringArrayField leniency for the exact same data shape.
+function stringArrayOrEmpty(value: unknown): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -90,16 +101,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const dewpointC = numberOrNull(body.dewpointC);
   const visibilityM = numberOrNull(body.visibilityM);
   const rawSnapshotId = typeof body.rawSnapshotId === "string" ? body.rawSnapshotId : null;
+  const notams = stringArrayOrEmpty(body.notams);
 
   const { tenantId } = keyLookup;
 
   const insertResult = await env.DB
     .prepare(
       `INSERT INTO weather_observations
-         (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type, notams_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(tenantId, observedAt, windSpeedKt, windDirDeg, windGustKt, qnhHpa, tempC, dewpointC, visibilityM, rawSnapshotId, sourceType)
+    .bind(tenantId, observedAt, windSpeedKt, windDirDeg, windGustKt, qnhHpa, tempC, dewpointC, visibilityM, rawSnapshotId, sourceType, JSON.stringify(notams))
     .run();
 
   if (!insertResult.success) return jsonResponse({ error: "Failed to store observation" }, 500);

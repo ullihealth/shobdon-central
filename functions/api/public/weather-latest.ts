@@ -43,6 +43,7 @@ interface LatestRow {
   tempC: number | null;
   dewpointC: number | null;
   sourceType: string;
+  notamsJson: string;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -62,7 +63,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT wo.observed_at AS observedAt, wo.wind_speed_kt AS windSpeedKt, wo.wind_dir_deg AS windDirDeg,
               wo.wind_gust_kt AS windGustKt, wo.qnh_hpa AS qnhHpa, wo.temp_c AS tempC, wo.dewpoint_c AS dewpointC,
-              wo.source_type AS sourceType
+              wo.source_type AS sourceType, wo.notams_json AS notamsJson
        FROM latest_conditions lc
        JOIN weather_observations wo ON wo.id = lc.observation_id
        WHERE lc.tenant_id = ?`
@@ -72,5 +73,28 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   if (!row) return jsonResponse(null, 404);
 
-  return jsonResponse(row);
+  // notams_json predates migration 0045 for any row backfilled/seeded
+  // before it existed (defaults to '[]', but parse defensively anyway -
+  // same "don't trust a stored JSON blob is well-formed" posture this
+  // project already applies to every other *_json column).
+  let notams: string[] = [];
+  try {
+    const parsed = JSON.parse(row.notamsJson);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) notams = parsed;
+  } catch {
+    // Leave notams as [] - a malformed blob isn't a reason to 500 the
+    // whole reading.
+  }
+
+  return jsonResponse({
+    observedAt: row.observedAt,
+    windSpeedKt: row.windSpeedKt,
+    windDirDeg: row.windDirDeg,
+    windGustKt: row.windGustKt,
+    qnhHpa: row.qnhHpa,
+    tempC: row.tempC,
+    dewpointC: row.dewpointC,
+    sourceType: row.sourceType,
+    notams,
+  });
 };

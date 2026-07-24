@@ -1,0 +1,18 @@
+-- Adds NOTAMs to the generic weather ingestion pipeline
+-- (functions/api/ingest/weather.ts). Found missing during the ATC/PC2
+-- multi-tenant migration investigation: the OLD Shobdon-specific
+-- pipeline (worker/src/index.ts's HTML parser -> KV) already extracts
+-- real NOTAMs from the station and atcProvider.ts already surfaces them
+-- (RightInfoPanel's auto-NOTAMs), but the generic ingest endpoint had no
+-- column/field for them at all, and ingestedProvider.ts hardcoded an
+-- empty array - a silent regression waiting to happen the moment
+-- Shobdon (or anyone) actually cut over from 'atc' to 'ingested'.
+--
+-- JSON text column, not a separate table - matches this project's
+-- existing convention for a small, tenant-owned array of strings
+-- (safety_notices_json on ops_panel_state), and NOTAMs here are exactly
+-- that: a snapshot of strings attached to one observation, never queried
+-- individually. Defaults to '[]' so every existing row (and any future
+-- source_type that doesn't produce NOTAMs) reads as "no notams", not a
+-- parse failure.
+ALTER TABLE weather_observations ADD COLUMN notams_json TEXT NOT NULL DEFAULT '[]';

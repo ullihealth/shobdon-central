@@ -26,6 +26,15 @@ interface LatestIngestedResponse {
   qnhHpa: number | null
   tempC: number | null
   dewpointC: number | null
+  notams: string[]
+}
+
+// Anything not cleanly a string[] (a source that never sends this field
+// at all, or a malformed one) is treated as "no notams", matching
+// atcProvider.ts's own leniency for the identical shape - a missing
+// notams field isn't a reason to blank the whole reading.
+function stringArrayField(value: unknown): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : []
 }
 
 export const fetchIngestedWeather: WeatherProviderFetcher = async () => {
@@ -60,7 +69,12 @@ export const fetchIngestedWeather: WeatherProviderFetcher = async () => {
     // Generic ingestion has no trend field to work from - same
     // limitation atcProvider.ts's own station has, not a regression.
     pressureTrend: 'steady',
-    notams: [],
+    // Was hardcoded to [] - found during the ATC/PC2 multi-tenant
+    // migration investigation that this silently dropped real NOTAMs
+    // the moment a tenant with an actual NOTAMs-producing source (e.g.
+    // Shobdon, post-migration) selected this provider. See migration
+    // 0045's own comment for the full story.
+    notams: stringArrayField(reading.notams),
     dewpoint: reading.dewpointC ?? undefined,
     capturedAt: reading.observedAt,
   }
