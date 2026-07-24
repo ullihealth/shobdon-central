@@ -15,6 +15,24 @@
 export interface Env {
   CAPTURES: KVNamespace
   CAPTURE_KEY: string
+  // Real per-tenant key for Shobdon's own tenants row (functions/api/
+  // tenant/api-keys), used only to forward already-parsed readings to
+  // the generic, genuinely multi-tenant ingestion endpoint - see
+  // forwardToIngest's own comment for the full story. Set via
+  // `wrangler secret put SHOBDON_INGEST_KEY` from this directory, never
+  // committed - same posture as CAPTURE_KEY already has via wrangler.toml
+  // + the Cloudflare dashboard.
+  SHOBDON_INGEST_KEY?: string
+}
+
+// Minimal structural subset of the real Workers ExecutionContext - just
+// the one method this file actually calls, matching this project's own
+// established "hand-roll a narrow local type rather than pull in a
+// dependency" convention (see functions/api/_utils/tenantAuth.ts's own
+// D1Database for the same pattern). Avoids needing @cloudflare/workers-
+// types as a real dependency in this directory, which has none today.
+interface MinimalExecutionContext {
+  waitUntil(promise: Promise<unknown>): void
 }
 
 const MAX_HISTORY = 20
@@ -341,7 +359,86 @@ async function handleGetTheme(env: Env): Promise<Response> {
   })
 }
 
-async function handlePost(request: Request, env: Env): Promise<Response> {
+// Domain doesn't matter for tenant resolution here - unlike the public
+// config routes, this endpoint resolves its tenant purely from the API
+// key in the Authorization header (see functions/api/ingest/weather.ts's
+// own comment), so any hostname routing to the same Cloudflare Pages
+// deployment works. Using the primary custom domain since it's the one
+// confirmed reachable from outside Cloudflare's own network (this Worker
+// makes a real external fetch, not an internal one).
+const INGEST_WEATHER_URL = 'https://airfieldcentral.com/api/ingest/weather'
+
+// Forwards this capture's already-parsed fields to the generic,
+// genuinely multi-tenant D1 ingestion endpoint, ADDITIONALLY to (never
+// instead of) the KV write below - built to let Shobdon migrate off
+// this file's own single-tenant global KV keys (see the KNOWN FUTURE
+// COLLISION comment below) without touching PC2's installed script at
+// all: PC2 keeps POSTing the exact same raw HTML to this exact same
+// Worker URL+key it always has, unaware this forward exists. Every
+// error path here is deliberately swallowed - a broken or unreachable
+// ingest endpoint must never affect what PC2 experiences, which is why
+// this is only ever called via ctx.waitUntil(...caught...), never
+// awaited inline in handlePost's own response path.
+//
+// wind_avg_kt is an averaging-period mean, not a gust reading (see
+// parseAvgWind's own comment) - windGustKt is correctly omitted here,
+// same as atcProvider.ts's own conclusion for the exact same station
+// data, not an oversight.
+async function forwardToIngest(parsed: Record<string, unknown>, capturedAt: string | null, env: Env): Promise<void> {
+  if (!env.SHOBDON_INGEST_KEY) return
+
+  const windSpeedKt = parsed.wind_speed_kt
+  const windDirDeg = parsed.wind_dir_deg
+  const qnhHpa = parsed.qnh_hpa
+  const tempC = parsed.temp_c
+  // Required fields on the ingest endpoint's own side - a watchdog-error
+  // or otherwise incomplete capture simply isn't forwarded this cycle,
+  // same as it already doesn't update the dashboard-facing KV `latest`
+  // in a fully-trustworthy way either (RightInfoPanel/atcProvider.ts
+  // just show whatever this cycle produced).
+  if (typeof windSpeedKt !== 'number' || typeof windDirDeg !== 'number' || typeof qnhHpa !== 'number' || typeof tempC !== 'number') {
+    return
+  }
+
+  // observed_at_utc is frequently null (see atcProvider.ts's own comment -
+  // the station's Time field's whitespace/multi-line quirk isn't fully
+  // handled by parseObservedAt yet) - capturedAt (this script's own
+  // fetch-time timestamp, always set) is the same fallback atcProvider.ts
+  // itself relies on for staleness checks, reused here for the same
+  // reason rather than skipping the forward whenever this one field is
+  // unreliable.
+  const observedAt = typeof parsed.observed_at_utc === 'string' ? parsed.observed_at_utc : (capturedAt ?? new Date().toISOString())
+
+  const notams = Array.isArray(parsed.notams) && parsed.notams.every((n) => typeof n === 'string') ? parsed.notams : []
+
+  const response = await fetch(INGEST_WEATHER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.SHOBDON_INGEST_KEY}` },
+    body: JSON.stringify({
+      sourceType: 'atc_capture',
+      observedAt,
+      windSpeedKt,
+      windDirDeg,
+      qnhHpa,
+      tempC,
+      dewpointC: typeof parsed.dewpoint_c === 'number' ? parsed.dewpoint_c : null,
+      notams,
+    }),
+  })
+  if (!response.ok) {
+    // Logged via a KV write (cheap, already have a namespace bound) so a
+    // string of failures is visible somewhere without needing Workers
+    // Logs/Tail set up specifically for this - overwrites on every
+    // failure, deliberately not a growing history (this is a "is the
+    // bridge currently broken" signal, not an audit trail).
+    await env.CAPTURES.put(
+      'ingest-forward-last-error',
+      JSON.stringify({ at: new Date().toISOString(), status: response.status, body: await response.text().catch(() => '') })
+    ).catch(() => {})
+  }
+}
+
+async function handlePost(request: Request, env: Env, ctx: MinimalExecutionContext): Promise<Response> {
   let payload: unknown
   try {
     payload = await request.json()
@@ -356,15 +453,21 @@ async function handlePost(request: Request, env: Env): Promise<Response> {
     // New-style capture from capture-weathercentral.ps1: parse server-side,
     // keep the raw HTML alongside the parsed result rather than replacing it.
     const { parsed, raw_unparsed } = await parseWeatherHtml(body.html)
+    const capturedAt = typeof body.capturedAt === 'string' ? body.capturedAt : null
     entry = {
       receivedAt: new Date().toISOString(),
       payload: {
-        capturedAt: typeof body.capturedAt === 'string' ? body.capturedAt : null,
+        capturedAt,
         raw: body.html,
         parsed,
         raw_unparsed,
       },
     }
+    // Fire-and-forget, deliberately not awaited here - see
+    // forwardToIngest's own comment for why this can never affect what
+    // PC2 experiences. ctx.waitUntil keeps it running after the response
+    // below is returned, rather than risking it being cut off mid-flight.
+    ctx.waitUntil(forwardToIngest(parsed, capturedAt, env).catch(() => {}))
   } else {
     // Existing browser-report shape (Capture & Copy button) - unchanged.
     entry = { receivedAt: new Date().toISOString(), payload }
@@ -495,7 +598,7 @@ async function handleGet(env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: MinimalExecutionContext): Promise<Response> {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS })
     }
@@ -530,7 +633,7 @@ export default {
       return handleGetLatestReading(env)
     }
 
-    if (request.method === 'POST') return handlePost(request, env)
+    if (request.method === 'POST') return handlePost(request, env, ctx)
     if (request.method === 'GET') return handleGet(env)
 
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
