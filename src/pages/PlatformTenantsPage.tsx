@@ -178,6 +178,85 @@ function QuotaEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (by
   )
 }
 
+// Manages this tenant's tenant_weather_shares row (migration 0029) via
+// the new functions/api/platform/tenants/[id]/weather-share.ts route -
+// built during the ATC/PC2 multi-tenant migration to support co-located
+// clubs (e.g. a future gyrocopter/microlight tenant at Shobdon reading
+// Shobdon's own ATC station instead of running their own feed). Fetches
+// the current share fresh on every tenant switch (own effect, not
+// derived from the tenants list response - that endpoint doesn't carry
+// this) since it's cross-tenant admin-only state, same posture as
+// has_physical_atc. Deliberately generic: any tenant can be picked as
+// the source, not just Shobdon - this is the same mechanism for any
+// future main-airfield-plus-neighbours arrangement.
+function WeatherShareEditor({
+  tenant,
+  allTenants,
+}: {
+  tenant: PlatformTenant
+  allTenants: PlatformTenant[]
+}): JSX.Element {
+  const [sourceSlug, setSourceSlug] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch(`${TENANTS_URL}/${tenant.id}/weather-share`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        setSourceSlug(data?.sourceTenantSlug ?? null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tenant.id])
+
+  async function handleChange(nextSlug: string) {
+    const value = nextSlug || null
+    setSaving(true)
+    const response = await fetch(`${TENANTS_URL}/${tenant.id}/weather-share`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceTenantSlug: value }),
+    })
+    const data = response.ok ? await response.json().catch(() => null) : null
+    setSaving(false)
+    setSourceSlug(data?.sourceTenantSlug ?? null)
+  }
+
+  const otherTenants = allTenants.filter((t) => t.id !== tenant.id)
+
+  return (
+    <div className="min-w-[220px]">
+      <div className="mb-1 text-xs uppercase tracking-wide text-muted-400">Reads weather from</div>
+      <select
+        value={sourceSlug ?? ''}
+        disabled={loading || saving}
+        onChange={(event) => handleChange(event.target.value)}
+        className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+      >
+        <option value="">— Its own weather source —</option>
+        {otherTenants.map((t) => (
+          <option key={t.id} value={t.slug}>
+            {t.name} ({t.slug})
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-[11px] text-muted-500">
+        When set, this tenant's dashboard shows the selected tenant's live weather (including NOTAMs) instead of its
+        own - it must still have its own Weather Config source set to &quot;Third-Party Station&quot; for this to
+        take effect.
+      </p>
+    </div>
+  )
+}
+
 // Same inline-edit-on-blur pattern as QuotaEditor above - a developer
 // customer-service fix (e.g. a tenant's name has a typo or their logo
 // was uploaded badly-sized) shouldn't need a separate "Edit" mode.
@@ -1153,8 +1232,9 @@ export default function PlatformTenantsPage(): JSX.Element {
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'hasPhysicalAtc', next)}
                     />
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-wrap gap-6">
                     <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
+                    <WeatherShareEditor tenant={selectedTenant} allTenants={tenants} />
                   </div>
 
                   {/* Suspend + Archive, grouped and visually separated
