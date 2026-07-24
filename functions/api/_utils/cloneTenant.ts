@@ -5,8 +5,11 @@
 // these tables via incremental ALTER TABLE migrations (club_theme,
 // runway_groups, camera_slots, ops_panel_state, carousel_slots), so a
 // hardcoded column list would silently drift out of date the next time
-// one of those gets a new column. Only used by
-// functions/api/platform/tenants/onboard.ts, cloning from org_newcustomer.
+// one of those gets a new column. Used by both onboarding paths that
+// provision a real tenant from org_newcustomer -
+// functions/api/platform/tenants/onboard.ts (platform-admin invite
+// link) and functions/api/public/trial-signup.ts (public self-serve
+// signup).
 import type { D1Database } from "./tenantAuth";
 
 async function cloneTable(
