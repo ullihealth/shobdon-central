@@ -291,7 +291,18 @@ export default function CloudVisibilityChart({
           </div>
         )}
         {visibilityFetchedAt && (
-          <div className="mt-5 text-center text-[0.625rem] text-muted-500">Last updated {formatTime(visibilityFetchedAt)}</div>
+          // Names the specific product/source, not just a bare "Last
+          // updated" stamp - found investigating a reported discrepancy
+          // against weather.metoffice.gov.uk that this widget's own
+          // Met Office DataHub product (Global Spot) can genuinely
+          // diverge from the consumer website's own forecast for the
+          // same hours, since neither is guaranteed to be the other's
+          // source. A pilot comparing the two should read this as its
+          // own distinct, clearly-sourced data point, not as this app
+          // disagreeing with "the" Met Office.
+          <div className="mt-5 text-center text-[0.625rem] text-muted-500">
+            Met Office DataHub · updated {formatTime(visibilityFetchedAt)}
+          </div>
         )}
       </div>
     </div>
