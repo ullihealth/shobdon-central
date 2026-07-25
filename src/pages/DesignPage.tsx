@@ -564,6 +564,37 @@ export default function DesignPage(): JSX.Element {
   // state itself is shared page state, not owned by any one tab.
   const [activeScreen, setActiveScreen] = useState<ScreenId>('dashboard')
 
+  // Task #40 follow-up: this tenant's cafe-tv display entitlement, same
+  // /api/tenant/me field AdminSidebar.tsx reads to hide the Cafe Media
+  // sidebar item - independent fetch here rather than a shared store,
+  // matching this codebase's existing convention (RequireAuth.tsx,
+  // AdminSidebar.tsx, and Header.tsx each fetch /api/tenant/me on their
+  // own too). Fails closed (false) until resolved, same as those. Drives
+  // the Dashboard/Cafe toggle below and the café template cards in the
+  // Layout footer - never a second/different entitlement check.
+  const [cafeEntitled, setCafeEntitled] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tenant/me')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) setCafeEntitled(!!data?.cafeEntitled)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // If entitlement is revoked while 'cafe' is the active screen (or the
+  // fetch above simply hasn't resolved 'true' yet by the time this
+  // runs), force back to 'dashboard' - the toggle itself is about to
+  // disappear below, so nothing should be left pointing at a screen the
+  // tenant can no longer reach.
+  useEffect(() => {
+    if (!cafeEntitled && activeScreen === 'cafe') setActiveScreen('dashboard')
+  }, [cafeEntitled, activeScreen])
+
   // Which of the 5 left-rail items is currently selected. Branding by
   // default, per an earlier round's instruction (still true after
   // consolidating Templates/Custom into Backgrounds).
@@ -1052,20 +1083,29 @@ export default function DesignPage(): JSX.Element {
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
-            {(['dashboard', 'cafe'] as const).map((screen) => (
-              <button
-                key={screen}
-                type="button"
-                onClick={() => setActiveScreen(screen)}
-                className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition ${
-                  activeScreen === screen ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
-                }`}
-              >
-                {screen === 'dashboard' ? 'Dashboard' : 'Cafe'}
-              </button>
-            ))}
-          </div>
+          {/* Only Dashboard exists for an unentitled tenant - nothing to
+              toggle between, so the whole control drops out rather than
+              rendering a single-option toggle. activeScreen is forced
+              back to 'dashboard' by the effect above whenever this is
+              false, so the rest of the page (preview, Layout footer
+              heading/grid) never has to account for 'cafe' being active
+              with no way to have gotten there. */}
+          {cafeEntitled && (
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
+              {(['dashboard', 'cafe'] as const).map((screen) => (
+                <button
+                  key={screen}
+                  type="button"
+                  onClick={() => setActiveScreen(screen)}
+                  className={`rounded-md px-4 py-1.5 text-xs font-bold uppercase tracking-wide transition ${
+                    activeScreen === screen ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-primary'
+                  }`}
+                >
+                  {screen === 'dashboard' ? 'Dashboard' : 'Cafe'}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Pinned here (this row renders regardless of which tab is
               active below) rather than duplicated into Backgrounds/
@@ -1684,7 +1724,7 @@ export default function DesignPage(): JSX.Element {
           is live until you click "Apply to live screen".
         </p>
         <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-          {TEMPLATE_SLOTS.map((slot) => {
+          {TEMPLATE_SLOTS.filter((slot) => cafeEntitled || slot.category !== 'cafe').map((slot) => {
             const toggledScreenLiveId = activeScreen === 'dashboard' ? activeTemplateId : cafeActiveTemplateId
             const isPendingSelection = slot.id === pendingIdForToggledScreen
             const isActiveOnDashboard = slot.id === activeTemplateId
