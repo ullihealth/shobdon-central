@@ -38,12 +38,36 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // current request resolved to.
   const memberships = await listUserMemberships(env.DB, result.userId);
 
+  // cafeEntitled drives AdminSidebar's Cafe Media item (sidebarConfig.ts's
+  // requireCafeEntitlement) - same live "entitled AND not trial-expired"
+  // fact as isCurrentlyEntitled() in functions/api/public/display.ts,
+  // read from the same tenant_displays row (migration 0034), not a
+  // parallel setting. The route itself (/cafe-media) already self-gates
+  // independently via CafeMediaPage.tsx's own /api/tenant/displays read
+  // (shows FeatureUpsellPanel instead of the editor when unentitled) -
+  // this field only needs to keep the sidebar link from pointing at
+  // that dead end. No row at all (never onboarded/visited) is treated
+  // as not entitled, same as displays.ts's own CafeMediaPage-facing read.
+  const cafeDisplay = await env.DB
+    .prepare(
+      `SELECT td.entitled AS entitled, td.entitlement_trial_expires_at AS entitlementTrialExpiresAt
+       FROM tenant_displays td
+       JOIN tenants t ON t.id = td.tenant_id
+       WHERE t.organization_id = ? AND td.slug = 'cafe-tv'`
+    )
+    .bind(result.membership.organizationId)
+    .first<{ entitled: number; entitlementTrialExpiresAt: string | null }>();
+  const cafeEntitled =
+    !!cafeDisplay?.entitled &&
+    !(cafeDisplay.entitlementTrialExpiresAt && new Date(cafeDisplay.entitlementTrialExpiresAt).getTime() <= Date.now());
+
   return jsonResponse({
     role: result.membership.role,
     organizationSlug: result.membership.slug,
     organizationName: result.membership.name,
     isDeveloper: !!userRow?.developer,
     hasAcceptedTerms: !!userRow?.termsAcceptedAt,
+    cafeEntitled,
     memberships,
   });
 };

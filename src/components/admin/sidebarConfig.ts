@@ -3,12 +3,17 @@ import type { MemberRole } from '../../types/member'
 // One item in the sidebar. allowedRoles is the visibility gate for
 // ordinary tenant-role items; requireDeveloper is a separate gate for the
 // cross-tenant developer flag (see AdminSidebar.tsx's isItemVisible) - an
-// item should set exactly one of the two, never both.
+// item should set exactly one of allowedRoles/requireDeveloper, never
+// both. requireCafeEntitlement is orthogonal to both (a live fact from
+// tenant_displays, not a role) and can combine with allowedRoles - Cafe
+// Media needs both "one of these roles" AND "this tenant's cafe-tv
+// display is entitled", not either alone.
 export interface SidebarItem {
   to: string
   label: string
   allowedRoles?: MemberRole[]
   requireDeveloper?: boolean
+  requireCafeEntitlement?: boolean
 }
 
 export interface SidebarGroupConfig {
@@ -30,7 +35,14 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       // brand-new role scoped to exactly Cafe Media + Media Library,
       // nothing else. 'media' still deliberately excluded from Cafe
       // Media itself, unchanged from before this round.
-      { to: '/cafe-media', label: 'Cafe Media', allowedRoles: ['owner', 'admin', 'cafe'] },
+      //
+      // requireCafeEntitlement: task #40 - a tenant that no longer
+      // administers its own café (entitlement off via /platform/tenants)
+      // shouldn't see this item at all, for any role including owner.
+      // CafeMediaPage.tsx already self-gates the route itself (shows
+      // FeatureUpsellPanel instead of the editor when unentitled) - this
+      // just keeps the sidebar from linking to that dead end.
+      { to: '/cafe-media', label: 'Cafe Media', allowedRoles: ['owner', 'admin', 'cafe'], requireCafeEntitlement: true },
       // Split out of Dashboard Manager (which used to embed the whole
       // library UI below its carousel slots) into its own page, shared by
       // both Dashboard Manager and Cafe Media's Source dropdowns. Keeps

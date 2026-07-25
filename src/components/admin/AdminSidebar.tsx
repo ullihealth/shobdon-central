@@ -17,7 +17,8 @@ function loadCollapsedGroups(): Record<string, boolean> {
   }
 }
 
-function isItemVisible(item: SidebarItem, role: MemberRole | null, isDeveloper: boolean): boolean {
+function isItemVisible(item: SidebarItem, role: MemberRole | null, isDeveloper: boolean, cafeEntitled: boolean): boolean {
+  if (item.requireCafeEntitlement && !cafeEntitled) return false
   if (item.requireDeveloper) return isDeveloper
   if (item.allowedRoles) return !!role && item.allowedRoles.includes(role)
   return true
@@ -33,6 +34,11 @@ export default function AdminSidebar(): JSX.Element {
   const location = useLocation()
   const [role, setRole] = useState<MemberRole | null>(null)
   const [isDeveloper, setIsDeveloper] = useState(false)
+  // Task #40: this tenant's cafe-tv display entitlement (tenant_displays,
+  // migration 0034), read from /api/tenant/me's cafeEntitled field -
+  // gates the Cafe Media item below. Fails closed (false) until the
+  // fetch resolves, same as role/isDeveloper above.
+  const [cafeEntitled, setCafeEntitled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadCollapsedGroups())
   // Empty until /api/tenant/me resolves, not another tenant's real name -
@@ -51,6 +57,7 @@ export default function AdminSidebar(): JSX.Element {
         if (cancelled) return
         setRole(data?.role ?? null)
         setIsDeveloper(!!data?.isDeveloper)
+        setCafeEntitled(!!data?.cafeEntitled)
         if (data?.organizationName) setOrganizationName(data.organizationName)
         setOrganizationSlug(data?.organizationSlug ?? '')
         setMemberships(Array.isArray(data?.memberships) ? data.memberships : [])
@@ -78,10 +85,10 @@ export default function AdminSidebar(): JSX.Element {
 
   const visibleGroups = SIDEBAR_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isItemVisible(item, role, isDeveloper)),
+    items: group.items.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled)),
   })).filter((group) => group.items.length > 0)
 
-  const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper))
+  const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled))
 
   return (
     <aside className="sticky top-0 flex h-screen w-64 flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
