@@ -11,12 +11,23 @@ interface DisplaysResponse {
   displays: DisplayEntry[]
 }
 
+interface DisplayUrlListProps {
+  // Same cafeEntitled fact DesignPage.tsx already fetches from
+  // /api/tenant/me for the Dashboard/Cafe toggle and café template
+  // cards (#40 follow-up) - passed down rather than re-fetched here so
+  // this list uses the exact same live value, including its trial-
+  // expiry check, instead of the plain (non-expiry-aware) `entitled`
+  // column already present per-row in the /api/tenant/displays response
+  // this component fetches below.
+  cafeEntitled: boolean
+}
+
 // Owner-only GET /api/tenant/displays (functions/api/tenant/displays.ts,
 // tenant_displays / migration 0027) - lists every named display this
 // tenant has (at minimum the seeded 'main' one) with its live /d/:slug
 // URL, so an owner doesn't need to know the URL scheme by heart to find
 // or share a display's link (e.g. for a new clubhouse TV).
-export default function DisplayUrlList(): JSX.Element | null {
+export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): JSX.Element | null {
   const [data, setData] = useState<DisplaysResponse | null>(null)
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null)
 
@@ -47,7 +58,15 @@ export default function DisplayUrlList(): JSX.Element | null {
     }
   }
 
-  if (!data || data.displays.length === 0) return null
+  if (!data) return null
+
+  // 'cafe-tv' is the same slug me.ts joins tenant_displays on to compute
+  // cafeEntitled (see that file's own comment) - dropped from the list
+  // entirely rather than shown disabled, same treatment as the
+  // Dashboard/Cafe toggle and café template cards it's gated alongside.
+  const visibleDisplays = data.displays.filter((display) => cafeEntitled || display.slug !== 'cafe-tv')
+
+  if (visibleDisplays.length === 0) return null
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
@@ -57,7 +76,7 @@ export default function DisplayUrlList(): JSX.Element | null {
         that view.
       </p>
       <div className="space-y-3">
-        {data.displays.map((display) => {
+        {visibleDisplays.map((display) => {
           const url = `https://${data.subdomain}/d/${display.slug}`
           return (
             <div

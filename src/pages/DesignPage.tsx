@@ -1582,7 +1582,7 @@ export default function DesignPage(): JSX.Element {
             {activeTab === 'your-displays' && (
               <div>
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Your Displays</div>
-                <DisplayUrlList />
+                <DisplayUrlList cafeEntitled={cafeEntitled} />
               </div>
             )}
           </div>
