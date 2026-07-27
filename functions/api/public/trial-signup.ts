@@ -23,6 +23,7 @@
 // endpoint yet. Fine before this page gets real marketing traffic -
 // flagged as a follow-up task, not solved here.
 import { cloneTenantTemplate } from "../_utils/cloneTenant";
+import { RESERVED_SLUGS } from "../_utils/tenantSlug";
 // Imported (not a separate hand-rolled local type, unlike this endpoint's
 // pre-existing convention) because cloneTenantTemplate below is typed
 // against this exact D1Database shape - passing env.DB through to it
@@ -44,15 +45,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
-
-// Anything that would collide with an existing or plausible future route
-// path (functions/api/public/*, src/App.tsx's routes) or is otherwise
-// not a real club's own identity.
-const RESERVED_SLUGS = new Set([
-  "www", "api", "global", "admin", "app", "login", "checklist", "account",
-  "config", "design", "runways", "members", "media-manager", "atc-control",
-  "developertools", "static", "assets", "signup", "trial", "shobdon",
-]);
 
 // Same template tenant onboard.ts's invite-link flow clones from - see
 // cloneTenantTemplate's own comment for why the clone itself reads the

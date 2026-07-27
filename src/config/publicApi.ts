@@ -111,6 +111,13 @@ export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'
 // PlatformTenantsPage.tsx's "Onboard new tenant" button.
 export const PLATFORM_ONBOARD_TENANT_URL = '/api/platform/tenants/onboard'
 
+// Platform-admin only: live availability check for the optional custom-
+// subdomain field on the same form above - functions/api/platform/
+// tenants/check-slug.ts. Advisory only (fast feedback while typing);
+// onboard.ts's own UNIQUE-constraint-backed try/catch is the real
+// guarantee against a race between two concurrent requests.
+export const PLATFORM_CHECK_SLUG_URL = '/api/platform/tenants/check-slug'
+
 // Public, unauthenticated invite-link account setup - functions/api/
 // public/onboard/[token].ts (GET validate) and its accept.ts sibling
 // (POST). Consumed by OnboardInvitePage.tsx.

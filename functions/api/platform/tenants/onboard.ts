@@ -1,19 +1,30 @@
-// Platform-admin only: POST /api/platform/tenants/onboard - one click,
-// no form input. Creates a new real-customer tenant cloned from the
-// newcustomer template tenant (see functions/api/_utils/cloneTenant.ts)
-// and mints a single-use invite link for the developer to copy/send
-// manually - no email-sending infrastructure exists yet (a documented,
-// deliberate gap, not an oversight).
+// Platform-admin only: POST /api/platform/tenants/onboard - creates a
+// new real-customer tenant cloned from the newcustomer template tenant
+// (see functions/api/_utils/cloneTenant.ts) and mints a single-use
+// invite link for the developer to copy/send manually - no email-
+// sending infrastructure exists yet (a documented, deliberate gap, not
+// an oversight).
 //
-// The slug is a random opaque string, not derived from a business name -
-// unlike trial-signup.ts's flow, the real business name isn't known at
-// this point (the invitee sets it themselves during the branding step),
-// and the slug isn't customer-facing anywhere in this pipeline (the
-// whole flow runs path-based on the existing app domain, not the new
-// tenant's own subdomain - see the plan's own note on why no Cloudflare
-// custom-domain work is needed for onboarding itself).
+// Optional JSON body { slug?: string } - a human-chosen subdomain
+// (wildcard DNS/Worker migration round: any valid subdomain now
+// resolves automatically the instant the tenant row exists, no
+// Cloudflare API call needed, so this is now a pure data-validation
+// feature, not an infra one). Omitted/empty body -> unchanged random-
+// slug behaviour (tenant-XXXXXXXX), same as before this round - this
+// keeps the existing one-click flow working exactly as it did.
+//
+// Format/reserved-word validation lives in ../../_utils/tenantSlug.ts,
+// shared with check-slug.ts (this form's live-as-you-type check) and
+// trial-signup.ts's own reserved list. That's advisory only, for fast
+// form feedback - the real atomic uniqueness guarantee is tenants.slug's
+// (and organization.slug's) own SQL-level UNIQUE constraint (migration
+// 0022_tenant_schema.sql, already existed, no new migration needed),
+// enforced below via a try/catch around the actual INSERTs so a genuine
+// race between two concurrent requests can never create two tenants
+// with the same slug, only ever one plus a clear error on the other.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { cloneTenantTemplate } from "../../_utils/cloneTenant";
+import { validateSlugCandidate } from "../../_utils/tenantSlug";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -55,26 +66,55 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "Template tenant 'newcustomer' is missing or has no linked organization" }, 500);
   }
 
+  const body = (await request.json().catch(() => null)) as { slug?: unknown } | null;
+  const requestedSlug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
+
   let slug: string | null = null;
-  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
-    const candidate = randomSlug();
-    const existing = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(candidate).first<{ id: number }>();
-    if (!existing) {
-      slug = candidate;
-      break;
+
+  if (requestedSlug) {
+    const validation = validateSlugCandidate(requestedSlug);
+    if (!validation.valid) return jsonResponse({ error: validation.error }, 400);
+
+    // Pre-check so a taken/reserved subdomain surfaces as a clear error
+    // BEFORE anything is created, not as a confusing failure partway
+    // through - the try/catch around the actual INSERTs below is the
+    // real guarantee against a race, this is just the common-case fast
+    // path that avoids ever hitting that catch block in practice.
+    const existing = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(requestedSlug).first<{ id: number }>();
+    if (existing) return jsonResponse({ error: "That subdomain is already taken" }, 409);
+
+    slug = requestedSlug;
+  } else {
+    for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
+      const candidate = randomSlug();
+      const existing = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(candidate).first<{ id: number }>();
+      if (!existing) {
+        slug = candidate;
+        break;
+      }
     }
+    if (!slug) return jsonResponse({ error: "Could not generate a unique tenant address - please try again" }, 500);
   }
-  if (!slug) return jsonResponse({ error: "Could not generate a unique tenant address - please try again" }, 500);
 
   const now = new Date().toISOString();
   const organizationId = `org_${slug}`;
   const subdomain = `${slug}.airfieldcentral.com`;
   const placeholderName = "Your Airfield Name";
 
-  await env.DB
-    .prepare("INSERT INTO organization (id, name, slug, createdAt) VALUES (?, ?, ?, ?)")
-    .bind(organizationId, placeholderName, slug, now)
-    .run();
+  try {
+    await env.DB
+      .prepare("INSERT INTO organization (id, name, slug, createdAt) VALUES (?, ?, ?, ?)")
+      .bind(organizationId, placeholderName, slug, now)
+      .run();
+  } catch {
+    // organization.slug is UNIQUE (migration 0002_organization_plugin.sql) -
+    // only reachable via a genuine race with another request choosing
+    // the exact same slug between the pre-check above and this INSERT.
+    // The random-slug path effectively never hits this (8 random chars,
+    // astronomically unlikely to collide); a human-chosen slug is the
+    // realistic case this exists for.
+    return jsonResponse({ error: "That subdomain was just taken - please try a different one" }, 409);
+  }
 
   // brand_display_json explicit here, not left to the column's own
   // DEFAULT (both showLogo/showName true) - same reasoning as
@@ -87,13 +127,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     cafe: { showLogo: false, showName: true, nameFontSize: "md" },
   });
 
-  await env.DB
-    .prepare(
-      `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json)
-       VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL, ?)`
-    )
-    .bind(slug, placeholderName, subdomain, organizationId, defaultBrandDisplay)
-    .run();
+  try {
+    await env.DB
+      .prepare(
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json)
+         VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL, ?)`
+      )
+      .bind(slug, placeholderName, subdomain, organizationId, defaultBrandDisplay)
+      .run();
+  } catch {
+    // tenants.slug/subdomain are both UNIQUE (migration
+    // 0022_tenant_schema.sql) - same race window as the organization
+    // INSERT above, now on the second of the two UNIQUE columns this
+    // flow touches. The organization row created just above is now
+    // orphaned - harmless and invisible to any tenant-facing surface,
+    // same accepted tradeoff trial-signup.ts's own identical race
+    // handling already documents, not worth a rollback mechanism for
+    // this rare a case.
+    return jsonResponse({ error: "That subdomain was just taken - please try a different one" }, 409);
+  }
 
   await cloneTenantTemplate(env.DB, template.organizationId, organizationId, slug);
 

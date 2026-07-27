@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
+import { PLATFORM_CHECK_SLUG_URL, PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
 import type { MemberRole } from '../types/member'
 
 const TENANTS_URL = '/api/platform/tenants'
+
+// Client-side mirror of functions/api/_utils/tenantSlug.ts's own
+// SLUG_FORMAT - instant typo feedback without a network round-trip.
+// Reserved-word/actual-availability checking still goes through
+// PLATFORM_CHECK_SLUG_URL (debounced below) rather than a second copy
+// of the reserved list here - that's a single source of truth question,
+// this is just "does this look like a DNS label at all."
+const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/
+const SLUG_CHECK_DEBOUNCE_MS = 400
 
 // 'owner' deliberately excluded - not addable via this flow, same as
 // MembersPage.tsx's own ADDABLE_ROLES (owner is set once at tenant
@@ -1040,18 +1049,71 @@ export default function PlatformTenantsPage(): JSX.Element {
   const [onboardError, setOnboardError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Wildcard DNS/Worker migration round: optional custom subdomain for
+  // the new tenant - blank still falls back to onboard.ts's existing
+  // random tenant-XXXXXXXX slug, unchanged. Lowercased as typed (server
+  // requires lowercase, not silently normalized there - forcing it here
+  // means what's typed is always exactly what gets validated, no
+  // surprise mismatch).
+  const [desiredSlug, setDesiredSlug] = useState('')
+  // idle: empty field (falls back to random slug) or format-invalid
+  // (shown via slugFormatError below, not this). checking/available/
+  // unavailable only apply once the debounced PLATFORM_CHECK_SLUG_URL
+  // call actually resolves - advisory only, onboard.ts's own UNIQUE-
+  // constraint try/catch is the real guarantee, this just keeps Jeff
+  // from ever submitting a slug it already knows is hopeless.
+  const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>(
+    { status: 'idle' }
+  )
+
+  const trimmedSlug = desiredSlug.trim()
+  const slugFormatError =
+    trimmedSlug && !SLUG_FORMAT.test(trimmedSlug)
+      ? '3-63 characters: lowercase letters, numbers, and hyphens only, not starting or ending with a hyphen'
+      : null
+
+  useEffect(() => {
+    if (!trimmedSlug || slugFormatError) {
+      setSlugCheck({ status: 'idle' })
+      return
+    }
+    let cancelled = false
+    setSlugCheck({ status: 'checking' })
+    const timeoutId = window.setTimeout(() => {
+      fetch(`${PLATFORM_CHECK_SLUG_URL}?slug=${encodeURIComponent(trimmedSlug)}`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return
+          setSlugCheck(data.available ? { status: 'available' } : { status: 'unavailable', reason: data.reason })
+        })
+        .catch(() => {
+          if (!cancelled) setSlugCheck({ status: 'idle' })
+        })
+    }, SLUG_CHECK_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [trimmedSlug, slugFormatError])
+
   async function handleOnboardTenant() {
     setOnboarding(true)
     setOnboardError(null)
     setInviteResult(null)
     try {
-      const response = await fetch(PLATFORM_ONBOARD_TENANT_URL, { method: 'POST' })
+      const response = await fetch(PLATFORM_ONBOARD_TENANT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: trimmedSlug || undefined }),
+      })
       const data = await response.json().catch(() => null)
       if (!response.ok) {
         setOnboardError(data?.error || 'Failed to onboard a new tenant')
         return
       }
       setInviteResult({ inviteUrl: data.inviteUrl, slug: data.slug })
+      setDesiredSlug('')
+      setSlugCheck({ status: 'idle' })
       // Refresh the list so the new tenant row appears immediately,
       // reusing the exact same fetch the initial mount already does.
       const refreshed = await fetch(TENANTS_URL)
@@ -1101,18 +1163,47 @@ export default function PlatformTenantsPage(): JSX.Element {
               Platform · Tenants
             </Link>
           </h1>
-          <div className="flex items-center gap-3">
-            <Link to="/platform/onboarding-content" className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+          <div className="flex flex-wrap items-start gap-3">
+            <Link
+              to="/platform/onboarding-content"
+              className="pt-2 text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
+            >
               Edit onboarding content →
             </Link>
-            <button
-              type="button"
-              onClick={handleOnboardTenant}
-              disabled={onboarding}
-              className="rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-            >
-              {onboarding ? 'Creating…' : 'Onboard new tenant'}
-            </button>
+            {/* Wildcard DNS/Worker migration round: optional custom
+                subdomain, live-checked as Jeff types (debounced,
+                PLATFORM_CHECK_SLUG_URL) rather than only finding out it's
+                taken/invalid after clicking the button - blank still
+                falls back to onboard.ts's own random tenant-XXXXXXXX
+                slug, exactly as before this round. */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={desiredSlug}
+                  onChange={(event) => setDesiredSlug(event.target.value.toLowerCase())}
+                  placeholder="optional custom subdomain"
+                  className="w-48 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder:text-muted-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleOnboardTenant}
+                  disabled={onboarding || !!slugFormatError || slugCheck.status === 'checking' || slugCheck.status === 'unavailable'}
+                  className="shrink-0 rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+                >
+                  {onboarding ? 'Creating…' : 'Onboard new tenant'}
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-500">
+                {trimmedSlug || 'tenant-xxxxxxxx'}.airfieldcentral.com
+                {slugFormatError && <span className="ml-2 text-status-bad">{slugFormatError}</span>}
+                {!slugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-muted-400">Checking…</span>}
+                {!slugFormatError && slugCheck.status === 'available' && <span className="ml-2 text-status-good">Available</span>}
+                {!slugFormatError && slugCheck.status === 'unavailable' && (
+                  <span className="ml-2 text-status-bad">{slugCheck.reason}</span>
+                )}
+              </p>
+            </div>
           </div>
         </div>
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
