@@ -90,6 +90,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 // POST slug: 'cafe-tv' themselves and get free café entitlement via the
 // column's bare default (which exists only to grandfather rows that
 // already existed before migration 0034, not to grant new entitlement).
+// active is forced to 0 alongside it, but ONLY for slug='cafe-tv' - a
+// self-serve (trial-signup.ts) tenant has no tenant_displays rows at
+// all until its owner first visits Screens Design (onboard.ts's
+// invite-link flow is the only path that pre-seeds them), so THIS is
+// where their first cafe-tv row is actually created, and it must start
+// fully off (Tom Galloway/Gyroplane Train round), same as onboard.ts's
+// own cafe-tv insert now does. Scoped to cafe-tv specifically because
+// active is NOT inert for 'main' the way entitled is (migration 0034's
+// own comment) - forcing every new row's active to 0 here would leave a
+// brand-new tenant's own 'main' display 404ing until a developer
+// manually re-enabled it, which is not the ask.
 // The ON CONFLICT branch deliberately never touches entitled/active -
 // an owner editing their OWN existing display's template/name must
 // never silently reset a developer-set entitlement or force-off flag.
@@ -114,18 +125,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const templateId = typeof body.templateId === "string" && body.templateId.trim() ? body.templateId.trim() : "classic";
   const panelConfigJson = body.panelConfig && typeof body.panelConfig === "object" ? JSON.stringify(body.panelConfig) : null;
   const now = new Date().toISOString();
+  const initialActive = slug === "cafe-tv" ? 0 : 1;
 
   await env.DB
     .prepare(
-      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config, created_at, updated_at, entitled)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config, created_at, updated_at, entitled, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
        ON CONFLICT(tenant_id, slug) DO UPDATE SET
          name = excluded.name,
          template_id = excluded.template_id,
          panel_config = excluded.panel_config,
          updated_at = excluded.updated_at`
     )
-    .bind(tenant.id, slug, name, templateId, panelConfigJson, now, now)
+    .bind(tenant.id, slug, name, templateId, panelConfigJson, now, now, initialActive)
     .run();
 
   return jsonResponse({ ok: true, slug, name, templateId, panelConfig: body.panelConfig ?? null });

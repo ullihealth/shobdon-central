@@ -117,10 +117,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .bind(tenantRow.id, JSON.stringify({ weather: true, compass: true, media: true, ops: true }))
     .run();
 
+  // active=0 alongside entitled=0 (Tom Galloway/Gyroplane Train round) -
+  // entitled alone already keeps the public /d/cafe-tv route 404ing
+  // (functions/api/public/display.ts's isCurrentlyEntitled check), but
+  // Jeff wants café fully off, not merely unentitled, until he
+  // deliberately turns it on via Platform Tenants - active is migration
+  // 0034's own independent developer force-off flag (Part D), completely
+  // separate from entitled (Part C), and defaults to 1 on the table
+  // itself (grandfathering pre-existing rows), so it must be forced
+  // here explicitly, same reasoning as entitled just above.
   await env.DB
     .prepare(
-      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled)
-       VALUES (?, 'cafe-tv', 'Clubhouse Cafe TV', 'cafe-1', 0)`
+      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled, active)
+       VALUES (?, 'cafe-tv', 'Clubhouse Cafe TV', 'cafe-1', 0, 0)`
     )
     .bind(tenantRow.id)
     .run();
