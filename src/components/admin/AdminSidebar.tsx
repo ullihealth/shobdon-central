@@ -5,6 +5,7 @@ import { SIDEBAR_GROUPS, STANDALONE_ITEMS, type SidebarItem } from './sidebarCon
 import SidebarGroup from './SidebarGroup'
 import SidebarUserMenu from './SidebarUserMenu'
 import OrgSwitcher, { type MembershipSummary } from './OrgSwitcher'
+import { useHostReachable } from '../../hooks/useHostReachable'
 
 const COLLAPSE_STORAGE_KEY = 'shobdon.adminSidebar.collapsedGroups.v1'
 
@@ -48,6 +49,19 @@ export default function AdminSidebar(): JSX.Element {
   const [organizationName, setOrganizationName] = useState('')
   const [organizationSlug, setOrganizationSlug] = useState('')
   const [memberships, setMemberships] = useState<MembershipSummary[]>([])
+  // Real root cause of the Tom Galloway/Gyroplane Train header-click bug
+  // (confirmed live via Playwright, not the Header.tsx component two
+  // prior rounds mistakenly fixed - that component is only ever rendered
+  // by the public dashboard templates, never on /config; grep confirms
+  // its only importers are ClassicTemplate/Clubhouse1Template/
+  // Clubhouse2Template). THIS Link (below) is the actual org-name link a
+  // logged-in admin sees and clicks - was a bare `to="/"`, unconditional,
+  // with none of Header.tsx's host-awareness. On a tenant whose subdomain
+  // isn't the current host (true for every tenant except Shobdon today -
+  // no per-tenant DNS is provisioned automatically, see the wildcard DNS
+  // migration plan doc), '/' always resolves to RootRoute's marketing
+  // LandingPage. Same subdomain field /api/tenant/me already returns.
+  const [tenantSubdomain, setTenantSubdomain] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +75,7 @@ export default function AdminSidebar(): JSX.Element {
         if (data?.organizationName) setOrganizationName(data.organizationName)
         setOrganizationSlug(data?.organizationSlug ?? '')
         setMemberships(Array.isArray(data?.memberships) ? data.memberships : [])
+        setTenantSubdomain(data?.subdomain ?? null)
       })
       .catch(() => {})
       .finally(() => {
@@ -70,6 +85,17 @@ export default function AdminSidebar(): JSX.Element {
       cancelled = true
     }
   }, [])
+
+  // Same logic as Header.tsx's own fix (kept, since it's still correct
+  // for the public-dashboard case it actually serves): trust a relative
+  // '/' only when this IS the tenant's own subdomain already. null
+  // (still loading) falls through to the unchanged relative-Link
+  // behaviour, same as every other pre-resolution default in this file.
+  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
+  const crossHostSubdomain = !isOnOwnSubdomain ? tenantSubdomain : null
+  const subdomainReachable = useHostReachable(crossHostSubdomain)
+  const subdomainConfirmedDown = !isOnOwnSubdomain && subdomainReachable === false
+  const homeHref = isOnOwnSubdomain ? '/' : `https://${tenantSubdomain}/`
 
   function toggleGroup(id: string) {
     setCollapsedGroups((prev) => {
@@ -99,9 +125,24 @@ export default function AdminSidebar(): JSX.Element {
           entirely. h-screen locks it to one viewport; sticky keeps it
           pinned while <main> scrolls independently. */}
       <div className="px-5 pb-4 pt-6">
-        <Link to="/" className="text-lg font-black uppercase tracking-wide text-primary transition hover:text-accent-sky-400">
-          {organizationName}
-        </Link>
+        {subdomainConfirmedDown ? (
+          <div
+            className="text-lg font-black uppercase tracking-wide text-muted-400"
+            title="Your dashboard URL isn't live yet - contact support"
+          >
+            {organizationName}
+          </div>
+        ) : isOnOwnSubdomain ? (
+          <Link to={homeHref} className="text-lg font-black uppercase tracking-wide text-primary transition hover:text-accent-sky-400">
+            {organizationName}
+          </Link>
+        ) : (
+          // Cross-host - a relative <Link> can't leave the current
+          // origin, same reasoning as Header.tsx's own fix.
+          <a href={homeHref} className="text-lg font-black uppercase tracking-wide text-primary transition hover:text-accent-sky-400">
+            {organizationName}
+          </a>
+        )}
       </div>
 
       {!loading && (
