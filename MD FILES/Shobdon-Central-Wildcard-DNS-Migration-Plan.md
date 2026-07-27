@@ -1,8 +1,8 @@
 # Shobdon Central — Wildcard DNS / Custom-Domain Migration Plan
 
-**Status:** Proposed, not started. Planning only — no code, DNS, or Cloudflare dashboard changes have been made as part of this document. Written up per Jeff's request after the Tom Galloway/Gyroplane Train investigation surfaced that no new tenant's subdomain is reachable without a manual, per-tenant Cloudflare step.
+**Status:** Executed (Steps 1–4 all complete — wildcard DNS record and Worker route are live in production). **Step 4's core assumption turned out to be wrong** — see the "Update — 2026-07-27" section near the bottom, which documents what actually happened and corrects the "Existing tenants" section below. Read that before trusting anything else on this page about Shobdon/demo/newcustomer's routing.
 
-**Do not execute this without a deliberate go-ahead and a scheduled window** — see Decision #4 and Runbook 2 below for why a domain-level Cloudflare change here has already gone wrong once.
+**Do not execute this without a deliberate go-ahead and a scheduled window** — see Decision #4 and Runbook 2 below for why a domain-level Cloudflare change here has already gone wrong once. (Historical note, kept for context: this warning applied before execution. It's included here unchanged rather than rewritten, since the rest of this document is also being kept largely as originally written, with corrections layered on top — see the update section.)
 
 ---
 
@@ -107,14 +107,31 @@ Then confirm a **brand-new, previously-unreachable** tenant subdomain now resolv
 
 ---
 
-## Existing tenants — explicitly confirmed unaffected
+## Existing tenants — ~~explicitly confirmed unaffected~~ INCORRECT, see update below
 
-- **Shobdon:** keeps its existing Pages Custom Domain untouched throughout. Exact match wins over wildcard (Cloudflare's documented precedence rule) — verified live at Step 4, not just assumed.
-- **Demo, newcustomer:** same as Shobdon — both already have their own explicit Custom Domains today (confirmed live, 200 each), unaffected by an additive wildcard rule that only ever applies to hostnames with no more specific match.
-- **Every future tenant** (Gyroplane Train included): purely additive — the first tenant to actually benefit from this without a manual step.
+*Left struck through rather than deleted — this was the plan's central safety assumption and the reason Step 4 seemed like enough verification. It was wrong. Do not trust this section; read "Update — 2026-07-27" below.*
+
+- ~~**Shobdon:** keeps its existing Pages Custom Domain untouched throughout. Exact match wins over wildcard (Cloudflare's documented precedence rule) — verified live at Step 4, not just assumed.~~
+- ~~**Demo, newcustomer:** same as Shobdon — both already have their own explicit Custom Domains today (confirmed live, 200 each), unaffected by an additive wildcard rule that only ever applies to hostnames with no more specific match.~~
+- **Every future tenant** (Gyroplane Train included): this part held — purely additive, the first tenants to actually benefit from this without a manual step. Still true; just not the *only* thing that changed.
 
 ---
 
 ## Resolved since this plan was first written
 
 Cloudflare support has since responded to the original outage's ticket and confirmed the root cause (a claim-propagation timing window — see the "Update" note above, Decision #4, and Runbook 2). The ticket is closed. This doesn't change Steps 1–4 of this plan (they never touch a Custom Domain claim), but it's now settled, documented guidance for the separate, not-currently-planned step of ever moving Shobdon's own Custom Domain to the Worker.
+
+---
+
+## Update — 2026-07-27: Step 4's precedence assumption was wrong. Every tenant subdomain, including Shobdon, is now served by the Worker.
+
+**How this was discovered:** not through Step 4's own verification (which was performed once, at cutover time, and treated as settled — see below for why that was already too thin a check) but indirectly, days later, while debugging an unrelated onboarding-UI fix that appeared live on Cloudflare Pages but wasn't showing up for a real tenant (`gyroplane.airfieldcentral.com`) even after a confirmed correct Pages deploy and multiple confirmed cache purges. Root-causing that bug meant checking whether Gyroplane's subdomain was actually being served by Pages or by the Worker — and it led to redeploying the Worker (`wrangler deploy --config wrangler.worker.toml`) with the fix. That single Worker-only redeploy immediately fixed the bug on **`shobdon.airfieldcentral.com`, `demo.airfieldcentral.com`, and `newcustomer.airfieldcentral.com` too** — not just Gyroplane. A Worker deploy cannot affect what Pages serves; the only explanation is that all four hostnames are actually being served by the Worker already.
+
+**Confirmed directly, today:**
+- `wrangler pages project list` still shows `airfieldcentral.com`, `demo.airfieldcentral.com`, `newcustomer.airfieldcentral.com`, and `shobdon.airfieldcentral.com` all attached as Custom Domains on the `shobdon-central` Pages project. **The claims were never removed, never orphaned, never stuck** — this is not a repeat of the Decision #4 / Runbook 2 incident. Pages still thinks it owns these hostnames.
+- Despite that, `curl`-ing any of `shobdon` / `demo` / `newcustomer` / a wildcard-only tenant subdomain (e.g. Gyroplane's) all served byte-identical HTML referencing the same bundle hash, and all four flipped to the new bundle simultaneously the moment (and only the moment) the standalone Worker was redeployed — Pages-side deploys and cache purges had zero effect on any of them.
+- The bare apex (`airfieldcentral.com`) — which the Worker's route pattern `*.airfieldcentral.com/*` does **not** match, since a leading wildcard label doesn't cover the zero-label apex — correctly stayed on Pages throughout (`cf-cache-status: DYNAMIC`, always reflecting the latest Pages deploy immediately, no purge ever needed). This is the control case that confirms the Worker's route, not something zone-wide, is what's intercepting the subdomains.
+
+**Best available explanation (not confirmed by a Cloudflare support ticket — corroborate before treating as gospel):** Step 4's "exact match wins over wildcard" assumption was modeled on how *Workers Routes rank against other Workers Routes* on the same zone, where a literal pattern does beat a wildcard pattern. That's a different comparison from *a Workers Route vs. a Cloudflare Pages Custom Domain* on the same hostname — two different Cloudflare products, not two entries in the same routing table. The empirical evidence above is consistent with Workers Routes being evaluated ahead of Pages' hostname-to-project mapping regardless of the Route pattern's specificity, meaning any wildcard Workers Route on a zone can end up intercepting a hostname that a Pages project still believes it owns as an exact-match Custom Domain. If true, there was never a way for Step 4's `curl`/`dig` check to have caught this at cutover time in the way the plan expected: right after Step 3, whatever was last deployed to the Worker (the tested-clean, inert baseline from Step 2) would have been serving on Shobdon/demo/newcustomer already, and — because at that moment the Worker's own build was current with what Pages was serving — the response would have looked identical either way. The two only diverge, and the misassumption becomes visible, on the *next* deploy that only goes to one side. That's exactly what surfaced this: an onboarding-UI fix shipped to Pages only, weeks later.
+
+**Practical, current-state consequence:** treat the Worker as the sole live server for **every** tenant subdomain — Shobdon included — not just wildcard/unclaimed ones. The Pages Custom Domain claims on `shobdon-central` for `shobdon` / `demo` / `newcustomer` are now vestigial: still configured, doing nothing, safe to leave in place (no evidence removing them changes anything, and removing them risks the exact claim-propagation issue from Decision #4/Runbook 2 for no benefit), but not to be relied on or reasoned about as "where that tenant is served" anymore. The bare apex (`airfieldcentral.com`) is the only hostname still actually served by Pages. See `Shobdon-Central-Decisions.md` (Decision #4 addendum) and `Shobdon-Central-Operational-Runbooks.md` (Runbook 2 header note) for the operational implications — most importantly, **every deploy now needs both the Pages path (`git push`) and a manual Worker rebuild + redeploy, or changes silently never reach any tenant.**

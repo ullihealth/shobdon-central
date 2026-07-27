@@ -1,0 +1,65 @@
+name: Deploy standalone Worker (airfield-central)
+
+# Cloudflare Pages already auto-deploys the "shobdon-central" Pages project on
+# every push to main, on its own, with no workflow file involved - that stays
+# exactly as-is. This workflow exists ONLY for the second, separate deploy
+# target: the standalone "airfield-central" Worker in wrangler.worker.toml,
+# whose wildcard route (*.airfieldcentral.com/*) turned out to be the sole
+# server for every tenant subdomain, Shobdon included - see
+# "MD FILES/Shobdon-Central-Wildcard-DNS-Migration-Plan.md" (the
+# 2026-07-27 update) and Decision #4 in "MD FILES/Shobdon-Central-Decisions.md"
+# for why this exists and how its absence caused several rounds of "pushed a
+# fix, Pages deployed fine, but no live tenant subdomain showed it" this same
+# day. Without this workflow, that manual step is trivially easy to forget on
+# any future change - frontend or backend - since nothing about a normal
+# `git push` surfaces that a second, separate deploy is even needed.
+#
+# Deliberately NOT yet wired to run automatically on push - see the
+# `on:` block below. Flip that on only after a manual workflow_dispatch run
+# has been confirmed to actually redeploy the Worker successfully (needs
+# CLOUDFLARE_API_TOKEN added as a repo secret first - Settings -> Secrets and
+# variables -> Actions -> "New repository secret" - only an account owner can
+# do that; see Shobdon-Central-Engineering-Changelog.md for the token scope).
+
+on:
+  workflow_dispatch: {}
+  # push:
+  #   branches: [main]
+  # ^ Uncomment once a manual `workflow_dispatch` run (Actions tab -> this
+  # workflow -> "Run workflow") has completed successfully at least once.
+  # Until then this workflow only runs when someone deliberately triggers it
+  # by hand, never automatically - so there's no risk of it silently failing
+  # on every future push before it's actually proven to work.
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend (vite build)
+        run: npm run build
+
+      - name: Build Pages Functions into the Worker entrypoint
+        run: npx wrangler@4 pages functions build --outdir dist/_worker.js
+
+      - name: Deploy the standalone Worker
+        run: npx wrangler@4 deploy --config wrangler.worker.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Not a secret - Cloudflare account IDs are visible in every
+          # dashboard URL for this account, not credentials on their own.
+          # Set explicitly (rather than relying on wrangler to infer it) so
+          # this can't silently target the wrong account on an API token
+          # that happens to have access to more than one.
+          CLOUDFLARE_ACCOUNT_ID: ec1676b8ffcf5e85467e3ed04b8fdfef
