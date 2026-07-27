@@ -1157,43 +1157,47 @@ export default function PlatformTenantsPage(): JSX.Element {
           layout, since the underlying font-size behaviour is unaffected
           by that rewrite. */}
       <div className="mx-auto max-w-[1900px]">
-        <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-2xl font-black uppercase tracking-wide text-primary">
             <Link to={dashboardLandingPage} className="transition-colors hover:text-accent-sky-400" title="Back to Dashboard">
               Platform · Tenants
             </Link>
           </h1>
-          <div className="flex flex-wrap items-start gap-3">
-            <Link
-              to="/platform/onboarding-content"
-              className="pt-2 text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
-            >
-              Edit onboarding content →
-            </Link>
-            {/* Wildcard DNS/Worker migration round: optional custom
-                subdomain, live-checked as Jeff types (debounced,
-                PLATFORM_CHECK_SLUG_URL) rather than only finding out it's
-                taken/invalid after clicking the button - blank still
-                falls back to onboard.ts's own random tenant-XXXXXXXX
-                slug, exactly as before this round. */}
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={desiredSlug}
-                  onChange={(event) => setDesiredSlug(event.target.value.toLowerCase())}
-                  placeholder="optional custom subdomain"
-                  className="w-48 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-white placeholder:text-muted-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleOnboardTenant}
-                  disabled={onboarding || !!slugFormatError || slugCheck.status === 'checking' || slugCheck.status === 'unavailable'}
-                  className="shrink-0 rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-                >
-                  {onboarding ? 'Creating…' : 'Onboard new tenant'}
-                </button>
-              </div>
+          <Link
+            to="/platform/onboarding-content"
+            className="pt-2 text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
+          >
+            Edit onboarding content →
+          </Link>
+        </div>
+
+        {/* Own labeled block, not squeezed beside another link in the
+            header row - the previous placement (Tom Galloway/Gyroplane
+            Train round) was missable enough that a real onboard happened
+            without it ever being noticed. Wildcard DNS/Worker migration
+            round: optional custom subdomain, live-checked as Jeff types
+            (debounced, PLATFORM_CHECK_SLUG_URL) rather than only finding
+            out it's taken/invalid after clicking the button - blank
+            still falls back to onboard.ts's own random tenant-XXXXXXXX
+            slug, unchanged from before that round. */}
+        <div className="mb-6 rounded-2xl border border-border bg-panel p-6">
+          <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Onboard New Tenant</div>
+          <p className="mb-4 text-xs text-muted-500">
+            Creates a new tenant and a single-use invite link. Choose a subdomain, or leave it blank for a random one.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="onboard-subdomain" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Subdomain (optional)
+              </label>
+              <input
+                id="onboard-subdomain"
+                type="text"
+                value={desiredSlug}
+                onChange={(event) => setDesiredSlug(event.target.value.toLowerCase())}
+                placeholder="e.g. gyroplane-train"
+                className="w-64 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+              />
               <p className="text-[11px] text-muted-500">
                 {trimmedSlug || 'tenant-xxxxxxxx'}.airfieldcentral.com
                 {slugFormatError && <span className="ml-2 text-status-bad">{slugFormatError}</span>}
@@ -1204,8 +1208,17 @@ export default function PlatformTenantsPage(): JSX.Element {
                 )}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={handleOnboardTenant}
+              disabled={onboarding || !!slugFormatError || slugCheck.status === 'checking' || slugCheck.status === 'unavailable'}
+              className="shrink-0 rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+            >
+              {onboarding ? 'Creating…' : 'Onboard new tenant'}
+            </button>
           </div>
         </div>
+
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
           Every tenant, across every organization. Developer-only — controls suspend/resume, archive, cross-tenant
           public visibility, internal/template status, storage quota, subscription status, members, and per-display
