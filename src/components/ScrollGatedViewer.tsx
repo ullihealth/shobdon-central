@@ -40,7 +40,7 @@ export default function ScrollGatedViewer({ text, reachedBottom, onReachedBottom
     <div
       ref={containerRef}
       onScroll={(event) => checkReachedBottom(event.currentTarget)}
-      className={`${heightClassName} overflow-y-auto rounded-lg border border-border bg-slate-900/60 p-4 text-sm leading-relaxed text-muted-300`}
+      className={`${heightClassName} overflow-y-auto rounded-lg border border-border bg-slate-900/60 p-4 text-base leading-relaxed text-muted-300`}
     >
       {paragraphs.map((paragraph, index) => (
         <p key={index} className="mb-3 whitespace-pre-wrap last:mb-0">

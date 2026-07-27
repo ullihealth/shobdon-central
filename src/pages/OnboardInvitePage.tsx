@@ -8,6 +8,7 @@ import {
   PUBLIC_CHECK_SLUG_URL,
 } from '../config/publicApi'
 import { useHostReachable } from '../hooks/useHostReachable'
+import PasswordField from '../components/PasswordField'
 
 type ValidateState =
   | { status: 'loading' }
@@ -71,8 +72,13 @@ export default function OnboardInvitePage(): JSX.Element {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Non-empty check on confirmPassword specifically - never flag a
+  // mismatch just because the user hasn't typed the second field yet.
+  const passwordsMismatch = confirmPassword.length > 0 && password !== confirmPassword
 
   // Subdomain-picker step's own state - kept separate from the account-
   // setup form's error/submitting state above since they're genuinely
@@ -243,12 +249,12 @@ export default function OnboardInvitePage(): JSX.Element {
           className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20"
         >
           <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Choose your address</h1>
-          <p className="mb-6 text-sm text-muted-400">
+          <p className="mb-6 text-base text-muted-400">
             Your dashboard will have its own unique web address — pick one below to get started.
           </p>
 
           <label className="mb-1 flex flex-col gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Subdomain</span>
+            <span className="text-sm font-semibold uppercase tracking-widest text-muted-400">Subdomain</span>
             <input
               type="text"
               required
@@ -256,10 +262,10 @@ export default function OnboardInvitePage(): JSX.Element {
               value={pickedSlug}
               onChange={(event) => setPickedSlug(event.target.value.toLowerCase())}
               placeholder="e.g. staraeroclub"
-              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-base text-white focus:border-sky-500 focus:outline-none"
             />
           </label>
-          <p className="mb-6 text-xs text-muted-500">
+          <p className="mb-6 text-sm text-muted-500">
             {trimmedPickedSlug || '?'}.airfieldcentral.com
             {pickedSlugFormatError && <span className="ml-2 text-status-bad">{pickedSlugFormatError}</span>}
             {!pickedSlugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-muted-400">Checking…</span>}
@@ -269,7 +275,7 @@ export default function OnboardInvitePage(): JSX.Element {
             )}
           </p>
 
-          {subdomainError && <p className="mb-4 text-sm font-semibold text-status-bad">{subdomainError}</p>}
+          {subdomainError && <p className="mb-4 text-base font-semibold text-status-bad">{subdomainError}</p>}
 
           <button
             type="submit"
@@ -305,48 +311,56 @@ export default function OnboardInvitePage(): JSX.Element {
         className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20"
       >
         <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Set up your account</h1>
-        <p className="mb-6 text-sm text-muted-400">Create your login to start setting up your tenant.</p>
+        <p className="mb-6 text-base text-muted-400">Create your login to start setting up your tenant.</p>
 
         <label className="mb-4 flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Your name</span>
+          <span className="text-sm font-semibold uppercase tracking-widest text-muted-400">Your name</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-base text-white focus:border-sky-500 focus:outline-none"
           />
         </label>
 
         <label className="mb-4 flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Email</span>
+          <span className="text-sm font-semibold uppercase tracking-widest text-muted-400">Email</span>
           <input
             type="email"
             required
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-base text-white focus:border-sky-500 focus:outline-none"
           />
         </label>
 
-        <label className="mb-6 flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Password</span>
-          <input
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-          />
-          <span className="text-xs text-muted-500">At least 8 characters.</span>
-        </label>
+        <PasswordField
+          id="password"
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          required
+          minLength={8}
+          autoComplete="new-password"
+          helperText="At least 8 characters."
+        />
 
-        {error && <p className="mb-4 text-sm font-semibold text-status-bad">{error}</p>}
+        <PasswordField
+          id="confirmPassword"
+          label="Confirm password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          required
+          minLength={8}
+          autoComplete="new-password"
+        />
+        {passwordsMismatch && <p className="mb-4 text-sm font-semibold text-status-bad">Passwords don't match.</p>}
+
+        {error && <p className="mb-4 text-base font-semibold text-status-bad">{error}</p>}
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || passwordsMismatch || !confirmPassword}
           className="w-full rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
         >
           {submitting ? 'Creating account…' : 'Create account'}
