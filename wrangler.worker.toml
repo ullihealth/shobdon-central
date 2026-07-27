@@ -15,6 +15,26 @@ compatibility_date = "2026-07-17"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+# Wildcard DNS/Worker migration (MD FILES/Shobdon-Central-Wildcard-DNS-
+# Migration-Plan.md) - prerequisite for zero-touch self-serve Stripe
+# onboarding. Cloudflare Pages has no wildcard Custom Domain support
+# (confirmed against current docs); Workers Routes do, natively, on any
+# plan - this is the standard documented mechanism for catching every
+# subdomain under a zone with one rule.
+#
+# Live in production: the wildcard DNS record (*.airfieldcentral.com,
+# proxied CNAME) was added and this route deployed - both confirmed via
+# dig/curl against a real tenant subdomain (Gyroplane Train's
+# tenant-5de4rbob.airfieldcentral.com, previously unreachable, now
+# resolving through this Worker). shobdon.airfieldcentral.com, demo.
+# airfieldcentral.com, and newcustomer.airfieldcentral.com are
+# unaffected - those are explicit Pages Custom Domains, and Cloudflare's
+# own precedence rule (exact match beats wildcard) keeps them on Pages,
+# also verified live post-cutover, not just assumed.
+[[routes]]
+pattern = "*.airfieldcentral.com/*"
+zone_name = "airfieldcentral.com"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"
