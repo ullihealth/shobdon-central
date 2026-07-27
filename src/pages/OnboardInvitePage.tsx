@@ -1,19 +1,31 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { authClient } from '../lib/auth/authClient'
-import { onboardInviteAcceptUrl, onboardInviteValidateUrl } from '../config/publicApi'
+import {
+  onboardInviteAcceptUrl,
+  onboardInviteSubdomainUrl,
+  onboardInviteValidateUrl,
+  PUBLIC_CHECK_SLUG_URL,
+} from '../config/publicApi'
 import { useHostReachable } from '../hooks/useHostReachable'
 
 type ValidateState =
   | { status: 'loading' }
   | { status: 'invalid'; reason: string }
-  | { status: 'valid'; tenantName: string; subdomain: string }
+  | { status: 'valid'; tenantName: string; subdomain: string; subdomainConfirmed: boolean }
 
 const REASON_MESSAGES: Record<string, string> = {
   not_found: 'This invite link is not valid.',
   used: 'This invite link has already been used.',
   expired: 'This invite link has expired.',
 }
+
+// Client-side mirror of functions/api/_utils/tenantSlug.ts's own
+// SLUG_FORMAT - instant typo feedback with no network round-trip, same
+// pattern as LandingPage.tsx's own signup form and
+// PlatformTenantsPage.tsx's onboarding field.
+const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/
+const SLUG_CHECK_DEBOUNCE_MS = 400
 
 // Public, unauthenticated: /onboard/:token - account setup step of the
 // onboarding pipeline. On success, signs the new account in via
@@ -38,6 +50,20 @@ const REASON_MESSAGES: Record<string, string> = {
 // actually keep using - not a cookie-domain change (that's a real
 // security-relevant architecture decision, not made here), just doing
 // the whole flow on the right host from the start.
+//
+// Subdomain-picker round: a tenant created via onboard.ts's optional
+// custom-slug field already has a real, deliberately-chosen subdomain
+// (subdomainConfirmed - migration 0046_tenant_subdomain_confirmed.sql)
+// and skips straight to the redirect-then-account-setup flow above,
+// unchanged. One created without it still has onboard.ts's own random
+// tenant-XXXXXXXX placeholder - this now requires the customer to
+// choose their real address FIRST, before anything else, since the
+// platform admin proved easy to overlook. Confirming a subdomain here
+// just updates local validate state with the new value; that alone is
+// enough to feed the exact same redirect effect above (it doesn't care
+// why the subdomain changed, just that it did) - no separate redirect
+// path to keep in sync, so the exact bug this whole file exists to
+// prevent can't reappear via a second code path.
 export default function OnboardInvitePage(): JSX.Element {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
@@ -48,6 +74,16 @@ export default function OnboardInvitePage(): JSX.Element {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Subdomain-picker step's own state - kept separate from the account-
+  // setup form's error/submitting state above since they're genuinely
+  // different steps a user never sees at the same time.
+  const [pickedSlug, setPickedSlug] = useState('')
+  const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>(
+    { status: 'idle' }
+  )
+  const [confirmingSubdomain, setConfirmingSubdomain] = useState(false)
+  const [subdomainError, setSubdomainError] = useState<string | null>(null)
+
   useEffect(() => {
     if (!token) return
     let cancelled = false
@@ -56,7 +92,9 @@ export default function OnboardInvitePage(): JSX.Element {
       .then((data) => {
         if (cancelled) return
         setValidate(
-          data.valid ? { status: 'valid', tenantName: data.tenantName ?? '', subdomain: data.subdomain } : { status: 'invalid', reason: data.reason }
+          data.valid
+            ? { status: 'valid', tenantName: data.tenantName ?? '', subdomain: data.subdomain, subdomainConfirmed: !!data.subdomainConfirmed }
+            : { status: 'invalid', reason: data.reason }
         )
       })
       .catch(() => {
@@ -68,22 +106,81 @@ export default function OnboardInvitePage(): JSX.Element {
   }, [token])
 
   const tenantSubdomain = validate.status === 'valid' ? validate.subdomain : null
+  const subdomainConfirmed = validate.status === 'valid' && validate.subdomainConfirmed
   const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
-  // Only probe once we actually need to redirect - never on the (already
-  // common, will become universal) case of already being on the right
-  // host, and never before validate resolves.
-  const crossHostSubdomain = !isOnOwnSubdomain ? tenantSubdomain : null
+  // Never probe/redirect toward an unconfirmed (still-random) subdomain -
+  // only once a human has actually chosen one, whether that was already
+  // true on the very first validate() response (admin set it at
+  // creation) or just became true via the picker step below.
+  const crossHostSubdomain = subdomainConfirmed && !isOnOwnSubdomain ? tenantSubdomain : null
   const subdomainReachable = useHostReachable(crossHostSubdomain)
 
   useEffect(() => {
-    if (isOnOwnSubdomain || subdomainReachable !== true) return
+    if (!subdomainConfirmed || isOnOwnSubdomain || subdomainReachable !== true) return
     // Hard navigation, not React Router - this must actually leave the
     // current origin. No credentials are in flight yet at this point
     // (the form hasn't been submitted), so there's nothing sensitive to
     // carry across; the token in the URL is already how invite links
     // work today, unchanged.
     window.location.href = `https://${tenantSubdomain}/onboard/${token}`
-  }, [isOnOwnSubdomain, subdomainReachable, tenantSubdomain, token])
+  }, [subdomainConfirmed, isOnOwnSubdomain, subdomainReachable, tenantSubdomain, token])
+
+  const trimmedPickedSlug = pickedSlug.trim()
+  const pickedSlugFormatError =
+    trimmedPickedSlug && !SLUG_FORMAT.test(trimmedPickedSlug)
+      ? '3-63 characters: lowercase letters, numbers, and hyphens only, not starting or ending with a hyphen'
+      : null
+
+  useEffect(() => {
+    if (!trimmedPickedSlug || pickedSlugFormatError) {
+      setSlugCheck({ status: 'idle' })
+      return
+    }
+    let cancelled = false
+    setSlugCheck({ status: 'checking' })
+    const timeoutId = window.setTimeout(() => {
+      fetch(`${PUBLIC_CHECK_SLUG_URL}?slug=${encodeURIComponent(trimmedPickedSlug)}`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return
+          setSlugCheck(data.available ? { status: 'available' } : { status: 'unavailable', reason: data.reason })
+        })
+        .catch(() => {
+          if (!cancelled) setSlugCheck({ status: 'idle' })
+        })
+    }, SLUG_CHECK_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [trimmedPickedSlug, pickedSlugFormatError])
+
+  async function handleConfirmSubdomain(event: React.FormEvent): Promise<void> {
+    event.preventDefault()
+    if (!token) return
+    setConfirmingSubdomain(true)
+    setSubdomainError(null)
+
+    const response = await fetch(onboardInviteSubdomainUrl(token), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: trimmedPickedSlug }),
+    })
+    const data = await response.json().catch(() => null)
+    setConfirmingSubdomain(false)
+
+    if (!response.ok) {
+      setSubdomainError(data?.error || 'Something went wrong - please try again')
+      return
+    }
+
+    // Feeds directly into the redirect effect above via the exact same
+    // derived values every other case already uses - not a second
+    // redirect path.
+    setValidate((prev) =>
+      prev.status === 'valid' ? { ...prev, subdomain: data.subdomain, subdomainConfirmed: true } : prev
+    )
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -121,21 +218,6 @@ export default function OnboardInvitePage(): JSX.Element {
     )
   }
 
-  // Redirect in flight (or still probing whether the target even
-  // resolves) - never render the account-setup form on the wrong host.
-  // subdomainReachable === false is the fallback case (target genuinely
-  // not reachable, e.g. DNS not yet propagated) - falls through to the
-  // normal form below instead, completing on the current host exactly
-  // as this page always did before this round, rather than redirecting
-  // a brand-new customer into a dead end.
-  if (validate.status === 'valid' && !isOnOwnSubdomain && subdomainReachable !== false) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
-        <p className="text-sm text-muted-400">Taking you to your own dashboard address…</p>
-      </div>
-    )
-  }
-
   if (validate.status === 'invalid') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
@@ -144,6 +226,74 @@ export default function OnboardInvitePage(): JSX.Element {
           <p className="text-sm text-muted-400">{REASON_MESSAGES[validate.reason] ?? REASON_MESSAGES.not_found}</p>
           <p className="mt-4 text-xs text-muted-500">Contact support@airfieldcentral.com for a new link.</p>
         </div>
+      </div>
+    )
+  }
+
+  // Required first step for a tenant with no deliberately-chosen
+  // subdomain yet - skipped entirely (never rendered at all) when
+  // subdomainConfirmed is already true, whether that's because the
+  // platform admin set one at creation or a prior visit here already
+  // confirmed it.
+  if (!subdomainConfirmed) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
+        <form
+          onSubmit={handleConfirmSubdomain}
+          className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20"
+        >
+          <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Choose your address</h1>
+          <p className="mb-6 text-sm text-muted-400">
+            Your dashboard will have its own unique web address — pick one below to get started.
+          </p>
+
+          <label className="mb-1 flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Subdomain</span>
+            <input
+              type="text"
+              required
+              maxLength={63}
+              value={pickedSlug}
+              onChange={(event) => setPickedSlug(event.target.value.toLowerCase())}
+              placeholder="e.g. staraeroclub"
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </label>
+          <p className="mb-6 text-xs text-muted-500">
+            {trimmedPickedSlug || '?'}.airfieldcentral.com
+            {pickedSlugFormatError && <span className="ml-2 text-status-bad">{pickedSlugFormatError}</span>}
+            {!pickedSlugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-muted-400">Checking…</span>}
+            {!pickedSlugFormatError && slugCheck.status === 'available' && <span className="ml-2 text-status-good">Available</span>}
+            {!pickedSlugFormatError && slugCheck.status === 'unavailable' && (
+              <span className="ml-2 text-status-bad">{slugCheck.reason}</span>
+            )}
+          </p>
+
+          {subdomainError && <p className="mb-4 text-sm font-semibold text-status-bad">{subdomainError}</p>}
+
+          <button
+            type="submit"
+            disabled={confirmingSubdomain || !!pickedSlugFormatError || slugCheck.status !== 'available'}
+            className="w-full rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+          >
+            {confirmingSubdomain ? 'Saving…' : 'Continue'}
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  // Redirect in flight (or still probing whether the target even
+  // resolves) - never render the account-setup form on the wrong host.
+  // subdomainReachable === false is the fallback case (target genuinely
+  // not reachable, e.g. DNS not yet propagated) - falls through to the
+  // normal form below instead, completing on the current host exactly
+  // as this page always did before this round, rather than redirecting
+  // a brand-new customer into a dead end.
+  if (!isOnOwnSubdomain && subdomainReachable !== false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
+        <p className="text-sm text-muted-400">Taking you to your own dashboard address…</p>
       </div>
     )
   }

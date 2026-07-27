@@ -140,8 +140,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // mutually exclusive rather than independent checkboxes.
     await env.DB
       .prepare(
-        `INSERT INTO tenants (slug, name, subdomain, organization_id, weather_public, ops_public, active, brand_display_json)
-         VALUES (?, ?, ?, ?, 0, 0, 1, ?)`
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, weather_public, ops_public, active, brand_display_json, subdomain_confirmed)
+         VALUES (?, ?, ?, ?, 0, 0, 1, ?, 1)`
       )
       .bind(
         slug,

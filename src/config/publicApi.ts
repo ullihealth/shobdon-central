@@ -131,6 +131,14 @@ export const PLATFORM_CHECK_SLUG_URL = '/api/platform/tenants/check-slug'
 export const onboardInviteValidateUrl = (token: string): string => `/api/public/onboard/${token}`
 export const onboardInviteAcceptUrl = (token: string): string => `/api/public/onboard/${token}/accept`
 
+// Public, unauthenticated, token-gated (not rate-limited separately -
+// see that file's own comment on why) subdomain-picker confirm step -
+// functions/api/public/onboard/[token]/subdomain.ts. Consumed by
+// OnboardInvitePage.tsx's new required "choose your address" step,
+// shown only when subdomainConfirmed is false in the validate response
+// above.
+export const onboardInviteSubdomainUrl = (token: string): string => `/api/public/onboard/${token}/subdomain`
+
 // Authenticated: mandatory onboarding-terms acceptance - functions/api/
 // tenant/terms/accept.ts. Consumed by OnboardingTermsPage.tsx.
 export const TERMS_ACCEPT_URL = '/api/tenant/terms/accept'

@@ -1,0 +1,25 @@
+-- Tracks whether a tenant's subdomain was deliberately chosen by a
+-- human (platform admin at creation, or the customer completing
+-- /onboard/:token) versus left as onboard.ts's own randomly-generated
+-- tenant-XXXXXXXX placeholder. Needed to decide whether the new
+-- required "choose your address" step on the invite-completion flow
+-- should render at all - a customer who already has a real, deliberate
+-- subdomain (admin set one at creation, or this is a self-serve
+-- trial-signup.ts tenant, which already requires choosing one) must
+-- never be asked a second time.
+--
+-- Deliberately a new column rather than pattern-matching the slug
+-- against randomSlug()'s own format (tenant- + 8 lowercase
+-- alphanumeric characters) - that would silently break if the random
+-- format ever changes, and couples this decision to another function's
+-- implementation detail rather than storing the actual fact directly.
+--
+-- Defaults to 0 (not confirmed) - correct for every existing row
+-- (Shobdon/demo/newcustomer all have real, deliberate subdomains, but
+-- none of them ever goes through /onboard/:token, so this is simply
+-- inert for them, not incorrect). Set to 1 at the two points a
+-- subdomain is ever actually chosen: onboard.ts (when a platform admin
+-- supplies a custom slug), trial-signup.ts (always, since that form
+-- already requires one), and the new functions/api/public/onboard/
+-- [token]/subdomain.ts endpoint once a customer confirms one there.
+ALTER TABLE tenants ADD COLUMN subdomain_confirmed INTEGER NOT NULL DEFAULT 0;

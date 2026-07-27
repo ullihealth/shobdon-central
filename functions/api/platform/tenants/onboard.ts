@@ -70,6 +70,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const requestedSlug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
 
   let slug: string | null = null;
+  // Subdomain-picker round: distinguishes "a human deliberately chose
+  // this" from "onboard.ts's own random fallback" (migration
+  // 0046_tenant_subdomain_confirmed.sql) - the customer-facing
+  // /onboard/:token completion flow uses this to decide whether it
+  // still needs to ask, rather than pattern-matching randomSlug()'s own
+  // output format (fragile - breaks silently if that format ever
+  // changes).
+  const subdomainConfirmed = !!requestedSlug;
 
   if (requestedSlug) {
     const validation = validateSlugCandidate(requestedSlug);
@@ -130,10 +138,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
     await env.DB
       .prepare(
-        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json)
-         VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL, ?)`
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed)
+         VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL, ?, ?)`
       )
-      .bind(slug, placeholderName, subdomain, organizationId, defaultBrandDisplay)
+      .bind(slug, placeholderName, subdomain, organizationId, defaultBrandDisplay, subdomainConfirmed ? 1 : 0)
       .run();
   } catch {
     // tenants.slug/subdomain are both UNIQUE (migration
