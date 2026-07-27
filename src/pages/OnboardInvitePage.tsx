@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { authClient } from '../lib/auth/authClient'
 import { onboardInviteAcceptUrl, onboardInviteValidateUrl } from '../config/publicApi'
+import { useHostReachable } from '../hooks/useHostReachable'
 
-type ValidateState = { status: 'loading' } | { status: 'invalid'; reason: string } | { status: 'valid'; tenantName: string }
+type ValidateState =
+  | { status: 'loading' }
+  | { status: 'invalid'; reason: string }
+  | { status: 'valid'; tenantName: string; subdomain: string }
 
 const REASON_MESSAGES: Record<string, string> = {
   not_found: 'This invite link is not valid.',
@@ -17,6 +21,23 @@ const REASON_MESSAGES: Record<string, string> = {
 // lands on /design (the branding step) - the mandatory terms gate
 // (RequireAuth.tsx) then takes over from there on the next real
 // navigation, since /design alone carries skipTermsGate.
+//
+// Cross-subdomain session round: the invite link itself is opened on
+// the generic app domain (onboard.ts's own comment - deliberately
+// host-agnostic), but every OTHER admin surface (AdminSidebar's own
+// logo link, fixed a couple of rounds ago) now correctly sends a
+// logged-in admin to their tenant's own subdomain, now that the
+// wildcard DNS migration makes it actually resolve. Signing in HERE, on
+// the generic domain, scopes the session cookie to that host only - the
+// very first real click after onboarding (the header logo) would then
+// land the brand-new admin on their own subdomain with no valid session
+// there at all, looking exactly like a rejected password even though
+// nothing about the credential itself was wrong. Fix: redirect onto the
+// tenant's own subdomain BEFORE rendering the form at all, so account
+// creation and sign-in both happen natively on the host the admin will
+// actually keep using - not a cookie-domain change (that's a real
+// security-relevant architecture decision, not made here), just doing
+// the whole flow on the right host from the start.
 export default function OnboardInvitePage(): JSX.Element {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
@@ -34,7 +55,9 @@ export default function OnboardInvitePage(): JSX.Element {
       .then((response) => (response.ok ? response.json() : { valid: false, reason: 'not_found' }))
       .then((data) => {
         if (cancelled) return
-        setValidate(data.valid ? { status: 'valid', tenantName: data.tenantName ?? '' } : { status: 'invalid', reason: data.reason })
+        setValidate(
+          data.valid ? { status: 'valid', tenantName: data.tenantName ?? '', subdomain: data.subdomain } : { status: 'invalid', reason: data.reason }
+        )
       })
       .catch(() => {
         if (!cancelled) setValidate({ status: 'invalid', reason: 'not_found' })
@@ -43,6 +66,24 @@ export default function OnboardInvitePage(): JSX.Element {
       cancelled = true
     }
   }, [token])
+
+  const tenantSubdomain = validate.status === 'valid' ? validate.subdomain : null
+  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
+  // Only probe once we actually need to redirect - never on the (already
+  // common, will become universal) case of already being on the right
+  // host, and never before validate resolves.
+  const crossHostSubdomain = !isOnOwnSubdomain ? tenantSubdomain : null
+  const subdomainReachable = useHostReachable(crossHostSubdomain)
+
+  useEffect(() => {
+    if (isOnOwnSubdomain || subdomainReachable !== true) return
+    // Hard navigation, not React Router - this must actually leave the
+    // current origin. No credentials are in flight yet at this point
+    // (the form hasn't been submitted), so there's nothing sensitive to
+    // carry across; the token in the URL is already how invite links
+    // work today, unchanged.
+    window.location.href = `https://${tenantSubdomain}/onboard/${token}`
+  }, [isOnOwnSubdomain, subdomainReachable, tenantSubdomain, token])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -76,6 +117,21 @@ export default function OnboardInvitePage(): JSX.Element {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
         <p className="text-sm text-muted-400">Checking your invite link…</p>
+      </div>
+    )
+  }
+
+  // Redirect in flight (or still probing whether the target even
+  // resolves) - never render the account-setup form on the wrong host.
+  // subdomainReachable === false is the fallback case (target genuinely
+  // not reachable, e.g. DNS not yet propagated) - falls through to the
+  // normal form below instead, completing on the current host exactly
+  // as this page always did before this round, rather than redirecting
+  // a brand-new customer into a dead end.
+  if (validate.status === 'valid' && !isOnOwnSubdomain && subdomainReachable !== false) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
+        <p className="text-sm text-muted-400">Taking you to your own dashboard address…</p>
       </div>
     )
   }
