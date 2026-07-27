@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AIRFIELD_TIMEZONE } from '../config/publicApi'
+import { useHostReachable } from '../hooks/useHostReachable'
 
 interface HeaderProps {
   rightSlot?: ReactNode
@@ -85,8 +86,25 @@ export default function Header({
   // than duplicating that role->page mapping a third time (RequireAuth's
   // "Not authorized" safety-net link is the second).
   const [dashboardLandingPage, setDashboardLandingPage] = useState('/login')
+  // Root cause of the freshly-onboarded-tenant "logo click dumps you on
+  // the marketing page" bug: on /config, the logo link below used to be
+  // a bare relative Link to '/' unconditionally. '/' (RootRoute.tsx)
+  // renders the marketing LandingPage for the bare airfieldcentral.com
+  // host and DashboardPage everywhere else, purely from
+  // window.location.hostname - it has no session/cookie fallback at all
+  // (same Host-only resolution as resolveTenantHost.ts server-side). A
+  // tenant provisioned via the platform-admin invite flow never actually
+  // lands on its own subdomain (onboard.ts's own comment: that flow
+  // "runs path-based on the existing app domain, not the new tenant's
+  // own subdomain" - no Cloudflare custom-domain automation exists yet),
+  // so every one of its admins is on the bare marketing host by
+  // definition - a relative '/' there is ALWAYS the marketing page for
+  // them, logged in or not. Fetched alongside dashboardLandingPage
+  // above (same /api/tenant/me response, now including `subdomain`) so
+  // this can compare it against the current hostname before deciding.
+  const [tenantSubdomain, setTenantSubdomain] = useState<string | null>(null)
   useEffect(() => {
-    if (!isPublicDashboard) return
+    if (!isPublicDashboard && !isConfigPage) return
     let cancelled = false
     fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))
@@ -96,6 +114,7 @@ export default function Header({
         setDashboardLandingPage(
           role === 'atc' ? '/atc-control' : role === 'media' ? '/media-manager' : role === 'cafe' ? '/cafe-media' : role ? '/config' : '/login'
         )
+        setTenantSubdomain(data?.subdomain ?? null)
       })
       .catch(() => {
         if (!cancelled) setDashboardLandingPage('/login')
@@ -103,7 +122,40 @@ export default function Header({
     return () => {
       cancelled = true
     }
-  }, [isPublicDashboard])
+  }, [isPublicDashboard, isConfigPage])
+
+  // Only trust a relative '/' when we've confirmed this IS the tenant's
+  // own subdomain - otherwise '/' resolves to marketing content (or, on
+  // Shobdon's own fallback hosts, to the WRONG tenant's dashboard) no
+  // matter who's logged in. tenantSubdomain === null covers both "still
+  // loading" and "not on /config at all" - '/' unchanged in both cases,
+  // same as this link's behaviour before this fix (no flash of a
+  // different target while the fetch above is in flight, matching
+  // dashboardLandingPage's own pre-resolution default elsewhere in this
+  // file). When it doesn't match, an absolute cross-host URL is the only
+  // way to actually reach the right place - a relative Link can't cross
+  // hosts. If that subdomain isn't DNS-provisioned yet (a separate,
+  // still-manual step - see onboard.ts), this surfaces as an honest
+  // browser navigation error instead of silently landing on marketing
+  // copy or someone else's dashboard, which is strictly more correct
+  // even though it isn't yet a fully working destination for every
+  // tenant.
+  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
+  const configBackHref = isOnOwnSubdomain ? '/' : `https://${tenantSubdomain}/`
+
+  // Option B from the DNS-not-provisioned round: rather than always
+  // linking to configBackHref and letting an unprovisioned subdomain
+  // fail as a raw browser navigation error, probe it first (only when
+  // we'd actually render the cross-host link - never for Shobdon or any
+  // tenant already on its own working subdomain, where isOnOwnSubdomain
+  // is true and this stays null/unused). null (still checking, or not
+  // applicable) intentionally falls through to the SAME link-rendering
+  // branch as `true` below - this is the exact pre-this-round behaviour
+  // for the brief window before the probe settles, not a new failure
+  // mode.
+  const crossHostSubdomain = isConfigPage && !isOnOwnSubdomain ? tenantSubdomain : null
+  const subdomainReachable = useHostReachable(crossHostSubdomain)
+  const subdomainConfirmedDown = isConfigPage && !isOnOwnSubdomain && subdomainReachable === false
 
   // timeZone: AIRFIELD_TIMEZONE, not the viewing device's own local zone -
   // this clock represents the airfield's actual local time (what a pilot
@@ -133,37 +185,83 @@ export default function Header({
       {/* Left - title (doubles as the Configuration nav control) with Last Updated, read as one info block.
           min-w-0 + truncate: a flex child otherwise refuses to shrink below its text's own natural width,
           which is what was pushing the clock (below) into overlapping it at narrow widths. */}
-      <Link
-        to={isConfigPage ? '/' : isPublicDashboard ? dashboardLandingPage : '/config'}
-        className="group flex min-w-0 flex-col cursor-pointer"
-        title={isConfigPage ? 'Back to Dashboard' : 'Weather Config'}
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          {showLogo && logoUrl && (
-            // shrink-0 + capped max-width: a logo of any aspect ratio must
-            // never be allowed to grow and push the centred clock (below)
-            // out of position - the exact narrow-width collision this
-            // file's own comments already document for the title text.
-            // h-full + object-contain (never object-cover/fixed w+h)
-            // guarantees no distortion and no cropping regardless of the
-            // uploaded image's native dimensions.
-            <div className="h-8 max-w-[100px] shrink-0 sm:h-12 sm:max-w-[160px]">
-              <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
+      {(() => {
+        const headerLinkContent = (
+          <>
+            <div className="flex min-w-0 items-center gap-2">
+              {showLogo && logoUrl && (
+                // shrink-0 + capped max-width: a logo of any aspect ratio must
+                // never be allowed to grow and push the centred clock (below)
+                // out of position - the exact narrow-width collision this
+                // file's own comments already document for the title text.
+                // h-full + object-contain (never object-cover/fixed w+h)
+                // guarantees no distortion and no cropping regardless of the
+                // uploaded image's native dimensions.
+                <div className="h-8 max-w-[100px] shrink-0 sm:h-12 sm:max-w-[160px]">
+                  <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
+                </div>
+              )}
+              {showName && (
+                <div
+                  className={`truncate font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 ${NAME_FONT_SIZE_CLASSES[nameFontSize]}`}
+                >
+                  {airfieldName || 'AIRFIELD CENTRAL'}
+                </div>
+              )}
             </div>
-          )}
-          {showName && (
-            <div
-              className={`truncate font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 ${NAME_FONT_SIZE_CLASSES[nameFontSize]}`}
-            >
-              {airfieldName || 'AIRFIELD CENTRAL'}
+            {/* Hidden below sm - at that width there isn't room for a second line
+                alongside the clock and status slot without forcing the title to
+                shrink further than it already has to. Reuses this exact slot for
+                the not-provisioned-yet message rather than adding a new line -
+                same reasoning as configBackHref above, this only ever renders for
+                a tenant whose subdomain isn't live, never for Shobdon or any
+                already-working tenant, so there's no new narrow-viewport case to
+                verify beyond what this line already had. */}
+            <div className="hidden text-sm font-medium text-muted-300 leading-tight sm:block">
+              {subdomainConfirmedDown ? "Your dashboard URL isn't live yet — contact support" : `Last updated ${lastUpdatedString}`}
             </div>
-          )}
-        </div>
-        {/* Hidden below sm - at that width there isn't room for a second line
-            alongside the clock and status slot without forcing the title to
-            shrink further than it already has to. */}
-        <div className="hidden text-sm font-medium text-muted-300 leading-tight sm:block">Last updated {lastUpdatedString}</div>
-      </Link>
+          </>
+        )
+        const headerLinkClassName = 'group flex min-w-0 flex-col cursor-pointer'
+        const headerLinkTitle = isConfigPage ? 'Back to Dashboard' : 'Weather Config'
+
+        // Confirmed unreachable (not just "still checking" - see
+        // subdomainConfirmedDown's own comment) - a raw <a href> here
+        // would just be a dead link to a host that doesn't resolve at
+        // all. Same content, not wrapped in any link element at all
+        // (no cursor-pointer, no hover state) - nothing to click to,
+        // so nothing should look clickable.
+        if (subdomainConfirmedDown) {
+          return (
+            <div className="flex min-w-0 flex-col" title="Your dashboard URL isn't live yet — contact support">
+              {headerLinkContent}
+            </div>
+          )
+        }
+
+        // A relative <Link> can't cross hosts - when configBackHref is
+        // the absolute cross-subdomain URL (see the comment on
+        // isOnOwnSubdomain above), this must be a plain <a>, not
+        // react-router's <Link>, which would otherwise just push a
+        // same-origin history entry for an https:// `to` value instead
+        // of actually navigating there.
+        if (isConfigPage && !isOnOwnSubdomain) {
+          return (
+            <a href={configBackHref} className={headerLinkClassName} title={headerLinkTitle}>
+              {headerLinkContent}
+            </a>
+          )
+        }
+        return (
+          <Link
+            to={isConfigPage ? configBackHref : isPublicDashboard ? dashboardLandingPage : '/config'}
+            className={headerLinkClassName}
+            title={headerLinkTitle}
+          >
+            {headerLinkContent}
+          </Link>
+        )
+      })()}
 
       {/* Centre - large clock, absolutely centred against the full header
           width from sm up. Below sm, absolute positioning is exactly what

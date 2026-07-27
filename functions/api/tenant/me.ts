@@ -61,6 +61,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     !!cafeDisplay?.entitled &&
     !(cafeDisplay.entitlementTrialExpiresAt && new Date(cafeDisplay.entitlementTrialExpiresAt).getTime() <= Date.now());
 
+  // This tenant's own subdomain (tenants.subdomain, e.g.
+  // "gyroplane-train.airfieldcentral.com") - Header.tsx's logo link on
+  // /config needs this to tell whether the CURRENT hostname is actually
+  // this tenant's own subdomain before linking to '/' (see that file's
+  // own comment: '/' only ever renders the right tenant's dashboard on
+  // that exact host - resolveTenantHost.ts's Host-based resolution has
+  // no session/cookie fallback). A freshly-provisioned tenant always has
+  // a real, non-null subdomain value here (both onboard.ts and trial-
+  // signup.ts set it at INSERT time) even when nothing is actually
+  // reachable at that hostname yet (DNS/custom-domain provisioning is a
+  // separate, still-manual step - see onboard.ts's own comment) - this
+  // field reports the intended host, not a live/reachable guarantee.
+  const tenantRow = await env.DB
+    .prepare("SELECT subdomain FROM tenants WHERE organization_id = ?")
+    .bind(result.membership.organizationId)
+    .first<{ subdomain: string | null }>();
+
   return jsonResponse({
     role: result.membership.role,
     organizationSlug: result.membership.slug,
@@ -68,6 +85,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     isDeveloper: !!userRow?.developer,
     hasAcceptedTerms: !!userRow?.termsAcceptedAt,
     cafeEntitled,
+    subdomain: tenantRow?.subdomain ?? null,
     memberships,
   });
 };

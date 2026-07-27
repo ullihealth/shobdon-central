@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useHostReachable } from '../../hooks/useHostReachable'
 
 interface DisplayEntry {
   slug: string
@@ -43,6 +44,15 @@ export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): J
       cancelled = true
     }
   }, [])
+
+  // DNS-not-provisioned round (same caveat as Header.tsx's logo link -
+  // see that file's own comment and useHostReachable's): every display
+  // here shares one tenant, so one probe against data.subdomain covers
+  // all of them - no per-row check needed. null (still loading, or no
+  // data yet) falls through to "assume reachable" below, same as
+  // Header.tsx's own default-while-checking behaviour.
+  const subdomainReachable = useHostReachable(data?.subdomain ?? null)
+  const subdomainConfirmedDown = subdomainReachable === false
 
   async function handleCopy(url: string, slug: string): Promise<void> {
     try {
@@ -91,6 +101,13 @@ export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): J
                   </span>
                 </div>
                 <div className="mt-1 truncate font-mono text-sm text-muted-300">{url}</div>
+                {/* Copy still works regardless (harmless, and useful to
+                    paste elsewhere/check back once DNS is set up) - only
+                    "Open" (an actual navigation to a host that doesn't
+                    resolve) is replaced. */}
+                {subdomainConfirmedDown && (
+                  <div className="mt-1 text-xs text-amber-400">Not live yet - this subdomain hasn't been set up. Contact support.</div>
+                )}
               </div>
               <div className="flex flex-shrink-0 gap-2">
                 <button
@@ -100,14 +117,23 @@ export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): J
                 >
                   {copiedSlug === display.slug ? 'Copied!' : 'Copy'}
                 </button>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
-                >
-                  Open
-                </a>
+                {subdomainConfirmedDown ? (
+                  <span
+                    className="cursor-not-allowed rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-muted-400"
+                    title="Not live yet - this subdomain hasn't been set up"
+                  >
+                    Open
+                  </span>
+                ) : (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
+                  >
+                    Open
+                  </a>
+                )}
               </div>
             </div>
           )
