@@ -30,6 +30,28 @@ export default function ConfigPage(): JSX.Element {
   // has via resolveWeatherConfig().
   const [hasPhysicalAtc, setHasPhysicalAtc] = useState(false)
 
+  // tenant_weather_shares (migration 0029) - platform-admin-configured
+  // only (functions/api/platform/tenants/[id]/weather-share.ts owns the
+  // write side), previously invisible anywhere on this tenant's own
+  // pages - a tenant had no way to learn this was set except asking.
+  // null covers both "still loading" and "no share configured", same
+  // "render nothing rather than an empty state" convention as this
+  // page's own hasPhysicalAtc sections below.
+  const [weatherShare, setWeatherShare] = useState<{ sourceTenantName: string } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tenant/weather-share')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.sourceTenantName) setWeatherShare({ sourceTenantName: data.sourceTenantName })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     resolveWeatherConfig().then((resolved) => {
@@ -84,6 +106,21 @@ export default function ConfigPage(): JSX.Element {
           >
             📋 ATC Visit Checklist
           </Link>
+        </div>
+      )}
+
+      {/* Read-only - the earlier decision to keep weather-sharing
+          platform-admin-only stands (see functions/api/tenant/weather-
+          share.ts's own comment), this is purely informational. Shown
+          regardless of which provider is currently selected below
+          (Third-Party Station is the one an active share actually
+          overrides - functions/api/public/weather-latest.ts - but the
+          share itself is a standing fact independent of what this
+          tenant's own activeProvider happens to be set to right now). */}
+      {weatherShare && (
+        <div className="mb-6 rounded-2xl border border-accent-sky-500/30 bg-accent-sky-500/10 px-6 py-4 text-sm text-slate-200">
+          Currently using <span className="font-semibold text-accent-sky-400">{weatherShare.sourceTenantName}</span>&apos;s
+          weather station — configured by your platform administrator.
         </div>
       )}
 
