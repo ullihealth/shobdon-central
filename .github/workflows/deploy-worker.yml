@@ -14,22 +14,18 @@ name: Deploy standalone Worker (airfield-central)
 # any future change - frontend or backend - since nothing about a normal
 # `git push` surfaces that a second, separate deploy is even needed.
 #
-# Deliberately NOT yet wired to run automatically on push - see the
-# `on:` block below. Flip that on only after a manual workflow_dispatch run
-# has been confirmed to actually redeploy the Worker successfully (needs
-# CLOUDFLARE_API_TOKEN added as a repo secret first - Settings -> Secrets and
-# variables -> Actions -> "New repository secret" - only an account owner can
-# do that; see Shobdon-Central-Engineering-Changelog.md for the token scope).
+# Runs automatically on every push to main (confirmed working via a manual
+# workflow_dispatch test run first - 2026-07-27, run #1, all steps green,
+# verified the Worker's own deployment timestamp updated and a live tenant
+# subdomain still served correctly afterward - see
+# Shobdon-Central-Engineering-Changelog.md). workflow_dispatch is kept
+# alongside push so a redeploy can still be triggered by hand if ever needed
+# without an empty commit.
 
 on:
   workflow_dispatch: {}
-  # push:
-  #   branches: [main]
-  # ^ Uncomment once a manual `workflow_dispatch` run (Actions tab -> this
-  # workflow -> "Run workflow") has completed successfully at least once.
-  # Until then this workflow only runs when someone deliberately triggers it
-  # by hand, never automatically - so there's no risk of it silently failing
-  # on every future push before it's actually proven to work.
+  push:
+    branches: [main]
 
 jobs:
   deploy-worker:
