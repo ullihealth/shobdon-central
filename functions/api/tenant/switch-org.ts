@@ -21,7 +21,7 @@ interface Env {
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 90;
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const userId = await getSessionUserId(request);
+  const userId = await getSessionUserId(request, env);
   if (!userId) return jsonResponse({ error: "Unauthorized" }, 401);
 
   const body = (await request.json().catch(() => null)) as { orgSlug?: unknown } | null;

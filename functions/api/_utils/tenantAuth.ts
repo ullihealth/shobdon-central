@@ -1,10 +1,6 @@
 // Shared "is this user logged in AND does this user belong to the tenant
 // they're trying to read/write" check, used by every authenticated
-// functions/api/tenant/* route. Pattern confirmed from proven-ai's own
-// working getSessionUserId implementation
-// (functions/api/manage/notes/index.ts): call BetterAuth's own
-// /api/auth/get-session route internally, forwarding the incoming
-// request's cookies, rather than re-implementing session/cookie parsing.
+// functions/api/tenant/* route.
 
 // Named (not inline) so functions/api/platform/tenants/[id]/hard-delete.ts
 // can type its own batch() array against exactly what .prepare().bind()
@@ -33,24 +29,58 @@ export type D1Database = {
   batch?: (statements: D1BoundStatement[]) => Promise<unknown[]>;
 };
 
-interface SessionResponse {
-  data?: { user?: { id?: string } };
-  user?: { id?: string };
+// Root-cause round: was a self-referential fetch() from inside this
+// same Worker back to its own origin's BetterAuth /api/auth/get-session
+// route (forwarding the incoming request's Cookie header) - worked
+// reliably on Cloudflare Pages (confirmed: Shobdon's real day-to-day
+// traffic, months of it), but confirmed BROKEN on the Worker every
+// wildcard-DNS-routed tenant subdomain now actually reaches: a valid
+// session cookie, proven valid by calling get-session directly as an
+// external client (200, correct session), returned Unauthorized from
+// every endpoint going through this function when called via the
+// Worker - reproduced identically on both the wildcard-matched hostname
+// AND the Worker's own canonical workers.dev hostname, so this isn't
+// about route-matching, it's the self-fetch itself failing silently
+// inside the Worker runtime (res falls into the .catch(() => null) or
+// !res.ok path either way - the exact Cloudflare-internal mechanism
+// wasn't further chased down since the fix below sidesteps it
+// entirely). Confirmed every authenticated admin action for a
+// wildcard-served tenant was affected, not just onboarding - this
+// function backs requireTenant/requirePlatformAdmin, used everywhere.
+//
+// Fixed by doing the session lookup directly against D1 instead of
+// bouncing through an HTTP round-trip to itself: BetterAuth's session
+// cookie value is `<token>.<hmac signature>` (confirmed directly
+// against a real cookie + the session table's own token column - the
+// portion before the first '.' is an exact match for session.token).
+// Skips signature verification deliberately, not carelessly - the
+// token itself is what's looked up, strictly, against the session
+// table (cryptographically random, unguessable per BetterAuth's own
+// generation, same trust boundary get-session's own DB lookup already
+// relied on) - the signature's role is tamper-evidence for claims
+// embedded IN the cookie, and none are trusted here beyond "does this
+// exact token exist and is it unexpired," which a forged/tampered
+// token cannot satisfy without already knowing a real one.
+function extractSessionToken(request: Request): string | null {
+  const cookieValue = getCookieValue(request, "__Secure-better-auth.session_token") ?? getCookieValue(request, "better-auth.session_token");
+  if (!cookieValue) return null;
+  const token = cookieValue.split(".")[0];
+  return token || null;
 }
 
-export async function getSessionUserId(request: Request): Promise<string | null> {
-  const origin = new URL(request.url).origin;
-  const res = await fetch(`${origin}/api/auth/get-session`, {
-    method: "GET",
-    headers: { cookie: request.headers.get("cookie") || "" },
-  }).catch(() => null);
+export async function getSessionUserId(request: Request, env: { DB: D1Database }): Promise<string | null> {
+  const token = extractSessionToken(request);
+  if (!token) return null;
 
-  if (!res || !res.ok) return null;
-  // BetterAuth's get-session route responds with a literal JSON `null`
-  // body (not `{}`) when there's no active session - guard with `?.`
-  // from the very first property access, not just the nested ones.
-  const data = (await res.json().catch(() => null)) as SessionResponse | null;
-  return data?.data?.user?.id || data?.user?.id || null;
+  const session = await env.DB
+    .prepare("SELECT userId, expiresAt FROM session WHERE token = ?")
+    .bind(token)
+    .first<{ userId: string; expiresAt: string }>();
+
+  if (!session) return null;
+  if (new Date(session.expiresAt).getTime() <= Date.now()) return null;
+
+  return session.userId;
 }
 
 export interface TenantMembership {
@@ -142,7 +172,7 @@ export type RequireTenantResult =
 // lightweight tenant/me role-check endpoint can all reuse the exact same
 // check rather than re-implementing it.
 export async function requireTenant(request: Request, env: { DB: D1Database }): Promise<RequireTenantResult> {
-  const userId = await getSessionUserId(request);
+  const userId = await getSessionUserId(request, env);
   if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) };
 
   let membership: TenantMembership | null;
@@ -262,7 +292,7 @@ export type RequirePlatformAdminOutcome = RequirePlatformAdminResult | { error: 
 // switcher cookie at all, so it behaves identically no matter which
 // org (if any) the caller currently belongs to or is switched to.
 export async function requirePlatformAdmin(request: Request, env: { DB: D1Database }): Promise<RequirePlatformAdminOutcome> {
-  const userId = await getSessionUserId(request);
+  const userId = await getSessionUserId(request, env);
   if (!userId) return { error: jsonResponse({ error: "Unauthorized" }, 401) };
 
   const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(userId).first<{ developer: number }>();
