@@ -106,6 +106,13 @@ export const PUBLIC_TENANTS_URL = '/api/public/tenants'
 // same reasoning as PUBLIC_TENANTS_URL above.
 export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'
 
+// Public, unauthenticated, rate-limited live-availability check for the
+// required subdomain field on the same signup form above -
+// functions/api/public/check-slug.ts. Advisory only (fast feedback
+// while typing); trial-signup.ts's own UNIQUE-constraint-backed
+// try/catch is the real guarantee against a race.
+export const PUBLIC_CHECK_SLUG_URL = '/api/public/check-slug'
+
 // Platform-admin only: mints a new tenant + single-use invite link -
 // functions/api/platform/tenants/onboard.ts. Consumed by
 // PlatformTenantsPage.tsx's "Onboard new tenant" button.

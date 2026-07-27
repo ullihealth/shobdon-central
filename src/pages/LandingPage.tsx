@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { TRIAL_SIGNUP_URL } from '../config/publicApi'
+import { PUBLIC_CHECK_SLUG_URL, TRIAL_SIGNUP_URL } from '../config/publicApi'
 import { LATEST_READING_URL } from '../config/captureEndpoint'
 
 // Public marketing/landing page for Airfield Central, live at the bare
@@ -93,6 +93,14 @@ interface SignupResult {
   subdomain: string
 }
 
+// Client-side mirror of functions/api/_utils/tenantSlug.ts's own
+// SLUG_FORMAT - instant typo feedback with no network round-trip.
+// Reserved-word/actual-availability checking still goes through
+// PUBLIC_CHECK_SLUG_URL (debounced below), not a second copy of the
+// reserved list here.
+const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/
+const SLUG_CHECK_DEBOUNCE_MS = 400
+
 // Real provisioning on submit (a genuine organization + tenants row via
 // TRIAL_SIGNUP_URL), not a fake lead-capture form - but deliberately
 // does not create a login (no password collected, by design - see
@@ -107,6 +115,46 @@ function SignupForm(): JSX.Element {
   const [errorMessage, setErrorMessage] = useState('')
   const [result, setResult] = useState<SignupResult | null>(null)
 
+  // Required here, unlike the platform-admin invite flow's own optional
+  // version of this same field - Jeff's own reasoning: a self-serve
+  // customer choosing their address up front avoids ever having to tell
+  // them afterward "actually, please switch to this new URL instead" -
+  // there's no admin relationship here to smooth that over.
+  const [slug, setSlug] = useState('')
+  const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>(
+    { status: 'idle' }
+  )
+
+  const trimmedSlug = slug.trim()
+  const slugFormatError =
+    trimmedSlug && !SLUG_FORMAT.test(trimmedSlug)
+      ? '3-63 characters: lowercase letters, numbers, and hyphens only, not starting or ending with a hyphen'
+      : null
+
+  useEffect(() => {
+    if (!trimmedSlug || slugFormatError) {
+      setSlugCheck({ status: 'idle' })
+      return
+    }
+    let cancelled = false
+    setSlugCheck({ status: 'checking' })
+    const timeoutId = window.setTimeout(() => {
+      fetch(`${PUBLIC_CHECK_SLUG_URL}?slug=${encodeURIComponent(trimmedSlug)}`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return
+          setSlugCheck(data.available ? { status: 'available' } : { status: 'unavailable', reason: data.reason })
+        })
+        .catch(() => {
+          if (!cancelled) setSlugCheck({ status: 'idle' })
+        })
+    }, SLUG_CHECK_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [trimmedSlug, slugFormatError])
+
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
     setStatus('submitting')
@@ -116,7 +164,7 @@ function SignupForm(): JSX.Element {
       const response = await fetch(TRIAL_SIGNUP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clubName, contactEmail, location }),
+        body: JSON.stringify({ clubName, contactEmail, location, slug: trimmedSlug }),
       })
       const data = (await response.json().catch(() => null)) as
         | { ok?: boolean; slug?: string; subdomain?: string; error?: string }
@@ -171,6 +219,28 @@ function SignupForm(): JSX.Element {
           />
         </div>
         <div>
+          <label htmlFor="slug" className="mb-1 block text-sm font-medium text-slate-300">
+            Your dashboard address
+          </label>
+          <input
+            id="slug"
+            type="text"
+            required
+            maxLength={63}
+            value={slug}
+            onChange={(event) => setSlug(event.target.value.toLowerCase())}
+            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+            placeholder="e.g. shobdon"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            {trimmedSlug || 'yourclub'}.airfieldcentral.com
+            {slugFormatError && <span className="ml-2 text-red-400">{slugFormatError}</span>}
+            {!slugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-slate-400">Checking…</span>}
+            {!slugFormatError && slugCheck.status === 'available' && <span className="ml-2 text-emerald-400">Available</span>}
+            {!slugFormatError && slugCheck.status === 'unavailable' && <span className="ml-2 text-red-400">{slugCheck.reason}</span>}
+          </p>
+        </div>
+        <div>
           <label htmlFor="contactEmail" className="mb-1 block text-sm font-medium text-slate-300">
             Contact email
           </label>
@@ -206,7 +276,7 @@ function SignupForm(): JSX.Element {
 
       <button
         type="submit"
-        disabled={status === 'submitting'}
+        disabled={status === 'submitting' || !!slugFormatError || slugCheck.status !== 'available'}
         className="mt-5 w-full rounded-lg bg-sky-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-60"
       >
         {status === 'submitting' ? 'Submitting…' : 'Start Your Free Trial'}
