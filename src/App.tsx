@@ -14,6 +14,7 @@ import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
 import OnboardInvitePage from './pages/OnboardInvitePage'
 import OnboardingTermsPage from './pages/OnboardingTermsPage'
+import PlatformCamerasPage from './pages/PlatformCamerasPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
@@ -80,6 +81,14 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformTenantsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/platform/cameras"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformCamerasPage />
             </RequireAuth>
           }
         />

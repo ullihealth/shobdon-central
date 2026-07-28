@@ -89,6 +89,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     label: 'Platform Admin',
     items: [
       { to: '/platform/tenants', label: 'Platform Tenants', requireDeveloper: true },
+      { to: '/platform/cameras', label: 'Cameras', requireDeveloper: true },
       { to: '/platform/onboarding-content', label: 'Onboarding Content', requireDeveloper: true },
       { to: '/platform/visits', label: 'Visit Log', requireDeveloper: true },
       { to: '/developertools', label: 'Developer Tools', requireDeveloper: true },
