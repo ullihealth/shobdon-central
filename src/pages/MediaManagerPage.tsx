@@ -40,10 +40,27 @@ export default function MediaManagerPage(): JSX.Element {
     // Camera URLs are already fully public (embedded as iframes on the
     // unauthenticated dashboard), so reusing the public config endpoint
     // here is not a new exposure - and it's readable by both owner and
-    // media roles, unlike the owner-only /api/tenant/config.
+    // media roles, unlike the owner-only /api/tenant/config. Merges the
+    // legacy camera_slots list (cameraSlots, `slot` set) with the newer
+    // cameras table (migration 0047, `cameraId` set) - see
+    // CameraOption's own comment for why these live in one array.
     return fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => setCameraOptions((data?.cameraSlots ?? []).filter((c: CameraOption) => c.url)))
+      .then((data) => {
+        const legacy = (data?.cameraSlots ?? []).map((c: { slot: number; label: string; url: string }) => ({
+          slot: c.slot,
+          cameraId: null,
+          label: c.label,
+          url: c.url,
+        }))
+        const newCameras = (data?.cameras ?? []).map((c: { id: string; label: string; url: string | null }) => ({
+          slot: null,
+          cameraId: c.id,
+          label: c.label,
+          url: c.url,
+        }))
+        setCameraOptions([...legacy, ...newCameras].filter((c: CameraOption) => c.url))
+      })
   }
 
   useEffect(() => {
@@ -74,19 +91,24 @@ export default function MediaManagerPage(): JSX.Element {
   }
 
   function handleSourceChange(slot: CarouselSlot, value: string) {
+    if (value.startsWith('webcam:cam:')) {
+      const cameraId = value.slice('webcam:cam:'.length)
+      saveSlot({ ...slot, mediaType: 'webcam', cameraId, cameraSlotNumber: null, mediaLibraryId: null })
+      return
+    }
     if (value.startsWith('webcam:')) {
       const cameraSlotNumber = Number(value.slice('webcam:'.length))
-      saveSlot({ ...slot, mediaType: 'webcam', cameraSlotNumber, mediaLibraryId: null })
+      saveSlot({ ...slot, mediaType: 'webcam', cameraSlotNumber, cameraId: null, mediaLibraryId: null })
       return
     }
     if (value.startsWith('file:')) {
       const fileId = value.slice('file:'.length)
       const file = files.find((f) => f.id === fileId)
       if (!file) return
-      saveSlot({ ...slot, mediaType: file.mediaType, mediaLibraryId: fileId, cameraSlotNumber: null })
+      saveSlot({ ...slot, mediaType: file.mediaType, mediaLibraryId: fileId, cameraSlotNumber: null, cameraId: null })
       return
     }
-    saveSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null })
+    saveSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null, cameraId: null })
   }
 
   // Deliberately does NOT touch appearanceEditorOpen - same fix as

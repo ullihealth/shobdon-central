@@ -41,6 +41,34 @@ interface CameraSlotRow {
   url: string;
 }
 
+// New tenant cameras (migration 0047) - deliberately separate from
+// camera_slots above (see that migration's own comment). Exposed here,
+// publicly, with the exact same posture camera_slots already has: these
+// URLs are embedded as iframes on the unauthenticated dashboard anyway,
+// so this is not a new exposure - rtsp_address is never selected here
+// or anywhere in this file.
+interface CameraRow {
+  id: string;
+  label: string;
+  mode: string;
+  youtubeVideoId: string | null;
+  localBaseUrl: string | null;
+}
+
+// Mirrors functions/api/public/cameras.ts's own localStreamUrl
+// construction exactly (go2rtc's built-in stream page, camera id as the
+// stream name by convention) - duplicated rather than imported, this
+// repo's established functions/src boundary convention. Stream mode
+// prefers the YouTube embed; local/both prefer the relay's own local
+// address, matching CameraPanel.tsx's own "try local first" default for
+// 'both'.
+function resolveCameraUrl(mode: string, youtubeVideoId: string | null, localBaseUrl: string | null, cameraId: string): string | null {
+  if (mode === "stream") {
+    return youtubeVideoId ? `https://www.youtube.com/embed/${youtubeVideoId}` : null;
+  }
+  return localBaseUrl ? `${localBaseUrl}/stream.html?src=${encodeURIComponent(cameraId)}` : null;
+}
+
 interface CarouselSlotResolvedRow {
   slotNumber: number;
   mediaType: string;
@@ -150,7 +178,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 // caller of buildPublicConfigResponse is unaffected - that function
 // below is now a thin wrapper over this one.
 export async function buildPublicConfigData(organizationId: string, env: PublicConfigEnv) {
-  const [runwayRows, themeRow, tenantRow, cameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
@@ -172,6 +200,21 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
       .all<CameraSlotRow>(),
+    // New tenant cameras (migration 0047) - tenant_id-keyed (not
+    // organizationId, unlike every other table in this file), matching
+    // the tenant_api_keys/weather_observations convention instead. The
+    // inline subquery avoids needing tenantRow's own result first
+    // (these all run in one Promise.all, so nothing here can depend on
+    // another query's resolved value).
+    env.DB
+      .prepare(
+        `SELECT c.id, c.name AS label, c.mode, c.youtube_video_id AS youtubeVideoId, r.local_base_url AS localBaseUrl
+         FROM cameras c JOIN site_relays r ON r.id = c.site_relay_id
+         WHERE c.tenant_id = (SELECT id FROM tenants WHERE organization_id = ?)
+         ORDER BY c.created_at`
+      )
+      .bind(organizationId)
+      .all<CameraRow>(),
     env.DB
       .prepare(
         `SELECT
@@ -192,10 +235,16 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
-           cam.url AS cameraUrl
+           cam.url AS cameraUrl,
+           nc.mode AS newCameraMode,
+           nc.youtube_video_id AS newCameraYoutubeVideoId,
+           nsr.local_base_url AS newCameraLocalBaseUrl,
+           cs.cameraId AS newCameraId
          FROM carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
+         LEFT JOIN cameras nc ON nc.id = cs.cameraId
+         LEFT JOIN site_relays nsr ON nsr.id = nc.site_relay_id
          WHERE cs.organizationId = ? AND cs.enabled = 1
          ORDER BY cs.slotNumber`
       )
@@ -219,6 +268,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         r2Key: string | null;
         mediaUploadedAt: string | null;
         cameraUrl: string | null;
+        newCameraMode: string | null;
+        newCameraYoutubeVideoId: string | null;
+        newCameraLocalBaseUrl: string | null;
+        newCameraId: string | null;
       }>(),
     // Café's own slot set (migration 0037, cafe_carousel_slots) - same
     // query shape as the dashboard's carouselRows above, pointed at the
@@ -249,10 +302,16 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
-           cam.url AS cameraUrl
+           cam.url AS cameraUrl,
+           nc.mode AS newCameraMode,
+           nc.youtube_video_id AS newCameraYoutubeVideoId,
+           nsr.local_base_url AS newCameraLocalBaseUrl,
+           cs.cameraId AS newCameraId
          FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
+         LEFT JOIN cameras nc ON nc.id = cs.cameraId
+         LEFT JOIN site_relays nsr ON nsr.id = nc.site_relay_id
          WHERE cs.organizationId = ? AND cs.enabled = 1
          ORDER BY cs.slotNumber`
       )
@@ -276,6 +335,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         r2Key: string | null;
         mediaUploadedAt: string | null;
         cameraUrl: string | null;
+        newCameraMode: string | null;
+        newCameraYoutubeVideoId: string | null;
+        newCameraLocalBaseUrl: string | null;
+        newCameraId: string | null;
       }>(),
     env.DB
       .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds FROM ops_panel_state WHERE organizationId = ?")
@@ -337,6 +400,17 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     url: row.url,
   }));
 
+  // New tenant cameras (migration 0047) - same {label, url} shape as
+  // cameraSlots above plus id (a string, unlike cameraSlots' numeric
+  // slot), so CarouselSlotEditor.tsx's Webcams dropdown can offer both
+  // lists side by side without the frontend needing to know which
+  // table either option actually came from.
+  const cameras = newCameraRows.results.map((row) => ({
+    id: row.id,
+    label: row.label,
+    url: resolveCameraUrl(row.mode, row.youtubeVideoId, row.localBaseUrl, row.id),
+  }));
+
   const mediaBaseUrl = env.MEDIA_PUBLIC_BASE_URL;
   const carouselSlots: CarouselSlotResolvedRow[] = carouselRows.results.map((row) => ({
     slotNumber: row.slotNumber,
@@ -358,9 +432,15 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // genuinely changed. mediaUploadedAt changes on every in-place
     // edit (see [id]/replace.ts), so appending it forces a fresh fetch
     // exactly when the content actually changed, and never otherwise.
+    // newCameraId set means this slot points at the new cameras table
+    // (migration 0047) rather than legacy camera_slots - resolved via
+    // the same helper functions/api/public/cameras.ts uses, checked
+    // first since a slot only ever has one or the other set.
     resolvedUrl:
       row.mediaType === "webcam"
-        ? row.cameraUrl
+        ? row.newCameraId
+          ? resolveCameraUrl(row.newCameraMode ?? "local", row.newCameraYoutubeVideoId, row.newCameraLocalBaseUrl, row.newCameraId)
+          : row.cameraUrl
         : row.r2Key && mediaBaseUrl
           ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
           : null,
@@ -382,7 +462,9 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     zone: row.zone,
     resolvedUrl:
       row.mediaType === "webcam"
-        ? row.cameraUrl
+        ? row.newCameraId
+          ? resolveCameraUrl(row.newCameraMode ?? "local", row.newCameraYoutubeVideoId, row.newCameraLocalBaseUrl, row.newCameraId)
+          : row.cameraUrl
         : row.r2Key && mediaBaseUrl
           ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
           : null,
@@ -440,6 +522,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     hasPhysicalAtc,
     brandDisplay,
     cameraSlots,
+    cameras,
     carouselSlots,
     cafeCarouselSlots,
     opsPanel,

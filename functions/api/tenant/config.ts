@@ -213,6 +213,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     lat: tenantRow?.lat ?? null,
     lon: tenantRow?.lon ?? null,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
+    cameras: publicConfigData.cameras,
     carouselSlots: publicConfigData.carouselSlots,
     cafeCarouselSlots: publicConfigData.cafeCarouselSlots,
     opsPanel: publicConfigData.opsPanel,

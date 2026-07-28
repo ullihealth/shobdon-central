@@ -13,7 +13,14 @@ import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
 // SlideEditor.tsx.
 
 export interface CameraOption {
-  slot: number
+  // Exactly one of these two is set - slot (legacy camera_slots,
+  // migration 0004) or cameraId (the newer cameras table, migration
+  // 0047/0048). Kept as one unified option type/list (rather than two
+  // separate arrays) so the Webcams dropdown/resolveSlotVisual/
+  // slotSourceLabel below don't need to know or care which table any
+  // given option actually came from.
+  slot: number | null
+  cameraId: string | null
   label: string
   url: string
 }
@@ -43,6 +50,7 @@ export function filterAssetsForScreen(
 // of two separate "pick a file" / "pick a webcam" controls that would
 // need to stay in sync with each other.
 function sourceValueFor(slot: CarouselSlot): string {
+  if (slot.mediaType === 'webcam' && slot.cameraId) return `webcam:cam:${slot.cameraId}`
   if (slot.mediaType === 'webcam' && slot.cameraSlotNumber) return `webcam:${slot.cameraSlotNumber}`
   if (slot.mediaLibraryId) return `file:${slot.mediaLibraryId}`
   return ''
@@ -61,7 +69,9 @@ function resolveSlotVisual(
 ): MediaSlotVisual {
   const resolvedUrl =
     slot.mediaType === 'webcam'
-      ? cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.url ?? null
+      ? slot.cameraId
+        ? cameraOptions.find((c) => c.cameraId === slot.cameraId)?.url ?? null
+        : cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.url ?? null
       : files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null
   return {
     mediaType: slot.mediaType,
@@ -342,6 +352,7 @@ function SlotAppearanceEditor({
 // resolve its label correctly, not go blank.
 function slotSourceLabel(slot: CarouselSlot, files: MediaLibraryFile[], cameraOptions: CameraOption[]): string {
   if (slot.mediaType === 'webcam') {
+    if (slot.cameraId) return cameraOptions.find((c) => c.cameraId === slot.cameraId)?.label ?? 'Webcam'
     return cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.label ?? `Webcam ${slot.cameraSlotNumber ?? '?'}`
   }
   return files.find((f) => f.id === slot.mediaLibraryId)?.filename ?? '— none —'
@@ -474,7 +485,7 @@ function CarouselSlotEditor({
           {cameraOptions.length > 0 && (
             <optgroup label="Webcams">
               {cameraOptions.map((cam) => (
-                <option key={cam.slot} value={`webcam:${cam.slot}`}>
+                <option key={cam.cameraId ?? cam.slot} value={cam.cameraId ? `webcam:cam:${cam.cameraId}` : `webcam:${cam.slot}`}>
                   {cam.label}
                 </option>
               ))}

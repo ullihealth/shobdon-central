@@ -58,6 +58,10 @@ export interface CarouselSlot {
   durationSeconds: number
   mediaLibraryId: string | null
   cameraSlotNumber: number | null
+  // References the newer cameras table (migration 0047/0048) - the
+  // legacy camera_slots alternative to cameraSlotNumber above. A slot
+  // has at most one of the two set.
+  cameraId: string | null
   // 'fill' = object-fit: cover (crops to fill the box); 'contain' =
   // object-fit: contain (always shows the whole image/video, letterboxed
   // if the aspect ratio doesn't match). Only meaningful for image/mp4 -

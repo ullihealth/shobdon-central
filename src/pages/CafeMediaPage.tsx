@@ -405,7 +405,24 @@ export default function CafeMediaPage(): JSX.Element {
         if (data.airfieldName) setAirfieldName(data.airfieldName as string)
         if (data.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
-        setCameraOptions((data.cameraSlots ?? []).filter((c: CameraOption) => c.url))
+        // Merges legacy camera_slots (`slot` set) with the newer cameras
+        // table (migration 0047, `cameraId` set) - see CameraOption's
+        // own comment for why these live in one array.
+        {
+          const legacy = (data.cameraSlots ?? []).map((c: { slot: number; label: string; url: string }) => ({
+            slot: c.slot,
+            cameraId: null,
+            label: c.label,
+            url: c.url,
+          }))
+          const newCameras = (data.cameras ?? []).map((c: { id: string; label: string; url: string | null }) => ({
+            slot: null,
+            cameraId: c.id,
+            label: c.label,
+            url: c.url,
+          }))
+          setCameraOptions([...legacy, ...newCameras].filter((c: CameraOption) => c.url))
+        }
         setMediaData({
           cameraSlots: Array.isArray(data.cameraSlots) ? data.cameraSlots : [],
           carouselSlots: Array.isArray(data.carouselSlots) ? data.carouselSlots : [],
@@ -631,19 +648,24 @@ export default function CafeMediaPage(): JSX.Element {
   }
 
   function handleCafeSourceChange(slot: CarouselSlot, value: string) {
+    if (value.startsWith('webcam:cam:')) {
+      const cameraId = value.slice('webcam:cam:'.length)
+      saveCafeSlot({ ...slot, mediaType: 'webcam', cameraId, cameraSlotNumber: null, mediaLibraryId: null })
+      return
+    }
     if (value.startsWith('webcam:')) {
       const cameraSlotNumber = Number(value.slice('webcam:'.length))
-      saveCafeSlot({ ...slot, mediaType: 'webcam', cameraSlotNumber, mediaLibraryId: null })
+      saveCafeSlot({ ...slot, mediaType: 'webcam', cameraSlotNumber, cameraId: null, mediaLibraryId: null })
       return
     }
     if (value.startsWith('file:')) {
       const fileId = value.slice('file:'.length)
       const file = files.find((f) => f.id === fileId)
       if (!file) return
-      saveCafeSlot({ ...slot, mediaType: file.mediaType, mediaLibraryId: fileId, cameraSlotNumber: null })
+      saveCafeSlot({ ...slot, mediaType: file.mediaType, mediaLibraryId: fileId, cameraSlotNumber: null, cameraId: null })
       return
     }
-    saveCafeSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null })
+    saveCafeSlot({ ...slot, mediaType: 'image', mediaLibraryId: null, cameraSlotNumber: null, cameraId: null })
   }
 
   // Deliberately does NOT touch cafeAppearanceEditorOpen - it used to

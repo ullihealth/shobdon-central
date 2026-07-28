@@ -1,11 +1,12 @@
 // Owner/admin/media-role: GET/PUT /api/tenant/carousel - the 12 carousel
 // slots. Assigning a slot to a library file (mediaLibraryId) or a
 // webcam (cameraSlotNumber, referencing the existing camera_slots
-// table) is metadata-only - no file is touched, moved, or re-uploaded.
-// admin was always documented as having media-manager access (see
-// src/types/member.ts's original role comment) but was missed when
-// this route was actually built - discovered via a real admin-role
-// account (test@mail.com) hitting a dead end after login.
+// table - OR cameraId, referencing the newer cameras table, migration
+// 0047/0048) is metadata-only - no file is touched, moved, or
+// re-uploaded. admin was always documented as having media-manager
+// access (see src/types/member.ts's original role comment) but was
+// missed when this route was actually built - discovered via a real
+// admin-role account (test@mail.com) hitting a dead end after login.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -31,6 +32,7 @@ interface CarouselSlotRow {
   durationSeconds: number;
   mediaLibraryId: string | null;
   cameraSlotNumber: number | null;
+  cameraId: string | null;
   fitMode: string;
   cropX: number;
   cropY: number;
@@ -51,6 +53,7 @@ interface CarouselSlotInput {
   durationSeconds: number;
   mediaLibraryId?: string | null;
   cameraSlotNumber?: number | null;
+  cameraId?: string | null;
   fitMode?: "fill" | "contain";
   cropRect?: CropRectInput;
   rotationDegrees?: number;
@@ -77,6 +80,7 @@ function defaultSlots(): CarouselSlotRow[] {
     durationSeconds: 10,
     mediaLibraryId: null,
     cameraSlotNumber: null,
+    cameraId: null,
     fitMode: "contain",
     cropX: 0,
     cropY: 0,
@@ -99,6 +103,7 @@ function rowToApi(row: CarouselSlotRow) {
     durationSeconds: row.durationSeconds,
     mediaLibraryId: row.mediaLibraryId,
     cameraSlotNumber: row.cameraSlotNumber,
+    cameraId: row.cameraId,
     fitMode: row.fitMode,
     cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
     rotationDegrees: row.rotationDegrees,
@@ -117,7 +122,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const { results } = await env.DB
     .prepare(
-      `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, fitMode,
+      `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
               bannerText, bannerOpacity, bannerFontSize, zone
        FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
@@ -183,8 +188,17 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     if (slot.mediaType === "webcam") {
-      if (!slot.cameraSlotNumber || slot.cameraSlotNumber < 1 || slot.cameraSlotNumber > 3) {
-        return jsonResponse({ error: "cameraSlotNumber must be 1-3 when mediaType is webcam" }, 400);
+      const hasLegacySlot = !!slot.cameraSlotNumber && slot.cameraSlotNumber >= 1 && slot.cameraSlotNumber <= 3;
+      const hasNewCamera = typeof slot.cameraId === "string" && slot.cameraId.length > 0;
+      if (!hasLegacySlot && !hasNewCamera) {
+        return jsonResponse({ error: "cameraSlotNumber (1-3) or cameraId is required when mediaType is webcam" }, 400);
+      }
+      if (hasNewCamera) {
+        const camera = await env.DB
+          .prepare("SELECT c.id FROM cameras c JOIN tenants t ON t.id = c.tenant_id WHERE c.id = ? AND t.organization_id = ?")
+          .bind(slot.cameraId, organizationId)
+          .first<{ id: string }>();
+        if (!camera) return jsonResponse({ error: `cameraId ${slot.cameraId} not found for your tenant` }, 400);
       }
     } else if (slot.mediaLibraryId) {
       // Referential integrity check at the app level - confirm the
@@ -200,11 +214,15 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
 
   const now = new Date().toISOString();
   for (const slot of body.slots) {
-    // mediaLibraryId and cameraSlotNumber are mutually exclusive by
-    // mediaType - explicitly null out whichever doesn't apply, rather
-    // than trusting the client not to send stale values for the other.
+    // mediaLibraryId/cameraSlotNumber/cameraId are mutually exclusive by
+    // mediaType (and, within "webcam", by which camera source the client
+    // actually picked) - explicitly null out whichever doesn't apply,
+    // rather than trusting the client not to send stale values for the
+    // others.
+    const isWebcamWithNewCamera = slot.mediaType === "webcam" && typeof slot.cameraId === "string" && slot.cameraId.length > 0;
     const mediaLibraryId = slot.mediaType === "webcam" ? null : slot.mediaLibraryId ?? null;
-    const cameraSlotNumber = slot.mediaType === "webcam" ? slot.cameraSlotNumber ?? null : null;
+    const cameraSlotNumber = slot.mediaType === "webcam" && !isWebcamWithNewCamera ? slot.cameraSlotNumber ?? null : null;
+    const cameraId = isWebcamWithNewCamera ? (slot.cameraId as string) : null;
     const fitMode = slot.fitMode ?? "contain";
     const cropX = slot.cropRect?.x ?? 0;
     const cropY = slot.cropRect?.y ?? 0;
@@ -220,17 +238,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare(
         `INSERT INTO carousel_slots (
-           organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber,
+           organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
            bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
            durationSeconds = excluded.durationSeconds,
            mediaLibraryId = excluded.mediaLibraryId,
            cameraSlotNumber = excluded.cameraSlotNumber,
+           cameraId = excluded.cameraId,
            fitMode = excluded.fitMode,
            cropX = excluded.cropX,
            cropY = excluded.cropY,
@@ -252,6 +271,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         slot.durationSeconds,
         mediaLibraryId,
         cameraSlotNumber,
+        cameraId,
         fitMode,
         cropX,
         cropY,
