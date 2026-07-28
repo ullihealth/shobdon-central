@@ -119,6 +119,22 @@ function isValidSavedSwatches(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= MAX_SAVED_SWATCHES && value.every((v) => typeof v === "string" && HEX_COLOR_PATTERN.test(v));
 }
 
+// Airfield location (icaoCode/lat/lon) - unlike every other field on this
+// route, invalid input here is REJECTED with a 400 rather than silently
+// skipped. This data now feeds the weather providers' own tenant-location
+// lookup (weather-metoffice.ts/weather-default.ts) and the automated NOTAM
+// endpoint (functions/api/public/notams.ts), not just display - a bad
+// coordinate silently accepted would quietly break both for this tenant.
+const ICAO_PATTERN = /^[A-Za-z]{4}$/;
+
+function isValidLat(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLon(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
@@ -136,13 +152,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // Same airfieldName field as the public config response - DesignPage.tsx's
     // preview renders the real Header component, which now needs this to
     // avoid falling back to its generic placeholder. logo_r2_key resolved
-    // to logoUrl the same way publicConfig.ts does.
+    // to logoUrl the same way publicConfig.ts does. icao_code/lat/lon added
+    // for ConfigPage.tsx's Airfield Location section - the same columns
+    // weather-metoffice.ts/weather-default.ts already read server-side for
+    // this tenant's own weather lookup, now finally editable instead of
+    // only ever hand-inserted directly into D1.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number; brandDisplayJson: string | null }>(),
+      .first<{
+        name: string;
+        logoR2Key: string | null;
+        hasPhysicalAtc: number;
+        brandDisplayJson: string | null;
+        icaoCode: string | null;
+        lat: number | null;
+        lon: number | null;
+      }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -181,6 +209,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     logoUrl: tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null,
     hasPhysicalAtc: !!tenantRow?.hasPhysicalAtc,
     brandDisplay: parseBrandDisplay(tenantRow?.brandDisplayJson),
+    icaoCode: tenantRow?.icaoCode ?? null,
+    lat: tenantRow?.lat ?? null,
+    lon: tenantRow?.lon ?? null,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
     carouselSlots: publicConfigData.carouselSlots,
     cafeCarouselSlots: publicConfigData.cafeCarouselSlots,
@@ -204,6 +235,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     airfieldName?: string;
     brandDisplay?: { main?: unknown; cafe?: unknown };
     savedSwatches?: unknown;
+    icaoCode?: unknown;
+    lat?: unknown;
+    lon?: unknown;
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -217,6 +251,42 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare("UPDATE tenants SET name = ?, updated_at = ? WHERE organization_id = ?")
       .bind(body.airfieldName.trim(), now, organizationId)
+      .run();
+  }
+
+  // icaoCode: optional - "" or null clears it, anything else must be
+  // exactly 4 alphabetic characters, uppercased on save (ICAO codes are
+  // conventionally upper case; normalising here means the frontend never
+  // needs to worry about the casing a tenant happens to type).
+  if (body.icaoCode !== undefined) {
+    if (body.icaoCode === null || body.icaoCode === "") {
+      await env.DB
+        .prepare("UPDATE tenants SET icao_code = NULL, updated_at = ? WHERE organization_id = ?")
+        .bind(now, organizationId)
+        .run();
+    } else if (typeof body.icaoCode === "string" && ICAO_PATTERN.test(body.icaoCode.trim())) {
+      await env.DB
+        .prepare("UPDATE tenants SET icao_code = ?, updated_at = ? WHERE organization_id = ?")
+        .bind(body.icaoCode.trim().toUpperCase(), now, organizationId)
+        .run();
+    } else {
+      return jsonResponse({ error: "icaoCode must be exactly 4 alphabetic characters" }, 400);
+    }
+  }
+
+  // lat/lon: a pair - either both present and valid, or neither touched.
+  // A lone lat or lon is meaningless, so it's rejected rather than
+  // half-written (the client form always sends both together anyway).
+  if (body.lat !== undefined || body.lon !== undefined) {
+    if (!isValidLat(body.lat)) {
+      return jsonResponse({ error: "lat must be a number between -90 and 90" }, 400);
+    }
+    if (!isValidLon(body.lon)) {
+      return jsonResponse({ error: "lon must be a number between -180 and 180" }, 400);
+    }
+    await env.DB
+      .prepare("UPDATE tenants SET lat = ?, lon = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(body.lat, body.lon, now, organizationId)
       .run();
   }
 

@@ -35,6 +35,13 @@ export const AIRFIELD_TIMEZONE = 'Europe/London'
 // resolution as PUBLIC_CONFIG_URL above.
 export const VISIBILITY_FORECAST_URL = `/api/public/visibility-forecast`
 
+// Served by functions/api/public/notams.ts - the automated NOTAM feed
+// shown in RightInfoPanel.tsx's "Runway In Use" state, gated on the same
+// ops_panel_state.showAutoNotams flag /atc-control's "Automated NOTAM
+// Feed" toggle already controls. Same host-based tenant resolution as
+// PUBLIC_CONFIG_URL above - the browser never sends lat/lon/ICAO itself.
+export const NOTAMS_URL = `/api/public/notams`
+
 // Served by functions/api/public/weather-default.ts - the per-tenant
 // weather-config default (activeProvider 'internet' + this tenant's own
 // lat/lon) a brand-new device with no stored config yet should adopt.

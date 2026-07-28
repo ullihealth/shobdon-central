@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
-import { PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { NOTAMS_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 
 type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -22,6 +22,31 @@ export interface OpsPanelPublic {
 function circuitDirectionLabel(direction: string): string {
   return direction === 'right' ? 'Right-hand' : 'Left-hand'
 }
+
+type NotamSeverity = 'critical' | 'warning' | 'info'
+
+interface AutoNotam {
+  id: string
+  icao: string
+  text: string
+  effectiveFrom: string | null
+  effectiveTo: string | null
+  severity: NotamSeverity
+}
+
+// This file's own existing status-token classes (already used for the
+// NOTAMS "+N more" indicator below), not CompassPanel.tsx's raw Tailwind
+// colours - CompassPanel is out of scope and uses a different,
+// non-themeable convention for its own headwind/crosswind cues.
+const SEVERITY_DOT_CLASSES: Record<NotamSeverity, string> = {
+  critical: 'bg-status-bad',
+  warning: 'bg-status-warn',
+  info: 'bg-muted-400',
+}
+
+const SEVERITY_ORDER: Record<NotamSeverity, number> = { critical: 0, warning: 1, info: 2 }
+
+const MAX_AUTO_NOTAMS_SHOWN = 3
 
 // Shifted up one step from the original sm/md/lg=16/18/20px tier: each
 // existing saved notice keeps its tier label (a notice saved as "md"
@@ -145,6 +170,34 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     }
   }, [opsPanelData])
 
+  // Automated NOTAM feed (functions/api/public/notams.ts) - fetched once
+  // here at top-level mount, NOT inside the cards branch below. The A/B
+  // carousel swaps its two states via a ternary (unmount/remount, not
+  // CSS-hide), so a fetch living inside that branch would refetch on
+  // every ~5-10s flip; holding it in this component's own state instead
+  // means it survives the flip untouched. Depends on
+  // opsPanel?.showAutoNotams specifically (not the whole opsPanel object)
+  // so it fires exactly once when that flag's real value first becomes
+  // known, and never refires just because some unrelated opsPanel field
+  // changed (e.g. a live admin-preview edit to safetyNotices). Never
+  // fetches at all when the flag is off - no point hitting even a cached
+  // endpoint for data that will never be shown.
+  const [autoNotams, setAutoNotams] = useState<AutoNotam[] | null>(null)
+
+  useEffect(() => {
+    if (!opsPanel?.showAutoNotams) return
+    let cancelled = false
+    fetch(NOTAMS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.notams)) setAutoNotams(data.notams)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [opsPanel?.showAutoNotams])
+
   // Plain 2-state flip, not a carousel - MediaPanel.tsx's per-slot
   // recursive setTimeout exists to support independently-durationed
   // slots; there's exactly one shared interval driving a single A/B
@@ -163,21 +216,17 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     return () => window.clearInterval(id)
   }, [notamsOnly, opsPanel?.notamsCarouselIntervalSeconds])
 
-  // Same liveDataUnavailable treatment as LeftInfoPanel's Notices row -
-  // an empty notams array during an unintended mock fallback would
-  // otherwise read as a false "No active notices" all-clear. showAutoNotams
-  // defaults true (matches the DB column default) so a tenant that's never
-  // touched /atc-control keeps today's exact auto-NOTAM behaviour - when
-  // explicitly turned off, the auto feed is skipped entirely, even if the
-  // station is actively reporting one, leaving only the manual rows.
+  // showAutoNotams now gates the automated feed in the OTHER carousel
+  // state (the cards branch below, "Runway In Use") rather than anything
+  // here - see autoNotamEntries/the Automated NOTAM section further
+  // down. This panel (State B) went back to manual notices only: the old
+  // weather.notams-sourced auto feed it used to merge in here was never
+  // actually a live external NOTAM source (it was whatever text showed
+  // up in a specific field scraped off the local ATC weather-station
+  // page, effectively always empty in practice) - real automated NOTAMs
+  // now come from functions/api/public/notams.ts instead, surfaced next
+  // to Runway Status/Circuit Direction where they're more visible.
   const showAutoNotams = opsPanel?.showAutoNotams ?? true
-  // Auto-NOTAMs are pulled, not authored - always the fixed default
-  // size, no per-notice size control exposed for them (that's only for
-  // the manual rows, which already come as {text,size} from opsPanel).
-  const autoNotams: SafetyNotice[] =
-    !weather || liveDataUnavailable || !showAutoNotams
-      ? []
-      : weather.notams.map((text) => ({ text, size: 'md' as const, enabled: true }))
   // enabled === false explicitly excludes a row from display entirely
   // (not greyed out, not counted toward "+N more" - simply absent from
   // the array NotamsPanel ever sees). !== false rather than === true so
@@ -185,15 +234,14 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // defensive against any stale/unexpected data) defaults to shown,
   // matching the migration's own enabled=true default.
   const manualNotices = (opsPanel?.safetyNotices ?? []).filter((n) => n.enabled !== false)
-  const allNotices = [...autoNotams, ...manualNotices]
   // 'N/A' as a single block preserves the exact prior informational
   // behaviour (weather/mock-fallback uncertainty overrides even real
   // manual notices) while fitting State B's one-block-per-entry shape.
   const noticesForDisplay: SafetyNotice[] =
     !weather || liveDataUnavailable
       ? [{ text: 'N/A', size: 'md', enabled: true }]
-      : allNotices.length > 0
-        ? allNotices
+      : manualNotices.length > 0
+        ? manualNotices
         : [{ text: 'No active notices', size: 'md', enabled: true }]
 
   // Runway Status and Circuit Direction come from ops_panel_state (set
@@ -217,6 +265,18 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   const runwayStatusValue = opsPanel ? `${opsPanel.activeRunwayEnd} Open` : '08/26 Open'
   const circuitDirectionValue = `${circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left')} circuit`
   const cards = [...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : [])]
+
+  // Critical first. Capped to 3 with a quiet "+N more" rather than
+  // internal scrolling, matching NotamsPanel's own "+N more" convention
+  // for State B. Nothing rendered at all while autoNotams is still null
+  // (not yet fetched) or genuinely empty - unlike Runway Status/Circuit
+  // Direction there's no "N/A"-style placeholder for this section, since
+  // right now (no provider credentials configured yet) it will always be
+  // empty for every tenant regardless of the toggle - see
+  // functions/api/public/notams.ts's own comment.
+  const sortedAutoNotams = [...(autoNotams ?? [])].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+  const visibleAutoNotams = sortedAutoNotams.slice(0, MAX_AUTO_NOTAMS_SHOWN)
+  const hiddenAutoNotamsCount = sortedAutoNotams.length - visibleAutoNotams.length
 
   // notamsOnly skips the "Ops Panel" heading/flip-state wrapper entirely -
   // NotamsPanel already renders its own complete, self-styled bordered
@@ -256,6 +316,27 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
                 <div className="text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
               </div>
             </div>
+            {/* Beneath Runway In Use, above Airfield Info - NOTAMs are
+                more time-sensitive than Airfield Info's static text (PPR
+                hours etc.), so the more urgent thing sits higher.
+                showAutoNotams preserves the toggle's existing meaning:
+                ON shows this section when there's data, OFF shows
+                nothing here regardless (manual Safety Notices in State B
+                are unaffected by this flag either way). */}
+            {showAutoNotams && visibleAutoNotams.length > 0 && (
+              <div className="rounded-3xl border border-border bg-card p-5">
+                <div className="text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs</div>
+                <div className="mt-3 flex flex-col gap-2">
+                  {visibleAutoNotams.map((notam) => (
+                    <div key={notam.id} className="flex items-start gap-2 text-sm text-primary">
+                      <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
+                      <span>{notam.text}</span>
+                    </div>
+                  ))}
+                  {hiddenAutoNotamsCount > 0 && <div className="text-xs text-muted-500">+{hiddenAutoNotamsCount} more</div>}
+                </div>
+              </div>
+            )}
             {cards.map((card) => (
               <div key={card.title} className="rounded-3xl border border-border bg-card p-5">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{card.title}</div>

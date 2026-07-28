@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import AirfieldLocationSection from '../components/config/AirfieldLocationSection'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
 import IngestedWeatherConfigSection from '../components/config/IngestedWeatherConfigSection'
@@ -146,6 +147,10 @@ export default function ConfigPage(): JSX.Element {
           {config.activeProvider === 'ingested' && <IngestedWeatherConfigSection />}
           {config.activeProvider === 'mock' && <MockWeatherConfigSection />}
         </div>
+      </div>
+
+      <div className="mt-6">
+        <AirfieldLocationSection />
       </div>
 
       {/* Omitted entirely (no placeholder) for a tenant with no physical
