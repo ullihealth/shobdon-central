@@ -4,24 +4,18 @@
 // state, gated client-side on the same ops_panel_state.showAutoNotams
 // flag /atc-control's "Automated NOTAM Feed" toggle already controls.
 //
-// No real provider credentials exist yet (FAA_NOTAM_CLIENT_ID/
-// FAA_NOTAM_CLIENT_SECRET are unset in every environment as of this
-// writing) - this is deliberate. The endpoint always degrades to
-// { notams: [], providerConfigured: false } rather than erroring when no
-// provider is configured, so this ships safely today and starts
-// returning real data the moment credentials are added later, with no
-// further code changes.
-//
-// FAA NOTAM API coverage caveat (UNVERIFIED - flagged, not resolved):
-// this is the only provider wired up so far. It's documented as covering
-// the US National Airspace System; UK ICAO codes (e.g. Shobdon's EGBS)
-// are NOT documented as covered, and this has never been tested live
-// against a real response (no credentials available to this round of
-// work). parseFaaResponse() below is written defensively against FAA's
-// publicly documented response shape, but has not been verified against
-// a real payload - check/adjust it once real credentials exist. A second,
-// UK-capable provider can be added as a sibling to createFaaProvider()
-// without touching anything below getProvider().
+// Active provider: NOTAMinfo (notaminfo.com), a free RSS feed tied to a
+// registered account (NOTAMINFO_FEED_URL, e.g.
+// https://notaminfo.com/feed?u=Jeff%20Thompson) - confirmed live and
+// working against a real 7-item pull. It's an AREA feed, not a
+// point/radius query - most items are nationwide/administrative
+// notices with nothing to do with any one airfield, so this file does
+// its own geographic filtering (see parseQLineLocation/
+// parseNotamInfoFeed below) rather than trusting every item the feed
+// returns. FAA_NOTAM_CLIENT_ID/SECRET remain wired but unconfigured -
+// kept as a fallback slot, not the active path (see the FAA-specific
+// comment further down for its own unresolved UK-coverage caveat).
+// NOTAMINFO_FEED_URL takes priority in getProvider() below.
 
 import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantHost";
 
@@ -41,6 +35,10 @@ type KVNamespace = {
 interface Env {
   DB: D1Database;
   WEATHER_CACHE: KVNamespace;
+  // NOTAMinfo (notaminfo.com) - the active provider. A per-account RSS
+  // feed URL, not a per-request API key/secret pair - confirmed live,
+  // see this file's top comment.
+  NOTAMINFO_FEED_URL?: string;
   FAA_NOTAM_CLIENT_ID?: string;
   FAA_NOTAM_CLIENT_SECRET?: string;
   // Generic second-provider slot (e.g. Laminar Data Hub) - unset today,
@@ -67,9 +65,26 @@ const SHOBDON_LONGITUDE = -2.8821;
 
 const NOTAM_RADIUS_NM = 8;
 const NOTAM_DATA_TTL_SECONDS = 24 * 60 * 60; // 24h floor - always-present last-known-good
-const NOTAM_FRESH_TTL_SECONDS = 12 * 60; // 10-15 min sentinel, active hours only
-const ACTIVE_HOURS_START = 7;
-const ACTIVE_HOURS_END = 19;
+// 240 minutes = the feed's own declared <ttl>, confirmed directly
+// against a live pull (not guessed) - replaces the old 10-15min/12h
+// active-hours split entirely. That finer-grained, time-of-day-aware
+// gating existed to conserve calls against a paid, per-request-priced
+// API; NOTAMinfo is a free, account-based feed with its own stated
+// refresh cadence, so there's no reason to vary caching behaviour by
+// time of day at all - always just respect the feed's own number.
+const NOTAM_FRESH_TTL_SECONDS = 240 * 60;
+
+// Real-world evidence this needed to be looser than "must be within the
+// item's own declared radius": Shobdon's real coordinates
+// (52.2416, -2.8821) are ~4.3nm from the Eyton crane NOTAM's parsed
+// point (5215N00246W, radius 001) - well outside that item's own 1nm
+// radius, yet it's a genuinely relevant local notice (confirmed against
+// the real feed pull). The item's own radius is used ONLY to separate
+// "a real, specific point notice" from the 999nm blanket/nationwide
+// sentinel (see parseNotamInfoFeed below) - actual relevance-to-tenant
+// is judged against this single, more generous, fixed cutoff instead.
+const NOTAM_LOCAL_RADIUS_CUTOFF_NM = 50;
+const EARTH_RADIUS_NM = 3440.065;
 
 interface TenantLocationRow {
   icaoCode: string | null;
@@ -95,26 +110,19 @@ interface NotamProviderResult {
 
 type CacheSource = "live" | "cached" | "stale-fallback" | "none";
 
-// 07:00-19:00 Europe/London, resolved via Intl.DateTimeFormat rather than
-// a fixed UTC offset - a fixed offset would silently be wrong for half
-// the year across the BST/GMT transition. hourCycle: 'h23' pinned
-// explicitly rather than relying on hour12: false, which has known
-// midnight-as-"24" quirks in some environments.
-function isActiveHoursLondon(now: Date): boolean {
-  const hourString = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
-    hourCycle: "h23",
-    hour: "numeric",
-  }).format(now);
-  const hour = Number(hourString);
-  return hour >= ACTIVE_HOURS_START && hour < ACTIVE_HOURS_END;
-}
-
 // Keyed by resolved airfield, not by tenant - if a second tenant later
 // shares an airfield, they share one cache entry (and one upstream call
 // budget) rather than fragmenting it per-tenant. ICAO preferred when
 // available (most precise, most likely to match how a real provider
 // indexes NOTAMs); rounded lat/lon + radius otherwise.
+//
+// Known imprecision for NOTAMinfo specifically: this feed is a single
+// account-wide feed (NOTAMINFO_FEED_URL), not a per-location query, so
+// two tenants with different coordinates genuinely cause two separate
+// upstream fetches of the exact same feed content, each then filtered
+// differently. Harmless today (Shobdon is still the only real tenant)
+// and not worth restructuring the cache around pre-emptively - revisit
+// if/when a second tenant with automated NOTAMs actually onboards.
 function buildCacheKey(icao: string | null, lat: number, lon: number, radiusNm: number): string {
   if (icao) return `icao:${icao}:r${radiusNm}`;
   return `geo:${lat.toFixed(2)},${lon.toFixed(2)}:r${radiusNm}`;
@@ -137,6 +145,134 @@ function classifySeverity(text: string): NotamSeverity {
 
 interface NotamProvider {
   fetch(icao: string | null, lat: number, lon: number): Promise<NotamProviderResult | null>;
+}
+
+function haversineNm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return EARTH_RADIUS_NM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+interface QLineLocation {
+  lat: number;
+  lon: number;
+  radiusNm: number;
+}
+
+// NOTAMinfo's <description> opens with a raw ICAO-format Q-line whose
+// final '/'-delimited segment is always a 14-character coordinate+radius
+// token, e.g. "5215N00253W005" - DDMM[N/S] (5 chars, latitude) +
+// DDDMM[E/W] (6 chars, longitude) + a 3-digit radius in nautical miles.
+// Confirmed against a real 7-item pull of this exact feed, not guessed
+// from spec alone. The Q-line is always followed by a double <br><br>
+// before the human-readable <pre> text - splitting on that is how the
+// Q-line itself gets isolated here.
+function parseQLineLocation(rawDescription: string): QLineLocation | null {
+  const qLine = rawDescription.split(/&lt;br&gt;&lt;br&gt;|<br\s*\/?>\s*<br\s*\/?>/i)[0];
+  const segments = qLine.split("/");
+  const token = segments[segments.length - 1]?.trim();
+  if (!token) return null;
+
+  const match = token.match(/^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])(\d{3})$/);
+  if (!match) return null;
+
+  const [, latDeg, latMin, latHem, lonDeg, lonMin, lonHem, radius] = match;
+  const lat = (Number(latDeg) + Number(latMin) / 60) * (latHem === "S" ? -1 : 1);
+  const lon = (Number(lonDeg) + Number(lonMin) / 60) * (lonHem === "W" ? -1 : 1);
+  return { lat, lon, radiusNm: Number(radius) };
+}
+
+function decodeXmlEntities(text: string): string {
+  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+}
+
+// Strips the raw Q-line and HTML markup, keeping the human-readable
+// summary plus the LOWER/UPPER/FROM/TO/SCHEDULE lines that follow it -
+// what a reader actually needs, without the machine-oriented Q-line
+// prefix or raw <pre>/<br> tags. effectiveFrom/effectiveTo are left null
+// on these entries rather than parsed out of the "FROM: ... TO: ..."
+// text (a free-text date format, e.g. "19 Jul 2026 08:15 GMT (09:15
+// BST)") - that text stays readable to a human either way, and a
+// bespoke parser for it wasn't asked for this round.
+function cleanNotamInfoText(rawDescription: string): string {
+  const decoded = decodeXmlEntities(rawDescription);
+  const afterQLine = decoded.replace(/^[^<]*<br\s*\/?>\s*<br\s*\/?>/i, "");
+  return afterQLine
+    .replace(/<pre>/gi, "")
+    .replace(/<\/pre>/gi, "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractTagContent(block: string, tag: string): string | null {
+  const match = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return match ? match[1].trim() : null;
+}
+
+// Plain regex-based extraction, not a real XML parser - Workers has no
+// DOMParser, and this feed's structure is regular/predictable enough
+// (confirmed against a real pull: no CDATA anywhere, one <item> per
+// NOTAM) that a hand-rolled parser is a reasonable fit, matching this
+// codebase's existing convention (worker/src/index.ts's own
+// extractFieldsById for the ATC weather-station page).
+//
+// Geographic filtering, not name-matching: most items in a real pull are
+// nationwide/administrative notices with a 999nm Q-line radius (the
+// standard NOTAM convention for "affects the whole FIR/country", not a
+// real distance) - those are always dropped regardless of how close
+// their nominal point happens to be. Genuinely local items carry a real,
+// small radius. Actual relevance-to-tenant is judged against the fixed
+// NOTAM_LOCAL_RADIUS_CUTOFF_NM, not the item's own (often much smaller)
+// declared radius - see that constant's own comment for the concrete
+// real-world case (the Eyton crane NOTAM) that ruled out the more
+// literal reading.
+function parseNotamInfoFeed(xml: string, fallbackIcao: string | null, tenantLat: number, tenantLon: number): NotamProviderResult {
+  const notams: NotamEntry[] = [];
+  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
+
+  for (const block of itemBlocks) {
+    const guid = extractTagContent(block, "guid");
+    const rawDescription = extractTagContent(block, "description");
+    if (!rawDescription) continue;
+
+    const location = parseQLineLocation(rawDescription);
+    if (!location) continue;
+    if (location.radiusNm >= NOTAM_LOCAL_RADIUS_CUTOFF_NM) continue;
+
+    const distanceNm = haversineNm(tenantLat, tenantLon, location.lat, location.lon);
+    if (distanceNm > NOTAM_LOCAL_RADIUS_CUTOFF_NM) continue;
+
+    const text = cleanNotamInfoText(rawDescription);
+    if (!text) continue;
+
+    notams.push({
+      id: guid ?? crypto.randomUUID(),
+      icao: fallbackIcao ?? "",
+      text,
+      effectiveFrom: null,
+      effectiveTo: null,
+      severity: classifySeverity(text),
+    });
+  }
+
+  return { fetchedAt: new Date().toISOString(), notams };
+}
+
+function createNotamInfoProvider(env: Env): NotamProvider | null {
+  if (!env.NOTAMINFO_FEED_URL) return null;
+  const feedUrl = env.NOTAMINFO_FEED_URL;
+
+  return {
+    async fetch(icao, lat, lon) {
+      const response = await fetch(feedUrl);
+      if (!response.ok) return null;
+      const xml = await response.text();
+      return parseNotamInfoFeed(xml, icao, lat, lon);
+    },
+  };
 }
 
 // UNVERIFIED against a live response - see this file's top comment.
@@ -222,7 +358,7 @@ function createGenericProvider(env: Env): NotamProvider | null {
 }
 
 function getProvider(env: Env): NotamProvider | null {
-  return createFaaProvider(env) ?? createGenericProvider(env);
+  return createNotamInfoProvider(env) ?? createFaaProvider(env) ?? createGenericProvider(env);
 }
 
 async function fetchFromProvider(provider: NotamProvider, icao: string | null, lat: number, lon: number): Promise<NotamProviderResult | null> {
@@ -233,43 +369,29 @@ async function fetchFromProvider(provider: NotamProvider, icao: string | null, l
   }
 }
 
+// No more active-hours branching - that time-of-day split existed only
+// to conserve calls to a paid, per-request-priced API (see
+// NOTAM_FRESH_TTL_SECONDS's own comment). This now always follows the
+// same single path, 24/7: serve straight from cache while the fresh
+// sentinel holds (up to 240 minutes, the feed's own declared cadence);
+// otherwise refetch, and on a failed refetch fall back to whatever's in
+// `data` (up to its own longer 24h floor) rather than a hard error.
 async function resolveNotams(
   env: Env,
   provider: NotamProvider,
   cacheKey: string,
   icao: string | null,
   lat: number,
-  lon: number,
-  active: boolean
+  lon: number
 ): Promise<{ payload: NotamProviderResult; source: CacheSource }> {
   const dataKey = `notam:data:${cacheKey}`;
   const freshKey = `notam:fresh:${cacheKey}`;
 
   const cached = await env.WEATHER_CACHE.get<NotamProviderResult>(dataKey, "json");
-
-  if (active) {
-    const freshSentinel = await env.WEATHER_CACHE.get(freshKey);
-    if (freshSentinel && cached) {
-      return { payload: cached, source: "cached" };
-    }
-
-    const fetched = await fetchFromProvider(provider, icao, lat, lon);
-    if (fetched) {
-      await env.WEATHER_CACHE.put(dataKey, JSON.stringify(fetched), { expirationTtl: NOTAM_DATA_TTL_SECONDS });
-      await env.WEATHER_CACHE.put(freshKey, "1", { expirationTtl: NOTAM_FRESH_TTL_SECONDS });
-      return { payload: fetched, source: "live" };
-    }
-
-    // Upstream failed - a blank panel is worse than a slightly old one.
-    if (cached) return { payload: cached, source: "stale-fallback" };
-    return { payload: { fetchedAt: new Date().toISOString(), notams: [] }, source: "none" };
+  const freshSentinel = await env.WEATHER_CACHE.get(freshKey);
+  if (freshSentinel && cached) {
+    return { payload: cached, source: "cached" };
   }
-
-  // Off-hours: the fresh sentinel is never consulted here, by design -
-  // serve `data` directly regardless of its age (up to the 24h floor
-  // TTL), and only touch upstream at all if there's genuinely no data
-  // yet (cold start), doing exactly one fetch in that case.
-  if (cached) return { payload: cached, source: "cached" };
 
   const fetched = await fetchFromProvider(provider, icao, lat, lon);
   if (fetched) {
@@ -277,6 +399,9 @@ async function resolveNotams(
     await env.WEATHER_CACHE.put(freshKey, "1", { expirationTtl: NOTAM_FRESH_TTL_SECONDS });
     return { payload: fetched, source: "live" };
   }
+
+  // Upstream failed - a blank panel is worse than a slightly old one.
+  if (cached) return { payload: cached, source: "stale-fallback" };
   return { payload: { fetchedAt: new Date().toISOString(), notams: [] }, source: "none" };
 }
 
@@ -316,8 +441,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const cacheKey = buildCacheKey(icao, lat, lon, NOTAM_RADIUS_NM);
-  const active = isActiveHoursLondon(new Date());
-  const { payload, source } = await resolveNotams(env, provider, cacheKey, icao, lat, lon, active);
+  const { payload, source } = await resolveNotams(env, provider, cacheKey, icao, lat, lon);
 
   return jsonResponse({
     icao,
