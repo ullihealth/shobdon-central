@@ -208,11 +208,15 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // non-empty value to show, rather than displaying a hardcoded string
   // that would look like real data but isn't.
   const airfieldInfoText = opsPanel?.airfieldInfoText.trim()
-  const cards = [
-    { title: 'Runway Status', value: opsPanel ? `${opsPanel.activeRunwayEnd} Open` : '08/26 Open' },
-    { title: 'Circuit Direction', value: circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left') },
-    ...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : []),
-  ]
+  // Runway Status and Circuit Direction used to be two separate cards -
+  // combined per ATC feedback into one "Runway In Use" card, two values
+  // side by side, since circuit direction is fixed per runway at this
+  // airfield and reading them apart was extra work. Still two independent
+  // values under the hood (see AtcControlPage.tsx's auto-link toggle) -
+  // this is purely how they're displayed, not a data change.
+  const runwayStatusValue = opsPanel ? `${opsPanel.activeRunwayEnd} Open` : '08/26 Open'
+  const circuitDirectionValue = `${circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left')} circuit`
+  const cards = [...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : [])]
 
   // notamsOnly skips the "Ops Panel" heading/flip-state wrapper entirely -
   // NotamsPanel already renders its own complete, self-styled bordered
@@ -245,6 +249,13 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
           // height its own padding+content needs; any leftover column
           // height simply stays empty below, which is the point.
           <div className="flex flex-col gap-4">
+            <div className="rounded-3xl border border-border bg-card p-5">
+              <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Runway In Use</div>
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <div className="text-3xl font-semibold text-primary">{runwayStatusValue}</div>
+                <div className="text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
+              </div>
+            </div>
             {cards.map((card) => (
               <div key={card.title} className="rounded-3xl border border-border bg-card p-5">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{card.title}</div>
