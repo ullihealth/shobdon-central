@@ -116,6 +116,13 @@ export default function AtcControlPage(): JSX.Element {
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>(
     Array.from({ length: SAFETY_NOTICE_ROWS }, () => ({ text: '', size: 'md', enabled: true }))
   )
+  // ATC-triggered override (migration 0054) - when on, every render
+  // location that shows activeRunwayEnd/circuitDirection shows "RUNWAYS
+  // CLOSED" instead, everywhere at once (see RightInfoPanel.tsx's own
+  // comment). Independent of activeRunwayEnd/circuitDirection - closing
+  // doesn't clear which end was active, so re-opening restores it
+  // without needing to re-pick.
+  const [runwaysClosed, setRunwaysClosed] = useState(false)
   const [showAutoNotams, setShowAutoNotams] = useState(true)
   const [notamsIntervalSeconds, setNotamsIntervalSeconds] = useState(NOTAMS_INTERVAL_DEFAULT_SECONDS)
   // Default OFF matches the D1 column's own DEFAULT 0 - deploying this
@@ -155,6 +162,7 @@ export default function AtcControlPage(): JSX.Element {
         setSafetyNotices(
           Array.from({ length: SAFETY_NOTICE_ROWS }, (_, i) => notices[i] ?? { text: '', size: 'md', enabled: true })
         )
+        setRunwaysClosed(opsPanel.runwaysClosed ?? false)
         setShowAutoNotams(opsPanel.showAutoNotams ?? true)
         setNotamsIntervalSeconds(opsPanel.notamsCarouselIntervalSeconds ?? NOTAMS_INTERVAL_DEFAULT_SECONDS)
         setWeatherSummaryChartEnabled(opsPanel.weatherSummaryChartEnabled ?? false)
@@ -277,6 +285,7 @@ export default function AtcControlPage(): JSX.Element {
           circuitDirection,
           airfieldInfoText,
           safetyNotices: safetyNotices.filter((n) => n.text.trim().length > 0),
+          runwaysClosed,
           showAutoNotams,
           notamsCarouselIntervalSeconds: notamsIntervalSeconds,
           weatherSummaryChartEnabled,
@@ -366,6 +375,22 @@ export default function AtcControlPage(): JSX.Element {
                 value={activeRunwayEnd}
                 onChange={handleRunwayEndChange}
               />
+              {/* Override, not a replacement for the value above - which
+                  end is active stays set underneath while closed, so
+                  re-opening doesn't need it re-picked (see runwaysClosed
+                  state's own comment). Red when on, matching the
+                  "RUNWAYS CLOSED" red the dashboard itself shows. */}
+              <label className="mt-3 flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={runwaysClosed}
+                  onChange={(event) => setRunwaysClosed(event.target.checked)}
+                  className="h-3.5 w-3.5 accent-status-bad"
+                />
+                <span className={`text-xs font-bold uppercase tracking-widest ${runwaysClosed ? 'text-status-bad' : 'text-muted-400'}`}>
+                  Runways Closed
+                </span>
+              </label>
             </div>
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
               <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">

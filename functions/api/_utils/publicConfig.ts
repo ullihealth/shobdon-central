@@ -96,6 +96,7 @@ interface OpsPanelRow {
   weatherSummaryChartEnabled: number;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
+  runwaysClosed: number;
 }
 
 // Dedicated Gas Prices store (migration 0049) - deliberately separate
@@ -354,7 +355,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         newCameraId: string | null;
       }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed FROM ops_panel_state WHERE organizationId = ?")
       .bind(organizationId)
       .first<OpsPanelRow>(),
     // Which dashboard template renders at "/" for this tenant - the
@@ -499,6 +500,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         weatherSummaryChartEnabled: !!opsPanelRow.weatherSummaryChartEnabled,
         weatherSummaryStateADurationSeconds: opsPanelRow.weatherSummaryStateADurationSeconds,
         weatherSummaryStateBDurationSeconds: opsPanelRow.weatherSummaryStateBDurationSeconds,
+        runwaysClosed: !!opsPanelRow.runwaysClosed,
       }
     : null;
 

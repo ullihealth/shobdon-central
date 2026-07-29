@@ -44,6 +44,7 @@ interface OpsPanelRow {
   weatherSummaryChartEnabled: number;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
+  runwaysClosed: number;
 }
 
 interface SafetyNoticeInput {
@@ -76,6 +77,14 @@ interface OpsPanelInput {
   weatherSummaryChartEnabled: boolean;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
+  // ATC-triggered override (migration 0054) - when true, every render
+  // location that shows activeRunwayEnd/circuitDirection shows
+  // "RUNWAYS CLOSED" instead, everywhere at once (see RightInfoPanel.tsx's
+  // own comment). Independent of activeRunwayEnd/circuitDirection
+  // themselves - closing runways doesn't clear which one was last
+  // active, so re-opening restores the same values without ATC needing
+  // to re-pick them.
+  runwaysClosed: boolean;
 }
 
 const AIRFIELD_INFO_MAX_LENGTH = 60;
@@ -123,7 +132,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { organizationId } = result.membership;
 
   const row = await env.DB
-    .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds FROM ops_panel_state WHERE organizationId = ?")
+    .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed FROM ops_panel_state WHERE organizationId = ?")
     .bind(organizationId)
     .first<OpsPanelRow>();
 
@@ -138,6 +147,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       weatherSummaryChartEnabled: false,
       weatherSummaryStateADurationSeconds: 8,
       weatherSummaryStateBDurationSeconds: 5,
+      runwaysClosed: false,
     });
   }
 
@@ -168,6 +178,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     weatherSummaryChartEnabled: !!row.weatherSummaryChartEnabled,
     weatherSummaryStateADurationSeconds: row.weatherSummaryStateADurationSeconds,
     weatherSummaryStateBDurationSeconds: row.weatherSummaryStateBDurationSeconds,
+    runwaysClosed: !!row.runwaysClosed,
   });
 };
 
@@ -212,6 +223,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (typeof body.showAutoNotams !== "boolean") {
     return jsonResponse({ error: "showAutoNotams must be a boolean" }, 400);
+  }
+  if (typeof body.runwaysClosed !== "boolean") {
+    return jsonResponse({ error: "runwaysClosed must be a boolean" }, 400);
   }
   if (
     !Number.isInteger(body.notamsCarouselIntervalSeconds) ||
@@ -265,8 +279,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
-      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organizationId) DO UPDATE SET
          activeRunwayEnd = excluded.activeRunwayEnd,
          circuitDirection = excluded.circuitDirection,
@@ -277,6 +291,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
          weatherSummaryChartEnabled = excluded.weatherSummaryChartEnabled,
          weatherSummaryStateADurationSeconds = excluded.weatherSummaryStateADurationSeconds,
          weatherSummaryStateBDurationSeconds = excluded.weatherSummaryStateBDurationSeconds,
+         runwaysClosed = excluded.runwaysClosed,
          updatedAt = excluded.updatedAt`
     )
     .bind(
@@ -290,6 +305,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       body.weatherSummaryChartEnabled ? 1 : 0,
       body.weatherSummaryStateADurationSeconds,
       body.weatherSummaryStateBDurationSeconds,
+      body.runwaysClosed ? 1 : 0,
       now
     )
     .run();

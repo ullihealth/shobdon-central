@@ -17,6 +17,13 @@ export interface OpsPanelPublic {
   safetyNotices: SafetyNotice[]
   showAutoNotams: boolean
   notamsCarouselIntervalSeconds: number
+  // ATC-triggered override (migration 0054) - when true, every render
+  // location that shows activeRunwayEnd/circuitDirection shows
+  // "RUNWAYS CLOSED" instead (see the Runway In Use card below).
+  // Deliberately does NOT affect CompassPanel.tsx - wind/compass data
+  // stays meaningful regardless of runway closure status, per explicit
+  // instruction.
+  runwaysClosed: boolean
 }
 
 // 'Left'/'Right' (not 'Left-hand'/'Right-hand') - condensed so
@@ -424,19 +431,29 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
           <div className="flex flex-col gap-4">
             <div className="rounded-3xl border border-border bg-card p-5">
               <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Runway In Use</div>
-              {/* flex, not grid-cols-2 (was an even 50/50 split) - a
-                  2-character runway number doesn't need the same width
-                  as "Left circuit"/"Right circuit", and giving it half
-                  the row was exactly backwards: the runway number sat in
-                  a mostly-empty column while circuit direction was
-                  starved for room and wrapped. flex-shrink-0 sizes the
-                  runway number to its own content only; the circuit
-                  direction cell (flex-1) gets everything left over,
-                  which is what actually needs the extra width. */}
-              <div className="mt-3 flex items-center gap-4">
-                <div className="flex-shrink-0 text-3xl font-semibold text-primary">{runwayStatusValue}</div>
-                <div className="flex-1 text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
-              </div>
+              {opsPanel?.runwaysClosed ? (
+                // ATC override (migration 0054) - supersedes both values
+                // below as one combined message, not two separately-red
+                // cells: a circuit direction has no operational meaning
+                // for a closed runway. activeRunwayEnd/circuitDirection
+                // stay set underneath (see AtcControlPage.tsx's toggle
+                // comment), so this is purely a display swap.
+                <div className="mt-3 text-3xl font-semibold text-status-bad">RUNWAYS CLOSED</div>
+              ) : (
+                // flex, not grid-cols-2 (was an even 50/50 split) - a
+                // 2-character runway number doesn't need the same width
+                // as "Left circuit"/"Right circuit", and giving it half
+                // the row was exactly backwards: the runway number sat in
+                // a mostly-empty column while circuit direction was
+                // starved for room and wrapped. flex-shrink-0 sizes the
+                // runway number to its own content only; the circuit
+                // direction cell (flex-1) gets everything left over,
+                // which is what actually needs the extra width.
+                <div className="mt-3 flex items-center gap-4">
+                  <div className="flex-shrink-0 text-3xl font-semibold text-primary">{runwayStatusValue}</div>
+                  <div className="flex-1 text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
+                </div>
+              )}
             </div>
             {/* Beneath Runway In Use, above Airfield Info - NOTAMs are
                 more time-sensitive than Airfield Info's static text (PPR
