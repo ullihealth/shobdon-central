@@ -160,3 +160,10 @@ export const TENANT_ONBOARDING_CONTENT_URL = '/api/tenant/onboarding-content'
 // functions/api/platform/onboarding-content/index.ts. Consumed by
 // PlatformOnboardingContentPage.tsx.
 export const PLATFORM_ONBOARDING_CONTENT_URL = '/api/platform/onboarding-content'
+
+// Platform-admin only: internal, app-wide "Developer Updates" running
+// changelog (migration 0050) - functions/api/platform/updates/. Not
+// tenant-facing. Consumed by PlatformUpdatesPage.tsx.
+export const PLATFORM_UPDATES_URL = '/api/platform/updates'
+export const PLATFORM_UPDATES_RELEASE_URL = '/api/platform/updates/release'
+export const platformUpdateUrl = (id: string): string => `/api/platform/updates/${id}`

@@ -17,6 +17,7 @@ import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformCamerasPage from './pages/PlatformCamerasPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
+import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
@@ -108,6 +109,17 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformVisitsPage />
+            </RequireAuth>
+          }
+        />
+        {/* Same standalone-outside-AdminLayout treatment as the routes
+            above - internal, app-wide running changelog (migration
+            0050), gated the same way. */}
+        <Route
+          path="/platform/updates"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformUpdatesPage />
             </RequireAuth>
           }
         />
