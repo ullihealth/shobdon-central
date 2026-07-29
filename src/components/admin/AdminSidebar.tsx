@@ -6,6 +6,7 @@ import SidebarGroup from './SidebarGroup'
 import SidebarUserMenu from './SidebarUserMenu'
 import OrgSwitcher, { type MembershipSummary } from './OrgSwitcher'
 import { useHostReachable } from '../../hooks/useHostReachable'
+import { isPagesPlatformHost } from '../../utils/isPagesPlatformHost'
 
 const COLLAPSE_STORAGE_KEY = 'shobdon.adminSidebar.collapsedGroups.v1'
 
@@ -91,7 +92,15 @@ export default function AdminSidebar(): JSX.Element {
   // '/' only when this IS the tenant's own subdomain already. null
   // (still loading) falls through to the unchanged relative-Link
   // behaviour, same as every other pre-resolution default in this file.
-  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
+  // isPagesPlatformHost also counts as "own" - this app's own pages.dev
+  // alias (production, no per-tenant DNS yet) AND any Cloudflare Pages
+  // PREVIEW deployment (its own hash subdomain) both resolve THIS
+  // tenant's real content directly (see resolveTenantHost.ts's own
+  // fallback). Without this, every preview deployment's Home link
+  // bounced admins straight to production instead of staying on the
+  // preview they were actually reviewing - found investigating exactly
+  // that report.
+  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname || isPagesPlatformHost(window.location.hostname)
   const crossHostSubdomain = !isOnOwnSubdomain ? tenantSubdomain : null
   const subdomainReachable = useHostReachable(crossHostSubdomain)
   const subdomainConfirmedDown = !isOnOwnSubdomain && subdomainReachable === false
