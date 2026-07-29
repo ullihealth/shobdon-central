@@ -22,6 +22,7 @@ import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
+import PreviewBanner from './components/PreviewBanner'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
 import RootRoute from './components/RootRoute'
@@ -30,6 +31,7 @@ import AdminLayout from './components/admin/AdminLayout'
 export default function App(): JSX.Element {
   return (
     <BrowserRouter>
+      <PreviewBanner />
       <RemoteRefreshWatcher />
       <Routes>
         <Route path="/login" element={<LoginPage />} />

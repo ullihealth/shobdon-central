@@ -22,3 +22,23 @@
 export function isPagesPlatformHost(hostname: string): boolean {
   return hostname.endsWith('.pages.dev') || hostname === 'localhost'
 }
+
+// Deliberately narrower than isPagesPlatformHost above - that function
+// treats production's own bare shobdon-central.pages.dev alias AND any
+// preview deployment's hash subdomain as equally "my own host" (correct
+// for the link-redirect decision it exists for). This one exists for a
+// different question - "is this NOT the real production site at all" -
+// so the bare production alias must return false here while a preview
+// hash subdomain (or localhost) returns true. Used by PreviewBanner.tsx
+// to show a persistent "this isn't the live site" indicator - a false
+// positive on the bare pages.dev alias would incorrectly flag real
+// production traffic (still genuinely live for any tenant without
+// per-tenant DNS yet, see resolveTenantHost.ts's own fallback), and a
+// false negative on a preview hash subdomain is exactly the confusion
+// this component exists to prevent (see PreviewBanner.tsx's own
+// comment for the report that prompted this).
+export function isPreviewDeploymentHost(hostname: string): boolean {
+  if (hostname === 'localhost') return true
+  if (hostname === 'shobdon-central.pages.dev') return false
+  return hostname.endsWith('.shobdon-central.pages.dev')
+}
