@@ -643,7 +643,7 @@ export default function MediaLibraryPage(): JSX.Element {
   // below always reflects the true combined totalBytes regardless of
   // this value), never a separate library per screen.
   const [activeScreen, setActiveScreen] = useState<ScreenId>('dashboard')
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
 
   // Info icon popover - same self-contained pattern (no toast/popover
