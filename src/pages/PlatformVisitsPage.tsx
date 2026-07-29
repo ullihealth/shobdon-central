@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 
 const VISITS_URL = '/api/platform/visits'
 
@@ -43,6 +43,24 @@ function formatVisitedAt(iso: string): string {
   })
 }
 
+// One line per row, tab-separated - pastes cleanly into a spreadsheet
+// (Sheets/Excel both split on tab) while still being plain readable
+// text if pasted somewhere that isn't. Includes a header row so a
+// paste destination that DOES respect it gets labelled columns.
+function visitsToClipboardText(rows: Visit[]): string {
+  const header = ['Time', 'Tenant', 'Display', 'IP address', 'User agent'].join('\t')
+  const lines = rows.map((v) =>
+    [
+      formatVisitedAt(v.visitedAt),
+      `${v.tenantName} (${v.tenantSlug})`,
+      v.displaySlug,
+      v.ipAddress ?? '—',
+      v.userAgent ?? '—',
+    ].join('\t')
+  )
+  return [header, ...lines].join('\n')
+}
+
 // Backs the Platform Admin "Visit Log" nav entry - a plain,
 // reverse-chronological view over display_visits (migration 0041), the
 // per-visit log written by functions/api/public/heartbeat.ts each time a
@@ -62,6 +80,8 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [sortField, setSortField] = useState<SortField>('visitedAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
 
   // Tenant slug -> id, accumulated (never shrunk) across every response
   // this page has seen so far - needed because tenantFilter is a slug
@@ -73,13 +93,14 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [knownTenants, setKnownTenants] = useState<Map<string, { id: number; name: string }>>(new Map())
   const [knownSlugs, setKnownSlugs] = useState<Set<string>>(new Set())
 
-  // Total display_visits is 5,021 rows in production (Shobdon alone:
-  // 4,993) - the backing endpoint caps a single response at 500 (see its
-  // own MAX_ROWS comment), so an unfiltered fetch only ever shows a thin
-  // recent slice. Tenant/display/date-range filters are sent to the
-  // server (not applied client-side against that slice) specifically so
-  // narrowing actually reaches rows outside that window, rather than
-  // just re-filtering what a first, unfiltered load happened to return.
+  // display_visits is well beyond the backing endpoint's single-response
+  // cap (see that endpoint's own MAX_ROWS comment - confirmed against
+  // production, 2026-07: 5,029 total rows, 4,998 of them Shobdon's own),
+  // so an unfiltered fetch only ever shows a thin recent slice. Tenant/
+  // display/date-range filters are sent to the server (not applied
+  // client-side against that slice) specifically so narrowing actually
+  // reaches rows outside that window, rather than just re-filtering
+  // whatever a first, unfiltered load happened to return.
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams()
@@ -157,6 +178,32 @@ export default function PlatformVisitsPage(): JSX.Element {
     return rows
   }, [visits, sortField, sortDirection])
 
+  const allVisibleSelected = filtered.length > 0 && filtered.every((v) => selectedIds.has(v.id))
+
+  function toggleSelectAll() {
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(filtered.map((v) => v.id)))
+  }
+
+  function toggleRowSelected(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // Copies the selected rows if any are checked, otherwise every
+  // currently filtered/sorted row - so the common "just grab everything
+  // I'm looking at" case needs no selection step first, while a
+  // deliberate subset still works via the checkboxes.
+  async function handleCopy() {
+    const rowsToCopy = selectedIds.size > 0 ? filtered.filter((v) => selectedIds.has(v.id)) : filtered
+    await navigator.clipboard.writeText(visitsToClipboardText(rowsToCopy))
+    setCopyStatus('copied')
+    setTimeout(() => setCopyStatus('idle'), 1500)
+  }
+
   if (forbidden) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
@@ -175,7 +222,7 @@ export default function PlatformVisitsPage(): JSX.Element {
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
           Every logged display visit, across every tenant. A row is written when a display's heartbeat sees a new IP
           or user-agent, or roughly every 20 minutes otherwise — not one row per heartbeat ping. Rows older than 30
-          days are pruned automatically.
+          days are pruned automatically. Click a row to see its captured location, if any.
         </p>
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -233,6 +280,18 @@ export default function PlatformVisitsPage(): JSX.Element {
               Clear dates
             </button>
           )}
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={filtered.length === 0}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-40"
+          >
+            {copyStatus === 'copied'
+              ? 'Copied!'
+              : selectedIds.size > 0
+                ? `Copy ${selectedIds.size} selected`
+                : 'Copy all visible'}
+          </button>
           <span className="text-xs text-muted-500">
             {filtered.length} visit{filtered.length === 1 ? '' : 's'}
           </span>
@@ -245,6 +304,15 @@ export default function PlatformVisitsPage(): JSX.Element {
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs font-semibold uppercase tracking-widest text-muted-400">
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all visible rows"
+                      className="h-3.5 w-3.5"
+                    />
+                  </th>
                   <th className="px-4 py-3">
                     <button
                       type="button"
@@ -271,23 +339,83 @@ export default function PlatformVisitsPage(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((visit) => (
-                  <tr key={visit.id} className="border-b border-border/60 last:border-0">
-                    <td className="px-4 py-3 text-xs text-muted-400">{formatVisitedAt(visit.visitedAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold">{visit.tenantName}</div>
-                      <div className="text-xs text-muted-500">{visit.tenantSlug}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-400">{visit.displaySlug}</td>
-                    <td className="px-4 py-3 text-xs text-muted-400">{visit.ipAddress ?? '—'}</td>
-                    <td className="max-w-xs truncate px-4 py-3 text-xs text-muted-500" title={visit.userAgent ?? ''}>
-                      {visit.userAgent ?? '—'}
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((visit) => {
+                  const isExpanded = expandedRowId === visit.id
+                  const isSelected = selectedIds.has(visit.id)
+                  const geoSummary = formatGeoSummary(visit)
+                  return (
+                    <Fragment key={visit.id}>
+                      <tr
+                        className={`cursor-pointer border-b border-border/60 last:border-0 hover:bg-white/5 ${
+                          isSelected ? 'bg-sky-500/10' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleRowSelected(visit.id)}
+                            aria-label={`Select visit ${visit.id}`}
+                            className="h-3.5 w-3.5"
+                          />
+                        </td>
+                        <td
+                          className="px-4 py-3 text-xs text-muted-400"
+                          onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
+                        >
+                          {formatVisitedAt(visit.visitedAt)}
+                        </td>
+                        <td className="px-4 py-3" onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}>
+                          <div className="font-semibold">{visit.tenantName}</div>
+                          <div className="text-xs text-muted-500">{visit.tenantSlug}</div>
+                        </td>
+                        <td
+                          className="px-4 py-3 text-xs text-muted-400"
+                          onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
+                        >
+                          {visit.displaySlug}
+                        </td>
+                        <td
+                          className="px-4 py-3 text-xs text-muted-400"
+                          onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
+                        >
+                          {visit.ipAddress ?? '—'}
+                        </td>
+                        <td
+                          className="max-w-xs truncate px-4 py-3 text-xs text-muted-500"
+                          title={visit.userAgent ?? ''}
+                          onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
+                        >
+                          {visit.userAgent ?? '—'}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-b border-border/60 bg-white/5 last:border-0">
+                          <td colSpan={6} className="px-4 py-3 text-xs">
+                            <span className="font-semibold uppercase tracking-widest text-muted-400">Location: </span>
+                            {geoSummary ? (
+                              <span className="text-muted-300">
+                                {geoSummary}
+                                {visit.geoLatitude && visit.geoLongitude && (
+                                  <span className="ml-2 text-muted-500">
+                                    ({visit.geoLatitude}, {visit.geoLongitude})
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="italic text-muted-500">
+                                Not available (logged before geolocation was added)
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td className="px-4 py-6 text-center text-sm text-muted-500" colSpan={5}>
+                    <td className="px-4 py-6 text-center text-sm text-muted-500" colSpan={6}>
                       {tenantFilter || slugFilter || dateFrom || dateTo
                         ? 'No visits match the current filters.'
                         : 'No visits logged yet.'}
