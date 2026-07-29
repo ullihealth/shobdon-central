@@ -1,4 +1,11 @@
+import { useEffect } from 'react'
 import { isPreviewDeploymentHost } from '../utils/isPagesPlatformHost'
+
+// Same tab-title prefix as the banner itself flags visually - lets a
+// preview tab be told apart from a production one even when buried
+// under a dozen other browser tabs, where the fixed banner isn't
+// visible at all.
+const PREVIEW_TITLE_PREFIX = '[PREVIEW] '
 
 // Fixed-position, unmissable "this isn't the live site" indicator -
 // added after a real report: Jeff mistook a Cloudflare Pages preview
@@ -28,7 +35,35 @@ import { isPreviewDeploymentHost } from '../utils/isPagesPlatformHost'
 // only indicator - the correctness that actually matters (never
 // appearing in production) doesn't depend on pixel-perfect placement.
 export default function PreviewBanner(): JSX.Element | null {
-  if (!isPreviewDeploymentHost(window.location.hostname)) return null
+  const isPreview = isPreviewDeploymentHost(window.location.hostname)
+
+  // MutationObserver, not a one-off assignment - document.title is set
+  // independently by DashboardPage.tsx/TenantDisplayPage.tsx once their
+  // own tenant-config fetch resolves, which happens AFTER this effect's
+  // first run and would otherwise silently overwrite (strip) the prefix
+  // the moment either of those pages loads real data. Observing the
+  // <title> element itself re-applies the prefix after every such
+  // overwrite, on every route, without needing to touch either of
+  // those files (or any future page that sets document.title) - same
+  // "one global component handles every route" reasoning as the banner
+  // itself. Guarded by startsWith so re-applying is idempotent rather
+  // than compounding into "[PREVIEW] [PREVIEW] [PREVIEW] ...".
+  useEffect(() => {
+    if (!isPreview) return
+    const titleEl = document.querySelector('title')
+    if (!titleEl) return
+    function applyPrefix() {
+      if (!document.title.startsWith(PREVIEW_TITLE_PREFIX)) {
+        document.title = PREVIEW_TITLE_PREFIX + document.title
+      }
+    }
+    applyPrefix()
+    const observer = new MutationObserver(applyPrefix)
+    observer.observe(titleEl, { childList: true })
+    return () => observer.disconnect()
+  }, [isPreview])
+
+  if (!isPreview) return null
 
   return (
     <div
