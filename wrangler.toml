@@ -52,3 +52,45 @@ id = "c5ada3c64f1745509ed0977c0ab0c323"
 MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
 
 # AUTH_SECRET is set via: npx wrangler pages secret put AUTH_SECRET
+
+# Preview deployments (any git push to a non-production branch) - a
+# dedicated, isolated D1 database (shobdon-central-preview), NOT
+# production's. Cloudflare Pages treats a committed wrangler.toml as
+# authoritative for Functions bindings on EVERY environment, silently
+# overriding anything configured via the dashboard/API for either
+# production or preview when there's no environment-specific section -
+# confirmed the hard way setting this up: a preview deployment kept
+# resolving to production's real D1 (31656f0d-...) despite the Pages
+# dashboard API reporting a successful preview-only binding change,
+# because the [[d1_databases]] block above has no [env.preview]
+# counterpart to differ from it. This section is that counterpart -
+# every future branch push now gets this same isolated database
+# automatically, no per-branch setup needed. Migrated to the exact same
+# schema as production via `wrangler d1 migrations apply` (all 49 files
+# applied cleanly against a from-fresh, unseeded copy).
+#
+# WEATHER_CACHE is intentionally still shared with production here -
+# it's a short-TTL third-party API response cache with no tenant-
+# specific or write-meaningful content, not real data, so isolating it
+# would only cost preview a cold cache with no corresponding safety
+# benefit. MEDIA (R2) is deliberately NOT bound for preview - media
+# library uploads/logo changes will fail there until a preview-specific
+# bucket is set up; existing production media still displays fine via
+# MEDIA_PUBLIC_BASE_URL below since that's a plain public URL, not an
+# R2 binding. AUTH_SECRET has no [env.preview.vars] entry here (same
+# posture as production above) - it's set separately via
+# `wrangler pages secret put AUTH_SECRET` against the preview
+# environment, never committed in plaintext.
+[env.preview]
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "shobdon-central-preview"
+database_id = "2679ff61-ddc2-422b-ae8f-9aad004a1192"
+
+[[env.preview.kv_namespaces]]
+binding = "WEATHER_CACHE"
+id = "c5ada3c64f1745509ed0977c0ab0c323"
+
+[env.preview.vars]
+MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
