@@ -14,6 +14,22 @@ import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantH
 
 type PagesFunction<Env = unknown> = (context: { request: Request; env: Env }) => Response | Promise<Response>;
 
+// Cloudflare's own edge-resolved geolocation, present on every request
+// as request.cf at the platform level (not from a header, not a
+// third-party lookup) - not in lib.dom.d.ts's Request type (this
+// codebase has no @cloudflare/workers-types dependency, see worker/
+// src/index.ts's own comment on that same choice), so narrowed locally
+// to just the fields this file actually reads. Absent entirely in local
+// dev without Cloudflare in front - every field already optional to
+// match.
+interface IncomingRequestCfProperties {
+  country?: string;
+  region?: string;
+  city?: string;
+  latitude?: string;
+  longitude?: string;
+}
+
 interface Env {
   DB: D1Database;
 }
@@ -65,6 +81,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Cloudflare in front) rather than storing a fake placeholder value.
   const ipAddress = request.headers.get("CF-Connecting-IP");
   const userAgent = request.headers.get("User-Agent");
+  const cf = (request as Request & { cf?: IncomingRequestCfProperties }).cf;
+  const geoCountry = cf?.country ?? null;
+  const geoRegion = cf?.region ?? null;
+  const geoCity = cf?.city ?? null;
+  const geoLatitude = cf?.latitude ?? null;
+  const geoLongitude = cf?.longitude ?? null;
   const now = new Date();
 
   const lastVisit = await env.DB
@@ -86,8 +108,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   await env.DB
-    .prepare("INSERT INTO display_visits (tenant_id, display_slug, visited_at, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)")
-    .bind(tenant.id, slug, now.toISOString(), ipAddress, userAgent)
+    .prepare(
+      "INSERT INTO display_visits (tenant_id, display_slug, visited_at, ip_address, user_agent, geo_country, geo_region, geo_city, geo_latitude, geo_longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(tenant.id, slug, now.toISOString(), ipAddress, userAgent, geoCountry, geoRegion, geoCity, geoLatitude, geoLongitude)
     .run();
 
   // Prune-on-write: cheap, scoped (this tenant only), indexed delete -

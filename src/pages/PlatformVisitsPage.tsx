@@ -11,7 +11,27 @@ interface Visit {
   visitedAt: string
   ipAddress: string | null
   userAgent: string | null
+  // Migration 0055 - Cloudflare-native geolocation, captured going
+  // forward only. NULL on every row logged before that migration; no
+  // backfill exists or is planned (see the migration's own comment).
+  geoCountry: string | null
+  geoRegion: string | null
+  geoCity: string | null
+  geoLatitude: string | null
+  geoLongitude: string | null
 }
+
+// "Leominster, Herefordshire, GB" - city/region are frequently absent
+// even when country is present (Cloudflare's own geolocation coverage
+// varies by request), so each part is included only if actually set,
+// rather than rendering literal "null" or leaving stray ", " gaps.
+function formatGeoSummary(visit: Visit): string | null {
+  const parts = [visit.geoCity, visit.geoRegion, visit.geoCountry].filter((p): p is string => !!p)
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
+type SortField = 'visitedAt' | 'ipAddress'
+type SortDirection = 'asc' | 'desc'
 
 function formatVisitedAt(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', {
@@ -37,10 +57,40 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [forbidden, setForbidden] = useState(false)
   const [tenantFilter, setTenantFilter] = useState('')
   const [slugFilter, setSlugFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [sortField, setSortField] = useState<SortField>('visitedAt')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [expandedRowId, setExpandedRowId] = useState<number | null>(null)
 
+  // Tenant slug -> id, accumulated (never shrunk) across every response
+  // this page has seen so far - needed because tenantFilter is a slug
+  // (readable in the URL-less UI, matches how the display-slug filter
+  // already works) but the server-side filter takes tenant_id. Built up
+  // rather than fetched from a dedicated tenants endpoint so this page
+  // still works with zero extra requests on the common case (no filter
+  // picked yet).
+  const [knownTenants, setKnownTenants] = useState<Map<string, { id: number; name: string }>>(new Map())
+  const [knownSlugs, setKnownSlugs] = useState<Set<string>>(new Set())
+
+  // Total display_visits is 5,021 rows in production (Shobdon alone:
+  // 4,993) - the backing endpoint caps a single response at 500 (see its
+  // own MAX_ROWS comment), so an unfiltered fetch only ever shows a thin
+  // recent slice. Tenant/display/date-range filters are sent to the
+  // server (not applied client-side against that slice) specifically so
+  // narrowing actually reaches rows outside that window, rather than
+  // just re-filtering what a first, unfiltered load happened to return.
   useEffect(() => {
     setLoading(true)
-    fetch(VISITS_URL)
+    const params = new URLSearchParams()
+    const tenantId = tenantFilter ? knownTenants.get(tenantFilter)?.id : undefined
+    if (tenantId !== undefined) params.set('tenantId', String(tenantId))
+    if (slugFilter) params.set('slug', slugFilter)
+    if (dateFrom) params.set('from', dateFrom)
+    if (dateTo) params.set('to', dateTo)
+    const query = params.toString()
+
+    fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
       .then((response) => {
         if (response.status === 403 || response.status === 401) {
           setForbidden(true)
@@ -49,25 +99,63 @@ export default function PlatformVisitsPage(): JSX.Element {
         return response.ok ? response.json() : null
       })
       .then((data) => {
-        if (data) setVisits(data.visits ?? [])
+        if (!data) return
+        const rows: Visit[] = data.visits ?? []
+        setVisits(rows)
+        setKnownTenants((prev) => {
+          const next = new Map(prev)
+          for (const v of rows) next.set(v.tenantSlug, { id: v.tenantId, name: v.tenantName })
+          return next
+        })
+        setKnownSlugs((prev) => {
+          const next = new Set(prev)
+          for (const v of rows) next.add(v.displaySlug)
+          return next
+        })
       })
       .finally(() => setLoading(false))
-  }, [])
+    // tenantFilter's server-side lookup depends on knownTenants, but
+    // knownTenants is only ever added to (never removed from) by this
+    // same effect's own responses, so including it here would refetch
+    // on every response - it's read via a ref-like snapshot at call
+    // time instead (the .get() above), deliberately left out of the
+    // dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantFilter, slugFilter, dateFrom, dateTo])
 
-  // Client-side filtering over the already-fetched (server-capped,
-  // see MAX_ROWS in the backing endpoint) set - re-fetching per
-  // keystroke would be overkill for a list this size, and the tenant/
-  // display dropdowns below are derived from the same fetched rows so
-  // they only ever list values that actually appear in the log.
-  const tenantOptions = useMemo(
-    () => Array.from(new Set(visits.map((v) => v.tenantSlug))).sort(),
-    [visits]
-  )
-  const slugOptions = useMemo(() => Array.from(new Set(visits.map((v) => v.displaySlug))).sort(), [visits])
+  const tenantOptions = useMemo(() => Array.from(knownTenants.keys()).sort(), [knownTenants])
+  const slugOptions = useMemo(() => Array.from(knownSlugs).sort(), [knownSlugs])
 
-  const filtered = visits.filter(
-    (v) => (!tenantFilter || v.tenantSlug === tenantFilter) && (!slugFilter || v.displaySlug === slugFilter)
-  )
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortDirection(field === 'visitedAt' ? 'desc' : 'asc')
+    }
+  }
+
+  // Sort is purely client-side over whatever the server just returned
+  // (already the correctly-filtered set, up to MAX_ROWS) - re-ordering
+  // an in-memory array needs no round trip.
+  const filtered = useMemo(() => {
+    const rows = [...visits]
+    rows.sort((a, b) => {
+      let result: number
+      if (sortField === 'visitedAt') {
+        result = a.visitedAt.localeCompare(b.visitedAt)
+      } else {
+        // Nulls last regardless of direction - an unknown IP shouldn't
+        // visually dominate either end of a sorted list.
+        if (a.ipAddress === null && b.ipAddress === null) result = 0
+        else if (a.ipAddress === null) return 1
+        else if (b.ipAddress === null) return -1
+        else result = a.ipAddress.localeCompare(b.ipAddress, undefined, { numeric: true })
+      }
+      return sortDirection === 'asc' ? result : -result
+    })
+    return rows
+  }, [visits, sortField, sortDirection])
 
   if (forbidden) {
     return (
@@ -115,6 +203,36 @@ export default function PlatformVisitsPage(): JSX.Element {
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-2 text-xs text-muted-400">
+            From
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-400">
+            To
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </label>
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom('')
+                setDateTo('')
+              }}
+              className="text-xs text-accent-sky-400 hover:underline"
+            >
+              Clear dates
+            </button>
+          )}
           <span className="text-xs text-muted-500">
             {filtered.length} visit{filtered.length === 1 ? '' : 's'}
           </span>
@@ -127,10 +245,28 @@ export default function PlatformVisitsPage(): JSX.Element {
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs font-semibold uppercase tracking-widest text-muted-400">
-                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('visitedAt')}
+                      className="flex items-center gap-1 uppercase tracking-widest hover:text-primary"
+                    >
+                      Time
+                      {sortField === 'visitedAt' && <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                    </button>
+                  </th>
                   <th className="px-4 py-3">Tenant</th>
                   <th className="px-4 py-3">Display</th>
-                  <th className="px-4 py-3">IP address</th>
+                  <th className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('ipAddress')}
+                      className="flex items-center gap-1 uppercase tracking-widest hover:text-primary"
+                    >
+                      IP address
+                      {sortField === 'ipAddress' && <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                    </button>
+                  </th>
                   <th className="px-4 py-3">User agent</th>
                 </tr>
               </thead>
@@ -152,7 +288,9 @@ export default function PlatformVisitsPage(): JSX.Element {
                 {filtered.length === 0 && (
                   <tr>
                     <td className="px-4 py-6 text-center text-sm text-muted-500" colSpan={5}>
-                      No visits logged yet.
+                      {tenantFilter || slugFilter || dateFrom || dateTo
+                        ? 'No visits match the current filters.'
+                        : 'No visits logged yet.'}
                     </td>
                   </tr>
                 )}
