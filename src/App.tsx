@@ -19,6 +19,7 @@ import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
+import KnownDevicesPage from './pages/KnownDevicesPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
@@ -111,6 +112,18 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformVisitsPage />
+            </RequireAuth>
+          }
+        />
+        {/* Same standalone-outside-AdminLayout treatment as the route
+            above - Phase B of the visit-log uptime work (migration
+            0056): confirm/dismiss which IPs are a tenant's real
+            display, gated the same way. */}
+        <Route
+          path="/platform/known-devices"
+          element={
+            <RequireAuth requireDeveloper>
+              <KnownDevicesPage />
             </RequireAuth>
           }
         />
