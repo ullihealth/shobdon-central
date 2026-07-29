@@ -48,6 +48,20 @@ interface TickerSlotInput {
   // Optional on input for backwards compatibility with configs saved
   // before this field existed; always present on output.
   enabled?: boolean;
+  // Which specific notice a type: 'notice' slot shows (matched against
+  // SafetyNotice.id, same as ops-panel's own notices). Was missing from
+  // this interface and silently dropped by rowToApi()/the PUT merge
+  // below (both used an explicit field list) - found and fixed while
+  // adding includeGasPrices, the same class of bug.
+  noticeId?: string;
+  // Task #42: additive to whatever `type`/`noticeId` this slot already
+  // resolves to - when true, the resolved segment also has gas price
+  // text appended (functions/api/_utils/publicConfig.ts's gasPrices,
+  // rendered client-side in CafeTicker.tsx). Not a slot TYPE of its own
+  // - a slot can be type: null with includeGasPrices: true (gas prices
+  // as their own standalone segment) or type: 'notice' with
+  // includeGasPrices: true (notice text + gas prices in one segment).
+  includeGasPrices?: boolean;
 }
 
 interface CafeSettingsInput {
@@ -75,7 +89,7 @@ interface DefaultSettings {
   layoutMode: string;
   adLabelEnabled: boolean;
   tickerEnabled: boolean;
-  tickerSlots: Required<TickerSlotInput>[];
+  tickerSlots: TickerSlotInput[];
   tickerBackgroundColor: string;
   tickerBackgroundOpacity: number;
   tickerHeightPx: number;
@@ -117,6 +131,8 @@ function rowToApi(row: CafeSettingsRow) {
     // never silently mutes every existing tenant's ticker the moment
     // this field first appears.
     enabled: slot.enabled !== false,
+    noticeId: slot.noticeId,
+    includeGasPrices: !!slot.includeGasPrices,
   }));
   return {
     layoutMode: row.layoutMode,
@@ -177,6 +193,12 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       if (slot.enabled !== undefined && typeof slot.enabled !== "boolean") {
         return jsonResponse({ error: "tickerSlots[].enabled must be a boolean" }, 400);
       }
+      if (slot.noticeId !== undefined && typeof slot.noticeId !== "string") {
+        return jsonResponse({ error: "tickerSlots[].noticeId must be a string" }, 400);
+      }
+      if (slot.includeGasPrices !== undefined && typeof slot.includeGasPrices !== "boolean") {
+        return jsonResponse({ error: "tickerSlots[].includeGasPrices must be a boolean" }, 400);
+      }
     }
   }
   if (body.tickerBackgroundColor !== undefined && !HEX_COLOR_PATTERN.test(body.tickerBackgroundColor)) {
@@ -233,6 +255,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       position: slot.position,
       type: slot.type,
       enabled: slot.enabled !== false,
+      noticeId: slot.noticeId,
+      includeGasPrices: !!slot.includeGasPrices,
     })),
     tickerBackgroundColor: body.tickerBackgroundColor ?? currentApi.tickerBackgroundColor,
     tickerBackgroundOpacity: body.tickerBackgroundOpacity ?? currentApi.tickerBackgroundOpacity,

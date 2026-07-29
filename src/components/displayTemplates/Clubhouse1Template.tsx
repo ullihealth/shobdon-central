@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import CentreDisplayPanel from '../CentreDisplayPanel'
+import GasPricesPanel, { type GasPricesPublic } from '../GasPricesPanel'
 import Header from '../Header'
 import LeftInfoPanel, { type OpsPanelChartConfig } from '../LeftInfoPanel'
 import RightInfoPanel, { type OpsPanelPublic } from '../RightInfoPanel'
@@ -38,6 +39,9 @@ interface Clubhouse1TemplateProps {
   mediaData?: MediaPanelSourceData
   opsPanelData?: OpsPanelPublic | null
   opsPanelChartData?: OpsPanelChartConfig | null
+  // Same reasoning as opsPanelData above, scoped to task #42's Gas
+  // Prices tile row instead of the Ops Panel's own notices/runway state.
+  gasPricesData?: GasPricesPublic | null
 }
 
 // "Clubhouse Template 1" - the dashboard layout that was DashboardPage.tsx's
@@ -63,6 +67,7 @@ export default function Clubhouse1Template({
   mediaData,
   opsPanelData,
   opsPanelChartData,
+  gasPricesData,
 }: Clubhouse1TemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
@@ -134,8 +139,24 @@ export default function Clubhouse1Template({
             <CentreDisplayPanel mediaData={mediaData} />
           </div>
 
-          <div className={isDesktop ? 'h-full' : ''}>
-            <RightInfoPanel opsPanelData={opsPanelData} />
+          {/* Gas Prices (task #42) sits above the Ops Panel, both sharing
+              this one right-hand column. flex-col + gap here (not two
+              independent h-full siblings) is what actually "shrinks" the
+              Ops Panel now that gas prices no longer rotate through its
+              own Safety Notices - RightInfoPanel's OWN outer box already
+              only sizes its content to what it needs (see that file's own
+              comment on why it went from a stretched grid to flex-col),
+              but this column wrapper was still pinning it to the FULL
+              column height regardless. min-h-0 on the RightInfoPanel
+              wrapper is required for flex-1 to actually shrink it below
+              its content's natural height on a short viewport, rather
+              than overflowing - same fix shape as CentreDisplayPanel's
+              own flex children elsewhere on this page. */}
+          <div className={isDesktop ? 'flex h-full flex-col gap-4' : 'flex flex-col gap-4'}>
+            <GasPricesPanel gasPricesData={gasPricesData} />
+            <div className={isDesktop ? 'min-h-0 flex-1' : ''}>
+              <RightInfoPanel opsPanelData={opsPanelData} />
+            </div>
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import MediaPanel, { type MediaPanelSourceData } from '../media/MediaPanel'
-import CafeTicker, { type TickerSlot, type TickerStyle } from '../CafeTicker'
+import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../CafeTicker'
 import VenueCornerBadge from '../VenueCornerBadge'
 import { currentMedia } from '../../config/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
@@ -41,6 +41,13 @@ interface CafeTemplateProps {
   // undefined (every real public caller) leaves the self-fetched
   // notices untouched.
   safetyNoticesData?: SafetyNotice[]
+  // Same reasoning/pattern as safetyNoticesData above, scoped to the
+  // ticker's new gas prices addon (task #42) instead of notices. Nullable
+  // (unlike safetyNoticesData) because its DesignPage.tsx caller's own
+  // state is sourced directly from gas_prices' own missing-row-is-null
+  // shape, not via an intermediate `?.` that would already collapse
+  // null to undefined.
+  gasPricesData?: TickerGasPrices | null
 }
 
 interface SafetyNotice {
@@ -48,6 +55,8 @@ interface SafetyNotice {
   size: 'sm' | 'md' | 'lg' | 'xl'
   enabled: boolean
 }
+
+const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
 
 interface CafeSettings {
   layoutMode: 'split' | 'full'
@@ -119,6 +128,7 @@ export default function CafeTemplate({
   isPreview = false,
   mediaData,
   safetyNoticesData,
+  gasPricesData,
 }: CafeTemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
@@ -139,6 +149,7 @@ export default function CafeTemplate({
   // papering over its symptoms.
   const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null)
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>(safetyNoticesData ?? [])
+  const [gasPrices, setGasPrices] = useState<TickerGasPrices>(gasPricesData ?? DEFAULT_GAS_PRICES)
 
   useEffect(() => {
     let cancelled = false
@@ -167,6 +178,7 @@ export default function CafeTemplate({
         // prop's own comment. cafeSettings itself is deliberately still
         // always self-fetched here, out of this round's scope.
         if (safetyNoticesData === undefined && data?.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
+        if (gasPricesData === undefined && data?.gasPrices) setGasPrices(data.gasPrices)
       })
       .catch(() => {
         if (!cancelled) setCafeSettings(DEFAULT_CAFE_SETTINGS)
@@ -174,7 +186,7 @@ export default function CafeTemplate({
     return () => {
       cancelled = true
     }
-  }, [safetyNoticesData])
+  }, [safetyNoticesData, gasPricesData])
 
   // Keeps safetyNotices in sync if a parent's own already-fetched data
   // changes after this component's initial mount (e.g. DesignPage.tsx's
@@ -184,6 +196,10 @@ export default function CafeTemplate({
   useEffect(() => {
     if (safetyNoticesData !== undefined) setSafetyNotices(safetyNoticesData)
   }, [safetyNoticesData])
+
+  useEffect(() => {
+    if (gasPricesData !== undefined) setGasPrices(gasPricesData ?? DEFAULT_GAS_PRICES)
+  }, [gasPricesData])
 
   // Same background gradient as the real content below (not a blank/
   // white flash), just without the grid/panels yet - avoids a jarring
@@ -339,6 +355,7 @@ export default function CafeTemplate({
               liveDataUnavailable={liveDataUnavailable}
               visibilityHours={visibilityHours}
               safetyNotices={safetyNotices}
+              gasPrices={gasPrices}
               style={tickerStyle}
             />
           </div>
