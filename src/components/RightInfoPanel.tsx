@@ -424,9 +424,18 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
           <div className="flex flex-col gap-4">
             <div className="rounded-3xl border border-border bg-card p-5">
               <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Runway In Use</div>
-              <div className="mt-3 grid grid-cols-2 gap-4">
-                <div className="text-3xl font-semibold text-primary">{runwayStatusValue}</div>
-                <div className="text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
+              {/* flex, not grid-cols-2 (was an even 50/50 split) - a
+                  2-character runway number doesn't need the same width
+                  as "Left circuit"/"Right circuit", and giving it half
+                  the row was exactly backwards: the runway number sat in
+                  a mostly-empty column while circuit direction was
+                  starved for room and wrapped. flex-shrink-0 sizes the
+                  runway number to its own content only; the circuit
+                  direction cell (flex-1) gets everything left over,
+                  which is what actually needs the extra width. */}
+              <div className="mt-3 flex items-center gap-4">
+                <div className="flex-shrink-0 text-3xl font-semibold text-primary">{runwayStatusValue}</div>
+                <div className="flex-1 text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
               </div>
             </div>
             {/* Beneath Runway In Use, above Airfield Info - NOTAMs are
