@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 
 const VISITS_URL = '/api/platform/visits'
+const VISITS_EXPORT_URL = '/api/platform/visits/export'
 
 interface Visit {
   id: number
@@ -204,6 +205,28 @@ export default function PlatformVisitsPage(): JSX.Element {
     setTimeout(() => setCopyStatus('idle'), 1500)
   }
 
+  // Deliberately reuses whatever the visible tenant/display/date filters
+  // are already set to, rather than a separate scope picker - those
+  // filters already ARE "All tenants" (nothing picked) / "current
+  // tenant" (tenantFilter set) / "date range" (dateFrom/dateTo set), and
+  // duplicating that as a second control would just be two ways to say
+  // the same thing. Plain navigation (not fetch+blob) - the export
+  // endpoint's own Content-Disposition: attachment header is what
+  // actually triggers the browser's download, and a same-origin
+  // navigation carries the session cookie the endpoint needs
+  // automatically, same as every other authenticated request on this
+  // page.
+  function handleExport() {
+    const params = new URLSearchParams()
+    const tenantId = tenantFilter ? knownTenants.get(tenantFilter)?.id : undefined
+    if (tenantId !== undefined) params.set('tenantId', String(tenantId))
+    if (slugFilter) params.set('slug', slugFilter)
+    if (dateFrom) params.set('from', dateFrom)
+    if (dateTo) params.set('to', dateTo)
+    const query = params.toString()
+    window.location.href = query ? `${VISITS_EXPORT_URL}?${query}` : VISITS_EXPORT_URL
+  }
+
   if (forbidden) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-slate-100">
@@ -291,6 +314,15 @@ export default function PlatformVisitsPage(): JSX.Element {
               : selectedIds.size > 0
                 ? `Copy ${selectedIds.size} selected`
                 : 'Copy all visible'}
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={filtered.length === 0}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-40"
+            title="Exports every matching row for the current tenant/display/date filters - not just what's rendered on screen"
+          >
+            Export CSV
           </button>
           <span className="text-xs text-muted-500">
             {filtered.length} visit{filtered.length === 1 ? '' : 's'}
