@@ -20,6 +20,7 @@ import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import KnownDevicesPage from './pages/KnownDevicesPage'
+import UptimeReportPage from './pages/UptimeReportPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
@@ -124,6 +125,18 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <KnownDevicesPage />
+            </RequireAuth>
+          }
+        />
+        {/* Same standalone-outside-AdminLayout treatment as the route
+            above - Phase C of the visit-log uptime work: the audit
+            report itself, computed only from Known Devices' confirmed
+            IPs, gated the same way. */}
+        <Route
+          path="/platform/uptime-report"
+          element={
+            <RequireAuth requireDeveloper>
+              <UptimeReportPage />
             </RequireAuth>
           }
         />

@@ -93,6 +93,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { to: '/platform/onboarding-content', label: 'Onboarding Content', requireDeveloper: true },
       { to: '/platform/visits', label: 'Visit Log', requireDeveloper: true },
       { to: '/platform/known-devices', label: 'Known Devices', requireDeveloper: true },
+      { to: '/platform/uptime-report', label: 'Uptime Report', requireDeveloper: true },
       { to: '/platform/updates', label: 'Developer Updates', requireDeveloper: true },
       { to: '/developertools', label: 'Developer Tools', requireDeveloper: true },
     ],
