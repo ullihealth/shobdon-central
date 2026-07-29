@@ -19,8 +19,14 @@ export interface OpsPanelPublic {
   notamsCarouselIntervalSeconds: number
 }
 
+// 'Left'/'Right' (not 'Left-hand'/'Right-hand') - condensed so
+// "${label} circuit" fits on one line in the Runway In Use card's grid
+// cell instead of wrapping to two, which was inflating that whole
+// card's height (a shared grid row sizes to its tallest cell) and
+// leaving visible empty space under the runway value's own single-line
+// cell alongside it.
 function circuitDirectionLabel(direction: string): string {
-  return direction === 'right' ? 'Right-hand' : 'Left-hand'
+  return direction === 'right' ? 'Right' : 'Left'
 }
 
 type NotamSeverity = 'critical' | 'warning' | 'info'
@@ -47,6 +53,33 @@ const SEVERITY_DOT_CLASSES: Record<NotamSeverity, string> = {
 const SEVERITY_ORDER: Record<NotamSeverity, number> = { critical: 0, warning: 1, info: 2 }
 
 const MAX_AUTO_NOTAMS_SHOWN = 3
+
+// Empirically determined, not guessed: measured the real rendered
+// height of the "Runway In Use"/auto-NOTAMs/Airfield Info stack at
+// 1366x768 (the narrower of this app's two tested reference
+// resolutions) with exactly MAX_AUTO_NOTAMS_SHOWN synthetic entries at
+// increasing lengths - 121 characters was the longest that still fit
+// without pushing the stack past the viewport; 122 already overflowed
+// (a single additional wrapped line across all 3 entries costs ~45px
+// at this width, more than the ~43px of margin available at 121). 110
+// keeps a real safety margin below that exact breakpoint - the
+// trailing ellipsis adds one more character, and font rendering can
+// vary slightly by platform/browser, so sitting right at the measured
+// edge would be fragile.
+const AUTO_NOTAM_TRUNCATE_LENGTH = 110
+
+interface TruncatedAutoNotam extends AutoNotam {
+  wasTruncated: boolean
+}
+
+// Per-entry truncation - the first half of the overflow fix (task #43):
+// no single NOTAM, however long, can blow out the compact card's
+// height by itself. Whole-word-ish trim (trimEnd before the ellipsis)
+// so it doesn't cut off mid-word looking like a rendering glitch.
+function truncateAutoNotamText(notam: AutoNotam): TruncatedAutoNotam {
+  if (notam.text.length <= AUTO_NOTAM_TRUNCATE_LENGTH) return { ...notam, wasTruncated: false }
+  return { ...notam, text: `${notam.text.slice(0, AUTO_NOTAM_TRUNCATE_LENGTH).trimEnd()}…`, wasTruncated: true }
+}
 
 // Shifted up one step from the original sm/md/lg=16/18/20px tier: each
 // existing saved notice keeps its tier label (a notice saved as "md"
@@ -116,6 +149,54 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Second half of the overflow fix (task #43) - a conditional 3rd
+// rotation state, only ever entered when the compact state's own
+// truncation/cap actually dropped something (see hasAutoNotamOverflow
+// below). Shows every auto-NOTAM in full, untruncated text, so nothing
+// is ever permanently hidden - just deferred to this state. Same
+// dynamic scroll-height measurement as NotamsPanel above (copied, not
+// abstracted into a shared helper - the two differ in exactly the bits
+// that would make a shared abstraction more indirection than the
+// duplication it'd save: different source data shape, different per-
+// entry markup (a severity dot, not a size-keyed font class), no
+// "notices can be managed from ATC Control" framing since these are
+// read-only feed data). Same "no manual scrolling" guarantee too -
+// overflow-hidden throughout, entries dropped and counted rather than
+// made scrollable, zero viewer interaction required anywhere.
+function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [visibleCount, setVisibleCount] = useState(notams.length)
+
+  useLayoutEffect(() => {
+    setVisibleCount(notams.length)
+  }, [notams])
+
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el || visibleCount <= 0) return
+    if (el.scrollHeight > el.clientHeight) {
+      setVisibleCount((count) => count - 1)
+    }
+  }, [visibleCount, notams])
+
+  const hiddenCount = notams.length - visibleCount
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
+      <div className="flex-shrink-0 text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
+      <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
+        {notams.slice(0, visibleCount).map((notam) => (
+          <div key={notam.id} className="mb-3 flex items-start gap-2 text-sm text-primary last:mb-0">
+            <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
+            <span>{notam.text}</span>
+          </div>
+        ))}
+      </div>
+      {hiddenCount > 0 && <div className="flex-shrink-0 text-xs font-bold text-status-bad">+{hiddenCount} more</div>}
     </div>
   )
 }
@@ -198,23 +279,56 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     }
   }, [opsPanel?.showAutoNotams])
 
-  // Plain 2-state flip, not a carousel - MediaPanel.tsx's per-slot
-  // recursive setTimeout exists to support independently-durationed
-  // slots; there's exactly one shared interval driving a single A/B
-  // toggle here, so a plain setInterval is the correct, simpler fit.
+  // Derived from autoNotams (fetched above) - computed here, ahead of
+  // the rotation-state effect below, specifically so that effect can
+  // depend on hasAutoNotamOverflow directly. Capped to
+  // MAX_AUTO_NOTAMS_SHOWN with a "+N more" indicator (unchanged), each
+  // VISIBLE entry additionally per-entry truncated (task #43, part 1 -
+  // see AUTO_NOTAM_TRUNCATE_LENGTH's own comment for how that limit was
+  // measured). hasAutoNotamOverflow (part 2) is true when either the
+  // cap hid whole entries, or truncation cut into any of the ones still
+  // shown - either case means the compact state doesn't have this
+  // tenant's complete NOTAM picture, which is exactly the condition
+  // that should pull in the 3rd rotation state below.
+  const sortedAutoNotams = [...(autoNotams ?? [])].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
+  const visibleAutoNotamsRaw = sortedAutoNotams.slice(0, MAX_AUTO_NOTAMS_SHOWN)
+  const hiddenAutoNotamsCount = sortedAutoNotams.length - visibleAutoNotamsRaw.length
+  const visibleAutoNotams = visibleAutoNotamsRaw.map(truncateAutoNotamText)
+  const hasAutoNotamOverflow = hiddenAutoNotamsCount > 0 || visibleAutoNotams.some((n) => n.wasTruncated)
+
+  // Carousel states, not a plain boolean flip anymore (task #43, part
+  // 3) - 'notamsFull' (AutoNotamsFullPanel) is spliced in ONLY when
+  // hasAutoNotamOverflow is true, so a tenant whose NOTAMs already fit
+  // never wastes rotation time on a state with nothing new to show.
+  // Still exactly one shared setInterval driving the whole rotation
+  // (MediaPanel.tsx's own per-slot recursive setTimeout is a different
+  // pattern for independently-durationed slots, not needed here - every
+  // state shares the same notamsCarouselIntervalSeconds duration).
+  const rotationStates: ('ops' | 'notamsFull' | 'notices')[] = [
+    'ops',
+    ...(hasAutoNotamOverflow ? (['notamsFull'] as const) : []),
+    'notices',
+  ]
   // Always starts on State A (today's default appearance) on load/on
-  // any config refetch, then flips every notamsCarouselIntervalSeconds.
-  const [showNotamsState, setShowNotamsState] = useState(false)
+  // any config refetch, then advances every notamsCarouselIntervalSeconds.
+  // Read via `% rotationStates.length` at render time (not clamped
+  // here) so a mid-cycle change in hasAutoNotamOverflow - e.g. new
+  // NOTAM data arrives shrinking rotationStates from 3 states back to 2
+  // - can never leave rotationIndex pointing past the end of the
+  // (now shorter) array.
+  const [rotationIndex, setRotationIndex] = useState(0)
 
   useEffect(() => {
-    setShowNotamsState(false)
+    setRotationIndex(0)
     if (notamsOnly) return
     const intervalSeconds = opsPanel?.notamsCarouselIntervalSeconds ?? 5
     const id = window.setInterval(() => {
-      setShowNotamsState((value) => !value)
+      setRotationIndex((value) => value + 1)
     }, Math.max(1, intervalSeconds) * 1000)
     return () => window.clearInterval(id)
   }, [notamsOnly, opsPanel?.notamsCarouselIntervalSeconds])
+
+  const currentRotationState = rotationStates[rotationIndex % rotationStates.length]
 
   // showAutoNotams now gates the automated feed in the OTHER carousel
   // state (the cards branch below, "Runway In Use") rather than anything
@@ -262,21 +376,18 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // airfield and reading them apart was extra work. Still two independent
   // values under the hood (see AtcControlPage.tsx's auto-link toggle) -
   // this is purely how they're displayed, not a data change.
-  const runwayStatusValue = opsPanel ? `${opsPanel.activeRunwayEnd} Open` : '08/26 Open'
+  //
+  // "Open" dropped from the runway value ("26 Open" -> "26") and
+  // circuitDirectionLabel condensed to "Left"/"Right" (was "Left-hand"/
+  // "Right-hand") - both now short enough to fit their own grid cell on
+  // one line at this card's text-3xl size, which also fixes a real
+  // layout bug: a wrapped "Left-hand circuit" was inflating the shared
+  // grid row taller than the single-line runway value needed, leaving
+  // visible empty space under that value. The "Runway In Use" label
+  // itself already says everything "Open" was adding.
+  const runwayStatusValue = opsPanel ? opsPanel.activeRunwayEnd : '08/26'
   const circuitDirectionValue = `${circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left')} circuit`
   const cards = [...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : [])]
-
-  // Critical first. Capped to 3 with a quiet "+N more" rather than
-  // internal scrolling, matching NotamsPanel's own "+N more" convention
-  // for State B. Nothing rendered at all while autoNotams is still null
-  // (not yet fetched) or genuinely empty - unlike Runway Status/Circuit
-  // Direction there's no "N/A"-style placeholder for this section, since
-  // right now (no provider credentials configured yet) it will always be
-  // empty for every tenant regardless of the toggle - see
-  // functions/api/public/notams.ts's own comment.
-  const sortedAutoNotams = [...(autoNotams ?? [])].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-  const visibleAutoNotams = sortedAutoNotams.slice(0, MAX_AUTO_NOTAMS_SHOWN)
-  const hiddenAutoNotamsCount = sortedAutoNotams.length - visibleAutoNotams.length
 
   // notamsOnly skips the "Ops Panel" heading/flip-state wrapper entirely -
   // NotamsPanel already renders its own complete, self-styled bordered
@@ -296,8 +407,10 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
         Ops Panel
       </div>
       <div className="min-h-0 flex-1">
-        {showNotamsState ? (
+        {currentRotationState === 'notices' ? (
           <NotamsPanel notices={noticesForDisplay} />
+        ) : currentRotationState === 'notamsFull' ? (
+          <AutoNotamsFullPanel notams={sortedAutoNotams} />
         ) : (
           // Content-sized, not stretched to fill the column (previously a
           // `grid h-full` with `minmax(6.5rem, 1fr)` rows, forcing each
