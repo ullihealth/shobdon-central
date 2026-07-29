@@ -70,6 +70,15 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         baseURL: {
           allowedHosts: [
             "shobdon-central.pages.dev",
+            // Cloudflare Pages preview deployments (branch pushes, not
+            // production) get a per-deployment hash subdomain of their
+            // own - <hash>.shobdon-central.pages.dev - which the bare
+            // entry above never matched, so sign-in silently failed
+            // ("Invalid email or password", not a clearer error) on
+            // every preview URL. Same wildcard pattern as
+            // *.airfieldcentral.com below, just for Pages' own preview
+            // subdomains.
+            "*.shobdon-central.pages.dev",
             "airfield-central.jeffthompson.workers.dev",
             "airfieldcentral.com",
             "*.airfieldcentral.com",
@@ -85,6 +94,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         // a non-HTTPS request to a matching host is correctly rejected.
         trustedOrigins: [
           "https://shobdon-central.pages.dev",
+          "https://*.shobdon-central.pages.dev",
           "https://airfield-central.jeffthompson.workers.dev",
           "https://airfieldcentral.com",
           "https://*.airfieldcentral.com",
