@@ -87,7 +87,18 @@ export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): J
       </p>
       <div className="space-y-3">
         {visibleDisplays.map((display) => {
-          const url = `https://${data.subdomain}/d/${display.slug}`
+          // Derived from wherever THIS page is actually being viewed
+          // from (window.location.origin), not data.subdomain (the
+          // tenant's real, DB-stored production subdomain) - was
+          // hardcoded to that value regardless of environment, so
+          // Copy/Open always pointed at production even when reviewing
+          // a Cloudflare Pages preview deployment. data.subdomain is
+          // still used below for the DNS-reachability check, a
+          // genuinely different question (has this tenant's real custom
+          // domain been provisioned at all) that's independent of
+          // where this admin page itself is currently being viewed
+          // from.
+          const url = `${window.location.origin}/d/${display.slug}`
           return (
             <div
               key={display.slug}
@@ -101,12 +112,20 @@ export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): J
                   </span>
                 </div>
                 <div className="mt-1 truncate font-mono text-sm text-muted-300">{url}</div>
-                {/* Copy still works regardless (harmless, and useful to
-                    paste elsewhere/check back once DNS is set up) - only
-                    "Open" (an actual navigation to a host that doesn't
-                    resolve) is replaced. */}
+                {/* Informational only now, not a gate on Open below - url
+                    is origin-relative (wherever this admin page is
+                    actually being viewed from), which is reachable by
+                    definition, so it's never the broken link this
+                    warning used to guard against. data.subdomain (the
+                    tenant's real custom domain) can still genuinely not
+                    be provisioned yet - worth surfacing since that's the
+                    address they'd actually want bookmarked on a
+                    clubhouse TV long-term, just not what Open uses. */}
                 {subdomainConfirmedDown && (
-                  <div className="mt-1 text-xs text-amber-400">Not live yet - this subdomain hasn't been set up. Contact support.</div>
+                  <div className="mt-1 text-xs text-amber-400">
+                    Note: your own domain ({data.subdomain}) isn't set up yet - Open below uses this page's current
+                    address instead. Contact support to get your own domain live.
+                  </div>
                 )}
               </div>
               <div className="flex flex-shrink-0 gap-2">
@@ -117,23 +136,14 @@ export default function DisplayUrlList({ cafeEntitled }: DisplayUrlListProps): J
                 >
                   {copiedSlug === display.slug ? 'Copied!' : 'Copy'}
                 </button>
-                {subdomainConfirmedDown ? (
-                  <span
-                    className="cursor-not-allowed rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-muted-400"
-                    title="Not live yet - this subdomain hasn't been set up"
-                  >
-                    Open
-                  </span>
-                ) : (
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
-                  >
-                    Open
-                  </a>
-                )}
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400"
+                >
+                  Open
+                </a>
               </div>
             </div>
           )

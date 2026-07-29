@@ -22,10 +22,23 @@
 // adding a second flag - one tenant, one "is this live" concept, no
 // risk of the two ever disagreeing with each other.
 //
-// Four fallback hosts resolve to Shobdon rather than 404:
+// Four fallback hosts (plus one wildcard) resolve to Shobdon rather
+// than 404:
 // - shobdon-central.pages.dev: Shobdon's own Pages project's own default
 //   hostname - permanently Shobdon, same category as the worker/D1/KV
 //   internal resource names that don't get renamed for the rebrand.
+//   Also matches ANY *.shobdon-central.pages.dev host - Cloudflare
+//   Pages preview deployments (any git push to a non-production branch)
+//   get their own per-deployment hash subdomain of this same form
+//   (e.g. 23cb1e4d.shobdon-central.pages.dev), pointed at a DIFFERENT
+//   D1 database (see wrangler.toml's [env.preview]) but the same tenant
+//   identity - without this wildcard, every preview deployment's public
+//   dashboard/display links 404'd with "unknown tenant host" even after
+//   being pointed at the right (relative) URL, since this function had
+//   no idea that host existed at all. Found investigating why the admin
+//   sidebar's Home link and Screens Design's "Your Displays" Open
+//   buttons sent Jeff to production instead of the preview he was
+//   reviewing.
 // - airfield-central.jeffthompson.workers.dev: the new Worker's own
 //   workers.dev URL from the Pages -> Workers migration - same role as
 //   the .pages.dev entry above, added alongside it (not replacing it)
@@ -65,6 +78,16 @@ const FALLBACK_TO_SHOBDON_HOSTS = new Set([
   "airfield-central.jeffthompson.workers.dev",
 ]);
 
+// *.shobdon-central.pages.dev - see the wildcard's own comment above.
+// A separate suffix check rather than another Set entry since this one
+// matches a whole family of hosts (any preview deployment's own hash),
+// not one fixed string.
+const PAGES_PREVIEW_SUFFIX = ".shobdon-central.pages.dev";
+
+function fallsBackToShobdon(bareHost: string): boolean {
+  return FALLBACK_TO_SHOBDON_HOSTS.has(bareHost) || bareHost.endsWith(PAGES_PREVIEW_SUFFIX) || bareHost === "localhost";
+}
+
 export async function resolveOrganizationIdFromHost(host: string, db: D1Database): Promise<string | null> {
   const bareHost = host.split(":")[0];
 
@@ -74,7 +97,7 @@ export async function resolveOrganizationIdFromHost(host: string, db: D1Database
     .first<{ organizationId: string | null }>();
   if (bySubdomain?.organizationId) return bySubdomain.organizationId;
 
-  if (FALLBACK_TO_SHOBDON_HOSTS.has(bareHost) || bareHost === "localhost") {
+  if (fallsBackToShobdon(bareHost)) {
     const shobdon = await db
       .prepare("SELECT organization_id AS organizationId FROM tenants WHERE slug = 'shobdon' AND active = 1")
       .first<{ organizationId: string | null }>();
@@ -104,7 +127,7 @@ export async function resolveTenantFromHost(host: string, db: D1Database): Promi
     .first<ResolvedTenant>();
   if (bySubdomain) return bySubdomain;
 
-  if (FALLBACK_TO_SHOBDON_HOSTS.has(bareHost) || bareHost === "localhost") {
+  if (fallsBackToShobdon(bareHost)) {
     const shobdon = await db
       .prepare("SELECT id, organization_id AS organizationId FROM tenants WHERE slug = 'shobdon' AND active = 1")
       .first<ResolvedTenant>();

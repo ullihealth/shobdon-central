@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AIRFIELD_TIMEZONE } from '../config/publicApi'
 import { useHostReachable } from '../hooks/useHostReachable'
+import { isPagesPlatformHost } from '../utils/isPagesPlatformHost'
 
 interface HeaderProps {
   rightSlot?: ReactNode
@@ -140,7 +141,12 @@ export default function Header({
   // copy or someone else's dashboard, which is strictly more correct
   // even though it isn't yet a fully working destination for every
   // tenant.
-  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
+  // isPagesPlatformHost: same addition as AdminSidebar.tsx's own
+  // isOnOwnSubdomain - a Cloudflare Pages preview deployment's hash
+  // subdomain resolves this tenant's real content directly (see
+  // resolveTenantHost.ts's own fallback), so it counts as "own" too,
+  // not just the bare production pages.dev alias.
+  const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname || isPagesPlatformHost(window.location.hostname)
   const configBackHref = isOnOwnSubdomain ? '/' : `https://${tenantSubdomain}/`
 
   // Option B from the DNS-not-provisioned round: rather than always
