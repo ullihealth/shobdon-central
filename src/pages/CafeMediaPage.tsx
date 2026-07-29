@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import MediaPanel, { type MediaPanelSourceData } from '../components/media/MediaPanel'
-import CafeTicker, { type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
+import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import FeatureUpsellPanel from '../components/FeatureUpsellPanel'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
@@ -143,6 +143,9 @@ interface PreviewContentProps {
   tickerSlots: TickerSlot[]
   tickerStyle: TickerStyle
   safetyNotices: SafetyNotice[]
+  // Task #42 - preview-only mirror of this tenant's own gas_prices row,
+  // same sourcing/pattern as safetyNotices above.
+  gasPrices: TickerGasPrices
   // Bumped whenever a Carousel Slots save actually lands server-side -
   // see MediaPanel.tsx's own comment on refreshSignal. Corrects a real
   // bug: MediaPanel self-fetches its media from /api/public/config
@@ -183,6 +186,7 @@ function PreviewContent({
   tickerSlots,
   tickerStyle,
   safetyNotices,
+  gasPrices,
   cafeSlotsRefreshSignal,
   mediaData,
 }: PreviewContentProps): JSX.Element {
@@ -245,6 +249,7 @@ function PreviewContent({
               liveDataUnavailable={liveDataUnavailable}
               visibilityHours={visibilityHours}
               safetyNotices={safetyNotices}
+              gasPrices={gasPrices}
               style={tickerStyle}
             />
           </div>
@@ -253,6 +258,8 @@ function PreviewContent({
     </div>
   )
 }
+
+const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
 
 export default function CafeMediaPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
@@ -284,6 +291,10 @@ export default function CafeMediaPage(): JSX.Element {
   // sync with `notices` after any CRUD action below so the preview
   // never lags what was just saved.
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
+  // Task #42 - preview mirror of gas_prices, same TENANT_CONFIG_URL
+  // sourcing as safetyNotices above (see that fetch below for why
+  // session-scoped, not Host-resolved).
+  const [gasPrices, setGasPrices] = useState<TickerGasPrices>(DEFAULT_GAS_PRICES)
   // Passed to PreviewContent's MediaPanel calls via their `data` prop -
   // see that prop's own comment. Sourced from the TENANT_CONFIG_URL
   // fetch below (session-scoped), not PUBLIC_CONFIG_URL (Host-resolved) -
@@ -405,6 +416,7 @@ export default function CafeMediaPage(): JSX.Element {
         if (data.airfieldName) setAirfieldName(data.airfieldName as string)
         if (data.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
+        if (data.gasPrices) setGasPrices(data.gasPrices)
         // Merges legacy camera_slots (`slot` set) with the newer cameras
         // table (migration 0047, `cameraId` set) - see CameraOption's
         // own comment for why these live in one array.
@@ -744,6 +756,7 @@ export default function CafeMediaPage(): JSX.Element {
               tickerSlots={tickerSlots}
               tickerStyle={tickerStyle}
               safetyNotices={safetyNotices}
+              gasPrices={gasPrices}
               cafeSlotsRefreshSignal={cafeSlotsRefreshSignal}
               mediaData={mediaData}
             />
@@ -1101,8 +1114,10 @@ export default function CafeMediaPage(): JSX.Element {
         <p className="mb-4 text-xs text-muted-500">
           A continuous scrolling strip across the bottom of the screen. Up to 10 slots, each set to a content
           type and independently switched on/off - pick a specific named notice from the Notices section above,
-          different slots can show different notices. A slot's own toggle only matters while the master toggle
-          above is on.
+          different slots can show different notices. Check "Gas" on any slot to also append the Gas Prices
+          container's values (Dashboard Manager) to that slot - additive, works alongside any content type
+          including on its own with no other type picked. A slot's own toggles only matter while the master
+          toggle above is on.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {tickerSlots.map((slot) => (
@@ -1119,6 +1134,18 @@ export default function CafeMediaPage(): JSX.Element {
                   </option>
                 ))}
               </select>
+              <label
+                className="flex shrink-0 cursor-pointer items-center gap-1.5"
+                title="Additive - appends the Gas Prices tiles' values onto whatever this slot already shows (or stands alone if the slot has no other content picked)"
+              >
+                <input
+                  type="checkbox"
+                  checked={!!slot.includeGasPrices}
+                  onChange={(event) => updateSlot(slot.position, { includeGasPrices: event.target.checked })}
+                  className="h-4 w-4 accent-accent-sky-500"
+                />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">Gas</span>
+              </label>
               <label className="flex shrink-0 cursor-pointer items-center gap-1.5" title="Enable this slot">
                 <input
                   type="checkbox"

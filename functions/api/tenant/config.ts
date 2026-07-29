@@ -217,6 +217,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     carouselSlots: publicConfigData.carouselSlots,
     cafeCarouselSlots: publicConfigData.cafeCarouselSlots,
     opsPanel: publicConfigData.opsPanel,
+    gasPrices: publicConfigData.gasPrices,
   });
 };
 

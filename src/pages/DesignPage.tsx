@@ -8,6 +8,7 @@ import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import MediaPanel, { type MediaPanelSourceData } from '../components/media/MediaPanel'
 import type { OpsPanelPublic } from '../components/RightInfoPanel'
 import type { OpsPanelChartConfig } from '../components/LeftInfoPanel'
+import type { GasPricesPublic } from '../components/GasPricesPanel'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import CafeTicker, { type TickerSlot, type TickerStyle } from '../components/CafeTicker'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
@@ -15,7 +16,9 @@ import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
 import { currentMedia } from '../config/media'
 import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
-import { TENANT_CONFIG_URL, BRANDING_LOGO_URL, OPS_PANEL_URL } from '../config/publicApi'
+import { TENANT_CONFIG_URL, BRANDING_LOGO_URL, OPS_PANEL_URL, GAS_PRICES_URL } from '../config/publicApi'
+
+const DEFAULT_GAS_PRICES: GasPricesPublic = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
 import {
   CURRENT_LIVE_THEME,
   CURRENT_LIVE_THEME_ID,
@@ -316,6 +319,7 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
   const { hours: visibilityHours } = useVisibilityForecast()
   const [settings, setSettings] = useState<CafePreviewSettings>(DEFAULT_CAFE_PREVIEW_SETTINGS)
   const [safetyNotices, setSafetyNotices] = useState<SafetyNoticeLike[]>([])
+  const [gasPrices, setGasPrices] = useState<GasPricesPublic>(DEFAULT_GAS_PRICES)
 
   useEffect(() => {
     let cancelled = false
@@ -337,6 +341,13 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
       .then((data) => {
         if (cancelled || !data) return
         if (Array.isArray(data.safetyNotices)) setSafetyNotices(data.safetyNotices)
+      })
+      .catch(() => {})
+    fetch(GAS_PRICES_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setGasPrices(data)
       })
       .catch(() => {})
     return () => {
@@ -407,6 +418,7 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
               liveDataUnavailable={liveDataUnavailable}
               visibilityHours={visibilityHours}
               safetyNotices={safetyNotices}
+              gasPrices={gasPrices}
               style={tickerStyle}
             />
           </div>
@@ -476,6 +488,7 @@ export default function DesignPage(): JSX.Element {
   const [mediaData, setMediaData] = useState<MediaPanelSourceData | undefined>(undefined)
   const [opsPanelData, setOpsPanelData] = useState<OpsPanelPublic | null | undefined>(undefined)
   const [opsPanelChartData, setOpsPanelChartData] = useState<OpsPanelChartConfig | null | undefined>(undefined)
+  const [gasPricesData, setGasPricesData] = useState<GasPricesPublic | null | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
     fetch(TENANT_CONFIG_URL)
@@ -499,6 +512,7 @@ export default function DesignPage(): JSX.Element {
             weatherSummaryStateADurationSeconds: data.opsPanel?.weatherSummaryStateADurationSeconds ?? 8,
             weatherSummaryStateBDurationSeconds: data.opsPanel?.weatherSummaryStateBDurationSeconds ?? 5,
           })
+          setGasPricesData(data.gasPrices ?? null)
         }
       })
       .catch(() => {})
@@ -1671,6 +1685,7 @@ export default function DesignPage(): JSX.Element {
                       isPreview
                       mediaData={mediaData}
                       safetyNoticesData={opsPanelData?.safetyNotices}
+                      gasPricesData={gasPricesData}
                     />
                   ) : (
                     <Clubhouse1Template
@@ -1684,6 +1699,7 @@ export default function DesignPage(): JSX.Element {
                       mediaData={mediaData}
                       opsPanelData={opsPanelData}
                       opsPanelChartData={opsPanelChartData}
+                      gasPricesData={gasPricesData}
                     />
                   )
                 ) : (

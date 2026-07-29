@@ -40,6 +40,19 @@ export interface TickerSlot {
   // empty segment and is skipped, same graceful-degradation posture as
   // every other empty/unset slot - never a crash.
   noticeId?: string
+  // Task #42: additive to whatever `type`/`noticeId` already resolves
+  // to for this slot - NOT a slot type of its own, so e.g. a slot can be
+  // type: null with just gas prices as its whole segment, or type:
+  // 'notice' with both the notice text AND gas prices in one segment.
+  // See gasPricesSegmentText below for the resolved format.
+  includeGasPrices?: boolean
+}
+
+export interface TickerGasPrices {
+  avgasPrice: number | null
+  ul91Price: number | null
+  jetA1Price: number | null
+  currency: string
 }
 
 export interface TickerStyle {
@@ -93,6 +106,7 @@ interface CafeTickerProps {
   liveDataUnavailable: boolean
   visibilityHours: VisibilityHour[]
   safetyNotices: SafetyNotice[]
+  gasPrices: TickerGasPrices
   style: TickerStyle
 }
 
@@ -152,6 +166,21 @@ function noticeSegmentText(noticeId: string | undefined, safetyNotices: SafetyNo
   return notice.text
 }
 
+// Task #42: same "LABEL: content" shape as forecastSegmentText/
+// conditionsSegmentText above, so it reads consistently alongside them.
+// A price of null is "not set" (Dashboard Manager's Gas Prices container
+// left blank) and is simply omitted, not shown as £0.00 - same
+// graceful-degradation posture as every other optional field in this
+// file. Empty string (all three unset) lets the caller fall through to
+// "no content" exactly like any other empty segment.
+function gasPricesSegmentText(gasPrices: TickerGasPrices): string {
+  const parts: string[] = []
+  if (gasPrices.avgasPrice !== null) parts.push(`AVGAS ${gasPrices.currency}${gasPrices.avgasPrice.toFixed(2)}`)
+  if (gasPrices.ul91Price !== null) parts.push(`UL91 ${gasPrices.currency}${gasPrices.ul91Price.toFixed(2)}`)
+  if (gasPrices.jetA1Price !== null) parts.push(`JET A1 ${gasPrices.currency}${gasPrices.jetA1Price.toFixed(2)}`)
+  return parts.length > 0 ? `GAS PRICES: ${parts.join(' · ')}` : ''
+}
+
 // Resolves each configured, ENABLED slot to its display text - built-in
 // types only, no per-slot fetching (all data is handed in as props,
 // already fetched once by the parent template/preview). A disabled slot
@@ -159,25 +188,36 @@ function noticeSegmentText(noticeId: string | undefined, safetyNotices: SafetyNo
 // ever renders as a blank segment.
 function useResolvedSegments(props: CafeTickerProps): string[] {
   const clockText = useClockText()
-  const { slots, weather, liveDataUnavailable, visibilityHours, safetyNotices } = props
+  const { slots, weather, liveDataUnavailable, visibilityHours, safetyNotices, gasPrices } = props
 
   return slots
     .filter((slot) => slot.enabled !== false)
     .slice()
     .sort((a, b) => a.position - b.position)
     .map((slot) => {
-      switch (slot.type) {
-        case 'clock':
-          return clockText
-        case 'forecast':
-          return forecastSegmentText(visibilityHours)
-        case 'conditions':
-          return conditionsSegmentText(weather, liveDataUnavailable)
-        case 'notice':
-          return noticeSegmentText(slot.noticeId, safetyNotices)
-        default:
-          return ''
-      }
+      const baseText = (() => {
+        switch (slot.type) {
+          case 'clock':
+            return clockText
+          case 'forecast':
+            return forecastSegmentText(visibilityHours)
+          case 'conditions':
+            return conditionsSegmentText(weather, liveDataUnavailable)
+          case 'notice':
+            return noticeSegmentText(slot.noticeId, safetyNotices)
+          default:
+            return ''
+        }
+      })()
+      // Additive, not a replacement (task #42) - a slot's own picked
+      // type/notice still resolves exactly as before; includeGasPrices
+      // just appends the gas prices segment onto the same slot's text
+      // when both are present, or stands alone when the slot has no
+      // other type/content configured.
+      if (!slot.includeGasPrices) return baseText
+      const gasText = gasPricesSegmentText(gasPrices)
+      if (!gasText) return baseText
+      return baseText ? `${baseText}   ${gasText}` : gasText
     })
     .filter((text) => text.trim().length > 0)
 }

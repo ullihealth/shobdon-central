@@ -98,6 +98,19 @@ interface OpsPanelRow {
   weatherSummaryStateBDurationSeconds: number;
 }
 
+// Dedicated Gas Prices store (migration 0049) - deliberately separate
+// from OpsPanelRow/safetyNoticesJson above, see that migration's own
+// comment. Missing row (a tenant that's never touched Dashboard
+// Manager's Gas Prices container) resolves to all-null prices below,
+// same "no sensible default, so don't show a fake one" posture as
+// airfieldInfoText.
+interface GasPricesRow {
+  avgasPrice: number | null;
+  ul91Price: number | null;
+  jetA1Price: number | null;
+  currency: string;
+}
+
 // Migration 0039 - independent logo/name display settings for the two
 // places a tenant's branding badge renders (Header.tsx on the
 // dashboard-style templates, VenueCornerBadge.tsx on the Café
@@ -178,7 +191,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 // caller of buildPublicConfigResponse is unaffected - that function
 // below is now a thin wrapper over this one.
 export async function buildPublicConfigData(organizationId: string, env: PublicConfigEnv) {
-  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(organizationId)
@@ -375,6 +388,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       )
       .bind(organizationId)
       .first<CafeSettingsRow>(),
+    env.DB
+      .prepare("SELECT avgasPrice, ul91Price, jetA1Price, currency FROM gas_prices WHERE organizationId = ?")
+      .bind(organizationId)
+      .first<GasPricesRow>(),
   ]);
 
   const runwayGroups = runwayRows.results.map((row) => ({
@@ -485,6 +502,18 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       }
     : null;
 
+  // Dedicated Gas Prices store (migration 0049) - missing row (never
+  // saved) resolves to all-null prices, same posture as opsPanel's own
+  // missing-row default above; the live dashboard's GasPricesPanel
+  // renders nothing at all when every price is null rather than showing
+  // empty/zero tiles.
+  const gasPrices = {
+    avgasPrice: gasPricesRow?.avgasPrice ?? null,
+    ul91Price: gasPricesRow?.ul91Price ?? null,
+    jetA1Price: gasPricesRow?.jetA1Price ?? null,
+    currency: gasPricesRow?.currency ?? "£",
+  };
+
   const mainTemplateId = mainDisplayRow?.templateId ?? "classic";
   // No row = never explicitly disabled -> active, same "missing row is
   // never a block" posture as mainTemplateId's own default above.
@@ -497,12 +526,23 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     tickerSlots: (cafeSettingsRow?.tickerSlotsJson
       ? JSON.parse(cafeSettingsRow.tickerSlotsJson)
       : Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null, enabled: true }))
-    ).map((slot: { position: number; type: string | null; enabled?: boolean }) => ({
+    ).map((slot: { position: number; type: string | null; enabled?: boolean; noticeId?: string; includeGasPrices?: boolean }) => ({
       position: slot.position,
       type: slot.type,
       // Missing on an older saved config = enabled, same
       // `enabled !== false` convention as safetyNotices.
       enabled: slot.enabled !== false,
+      // noticeId was previously dropped here (this mapping only ever
+      // returned position/type/enabled), which silently broke every
+      // notice-type ticker slot on the LIVE public dashboard specifically
+      // - CafeTemplate.tsx sources tickerSlots from exactly this field
+      // (see its own PUBLIC_CONFIG_URL fetch), so a slot correctly saved
+      // with a specific notice picked in CafeMediaPage.tsx would always
+      // render blank once actually live. Fixed as part of adding
+      // includeGasPrices below, the same class of "new optional field
+      // silently stripped by an explicit field list" issue.
+      noticeId: slot.noticeId,
+      includeGasPrices: !!slot.includeGasPrices,
     })),
     tickerBackgroundColor: cafeSettingsRow?.tickerBackgroundColor ?? "#0f172a",
     tickerBackgroundOpacity: cafeSettingsRow?.tickerBackgroundOpacity ?? 100,
@@ -526,6 +566,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     carouselSlots,
     cafeCarouselSlots,
     opsPanel,
+    gasPrices,
     mainTemplateId,
     mainDisplayActive,
     cafeSettings,
