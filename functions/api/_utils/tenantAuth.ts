@@ -136,9 +136,32 @@ export async function resolveTenantMembership(
 // /platform/tenants (including hard-deleting the tenant entirely) -
 // this just makes the tenant's OWN regular admin UI reachable too,
 // for previewing.
+//
+// Deliberately resolves by tenants.slug (joined to organization), NOT
+// by organization.slug directly - an earlier version queried
+// `organization WHERE slug = ?` using the same slug the /platform/preview
+// dropdown offers (tenants.slug, sourced from GET /api/platform/tenants),
+// silently assuming the two always match. They don't: at least one real
+// tenant (Gyroplane Train - tenants.slug='gyroplane') has an organization
+// row still stuck at its auto-generated onboarding defaults
+// (slug='tenant-3tvd9aq5', name='Your Airfield Name') that was never
+// reslugged/renamed to match, so picking it in the dropdown 404'd here
+// even though it listed correctly. tenants.slug is the identity the
+// dropdown actually offers and the identity actually stored in the
+// cookie, so resolution must key off THAT, not assume it mirrors
+// organization.slug. t.deleted_at IS NULL matches the dropdown's own
+// listing filter (functions/api/platform/tenants/index.ts) - an archived
+// tenant can't be resolved here either, consistent with never being
+// offered as an option. t.name (not o.name) is returned as the display
+// name for the same reason - it's the one kept current by
+// /platform/tenants' own onboarding/rename flow.
 export async function resolveDeveloperPreviewTenant(db: D1Database, slug: string): Promise<TenantMembership | null> {
   const row = await db
-    .prepare("SELECT id AS organizationId, slug, name FROM organization WHERE slug = ?")
+    .prepare(
+      `SELECT o.id AS organizationId, t.slug AS slug, t.name AS name
+       FROM tenants t JOIN organization o ON o.id = t.organization_id
+       WHERE t.slug = ? AND t.deleted_at IS NULL`
+    )
     .bind(slug)
     .first<{ organizationId: string; slug: string; name: string }>();
   if (!row) return null;
