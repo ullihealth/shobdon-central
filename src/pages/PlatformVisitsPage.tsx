@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 
 const VISITS_URL = '/api/platform/visits'
 const VISITS_EXPORT_URL = '/api/platform/visits/export'
+const IP_LABELS_URL = '/api/platform/ip-labels'
 
 interface Visit {
   id: number
@@ -20,6 +21,18 @@ interface Visit {
   geoCity: string | null
   geoLatitude: string | null
   geoLongitude: string | null
+  // Migration 0057 - the global IP directory (ip_labels), NOT the same
+  // thing as tenant_known_devices' per-tenant uptime confirmation. Any
+  // IP Jeff recognizes can carry a label here regardless of which
+  // tenant it appeared under.
+  labelGroup: string | null
+}
+
+interface IpLabel {
+  id: number
+  ipAddress: string
+  groupName: string
+  note: string | null
 }
 
 // "Leominster, Herefordshire, GB" - city/region are frequently absent
@@ -49,7 +62,7 @@ function formatVisitedAt(iso: string): string {
 // text if pasted somewhere that isn't. Includes a header row so a
 // paste destination that DOES respect it gets labelled columns.
 function visitsToClipboardText(rows: Visit[]): string {
-  const header = ['Time', 'Tenant', 'Display', 'IP address', 'User agent'].join('\t')
+  const header = ['Time', 'Tenant', 'Display', 'IP address', 'User agent', 'Label'].join('\t')
   const lines = rows.map((v) =>
     [
       formatVisitedAt(v.visitedAt),
@@ -57,6 +70,7 @@ function visitsToClipboardText(rows: Visit[]): string {
       v.displaySlug,
       v.ipAddress ?? '—',
       v.userAgent ?? '—',
+      v.labelGroup ?? '',
     ].join('\t')
   )
   return [header, ...lines].join('\n')
@@ -83,6 +97,10 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
+  const [hideGroups, setHideGroups] = useState<Set<string>>(new Set())
+  const [unlabeledOnly, setUnlabeledOnly] = useState(false)
+  const [labelDrafts, setLabelDrafts] = useState<Record<number, string>>({})
+  const [labelSaving, setLabelSaving] = useState<number | null>(null)
 
   // Tenant slug -> id, accumulated (never shrunk) across every response
   // this page has seen so far - needed because tenantFilter is a slug
@@ -94,14 +112,32 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [knownTenants, setKnownTenants] = useState<Map<string, { id: number; name: string }>>(new Map())
   const [knownSlugs, setKnownSlugs] = useState<Set<string>>(new Set())
 
+  // All existing group names, fetched once - backs both the "hide
+  // these groups" filter's option list and the label input's
+  // autocomplete (a plain <datalist>, so typing a new name still just
+  // works - this is a suggestion list, not a closed set).
+  const [allLabels, setAllLabels] = useState<IpLabel[]>([])
+  const allGroupNames = useMemo(() => Array.from(new Set(allLabels.map((l) => l.groupName))).sort(), [allLabels])
+
+  function loadLabels() {
+    return fetch(IP_LABELS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data) setAllLabels(data.labels ?? [])
+      })
+  }
+
+  useEffect(() => {
+    loadLabels()
+  }, [])
+
   // display_visits is well beyond the backing endpoint's single-response
   // cap (see that endpoint's own MAX_ROWS comment - confirmed against
   // production, 2026-07: 5,029 total rows, 4,998 of them Shobdon's own),
   // so an unfiltered fetch only ever shows a thin recent slice. Tenant/
-  // display/date-range filters are sent to the server (not applied
-  // client-side against that slice) specifically so narrowing actually
-  // reaches rows outside that window, rather than just re-filtering
-  // whatever a first, unfiltered load happened to return.
+  // display/date-range/label filters are all sent to the server (not
+  // applied client-side against that slice) specifically so narrowing
+  // actually reaches rows outside that window.
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams()
@@ -110,6 +146,8 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (slugFilter) params.set('slug', slugFilter)
     if (dateFrom) params.set('from', dateFrom)
     if (dateTo) params.set('to', dateTo)
+    if (hideGroups.size > 0) params.set('hideGroups', Array.from(hideGroups).join(','))
+    if (unlabeledOnly) params.set('unlabeledOnly', 'true')
     const query = params.toString()
 
     fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
@@ -143,7 +181,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     // time instead (the .get() above), deliberately left out of the
     // dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantFilter, slugFilter, dateFrom, dateTo])
+  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly])
 
   const tenantOptions = useMemo(() => Array.from(knownTenants.keys()).sort(), [knownTenants])
   const slugOptions = useMemo(() => Array.from(knownSlugs).sort(), [knownSlugs])
@@ -155,6 +193,15 @@ export default function PlatformVisitsPage(): JSX.Element {
       setSortField(field)
       setSortDirection(field === 'visitedAt' ? 'desc' : 'asc')
     }
+  }
+
+  function toggleHideGroup(group: string) {
+    setHideGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(group)) next.delete(group)
+      else next.add(group)
+      return next
+    })
   }
 
   // Sort is purely client-side over whatever the server just returned
@@ -205,17 +252,14 @@ export default function PlatformVisitsPage(): JSX.Element {
     setTimeout(() => setCopyStatus('idle'), 1500)
   }
 
-  // Deliberately reuses whatever the visible tenant/display/date filters
-  // are already set to, rather than a separate scope picker - those
-  // filters already ARE "All tenants" (nothing picked) / "current
-  // tenant" (tenantFilter set) / "date range" (dateFrom/dateTo set), and
-  // duplicating that as a second control would just be two ways to say
-  // the same thing. Plain navigation (not fetch+blob) - the export
-  // endpoint's own Content-Disposition: attachment header is what
-  // actually triggers the browser's download, and a same-origin
-  // navigation carries the session cookie the endpoint needs
-  // automatically, same as every other authenticated request on this
-  // page.
+  // Deliberately reuses whatever the visible tenant/display/date/label
+  // filters are already set to, rather than a separate scope picker -
+  // those filters already ARE the scope, and duplicating them as a
+  // second control would just be two ways to say the same thing. Plain
+  // navigation (not fetch+blob) - the export endpoint's own
+  // Content-Disposition: attachment header triggers the browser's
+  // download, and a same-origin navigation carries the session cookie
+  // the endpoint needs automatically.
   function handleExport() {
     const params = new URLSearchParams()
     const tenantId = tenantFilter ? knownTenants.get(tenantFilter)?.id : undefined
@@ -223,8 +267,34 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (slugFilter) params.set('slug', slugFilter)
     if (dateFrom) params.set('from', dateFrom)
     if (dateTo) params.set('to', dateTo)
+    if (hideGroups.size > 0) params.set('hideGroups', Array.from(hideGroups).join(','))
+    if (unlabeledOnly) params.set('unlabeledOnly', 'true')
     const query = params.toString()
     window.location.href = query ? `${VISITS_EXPORT_URL}?${query}` : VISITS_EXPORT_URL
+  }
+
+  // Single fast action, per the spec: typing a new group name creates
+  // it, typing an existing one (offered via the <datalist> below) just
+  // adds this IP to it - no separate "create group" step, no modal.
+  async function handleSaveLabel(visit: Visit) {
+    const groupName = (labelDrafts[visit.id] ?? visit.labelGroup ?? '').trim()
+    if (!groupName || !visit.ipAddress) return
+    setLabelSaving(visit.id)
+    try {
+      await fetch(IP_LABELS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ipAddress: visit.ipAddress, groupName }),
+      })
+      // Updates every row sharing this IP in the currently-loaded set,
+      // not just the one that was open - a label is per-IP, not
+      // per-visit-row, so every occurrence should reflect it
+      // immediately without a full refetch.
+      setVisits((prev) => prev.map((v) => (v.ipAddress === visit.ipAddress ? { ...v, labelGroup: groupName } : v)))
+      await loadLabels()
+    } finally {
+      setLabelSaving(null)
+    }
   }
 
   if (forbidden) {
@@ -245,10 +315,10 @@ export default function PlatformVisitsPage(): JSX.Element {
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
           Every logged display visit, across every tenant. A row is written when a display's heartbeat sees a new IP
           or user-agent, or roughly every 20 minutes otherwise — not one row per heartbeat ping. Rows older than 30
-          days are pruned automatically. Click a row to see its captured location, if any.
+          days are pruned automatically. Click a row to see its captured location and label it.
         </p>
 
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
           <select
             value={tenantFilter}
             onChange={(event) => setTenantFilter(event.target.value)}
@@ -320,13 +390,47 @@ export default function PlatformVisitsPage(): JSX.Element {
             onClick={handleExport}
             disabled={filtered.length === 0}
             className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-40"
-            title="Exports every matching row for the current tenant/display/date filters - not just what's rendered on screen"
+            title="Exports every matching row for the current filters - not just what's rendered on screen"
           >
             Export CSV
           </button>
           <span className="text-xs text-muted-500">
             {filtered.length} visit{filtered.length === 1 ? '' : 's'}
           </span>
+        </div>
+
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-panel/60 p-3">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-500">Label filter:</span>
+          <label className="flex items-center gap-2 text-xs text-muted-300">
+            <input
+              type="checkbox"
+              checked={unlabeledOnly}
+              onChange={(e) => setUnlabeledOnly(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Unlabeled only
+          </label>
+          {allGroupNames.length > 0 && (
+            <>
+              <span className="text-xs text-muted-500">Hide:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {allGroupNames.map((group) => (
+                  <button
+                    key={group}
+                    type="button"
+                    onClick={() => toggleHideGroup(group)}
+                    className={`rounded-full border px-2.5 py-1 text-xs ${
+                      hideGroups.has(group)
+                        ? 'border-status-bad/60 bg-status-bad/20 text-status-bad'
+                        : 'border-slate-700 bg-slate-900/80 text-muted-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {group}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -367,6 +471,7 @@ export default function PlatformVisitsPage(): JSX.Element {
                       {sortField === 'ipAddress' && <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>}
                     </button>
                   </th>
+                  <th className="px-4 py-3">Label</th>
                   <th className="px-4 py-3">User agent</th>
                 </tr>
               </thead>
@@ -375,6 +480,7 @@ export default function PlatformVisitsPage(): JSX.Element {
                   const isExpanded = expandedRowId === visit.id
                   const isSelected = selectedIds.has(visit.id)
                   const geoSummary = formatGeoSummary(visit)
+                  const isLabelBusy = labelSaving === visit.id
                   return (
                     <Fragment key={visit.id}>
                       <tr
@@ -414,6 +520,18 @@ export default function PlatformVisitsPage(): JSX.Element {
                           {visit.ipAddress ?? '—'}
                         </td>
                         <td
+                          className="px-4 py-3 text-xs"
+                          onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
+                        >
+                          {visit.labelGroup ? (
+                            <span className="rounded-full border border-accent-sky-500/40 bg-accent-sky-500/10 px-2 py-0.5 text-accent-sky-400">
+                              {visit.labelGroup}
+                            </span>
+                          ) : (
+                            <span className="text-muted-600">—</span>
+                          )}
+                        </td>
+                        <td
                           className="max-w-xs truncate px-4 py-3 text-xs text-muted-500"
                           title={visit.userAgent ?? ''}
                           onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
@@ -423,21 +541,50 @@ export default function PlatformVisitsPage(): JSX.Element {
                       </tr>
                       {isExpanded && (
                         <tr className="border-b border-border/60 bg-white/5 last:border-0">
-                          <td colSpan={6} className="px-4 py-3 text-xs">
-                            <span className="font-semibold uppercase tracking-widest text-muted-400">Location: </span>
-                            {geoSummary ? (
-                              <span className="text-muted-300">
-                                {geoSummary}
-                                {visit.geoLatitude && visit.geoLongitude && (
-                                  <span className="ml-2 text-muted-500">
-                                    ({visit.geoLatitude}, {visit.geoLongitude})
-                                  </span>
-                                )}
-                              </span>
-                            ) : (
-                              <span className="italic text-muted-500">
-                                Not available (logged before geolocation was added)
-                              </span>
+                          <td colSpan={7} className="px-4 py-3 text-xs">
+                            <div className="mb-2">
+                              <span className="font-semibold uppercase tracking-widest text-muted-400">Location: </span>
+                              {geoSummary ? (
+                                <span className="text-muted-300">
+                                  {geoSummary}
+                                  {visit.geoLatitude && visit.geoLongitude && (
+                                    <span className="ml-2 text-muted-500">
+                                      ({visit.geoLatitude}, {visit.geoLongitude})
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="italic text-muted-500">
+                                  Not available (logged before geolocation was added)
+                                </span>
+                              )}
+                            </div>
+                            {visit.ipAddress && (
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold uppercase tracking-widest text-muted-400">
+                                  Label this IP:
+                                </span>
+                                <input
+                                  type="text"
+                                  list="ip-label-group-names"
+                                  placeholder="e.g. Jeff's Mac, Shobdon Café TV…"
+                                  value={labelDrafts[visit.id] ?? visit.labelGroup ?? ''}
+                                  onChange={(e) => setLabelDrafts((prev) => ({ ...prev, [visit.id]: e.target.value }))}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-56 rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isLabelBusy}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleSaveLabel(visit)
+                                  }}
+                                  className="rounded-lg border border-accent-sky-500/50 bg-accent-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-accent-sky-400 disabled:opacity-40"
+                                >
+                                  {isLabelBusy ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -447,8 +594,8 @@ export default function PlatformVisitsPage(): JSX.Element {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td className="px-4 py-6 text-center text-sm text-muted-500" colSpan={6}>
-                      {tenantFilter || slugFilter || dateFrom || dateTo
+                    <td className="px-4 py-6 text-center text-sm text-muted-500" colSpan={7}>
+                      {tenantFilter || slugFilter || dateFrom || dateTo || hideGroups.size > 0 || unlabeledOnly
                         ? 'No visits match the current filters.'
                         : 'No visits logged yet.'}
                     </td>
@@ -459,6 +606,11 @@ export default function PlatformVisitsPage(): JSX.Element {
           </div>
         )}
       </div>
+      <datalist id="ip-label-group-names">
+        {allGroupNames.map((group) => (
+          <option key={group} value={group} />
+        ))}
+      </datalist>
     </div>
   )
 }

@@ -31,6 +31,13 @@ interface SuggestionRow {
   visitCount: number;
   firstSeen: string;
   lastSeen: string;
+  // Migration 0057 (global IP directory) cross-check - a real gap this
+  // catches: 185.69.144.84 was confirmed as Shobdon's known device
+  // despite also appearing under GyroPlane Train's log with heavily
+  // overlapping timestamps, strong evidence it's a shared dev/test
+  // source rather than either tenant's real display. Surfaced here so
+  // that mistake is visible BEFORE confirming, not discovered after.
+  labelGroup: string | null;
 }
 
 // A candidate list, not a live feed - caps at a generous number so a
@@ -62,10 +69,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT v.tenant_id AS tenantId, t.name AS tenantName, t.slug AS tenantSlug,
               v.display_slug AS displaySlug, td.name AS displayName, v.ip_address AS ipAddress,
-              COUNT(*) AS visitCount, MIN(v.visited_at) AS firstSeen, MAX(v.visited_at) AS lastSeen
+              COUNT(*) AS visitCount, MIN(v.visited_at) AS firstSeen, MAX(v.visited_at) AS lastSeen,
+              l.group_name AS labelGroup
        FROM display_visits v
        JOIN tenants t ON t.id = v.tenant_id
        LEFT JOIN tenant_displays td ON td.tenant_id = v.tenant_id AND td.slug = v.display_slug
+       LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
        WHERE ${whereClause}
          AND NOT EXISTS (
            SELECT 1 FROM tenant_known_devices k

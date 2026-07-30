@@ -24,6 +24,14 @@ interface KnownDeviceRow {
   status: string;
   active: number;
   confirmedAt: string;
+  // Global IP directory (migration 0057) cross-check, NOT the same
+  // field as `label` above (that's this row's own free-text note within
+  // tenant_known_devices). A confirmed device that also carries a
+  // global label like "Jeff's Mac" is a strong signal it was wrongly
+  // confirmed - see suggestions.ts's own comment for the concrete case
+  // this caught (185.69.144.84 confirmed under Shobdon despite also
+  // appearing under GyroPlane Train's log).
+  globalLabelGroup: string | null;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -53,9 +61,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT k.id AS id, k.tenant_id AS tenantId, t.name AS tenantName, t.slug AS tenantSlug,
               k.display_slug AS displaySlug, k.ip_address AS ipAddress, k.label AS label,
-              k.status AS status, k.active AS active, k.confirmed_at AS confirmedAt
+              k.status AS status, k.active AS active, k.confirmed_at AS confirmedAt,
+              l.group_name AS globalLabelGroup
        FROM tenant_known_devices k
        JOIN tenants t ON t.id = k.tenant_id
+       LEFT JOIN ip_labels l ON l.ip_address = k.ip_address
        ${whereClause}
        ORDER BY k.active DESC, k.confirmed_at DESC`
     )

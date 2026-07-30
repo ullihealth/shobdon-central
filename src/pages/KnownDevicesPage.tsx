@@ -13,6 +13,12 @@ interface Suggestion {
   visitCount: number
   firstSeen: string
   lastSeen: string
+  // Global IP directory (migration 0057) cross-check - a real gap this
+  // catches: an IP confirmed as one tenant's known device that ALSO
+  // carries a label like "Jeff's Mac" is almost certainly not that
+  // tenant's real display. Surfaced as a visible warning here, before
+  // confirming, not discovered after.
+  labelGroup: string | null
 }
 
 interface KnownDevice {
@@ -26,6 +32,10 @@ interface KnownDevice {
   status: string
   active: number
   confirmedAt: string
+  // Global IP directory cross-check - see Suggestion's own field for
+  // the full reasoning. Distinct from `label` above (this row's own
+  // free-text note).
+  globalLabelGroup: string | null
 }
 
 function formatDate(iso: string): string {
@@ -178,13 +188,23 @@ export default function KnownDevicesPage(): JSX.Element {
                       const key = `${s.tenantId}:${s.displaySlug}:${s.ipAddress}`
                       const isBusy = busyKey === key
                       return (
-                        <tr key={key} className="border-b border-border/60 last:border-0">
+                        <tr
+                          key={key}
+                          className={`border-b border-border/60 last:border-0 ${s.labelGroup ? 'bg-amber-500/5' : ''}`}
+                        >
                           <td className="px-4 py-3">
                             <div className="font-semibold">{s.tenantName}</div>
                             <div className="text-xs text-muted-500">{s.tenantSlug}</div>
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-400">{s.displayName ?? s.displaySlug}</td>
-                          <td className="px-4 py-3 text-xs text-muted-400">{s.ipAddress}</td>
+                          <td className="px-4 py-3 text-xs text-muted-400">
+                            {s.ipAddress}
+                            {s.labelGroup && (
+                              <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                                ⚠ Labeled "{s.labelGroup}"
+                              </div>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-xs text-muted-400">{s.visitCount} times</td>
                           <td className="px-4 py-3 text-xs text-muted-500">
                             {formatDate(s.firstSeen)} — {formatDate(s.lastSeen)}
@@ -246,13 +266,23 @@ export default function KnownDevicesPage(): JSX.Element {
                       const isRetireBusy = busyKey === `retire:${d.id}`
                       const isLabelBusy = busyKey === `label:${d.id}`
                       return (
-                        <tr key={d.id} className={`border-b border-border/60 last:border-0 ${d.active === 0 ? 'opacity-50' : ''}`}>
+                        <tr
+                          key={d.id}
+                          className={`border-b border-border/60 last:border-0 ${d.active === 0 ? 'opacity-50' : ''} ${d.active === 1 && d.globalLabelGroup ? 'bg-amber-500/5' : ''}`}
+                        >
                           <td className="px-4 py-3">
                             <div className="font-semibold">{d.tenantName}</div>
                             <div className="text-xs text-muted-500">{d.tenantSlug}</div>
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-400">{d.displaySlug}</td>
-                          <td className="px-4 py-3 text-xs text-muted-400">{d.ipAddress}</td>
+                          <td className="px-4 py-3 text-xs text-muted-400">
+                            {d.ipAddress}
+                            {d.active === 1 && d.globalLabelGroup && (
+                              <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                                ⚠ Labeled "{d.globalLabelGroup}" - probably not this tenant's real display
+                              </div>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-2">
                               <input

@@ -21,6 +21,7 @@ import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import KnownDevicesPage from './pages/KnownDevicesPage'
 import UptimeReportPage from './pages/UptimeReportPage'
+import IpDirectoryPage from './pages/IpDirectoryPage'
 import RunwaysPage from './pages/RunwaysPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
@@ -137,6 +138,17 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <UptimeReportPage />
+            </RequireAuth>
+          }
+        />
+        {/* Same standalone-outside-AdminLayout treatment as the route
+            above - the global IP directory (migration 0057), gated the
+            same way. */}
+        <Route
+          path="/platform/ip-directory"
+          element={
+            <RequireAuth requireDeveloper>
+              <IpDirectoryPage />
             </RequireAuth>
           }
         />

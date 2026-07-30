@@ -35,6 +35,11 @@ interface VisitRow {
   geoCity: string | null;
   geoLatitude: string | null;
   geoLongitude: string | null;
+  // Migration 0057 - the global IP directory (ip_labels), joined here
+  // rather than fetched separately so the label filter (hideGroups/
+  // unlabeledOnly below) can be a real WHERE clause reaching past
+  // MAX_ROWS, not a client-side filter over an already-capped page.
+  labelGroup: string | null;
 }
 
 // Caps a single response - this is a live ops log, not an export; the
@@ -81,6 +86,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     conditions.push("v.visited_at <= ?");
     bindings.push(`${toParam}T23:59:59.999Z`);
   }
+  // Comma-separated group_name values to exclude (e.g. "Jeff's
+  // Mac,Home VPN") - checked against the joined label, not a second
+  // query, so it's a real filter on the underlying data rather than
+  // something applied after MAX_ROWS has already cut rows off.
+  const hideGroupsParam = url.searchParams.get("hideGroups");
+  const hideGroups = hideGroupsParam ? hideGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
+  if (hideGroups.length > 0) {
+    conditions.push(`(l.group_name IS NULL OR l.group_name NOT IN (${hideGroups.map(() => "?").join(",")}))`);
+    bindings.push(...hideGroups);
+  }
+  // The discovery view for a newly onboarded tenant - everything not
+  // yet identified, regardless of hideGroups (an empty label can't be
+  // "hidden by name", so this is deliberately a separate flag rather
+  // than folded into hideGroups).
+  if (url.searchParams.get("unlabeledOnly") === "true") {
+    conditions.push("l.id IS NULL");
+  }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const { results } = await env.DB
@@ -89,9 +111,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               v.display_slug AS displaySlug, v.visited_at AS visitedAt,
               v.ip_address AS ipAddress, v.user_agent AS userAgent,
               v.geo_country AS geoCountry, v.geo_region AS geoRegion, v.geo_city AS geoCity,
-              v.geo_latitude AS geoLatitude, v.geo_longitude AS geoLongitude
+              v.geo_latitude AS geoLatitude, v.geo_longitude AS geoLongitude,
+              l.group_name AS labelGroup
        FROM display_visits v
        JOIN tenants t ON t.id = v.tenant_id
+       LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
        ${whereClause}
        ORDER BY v.visited_at DESC
        LIMIT ${MAX_ROWS}`
