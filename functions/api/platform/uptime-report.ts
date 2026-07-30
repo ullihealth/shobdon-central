@@ -28,14 +28,17 @@ interface Gap {
   durationMinutes: number;
 }
 
-// Matches DEDUP_WINDOW_MS in functions/api/public/heartbeat.ts - that's
-// the interval this whole report's math is built on (confirmed via
-// that file directly, not assumed): the browser pings every 3 minutes,
-// but the server only WRITES a new row every ~20 minutes in steady
-// state (or immediately on IP/user-agent change), so 20 minutes - not
-// the 3-minute ping rate - is the real expected spacing between logged
-// rows for a continuously-running display.
-const EXPECTED_INTERVAL_MINUTES = 20;
+// Matches HEARTBEAT_INTERVAL_MS in src/hooks/useDisplayHeartbeat.ts -
+// that's the interval this whole report's math is built on (confirmed
+// via that file directly, not assumed). Reduced from 3 to 30 minutes;
+// the server-side dedup window in functions/api/public/heartbeat.ts is
+// now shorter than this interval (5 minutes, purely a reload-spam
+// guard - see that file's own comment), so every ping at this cadence
+// writes its own row: 30 minutes IS the real expected spacing between
+// logged rows for a continuously-running display, not just a proxy for
+// it. Change this together with HEARTBEAT_INTERVAL_MS, never alone -
+// otherwise every tenant's uptime % silently drifts from reality.
+const EXPECTED_INTERVAL_MINUTES = 30;
 
 // "Missed by more than one interval" (the report's own spec) - a gap
 // is flagged only once two consecutive expected pings have been

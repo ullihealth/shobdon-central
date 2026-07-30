@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { LabelPill } from '../components/admin/LabelPill'
+import { ColorPicker } from '../components/admin/ColorPicker'
+import { resolveLabelColor } from '../utils/labelColors'
 
 const VISITS_URL = '/api/platform/visits'
 const VISITS_EXPORT_URL = '/api/platform/visits/export'
@@ -26,6 +29,8 @@ interface Visit {
   // IP Jeff recognizes can carry a label here regardless of which
   // tenant it appeared under.
   labelGroup: string | null
+  // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
+  labelColor: string | null
 }
 
 interface IpLabel {
@@ -33,6 +38,7 @@ interface IpLabel {
   ipAddress: string
   groupName: string
   note: string | null
+  color: string | null
 }
 
 // "Leominster, Herefordshire, GB" - city/region are frequently absent
@@ -78,11 +84,11 @@ function visitsToClipboardText(rows: Visit[]): string {
 
 // Backs the Platform Admin "Visit Log" nav entry - a plain,
 // reverse-chronological view over display_visits (migration 0041), the
-// per-visit log written by functions/api/public/heartbeat.ts each time a
-// display page's heartbeat sees a new IP/user-agent or ~20 minutes have
-// passed. Deliberately just a filterable list, no charts/aggregates -
-// the questions this answers ("was this screen on around 9am", "what
-// IPs have hit this URL lately") are both answered directly by scanning
+// per-visit log written by functions/api/public/heartbeat.ts on every
+// ~30-minute heartbeat ping (or immediately on IP/user-agent change).
+// Deliberately just a filterable list, no charts/aggregates - the
+// questions this answers ("was this screen on around 9am", "what IPs
+// have hit this URL lately") are both answered directly by scanning
 // rows, not by a summary view.
 export default function PlatformVisitsPage(): JSX.Element {
   const [visits, setVisits] = useState<Visit[]>([])
@@ -100,6 +106,7 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [hideGroups, setHideGroups] = useState<Set<string>>(new Set())
   const [unlabeledOnly, setUnlabeledOnly] = useState(false)
   const [labelDrafts, setLabelDrafts] = useState<Record<number, string>>({})
+  const [colorDrafts, setColorDrafts] = useState<Record<number, string | null>>({})
   const [labelSaving, setLabelSaving] = useState<number | null>(null)
 
   // Tenant slug -> id, accumulated (never shrunk) across every response
@@ -118,6 +125,22 @@ export default function PlatformVisitsPage(): JSX.Element {
   // works - this is a suggestion list, not a closed set).
   const [allLabels, setAllLabels] = useState<IpLabel[]>([])
   const allGroupNames = useMemo(() => Array.from(new Set(allLabels.map((l) => l.groupName))).sort(), [allLabels])
+
+  // A group's colour lives per-IP-row (migration 0058), but the "Hide"
+  // filter pills operate at the group level - this picks one
+  // representative colour per group_name (preferring an explicit one
+  // over a not-yet-set null) so the pill matches whatever colour Jeff
+  // actually sees on that group's individual rows.
+  const groupColors = useMemo(() => {
+    const map = new Map<string, string | null>()
+    for (const l of allLabels) {
+      const existing = map.get(l.groupName)
+      if (existing === undefined || (!existing && l.color)) {
+        map.set(l.groupName, l.color)
+      }
+    }
+    return map
+  }, [allLabels])
 
   function loadLabels() {
     return fetch(IP_LABELS_URL)
@@ -288,18 +311,25 @@ export default function PlatformVisitsPage(): JSX.Element {
   async function handleSaveLabel(visit: Visit) {
     const groupName = (labelDrafts[visit.id] ?? visit.labelGroup ?? '').trim()
     if (!groupName || !visit.ipAddress) return
+    // undefined means "picker never touched" (keep whatever this IP
+    // already had); null is a deliberate "Auto" pick, distinct from
+    // "unchanged" - both need separate handling from the draft map's
+    // absence of a key.
+    const color = visit.id in colorDrafts ? colorDrafts[visit.id] : (visit.labelColor ?? null)
     setLabelSaving(visit.id)
     try {
       await fetch(IP_LABELS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ipAddress: visit.ipAddress, groupName }),
+        body: JSON.stringify({ ipAddress: visit.ipAddress, groupName, color }),
       })
       // Updates every row sharing this IP in the currently-loaded set,
       // not just the one that was open - a label is per-IP, not
       // per-visit-row, so every occurrence should reflect it
       // immediately without a full refetch.
-      setVisits((prev) => prev.map((v) => (v.ipAddress === visit.ipAddress ? { ...v, labelGroup: groupName } : v)))
+      setVisits((prev) =>
+        prev.map((v) => (v.ipAddress === visit.ipAddress ? { ...v, labelGroup: groupName, labelColor: color } : v))
+      )
       await loadLabels()
     } finally {
       setLabelSaving(null)
@@ -322,9 +352,9 @@ export default function PlatformVisitsPage(): JSX.Element {
       <div className="mx-auto max-w-[1900px]">
         <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Platform · Visit Log</h1>
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
-          Every logged display visit, across every tenant. A row is written when a display's heartbeat sees a new IP
-          or user-agent, or roughly every 20 minutes otherwise — not one row per heartbeat ping. Rows older than 30
-          days are pruned automatically. Click a row to see its captured location and label it.
+          Every logged display visit, across every tenant. A row is written on every ~30-minute heartbeat ping (or
+          immediately if the IP/user-agent changes). Rows older than 30 days are pruned automatically. Click a row to
+          see its captured location and label it.
         </p>
 
         <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -432,20 +462,22 @@ export default function PlatformVisitsPage(): JSX.Element {
             <>
               <span className="text-xs text-muted-500">Hide:</span>
               <div className="flex flex-wrap gap-1.5">
-                {allGroupNames.map((group) => (
-                  <button
-                    key={group}
-                    type="button"
-                    onClick={() => toggleHideGroup(group)}
-                    className={`rounded-full border px-2.5 py-1 text-xs ${
-                      hideGroups.has(group)
-                        ? 'border-status-bad/60 bg-status-bad/20 text-status-bad'
-                        : 'border-slate-700 bg-slate-900/80 text-muted-400 hover:border-slate-500'
-                    }`}
-                  >
-                    {group}
-                  </button>
-                ))}
+                {allGroupNames.map((group) => {
+                  const isHidden = hideGroups.has(group)
+                  const entry = resolveLabelColor(groupColors.get(group), group)
+                  return (
+                    <button
+                      key={group}
+                      type="button"
+                      onClick={() => toggleHideGroup(group)}
+                      className={`rounded-full border px-2.5 py-1 text-xs ${
+                        isHidden ? 'border-status-bad/60 bg-status-bad/20 text-status-bad line-through' : entry.pillClass
+                      }`}
+                    >
+                      {group}
+                    </button>
+                  )
+                })}
               </div>
             </>
           )}
@@ -542,9 +574,7 @@ export default function PlatformVisitsPage(): JSX.Element {
                           onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
                         >
                           {visit.labelGroup ? (
-                            <span className="rounded-full border border-accent-sky-500/40 bg-accent-sky-500/10 px-2 py-0.5 text-accent-sky-400">
-                              {visit.labelGroup}
-                            </span>
+                            <LabelPill groupName={visit.labelGroup} color={visit.labelColor} />
                           ) : (
                             <span className="text-muted-600">—</span>
                           )}
@@ -578,7 +608,7 @@ export default function PlatformVisitsPage(): JSX.Element {
                               )}
                             </div>
                             {visit.ipAddress && (
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                 <span className="font-semibold uppercase tracking-widest text-muted-400">
                                   Label this IP:
                                 </span>
@@ -588,16 +618,16 @@ export default function PlatformVisitsPage(): JSX.Element {
                                   placeholder="e.g. Jeff's Mac, Shobdon Café TV…"
                                   value={labelDrafts[visit.id] ?? visit.labelGroup ?? ''}
                                   onChange={(e) => setLabelDrafts((prev) => ({ ...prev, [visit.id]: e.target.value }))}
-                                  onClick={(e) => e.stopPropagation()}
                                   className="w-56 rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none"
+                                />
+                                <ColorPicker
+                                  value={visit.id in colorDrafts ? colorDrafts[visit.id] : visit.labelColor}
+                                  onChange={(color) => setColorDrafts((prev) => ({ ...prev, [visit.id]: color }))}
                                 />
                                 <button
                                   type="button"
                                   disabled={isLabelBusy}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleSaveLabel(visit)
-                                  }}
+                                  onClick={() => handleSaveLabel(visit)}
                                   className="rounded-lg border border-accent-sky-500/50 bg-accent-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-accent-sky-400 disabled:opacity-40"
                                 >
                                   {isLabelBusy ? 'Saving…' : 'Save'}

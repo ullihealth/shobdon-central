@@ -41,17 +41,17 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-// A continuously-open display page pings this endpoint every 2-5
-// minutes (see DashboardPage.tsx/TenantDisplayPage.tsx's own heartbeat
-// effect), but logging every single ping would be pure noise for what
-// this table is actually asked - "was it on around 9am" and "what IPs
-// have hit this" don't need row-per-ping resolution. A new row is only
-// written when the IP or user-agent actually changed since the last
-// logged row (an unexpected-access signal, logged immediately, not
-// batched), OR when this many milliseconds have passed since the last
-// row for this tenant+slug (so a quiet, unchanging display still gets
-// occasional fresh rows, not one from days ago as its only record).
-const DEDUP_WINDOW_MS = 20 * 60 * 1000;
+// A continuously-open display page pings this endpoint every 30
+// minutes (src/hooks/useDisplayHeartbeat.ts's own HEARTBEAT_INTERVAL_MS -
+// keep both in sync), which is already the row-write cadence the Uptime
+// Report assumes, so this window's job is narrower than it used to be:
+// it no longer "spaces out" otherwise-frequent pings (a 30-minute ping
+// always exceeds this window, so it always logs on the normal timer,
+// same as an IP/user-agent change always logs immediately) - it now
+// exists purely to stop a page reload (or several tabs open on the
+// same display) from writing duplicate rows seconds apart. Deliberately
+// smaller than the ping interval for exactly that reason.
+const DEDUP_WINDOW_MS = 5 * 60 * 1000;
 
 // How long a tenant's visit rows are kept - chosen as a reasonable
 // window for "was this displayed recently"/"any odd IPs lately"

@@ -149,8 +149,8 @@ export default function UptimeReportPage(): JSX.Element {
             Known Devices
           </a>
           ) - a tenant/display with nothing confirmed yet can't produce a report. Expected heartbeats assume the
-          real ~20-minute logged cadence (confirmed against the heartbeat endpoint's own dedup logic, not the
-          3-minute raw ping rate), and this number can understate real uptime whenever a confirmed IP has quietly
+          real ~30-minute logged cadence (matches the display's own heartbeat interval directly - every ping now
+          writes its own row), and this number can understate real uptime whenever a confirmed IP has quietly
           rotated away without being reconfirmed - see the reliability note on Known Devices.
         </p>
 

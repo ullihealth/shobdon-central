@@ -40,6 +40,8 @@ interface VisitRow {
   // unlabeledOnly below) can be a real WHERE clause reaching past
   // MAX_ROWS, not a client-side filter over an already-capped page.
   labelGroup: string | null;
+  // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
+  labelColor: string | null;
 }
 
 // Caps a single response - this is a live ops log, not an export; the
@@ -112,7 +114,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               v.ip_address AS ipAddress, v.user_agent AS userAgent,
               v.geo_country AS geoCountry, v.geo_region AS geoRegion, v.geo_city AS geoCity,
               v.geo_latitude AS geoLatitude, v.geo_longitude AS geoLongitude,
-              l.group_name AS labelGroup
+              l.group_name AS labelGroup, l.color AS labelColor
        FROM display_visits v
        JOIN tenants t ON t.id = v.tenant_id
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address

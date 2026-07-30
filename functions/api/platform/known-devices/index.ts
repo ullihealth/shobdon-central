@@ -32,6 +32,8 @@ interface KnownDeviceRow {
   // this caught (185.69.144.84 confirmed under Shobdon despite also
   // appearing under GyroPlane Train's log).
   globalLabelGroup: string | null;
+  // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
+  globalLabelColor: string | null;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -62,7 +64,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       `SELECT k.id AS id, k.tenant_id AS tenantId, t.name AS tenantName, t.slug AS tenantSlug,
               k.display_slug AS displaySlug, k.ip_address AS ipAddress, k.label AS label,
               k.status AS status, k.active AS active, k.confirmed_at AS confirmedAt,
-              l.group_name AS globalLabelGroup
+              l.group_name AS globalLabelGroup, l.color AS globalLabelColor
        FROM tenant_known_devices k
        JOIN tenants t ON t.id = k.tenant_id
        LEFT JOIN ip_labels l ON l.ip_address = k.ip_address

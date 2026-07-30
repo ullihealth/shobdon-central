@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LabelPill } from '../components/admin/LabelPill'
 
 const SUGGESTIONS_URL = '/api/platform/known-devices/suggestions'
 const KNOWN_DEVICES_URL = '/api/platform/known-devices'
@@ -19,6 +20,8 @@ interface Suggestion {
   // tenant's real display. Surfaced as a visible warning here, before
   // confirming, not discovered after.
   labelGroup: string | null
+  // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
+  labelColor: string | null
 }
 
 interface KnownDevice {
@@ -36,6 +39,8 @@ interface KnownDevice {
   // the full reasoning. Distinct from `label` above (this row's own
   // free-text note).
   globalLabelGroup: string | null
+  // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
+  globalLabelColor: string | null
 }
 
 function formatDate(iso: string): string {
@@ -200,8 +205,9 @@ export default function KnownDevicesPage(): JSX.Element {
                           <td className="px-4 py-3 text-xs text-muted-400">
                             {s.ipAddress}
                             {s.labelGroup && (
-                              <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
-                                ⚠ Labeled "{s.labelGroup}"
+                              <div className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                                <span>⚠ Labeled</span>
+                                <LabelPill groupName={s.labelGroup} color={s.labelColor} />
                               </div>
                             )}
                           </td>
@@ -278,8 +284,10 @@ export default function KnownDevicesPage(): JSX.Element {
                           <td className="px-4 py-3 text-xs text-muted-400">
                             {d.ipAddress}
                             {d.active === 1 && d.globalLabelGroup && (
-                              <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
-                                ⚠ Labeled "{d.globalLabelGroup}" - probably not this tenant's real display
+                              <div className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+                                <span>⚠ Labeled</span>
+                                <LabelPill groupName={d.globalLabelGroup} color={d.globalLabelColor} />
+                                <span>- probably not this tenant's real display</span>
                               </div>
                             )}
                           </td>

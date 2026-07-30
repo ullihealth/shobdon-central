@@ -1,11 +1,14 @@
 import { useEffect } from 'react'
 
-// 3 minutes - within the 2-5 minute range this round's investigation
-// settled on. The server-side dedup (functions/api/public/heartbeat.ts)
-// is what actually controls how much gets logged/written - this
-// interval just controls how often the client asks, not how often a
-// row gets written.
-const HEARTBEAT_INTERVAL_MS = 3 * 60 * 1000
+// 30 minutes - reduced from the original 3-minute interval (the uptime
+// tracking work no longer needs finer-grained pings; this is purely
+// about "is the display still on", not real-time monitoring). The
+// server-side dedup window in functions/api/public/heartbeat.ts is now
+// shorter than this interval, so every ping at this cadence writes its
+// own row - see that file's own comment. The Uptime Report's expected-
+// heartbeats math (functions/api/platform/uptime-report.ts) assumes
+// this exact value; change both together.
+const HEARTBEAT_INTERVAL_MS = 30 * 60 * 1000
 
 // Shared by DashboardPage.tsx ('/', slug 'main') and TenantDisplayPage.tsx
 // ('/d/:slug') - pings the heartbeat endpoint on mount and every few

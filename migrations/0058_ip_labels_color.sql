@@ -1,0 +1,11 @@
+-- Small additive column on ip_labels (migration 0057) - a fixed-palette
+-- colour key (e.g. "sky", "emerald"; see src/utils/labelColors.ts for
+-- the actual palette), NOT a raw hex value, so the picker stays a
+-- simple swatch grid rather than a full colour wheel. Nullable and
+-- deliberately left NULL for every existing row - no backfill: the
+-- frontend derives a deterministic colour from the group name itself
+-- when this is unset (a consistent hash-to-palette pick, same group
+-- name always lands on the same colour), so labels look sensible with
+-- zero setup and this column only needs writing when Jeff actually
+-- wants to override that default.
+ALTER TABLE ip_labels ADD COLUMN color TEXT;

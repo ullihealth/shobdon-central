@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { LabelPill } from '../components/admin/LabelPill'
+import { ColorPicker } from '../components/admin/ColorPicker'
 
 const IP_LABELS_URL = '/api/platform/ip-labels'
 
@@ -7,6 +9,8 @@ interface IpLabel {
   ipAddress: string
   groupName: string
   note: string | null
+  // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
+  color: string | null
   createdAt: string
   updatedAt: string
 }
@@ -35,6 +39,7 @@ export default function IpDirectoryPage(): JSX.Element {
   const [newIp, setNewIp] = useState('')
   const [newGroup, setNewGroup] = useState('')
   const [newNote, setNewNote] = useState('')
+  const [newColor, setNewColor] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
 
@@ -77,14 +82,38 @@ export default function IpDirectoryPage(): JSX.Element {
       await fetch(IP_LABELS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ipAddress: newIp.trim(), groupName: newGroup.trim(), note: newNote.trim() || undefined }),
+        body: JSON.stringify({
+          ipAddress: newIp.trim(),
+          groupName: newGroup.trim(),
+          note: newNote.trim() || undefined,
+          color: newColor,
+        }),
       })
       setNewIp('')
       setNewGroup('')
       setNewNote('')
+      setNewColor(null)
       await loadLabels()
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Colour-only edit - saves immediately on pick (no separate button),
+  // same "single fast action" spirit as the rest of this feature. Reuses
+  // the same upsert endpoint with this row's existing ip/group/note
+  // unchanged, only color different.
+  async function handleChangeColor(label: IpLabel, color: string | null) {
+    setBusyId(label.id)
+    try {
+      await fetch(IP_LABELS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ipAddress: label.ipAddress, groupName: label.groupName, note: label.note ?? undefined, color }),
+      })
+      await loadLabels()
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -158,6 +187,12 @@ export default function IpDirectoryPage(): JSX.Element {
               className="w-64 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
             />
           </label>
+          <div className="flex flex-col gap-1 text-xs text-muted-400">
+            Colour
+            <div className="flex h-[38px] items-center">
+              <ColorPicker value={newColor} onChange={setNewColor} />
+            </div>
+          </div>
           <button
             type="button"
             onClick={handleAdd}
@@ -176,8 +211,9 @@ export default function IpDirectoryPage(): JSX.Element {
           <div className="space-y-6">
             {grouped.map(([groupName, ips]) => (
               <div key={groupName} className="overflow-hidden rounded-2xl border border-border bg-panel">
-                <div className="border-b border-border bg-white/5 px-4 py-2 text-sm font-bold uppercase tracking-wide text-accent-sky-400">
-                  {groupName} ({ips.length})
+                <div className="flex items-center gap-2 border-b border-border bg-white/5 px-4 py-2">
+                  <LabelPill groupName={groupName} color={ips[0]?.color ?? null} className="text-sm" />
+                  <span className="text-xs text-muted-500">({ips.length})</span>
                 </div>
                 <table className="w-full text-left text-sm">
                   <tbody>
@@ -185,6 +221,12 @@ export default function IpDirectoryPage(): JSX.Element {
                       <tr key={l.id} className="border-b border-border/60 last:border-0">
                         <td className="px-4 py-3 text-xs text-muted-300">{l.ipAddress}</td>
                         <td className="px-4 py-3 text-xs text-muted-500">{l.note ?? ''}</td>
+                        <td className="px-4 py-3">
+                          <ColorPicker
+                            value={l.color}
+                            onChange={(color) => handleChangeColor(l, color)}
+                          />
+                        </td>
                         <td className="px-4 py-3 text-xs text-muted-600">Updated {formatDate(l.updatedAt)}</td>
                         <td className="px-4 py-3 text-right">
                           <button
