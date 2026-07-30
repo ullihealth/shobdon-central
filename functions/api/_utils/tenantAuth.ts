@@ -168,6 +168,37 @@ export async function resolveDeveloperPreviewTenant(db: D1Database, slug: string
   return { ...row, role: "owner" };
 }
 
+// Keeps organization.slug/organization.name (BetterAuth's own org-plugin
+// columns) in sync with tenants.slug/tenants.name (this app's actual
+// source of truth for a tenant's identity/branding) whenever either
+// changes post-onboarding. Root cause of why this was ever needed: both
+// organization columns are written exactly once, at INSERT time
+// (onboard.ts/trial-signup.ts, or the one-off demo-tenant seed
+// migration) - nothing ever wrote them again, while three separate
+// endpoints (the subdomain-confirmation step, platform-admin tenant
+// PATCH, and the tenant's own branding form) could freely rewrite
+// tenants.slug/tenants.name after that point. Confirmed drifted in
+// production for real: Gyroplane Train's org row was still stuck at its
+// onboarding placeholder ('tenant-XXXXXXXX'/'Your Airfield Name') after
+// the customer picked a real subdomain and display name, and 'demo's
+// org.name was still stuck at the migration seed value ('Template
+// Airfield') after its tenants.name was changed to 'Demo Airfield'.
+// Every call site that writes tenants.slug or tenants.name must call
+// this in the same request so the two tables can never drift again.
+export async function syncOrganizationIdentity(
+  db: D1Database,
+  organizationId: string,
+  changes: { slug?: string; name?: string }
+): Promise<void> {
+  if (changes.slug !== undefined && changes.name !== undefined) {
+    await db.prepare("UPDATE organization SET slug = ?, name = ? WHERE id = ?").bind(changes.slug, changes.name, organizationId).run();
+  } else if (changes.slug !== undefined) {
+    await db.prepare("UPDATE organization SET slug = ? WHERE id = ?").bind(changes.slug, organizationId).run();
+  } else if (changes.name !== undefined) {
+    await db.prepare("UPDATE organization SET name = ? WHERE id = ?").bind(changes.name, organizationId).run();
+  }
+}
+
 export interface UserMembershipSummary {
   slug: string;
   name: string;
