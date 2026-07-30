@@ -119,6 +119,86 @@ export async function resolveTenantMembership(
   return row ?? null;
 }
 
+// Tier 3 of requireTenant's resolution chain (dev-tenant-preview
+// feature, /platform/preview) - resolves an organization by slug alone,
+// with NO membership-row check, unlike resolveTenantMembership above.
+// Deliberately a separate cookie/function rather than reusing
+// ACTIVE_ORG_COOKIE/resolveTenantMembership: mixing "real member of
+// this org" and "developer previewing this org" under the same cookie
+// would let a developer's preview choice silently leak into their OWN
+// real tenant context (or vice versa) the next time they hit a route
+// that reads the other cookie - the same class of bug Decision #6
+// already fixed once for requirePlatformAdmin (see that decision's own
+// reasoning). Grants a synthetic 'owner' role - not a new capability,
+// since the only caller who can ever set this cookie is already a
+// platform admin (see preview-org.ts's own requirePlatformAdmin gate),
+// who can already do strictly more than a tenant owner via
+// /platform/tenants (including hard-deleting the tenant entirely) -
+// this just makes the tenant's OWN regular admin UI reachable too,
+// for previewing.
+//
+// Deliberately resolves by tenants.slug (joined to organization), NOT
+// by organization.slug directly - an earlier version queried
+// `organization WHERE slug = ?` using the same slug the /platform/preview
+// dropdown offers (tenants.slug, sourced from GET /api/platform/tenants),
+// silently assuming the two always match. They don't: at least one real
+// tenant (Gyroplane Train - tenants.slug='gyroplane') has an organization
+// row still stuck at its auto-generated onboarding defaults
+// (slug='tenant-3tvd9aq5', name='Your Airfield Name') that was never
+// reslugged/renamed to match, so picking it in the dropdown 404'd here
+// even though it listed correctly. tenants.slug is the identity the
+// dropdown actually offers and the identity actually stored in the
+// cookie, so resolution must key off THAT, not assume it mirrors
+// organization.slug. t.deleted_at IS NULL matches the dropdown's own
+// listing filter (functions/api/platform/tenants/index.ts) - an archived
+// tenant can't be resolved here either, consistent with never being
+// offered as an option. t.name (not o.name) is returned as the display
+// name for the same reason - it's the one kept current by
+// /platform/tenants' own onboarding/rename flow.
+export async function resolveDeveloperPreviewTenant(db: D1Database, slug: string): Promise<TenantMembership | null> {
+  const row = await db
+    .prepare(
+      `SELECT o.id AS organizationId, t.slug AS slug, t.name AS name
+       FROM tenants t JOIN organization o ON o.id = t.organization_id
+       WHERE t.slug = ? AND t.deleted_at IS NULL`
+    )
+    .bind(slug)
+    .first<{ organizationId: string; slug: string; name: string }>();
+  if (!row) return null;
+  return { ...row, role: "owner" };
+}
+
+// Keeps organization.slug/organization.name (BetterAuth's own org-plugin
+// columns) in sync with tenants.slug/tenants.name (this app's actual
+// source of truth for a tenant's identity/branding) whenever either
+// changes post-onboarding. Root cause of why this was ever needed: both
+// organization columns are written exactly once, at INSERT time
+// (onboard.ts/trial-signup.ts, or the one-off demo-tenant seed
+// migration) - nothing ever wrote them again, while three separate
+// endpoints (the subdomain-confirmation step, platform-admin tenant
+// PATCH, and the tenant's own branding form) could freely rewrite
+// tenants.slug/tenants.name after that point. Confirmed drifted in
+// production for real: Gyroplane Train's org row was still stuck at its
+// onboarding placeholder ('tenant-XXXXXXXX'/'Your Airfield Name') after
+// the customer picked a real subdomain and display name, and 'demo's
+// org.name was still stuck at the migration seed value ('Template
+// Airfield') after its tenants.name was changed to 'Demo Airfield'.
+// Every call site that writes tenants.slug or tenants.name must call
+// this in the same request so the two tables can never drift again.
+export async function syncOrganizationIdentity(
+  db: D1Database,
+  organizationId: string,
+  changes: { slug?: string; name?: string }
+): Promise<void> {
+  if (changes.slug !== undefined && changes.name !== undefined) {
+    await db.prepare("UPDATE organization SET slug = ?, name = ? WHERE id = ?").bind(changes.slug, changes.name, organizationId).run();
+  } else if (changes.slug !== undefined) {
+    await db.prepare("UPDATE organization SET slug = ? WHERE id = ?").bind(changes.slug, organizationId).run();
+  } else if (changes.name !== undefined) {
+    await db.prepare("UPDATE organization SET name = ? WHERE id = ?").bind(changes.name, organizationId).run();
+  }
+}
+
 export interface UserMembershipSummary {
   slug: string;
   name: string;
@@ -141,6 +221,11 @@ export async function listUserMemberships(db: D1Database, userId: string): Promi
 }
 
 export const ACTIVE_ORG_COOKIE = "aic-active-org";
+
+// Separate from ACTIVE_ORG_COOKIE on purpose - see
+// resolveDeveloperPreviewTenant's own comment for why the two must
+// never share a cookie.
+export const DEV_PREVIEW_ORG_COOKIE = "aic-dev-preview-org";
 
 function getCookieValue(request: Request, name: string): string | null {
   const header = request.headers.get("cookie");
@@ -191,6 +276,31 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
     // out entirely; it should just behave as if it weren't there.
     const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
     membership = cookieOrgSlug ? await resolveTenantMembership(env.DB, userId, cookieOrgSlug) : null;
+
+    // Tier 3 - developer tenant preview (/platform/preview). Only
+    // reached once a real membership resolution (?org=, then
+    // ACTIVE_ORG_COOKIE) has already failed to produce one. Checks
+    // user.developer directly here (a plain developer=1 lookup, same
+    // shape as requirePlatformAdmin's own check) rather than composing
+    // with requireDeveloper, which itself depends on requireTenant
+    // already having resolved a membership - see requireDeveloper's own
+    // comment on why that ordering is wrong. Non-developers, and
+    // developers with no preview cookie set, are completely unaffected:
+    // this block costs them nothing beyond the one cookie-presence
+    // check below.
+    if (!membership) {
+      const previewOrgSlug = getCookieValue(request, DEV_PREVIEW_ORG_COOKIE);
+      if (previewOrgSlug) {
+        const userRow = await env.DB
+          .prepare("SELECT developer FROM user WHERE id = ?")
+          .bind(userId)
+          .first<{ developer: number }>();
+        if (userRow?.developer) {
+          membership = await resolveDeveloperPreviewTenant(env.DB, previewOrgSlug);
+        }
+      }
+    }
+
     if (!membership) {
       membership = await resolveTenantMembership(env.DB, userId, null);
       if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };

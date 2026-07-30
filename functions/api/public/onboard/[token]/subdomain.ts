@@ -19,7 +19,7 @@
 // subdomain_confirmed = 1 so OnboardInvitePage.tsx never asks again on
 // a later visit to this same link (e.g. after the redirect this
 // triggers on the correct host, or a refresh).
-import { jsonResponse, type D1Database } from "../../../_utils/tenantAuth";
+import { jsonResponse, syncOrganizationIdentity, type D1Database } from "../../../_utils/tenantAuth";
 import { validateSlugCandidate } from "../../../_utils/tenantSlug";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -36,6 +36,7 @@ interface InviteRow {
   tenantId: number;
   expiresAt: string;
   usedAt: string | null;
+  organizationId: string;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -43,7 +44,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!token) return jsonResponse({ error: "Missing invite token" }, 400);
 
   const invite = await env.DB
-    .prepare("SELECT tenant_id AS tenantId, expires_at AS expiresAt, used_at AS usedAt FROM tenant_invites WHERE token = ?")
+    .prepare(
+      `SELECT ti.tenant_id AS tenantId, ti.expires_at AS expiresAt, ti.used_at AS usedAt, t.organization_id AS organizationId
+       FROM tenant_invites ti JOIN tenants t ON t.id = ti.tenant_id
+       WHERE ti.token = ?`
+    )
     .bind(token)
     .first<InviteRow>();
 
@@ -72,6 +77,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
       .prepare("UPDATE tenants SET slug = ?, subdomain = ?, subdomain_confirmed = 1 WHERE id = ?")
       .bind(slug, subdomain, invite.tenantId)
       .run();
+    await syncOrganizationIdentity(env.DB, invite.organizationId, { slug });
   } catch {
     // tenants.slug/subdomain are both UNIQUE (migration
     // 0022_tenant_schema.sql) - only reachable via a genuine race with

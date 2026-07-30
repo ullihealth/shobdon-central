@@ -17,7 +17,7 @@
 // (raw SQL only, per mediaQuota.ts's and the tenant-pause work's own
 // documented queries) - this is the first UI-reachable way to change
 // either.
-import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { requirePlatformAdmin, jsonResponse, syncOrganizationIdentity, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -31,6 +31,7 @@ interface Env {
 
 interface TenantRow {
   name: string;
+  organizationId: string | null;
   active: number;
   weatherPublic: number;
   opsPublic: number;
@@ -119,7 +120,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
 
   const current = await env.DB
     .prepare(
-      `SELECT name, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal,
+      `SELECT name, organization_id AS organizationId, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal,
               has_physical_atc AS hasPhysicalAtc, storage_quota_bytes AS storageQuotaBytes,
               subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
               deleted_at AS deletedAt
@@ -170,6 +171,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       tenantId
     )
     .run();
+
+  // Keep organization.name in sync with the rename above - see
+  // syncOrganizationIdentity's own comment for why this is required on
+  // every write to tenants.name, not just this one. Only when the
+  // caller actually provided a name (current.organizationId is null for
+  // a tenant that somehow has no linked org yet - nothing to sync).
+  if (body.name !== undefined && current.organizationId) {
+    await syncOrganizationIdentity(env.DB, current.organizationId, { name: next.name });
+  }
 
   // One history row per subscription-related PATCH - only when the
   // caller actually touched one of the two subscription fields, not on

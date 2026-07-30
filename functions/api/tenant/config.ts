@@ -9,7 +9,7 @@
 // this endpoint directly with their own valid session cookie. Read shape
 // matches functions/api/public/[tenant]/config.ts exactly.
 
-import { requireOwner, jsonResponse, type D1Database } from "../_utils/tenantAuth";
+import { requireOwner, jsonResponse, syncOrganizationIdentity, type D1Database } from "../_utils/tenantAuth";
 import { buildPublicConfigData } from "../_utils/publicConfig";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -250,10 +250,15 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // requireOwner above is the only gate needed, matching every other
   // field this endpoint already writes.
   if (typeof body.airfieldName === "string" && body.airfieldName.trim()) {
+    const airfieldName = body.airfieldName.trim();
     await env.DB
       .prepare("UPDATE tenants SET name = ?, updated_at = ? WHERE organization_id = ?")
-      .bind(body.airfieldName.trim(), now, organizationId)
+      .bind(airfieldName, now, organizationId)
       .run();
+    // Keep organization.name in sync with the rename above - see
+    // syncOrganizationIdentity's own comment for why this is required
+    // on every write to tenants.name, not just this one.
+    await syncOrganizationIdentity(env.DB, organizationId, { name: airfieldName });
   }
 
   // icaoCode: optional - "" or null clears it, anything else must be
