@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AirfieldLocationSection from '../components/config/AirfieldLocationSection'
+import CameraSection from '../components/config/CameraSection'
 import WeatherSourceSelector from '../components/config/WeatherSourceSelector'
 import AtcWeatherConfigSection from '../components/config/AtcWeatherConfigSection'
 import IngestedWeatherConfigSection from '../components/config/IngestedWeatherConfigSection'
@@ -151,6 +152,10 @@ export default function ConfigPage(): JSX.Element {
 
       <div className="mt-6">
         <AirfieldLocationSection />
+      </div>
+
+      <div className="mt-6">
+        <CameraSection />
       </div>
 
       {/* Omitted entirely (no placeholder) for a tenant with no physical

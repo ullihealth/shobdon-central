@@ -88,6 +88,16 @@ export const GAS_PRICES_URL = '/api/tenant/gas-prices'
 // library - functions/api/tenant/media-folders/*.
 export const MEDIA_FOLDERS_URL = '/api/tenant/media-folders'
 
+// Owner/admin self-service editing of this tenant's own already-
+// provisioned cameras (migration 0047) - functions/api/tenant/cameras/.
+// Scoped to the caller's own org server-side; deliberately narrower
+// than functions/api/platform/cameras (no create/delete/relay
+// reassignment - see that route's own comment for why those stay
+// platform-admin-only). GET never includes rtsp_address; PATCH accepts
+// it write-only.
+export const TENANT_CAMERAS_URL = '/api/tenant/cameras'
+export const tenantCameraUrl = (id: string): string => `/api/tenant/cameras/${id}`
+
 // Slide composer - see SlideEditor.tsx. Recipe attach is a separate PUT
 // from the upload itself (upload.ts stays completely untouched); the
 // image proxy is same-origin so an existing library image can be loaded
