@@ -17,6 +17,7 @@ import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformCamerasPage from './pages/PlatformCamerasPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
+import PlatformPreviewPage from './pages/PlatformPreviewPage'
 import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import KnownDevicesPage from './pages/KnownDevicesPage'
@@ -87,6 +88,20 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformTenantsPage />
+            </RequireAuth>
+          }
+        />
+        {/* Same standalone-outside-AdminLayout treatment as the route
+            above - dev-tenant-preview feature: a single tenant picker
+            that drives /config, /media-manager, /runways, /members, and
+            Screens Design's own live dashboard preview together, via
+            requireTenant's own tier-3 resolution (tenantAuth.ts) rather
+            than duplicate pages. Gated the same way. */}
+        <Route
+          path="/platform/preview"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformPreviewPage />
             </RequireAuth>
           }
         />

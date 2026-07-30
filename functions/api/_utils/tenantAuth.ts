@@ -119,6 +119,32 @@ export async function resolveTenantMembership(
   return row ?? null;
 }
 
+// Tier 3 of requireTenant's resolution chain (dev-tenant-preview
+// feature, /platform/preview) - resolves an organization by slug alone,
+// with NO membership-row check, unlike resolveTenantMembership above.
+// Deliberately a separate cookie/function rather than reusing
+// ACTIVE_ORG_COOKIE/resolveTenantMembership: mixing "real member of
+// this org" and "developer previewing this org" under the same cookie
+// would let a developer's preview choice silently leak into their OWN
+// real tenant context (or vice versa) the next time they hit a route
+// that reads the other cookie - the same class of bug Decision #6
+// already fixed once for requirePlatformAdmin (see that decision's own
+// reasoning). Grants a synthetic 'owner' role - not a new capability,
+// since the only caller who can ever set this cookie is already a
+// platform admin (see preview-org.ts's own requirePlatformAdmin gate),
+// who can already do strictly more than a tenant owner via
+// /platform/tenants (including hard-deleting the tenant entirely) -
+// this just makes the tenant's OWN regular admin UI reachable too,
+// for previewing.
+export async function resolveDeveloperPreviewTenant(db: D1Database, slug: string): Promise<TenantMembership | null> {
+  const row = await db
+    .prepare("SELECT id AS organizationId, slug, name FROM organization WHERE slug = ?")
+    .bind(slug)
+    .first<{ organizationId: string; slug: string; name: string }>();
+  if (!row) return null;
+  return { ...row, role: "owner" };
+}
+
 export interface UserMembershipSummary {
   slug: string;
   name: string;
@@ -141,6 +167,11 @@ export async function listUserMemberships(db: D1Database, userId: string): Promi
 }
 
 export const ACTIVE_ORG_COOKIE = "aic-active-org";
+
+// Separate from ACTIVE_ORG_COOKIE on purpose - see
+// resolveDeveloperPreviewTenant's own comment for why the two must
+// never share a cookie.
+export const DEV_PREVIEW_ORG_COOKIE = "aic-dev-preview-org";
 
 function getCookieValue(request: Request, name: string): string | null {
   const header = request.headers.get("cookie");
@@ -191,6 +222,31 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
     // out entirely; it should just behave as if it weren't there.
     const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
     membership = cookieOrgSlug ? await resolveTenantMembership(env.DB, userId, cookieOrgSlug) : null;
+
+    // Tier 3 - developer tenant preview (/platform/preview). Only
+    // reached once a real membership resolution (?org=, then
+    // ACTIVE_ORG_COOKIE) has already failed to produce one. Checks
+    // user.developer directly here (a plain developer=1 lookup, same
+    // shape as requirePlatformAdmin's own check) rather than composing
+    // with requireDeveloper, which itself depends on requireTenant
+    // already having resolved a membership - see requireDeveloper's own
+    // comment on why that ordering is wrong. Non-developers, and
+    // developers with no preview cookie set, are completely unaffected:
+    // this block costs them nothing beyond the one cookie-presence
+    // check below.
+    if (!membership) {
+      const previewOrgSlug = getCookieValue(request, DEV_PREVIEW_ORG_COOKIE);
+      if (previewOrgSlug) {
+        const userRow = await env.DB
+          .prepare("SELECT developer FROM user WHERE id = ?")
+          .bind(userId)
+          .first<{ developer: number }>();
+        if (userRow?.developer) {
+          membership = await resolveDeveloperPreviewTenant(env.DB, previewOrgSlug);
+        }
+      }
+    }
+
     if (!membership) {
       membership = await resolveTenantMembership(env.DB, userId, null);
       if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
