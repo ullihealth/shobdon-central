@@ -138,7 +138,12 @@ export default function PlatformVisitsPage(): JSX.Element {
   // display/date-range/label filters are all sent to the server (not
   // applied client-side against that slice) specifically so narrowing
   // actually reaches rows outside that window.
-  useEffect(() => {
+  // Pulled out of the effect below so a manual "Refresh" click can call
+  // the exact same fetch on demand - e.g. labels added in another tab/
+  // by another admin since this page loaded, which the client-side
+  // label-save patch (handleSaveLabel below) has no way to know about
+  // on its own.
+  function loadVisits() {
     setLoading(true)
     const params = new URLSearchParams()
     const tenantId = tenantFilter ? knownTenants.get(tenantFilter)?.id : undefined
@@ -150,7 +155,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (unlabeledOnly) params.set('unlabeledOnly', 'true')
     const query = params.toString()
 
-    fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
+    return fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
       .then((response) => {
         if (response.status === 403 || response.status === 401) {
           setForbidden(true)
@@ -174,6 +179,10 @@ export default function PlatformVisitsPage(): JSX.Element {
         })
       })
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadVisits()
     // tenantFilter's server-side lookup depends on knownTenants, but
     // knownTenants is only ever added to (never removed from) by this
     // same effect's own responses, so including it here would refetch
@@ -393,6 +402,15 @@ export default function PlatformVisitsPage(): JSX.Element {
             title="Exports every matching row for the current filters - not just what's rendered on screen"
           >
             Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={loadVisits}
+            disabled={loading}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-400 hover:border-slate-500 disabled:opacity-40"
+            title="Pull fresh data from the server for the current filters - e.g. if labels were added elsewhere since this page loaded"
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
           </button>
           <span className="text-xs text-muted-500">
             {filtered.length} visit{filtered.length === 1 ? '' : 's'}
