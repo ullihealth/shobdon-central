@@ -119,7 +119,7 @@ export async function resolveTenantMembership(
   return row ?? null;
 }
 
-// Tier 3 of requireTenant's resolution chain (dev-tenant-preview
+// Tier 2 of requireTenant's resolution chain (dev-tenant-preview
 // feature, /platform/preview) - resolves an organization by slug alone,
 // with NO membership-row check, unlike resolveTenantMembership above.
 // Deliberately a separate cookie/function rather than reusing
@@ -166,6 +166,65 @@ export async function resolveDeveloperPreviewTenant(db: D1Database, slug: string
     .first<{ organizationId: string; slug: string; name: string }>();
   if (!row) return null;
   return { ...row, role: "owner" };
+}
+
+// Tier 3 of requireTenant's resolution chain - lets a tenant admin
+// visiting their own subdomain always see their own tenant, regardless
+// of stale ?org=/switcher-cookie state left over from a previous
+// session. Confirmed live before this fix: gyroplane.airfieldcentral.com
+// /config showed Shobdon Airfield, because requireTenant never looked
+// at Host at all - every authenticated tenant route resolved purely
+// from session state, completely independent of which subdomain the
+// request actually arrived on.
+//
+// Deliberately NOT resolveTenantHost.ts's own resolveTenantFromHost/
+// resolveOrganizationIdFromHost - those deliberately fall back to
+// Shobdon for shobdon-central.pages.dev, its *.shobdon-central.pages.dev
+// wildcard (every preview deployment's own hash host), and the
+// workers.dev host, which is correct for the PUBLIC dashboard (always
+// show something rather than 404) but would be wrong reused here: every
+// preview deployment and the bare production Pages URL would force-
+// resolve every authenticated request to Shobdon regardless of any
+// cookie, breaking /platform/preview's own "stay on a non-tenant host,
+// switch tenants via the picker" pattern this exact function's sibling
+// (resolveDeveloperPreviewTenant) exists for. Exact tenants.subdomain
+// match only, no fallback host list - an unrecognised host simply
+// doesn't produce a membership here, falling through to the next tier
+// exactly as if this function didn't exist.
+//
+// Positioned below the dev-preview-org cookie (tier 2) deliberately -
+// a developer's explicit "preview this tenant" choice from
+// /platform/preview must keep working no matter which real tenant
+// subdomain they're currently sitting on; only once that's absent does
+// ambient Host state get to decide anything. Real membership wins if
+// present (the visiting user's own actual role); a developer with no
+// real membership in this tenant gets the same synthetic 'owner' role
+// resolveDeveloperPreviewTenant already grants for the identical reason
+// (already strictly more privileged via /platform/tenants) - so a
+// developer landing directly on any real tenant's subdomain sees that
+// tenant's admin UI too, not just via the picker.
+export async function resolveTenantByHost(db: D1Database, host: string, userId: string): Promise<TenantMembership | null> {
+  const bareHost = host.split(":")[0];
+  const tenantRow = await db
+    .prepare(
+      `SELECT o.id AS organizationId, t.slug AS slug, t.name AS name
+       FROM tenants t JOIN organization o ON o.id = t.organization_id
+       WHERE t.subdomain = ? AND t.deleted_at IS NULL`
+    )
+    .bind(bareHost)
+    .first<{ organizationId: string; slug: string; name: string }>();
+  if (!tenantRow) return null;
+
+  const realMembership = await db
+    .prepare("SELECT role FROM member WHERE userId = ? AND organizationId = ?")
+    .bind(userId, tenantRow.organizationId)
+    .first<{ role: string }>();
+  if (realMembership) return { ...tenantRow, role: realMembership.role };
+
+  const userRow = await db.prepare("SELECT developer FROM user WHERE id = ?").bind(userId).first<{ developer: number }>();
+  if (userRow?.developer) return { ...tenantRow, role: "owner" };
+
+  return null;
 }
 
 // Keeps organization.slug/organization.name (BetterAuth's own org-plugin
@@ -269,17 +328,13 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
     membership = await resolveTenantMembership(env.DB, userId, explicitOrgSlug);
     if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
   } else {
-    // No ?org= - try the switcher's remembered choice next, but fall back
-    // to the original default (earliest membership by createdAt) if the
-    // cookie is missing or stale (e.g. access to that org was revoked
-    // after the cookie was set). A stale cookie should never lock someone
-    // out entirely; it should just behave as if it weren't there.
-    const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
-    membership = cookieOrgSlug ? await resolveTenantMembership(env.DB, userId, cookieOrgSlug) : null;
+    membership = null;
 
-    // Tier 3 - developer tenant preview (/platform/preview). Only
-    // reached once a real membership resolution (?org=, then
-    // ACTIVE_ORG_COOKIE) has already failed to produce one. Checks
+    // Tier 2 - developer tenant preview (/platform/preview). Checked
+    // before Host (tier 3) deliberately - a developer's explicit
+    // "preview this tenant" choice must keep working no matter which
+    // real tenant subdomain they're currently on, see
+    // resolveTenantByHost's own comment for the full reasoning. Checks
     // user.developer directly here (a plain developer=1 lookup, same
     // shape as requirePlatformAdmin's own check) rather than composing
     // with requireDeveloper, which itself depends on requireTenant
@@ -288,19 +343,40 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
     // developers with no preview cookie set, are completely unaffected:
     // this block costs them nothing beyond the one cookie-presence
     // check below.
-    if (!membership) {
-      const previewOrgSlug = getCookieValue(request, DEV_PREVIEW_ORG_COOKIE);
-      if (previewOrgSlug) {
-        const userRow = await env.DB
-          .prepare("SELECT developer FROM user WHERE id = ?")
-          .bind(userId)
-          .first<{ developer: number }>();
-        if (userRow?.developer) {
-          membership = await resolveDeveloperPreviewTenant(env.DB, previewOrgSlug);
-        }
+    const previewOrgSlug = getCookieValue(request, DEV_PREVIEW_ORG_COOKIE);
+    if (previewOrgSlug) {
+      const userRow = await env.DB
+        .prepare("SELECT developer FROM user WHERE id = ?")
+        .bind(userId)
+        .first<{ developer: number }>();
+      if (userRow?.developer) {
+        membership = await resolveDeveloperPreviewTenant(env.DB, previewOrgSlug);
       }
     }
 
+    // Tier 3 - Host header match. See resolveTenantByHost's own comment
+    // for the full reasoning (why this exists, why it's not
+    // resolveTenantHost.ts's fallback-carrying resolver, why it sits
+    // below the preview cookie but above the switcher cookie).
+    if (!membership) {
+      const host = request.headers.get("host");
+      if (host) {
+        membership = await resolveTenantByHost(env.DB, host, userId);
+      }
+    }
+
+    // Tier 4 - the switcher's remembered choice, but fall back to the
+    // original default (earliest membership by createdAt, tier 5) if
+    // the cookie is missing or stale (e.g. access to that org was
+    // revoked after the cookie was set). A stale cookie should never
+    // lock someone out entirely; it should just behave as if it weren't
+    // there.
+    if (!membership) {
+      const cookieOrgSlug = getCookieValue(request, ACTIVE_ORG_COOKIE);
+      membership = cookieOrgSlug ? await resolveTenantMembership(env.DB, userId, cookieOrgSlug) : null;
+    }
+
+    // Tier 5 - earliest membership, the final fallback.
     if (!membership) {
       membership = await resolveTenantMembership(env.DB, userId, null);
       if (!membership) return { error: jsonResponse({ error: "Forbidden" }, 403) };
