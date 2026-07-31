@@ -27,6 +27,8 @@ interface LatestIngestedResponse {
   tempC: number | null
   dewpointC: number | null
   notams: string[]
+  sourceType: string
+  sourceTenantName: string | null
 }
 
 // Anything not cleanly a string[] (a source that never sends this field
@@ -35,6 +37,12 @@ interface LatestIngestedResponse {
 // notams field isn't a reason to blank the whole reading.
 function stringArrayField(value: unknown): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : []
+}
+
+const SOURCE_READING_TYPES = new Set(['atc_capture', 'internet', 'third_party_api'])
+
+function asSourceReadingType(value: string): WeatherData['sourceReadingType'] {
+  return SOURCE_READING_TYPES.has(value) ? (value as WeatherData['sourceReadingType']) : undefined
 }
 
 export const fetchIngestedWeather: WeatherProviderFetcher = async () => {
@@ -77,6 +85,8 @@ export const fetchIngestedWeather: WeatherProviderFetcher = async () => {
     notams: stringArrayField(reading.notams),
     dewpoint: reading.dewpointC ?? undefined,
     capturedAt: reading.observedAt,
+    sourceTenantName: reading.sourceTenantName ?? undefined,
+    sourceReadingType: asSourceReadingType(reading.sourceType),
   }
 
   return { data, live: true }

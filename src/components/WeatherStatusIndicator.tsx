@@ -16,8 +16,15 @@ const STATUS_BY_PROVIDER: Record<Exclude<WeatherProviderId, 'internet' | 'atc'>,
   mock: { emoji: '🟠', label: 'MOCK' },
 }
 
+// "Shobdon Airfield" -> "SHOBDON" - keeps the badge short (it sits in a
+// fixed top-right corner alongside the clock) rather than spelling out
+// a full tenant name every time.
+function firstWordUpper(name: string): string {
+  return (name.trim().split(/\s+/)[0] ?? name).toUpperCase()
+}
+
 export default function WeatherStatusIndicator(): JSX.Element {
-  const { activeProvider, config, liveDataUnavailable, usingFallback, reconnectToAtc } = useWeather()
+  const { activeProvider, weather, config, liveDataUnavailable, usingFallback, reconnectToAtc } = useWeather()
 
   // liveDataUnavailable means the selected source's fetch failed and the
   // numbers on screen are the substituted mock fixture, not real data -
@@ -33,7 +40,23 @@ export default function WeatherStatusIndicator(): JSX.Element {
             emoji: '🔵',
             label: `INTERNET: ${INTERNET_WEATHER_PROVIDERS[config.internet.provider].label.toUpperCase()}`,
           }
-        : STATUS_BY_PROVIDER[activeProvider]
+        : // Weather-share round: 'ingested' via an active cross-tenant share
+          // (weather.sourceTenantName only ever set in that case - see
+          // WeatherData's own comment) names the actual source instead of
+          // the generic "Third-Party Station" label below, which told the
+          // viewer nothing. Genuinely ATC-captured data (sourceReadingType
+          // 'atc_capture') gets the SAME green live-ATC treatment Shobdon's
+          // own dashboard uses for its own station - it IS a live ATC
+          // reading, just physically captured at another tenant's site.
+          // Anything else (the source tenant's own internet/third-party
+          // feed, shared onward) keeps the purple "not a physical station"
+          // treatment, just naming who it's from instead of staying
+          // generic - never claim ATC for a reading that isn't one.
+          activeProvider === 'ingested' && weather?.sourceTenantName
+          ? weather.sourceReadingType === 'atc_capture'
+            ? { emoji: '🟢', label: `${firstWordUpper(weather.sourceTenantName)} ATC` }
+            : { emoji: '🟣', label: `SHARED: ${firstWordUpper(weather.sourceTenantName)}` }
+          : STATUS_BY_PROVIDER[activeProvider]
 
   return (
     <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">

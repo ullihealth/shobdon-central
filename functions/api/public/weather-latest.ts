@@ -54,9 +54,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!tenant) return jsonResponse({ error: "Unknown tenant host" }, 404);
 
   const shareRow = await env.DB
-    .prepare("SELECT source_tenant_id AS sourceTenantId FROM tenant_weather_shares WHERE target_tenant_id = ?")
+    .prepare(
+      `SELECT s.source_tenant_id AS sourceTenantId, t.name AS sourceTenantName
+       FROM tenant_weather_shares s JOIN tenants t ON t.id = s.source_tenant_id
+       WHERE s.target_tenant_id = ?`
+    )
     .bind(tenant.id)
-    .first<{ sourceTenantId: number }>();
+    .first<{ sourceTenantId: number; sourceTenantName: string }>();
   const effectiveTenantId = shareRow?.sourceTenantId ?? tenant.id;
 
   const row = await env.DB
@@ -95,6 +99,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     tempC: row.tempC,
     dewpointC: row.dewpointC,
     sourceType: row.sourceType,
+    // Only set when an active share redirected this read to another
+    // tenant's own data (null for the ordinary own-data case) - lets
+    // WeatherStatusIndicator.tsx name the actual source in its badge
+    // ("Shobdon Airfield ATC") instead of a generic "Third-Party
+    // Station" label, reusing this same lookup rather than a second
+    // endpoint/query for it.
+    sourceTenantName: shareRow?.sourceTenantName ?? null,
     notams,
   });
 };
