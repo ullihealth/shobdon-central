@@ -122,6 +122,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (url.searchParams.get("unlabeledOnly") === "true") {
     conditions.push("l.id IS NULL");
   }
+  // Solo mode - same param/semantics as index.ts's own onlyGroups (see
+  // that file's own comment for the "hidden wins" reasoning, which
+  // applies identically here since both conditions AND together).
+  const onlyGroupsParam = url.searchParams.get("onlyGroups");
+  const onlyGroups = onlyGroupsParam ? onlyGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
+  if (onlyGroups.length > 0) {
+    conditions.push(`l.group_name IN (${onlyGroups.map(() => "?").join(",")})`);
+    bindings.push(...onlyGroups);
+  }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const { results } = await env.DB

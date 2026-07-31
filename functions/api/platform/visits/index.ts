@@ -105,6 +105,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (url.searchParams.get("unlabeledOnly") === "true") {
     conditions.push("l.id IS NULL");
   }
+  // Visit Log sidebar's "solo" mode - the positive-selection mirror of
+  // hideGroups above (same comma-separated shape, same AND-composed
+  // WHERE clause), added as a real server-side filter rather than a
+  // client-side slice of the already-fetched page specifically so
+  // soloing a label reaches every matching row beyond MAX_ROWS, not
+  // just whatever happened to be in the current unfiltered top slice -
+  // a rarely-appearing but genuinely-alive label must never read as
+  // "no results" just because busier labels crowded it out of the cap.
+  // Combines with hideGroups via a plain AND, which is also what gives
+  // "hidden wins over solo" for free: a group present in both lists
+  // satisfies this IN(...) but still fails hideGroups' NOT IN(...), so
+  // it's excluded either way - no extra precedence logic needed here.
+  const onlyGroupsParam = url.searchParams.get("onlyGroups");
+  const onlyGroups = onlyGroupsParam ? onlyGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
+  if (onlyGroups.length > 0) {
+    conditions.push(`l.group_name IN (${onlyGroups.map(() => "?").join(",")})`);
+    bindings.push(...onlyGroups);
+  }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const { results } = await env.DB

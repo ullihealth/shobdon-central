@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { LabelPill } from '../components/admin/LabelPill'
 import { ColorPicker } from '../components/admin/ColorPicker'
 import { resolveLabelColor } from '../utils/labelColors'
@@ -6,6 +7,23 @@ import { resolveLabelColor } from '../utils/labelColors'
 const VISITS_URL = '/api/platform/visits'
 const VISITS_EXPORT_URL = '/api/platform/visits/export'
 const IP_LABELS_URL = '/api/platform/ip-labels'
+
+// The hide-set is the one piece of this page's filter state that's
+// meant to be a standing preference (labels Jeff never wants to see
+// again, e.g. his own machine) rather than a one-off query - so it's
+// the only filter persisted across reloads. unlabeledOnly/soloGroups
+// are both deliberately session-only (see their own state comments).
+const HIDE_GROUPS_STORAGE_KEY = 'platformVisits.hideGroups'
+
+function loadPersistedHideGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDE_GROUPS_STORAGE_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? new Set(parsed.filter((v): v is string => typeof v === 'string')) : new Set()
+  } catch {
+    return new Set()
+  }
+}
 
 interface Visit {
   id: number
@@ -82,6 +100,31 @@ function visitsToClipboardText(rows: Visit[]): string {
   return [header, ...lines].join('\n')
 }
 
+// Same hand-rolled eye/eye-slash SVGs as PasswordField.tsx (no icon
+// library in this app - see that component's own comment on why) - kept
+// as two small local components rather than importing PasswordField's
+// icons directly, since those live inline in that file rather than
+// being exported.
+function EyeIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function EyeOffIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 1 11.5s4 7 11 7a9.26 9.26 0 0 0 5.39-1.61" />
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  )
+}
+
 // Backs the Platform Admin "Visit Log" nav entry - a plain,
 // reverse-chronological view over display_visits (migration 0041), the
 // per-visit log written by functions/api/public/heartbeat.ts on every
@@ -103,8 +146,28 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
-  const [hideGroups, setHideGroups] = useState<Set<string>>(new Set())
+  const [hideGroups, setHideGroups] = useState<Set<string>>(loadPersistedHideGroups)
   const [unlabeledOnly, setUnlabeledOnly] = useState(false)
+  // Visit Log sidebar's "solo" set - deliberately NOT persisted (unlike
+  // hideGroups above). This is a quick "is this one alive right now"
+  // check, not a standing preference, so every fresh page load starts
+  // back at "show everything" regardless of what was soloed last time.
+  const [soloGroups, setSoloGroups] = useState<Set<string>>(new Set())
+  // Type-to-filter over the sidebar's own label list - display-only,
+  // never sent to the server (narrowing which labels are visible/
+  // clickable in the sidebar, not which visit rows are shown).
+  const [labelSearch, setLabelSearch] = useState('')
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDE_GROUPS_STORAGE_KEY, JSON.stringify(Array.from(hideGroups)))
+    } catch {
+      // Storage can fail (private browsing, quota) - the hide filter
+      // still works for this session via component state either way,
+      // it just won't survive a reload. Not worth surfacing as an error
+      // for a convenience feature.
+    }
+  }, [hideGroups])
   const [labelDrafts, setLabelDrafts] = useState<Record<number, string>>({})
   const [colorDrafts, setColorDrafts] = useState<Record<number, string | null>>({})
   const [labelSaving, setLabelSaving] = useState<number | null>(null)
@@ -176,6 +239,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (dateTo) params.set('to', dateTo)
     if (hideGroups.size > 0) params.set('hideGroups', Array.from(hideGroups).join(','))
     if (unlabeledOnly) params.set('unlabeledOnly', 'true')
+    if (soloGroups.size > 0) params.set('onlyGroups', Array.from(soloGroups).join(','))
     const query = params.toString()
 
     return fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
@@ -213,7 +277,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     // time instead (the .get() above), deliberately left out of the
     // dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly])
+  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly, soloGroups])
 
   const tenantOptions = useMemo(() => Array.from(knownTenants.keys()).sort(), [knownTenants])
   const slugOptions = useMemo(() => Array.from(knownSlugs).sort(), [knownSlugs])
@@ -235,6 +299,33 @@ export default function PlatformVisitsPage(): JSX.Element {
       return next
     })
   }
+
+  // Plain click solos JUST this label - replacing whatever the solo set
+  // currently holds - except when this label is ALREADY the sole active
+  // solo, in which case it toggles back off (per spec: "click it again
+  // -> back to showing everything"). Shift/cmd/ctrl-click instead adds
+  // this label to (or, symmetrically, removes it from) the existing
+  // solo set, so a multi-label solo can be built up incrementally and
+  // individual labels can be dropped from it again without clearing the
+  // whole set and starting over.
+  function handleLabelNameClick(group: string, event: ReactMouseEvent) {
+    const additive = event.shiftKey || event.metaKey || event.ctrlKey
+    setSoloGroups((prev) => {
+      if (additive) {
+        const next = new Set(prev)
+        if (next.has(group)) next.delete(group)
+        else next.add(group)
+        return next
+      }
+      if (prev.size === 1 && prev.has(group)) return new Set()
+      return new Set([group])
+    })
+  }
+
+  const visibleGroupNames = useMemo(() => {
+    const query = labelSearch.trim().toLowerCase()
+    return query ? allGroupNames.filter((group) => group.toLowerCase().includes(query)) : allGroupNames
+  }, [allGroupNames, labelSearch])
 
   // Sort is purely client-side over whatever the server just returned
   // (already the correctly-filtered set, up to MAX_ROWS) - re-ordering
@@ -301,6 +392,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (dateTo) params.set('to', dateTo)
     if (hideGroups.size > 0) params.set('hideGroups', Array.from(hideGroups).join(','))
     if (unlabeledOnly) params.set('unlabeledOnly', 'true')
+    if (soloGroups.size > 0) params.set('onlyGroups', Array.from(soloGroups).join(','))
     const query = params.toString()
     window.location.href = query ? `${VISITS_EXPORT_URL}?${query}` : VISITS_EXPORT_URL
   }
@@ -357,6 +449,84 @@ export default function PlatformVisitsPage(): JSX.Element {
           see its captured location and label it.
         </p>
 
+        <div className="flex gap-6">
+          <aside className="w-64 shrink-0">
+            <div className="sticky top-6 rounded-xl border border-border bg-panel/60 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-500">Labels</span>
+                {soloGroups.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSoloGroups(new Set())}
+                    className="text-xs text-accent-sky-400 hover:underline"
+                  >
+                    Show all
+                  </button>
+                )}
+              </div>
+              {allGroupNames.length === 0 ? (
+                <p className="text-xs text-muted-500">No labels yet.</p>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={labelSearch}
+                    onChange={(event) => setLabelSearch(event.target.value)}
+                    placeholder="Filter labels…"
+                    className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+                  />
+                  <div className="flex max-h-[70vh] flex-col gap-0.5 overflow-y-auto">
+                    {visibleGroupNames.map((group) => {
+                      const isHidden = hideGroups.has(group)
+                      const isSolo = soloGroups.has(group)
+                      const entry = resolveLabelColor(groupColors.get(group), group)
+                      return (
+                        <div
+                          key={group}
+                          className={`flex items-center gap-1 rounded-lg px-1.5 py-1.5 ${
+                            isSolo && !isHidden ? 'bg-accent-sky-500/15' : ''
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={(event) => handleLabelNameClick(group, event)}
+                            title={
+                              isHidden
+                                ? `${group} (hidden - hiding always wins over solo)`
+                                : `Click to solo · Shift/Cmd/Ctrl-click to add to solo set`
+                            }
+                            className={`min-w-0 flex-1 truncate text-left text-xs ${
+                              isHidden
+                                ? 'text-muted-600 line-through'
+                                : isSolo
+                                  ? 'font-semibold text-accent-sky-400'
+                                  : entry.pillClass.split(' ').find((c) => c.startsWith('text-')) || 'text-muted-200'
+                            }`}
+                          >
+                            {group}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleHideGroup(group)}
+                            aria-label={isHidden ? `Show ${group}` : `Hide ${group}`}
+                            title={isHidden ? 'Hidden - click to show' : 'Click to hide'}
+                            className={`shrink-0 rounded p-1 hover:bg-white/10 ${isHidden ? 'text-status-bad' : 'text-muted-500'}`}
+                          >
+                            {isHidden ? <EyeOffIcon /> : <EyeIcon />}
+                          </button>
+                        </div>
+                      )
+                    })}
+                    {visibleGroupNames.length === 0 && (
+                      <p className="px-1.5 py-1.5 text-xs text-muted-500">No labels match &ldquo;{labelSearch}&rdquo;.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </aside>
+
+          <div className="min-w-0 flex-1">
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <select
             value={tenantFilter}
@@ -458,29 +628,6 @@ export default function PlatformVisitsPage(): JSX.Element {
             />
             Unlabeled only
           </label>
-          {allGroupNames.length > 0 && (
-            <>
-              <span className="text-xs text-muted-500">Hide:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {allGroupNames.map((group) => {
-                  const isHidden = hideGroups.has(group)
-                  const entry = resolveLabelColor(groupColors.get(group), group)
-                  return (
-                    <button
-                      key={group}
-                      type="button"
-                      onClick={() => toggleHideGroup(group)}
-                      className={`rounded-full border px-2.5 py-1 text-xs ${
-                        isHidden ? 'border-status-bad/60 bg-status-bad/20 text-status-bad line-through' : entry.pillClass
-                      }`}
-                    >
-                      {group}
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          )}
         </div>
 
         {loading ? (
@@ -643,7 +790,13 @@ export default function PlatformVisitsPage(): JSX.Element {
                 {filtered.length === 0 && (
                   <tr>
                     <td className="px-4 py-6 text-center text-sm text-muted-500" colSpan={7}>
-                      {tenantFilter || slugFilter || dateFrom || dateTo || hideGroups.size > 0 || unlabeledOnly
+                      {tenantFilter ||
+                      slugFilter ||
+                      dateFrom ||
+                      dateTo ||
+                      hideGroups.size > 0 ||
+                      unlabeledOnly ||
+                      soloGroups.size > 0
                         ? 'No visits match the current filters.'
                         : 'No visits logged yet.'}
                     </td>
@@ -653,6 +806,8 @@ export default function PlatformVisitsPage(): JSX.Element {
             </table>
           </div>
         )}
+          </div>
+        </div>
       </div>
       <datalist id="ip-label-group-names">
         {allGroupNames.map((group) => (
