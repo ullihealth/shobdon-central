@@ -14,6 +14,8 @@
 // publicConfig.ts's single response. Isolating this here means the worst
 // a failure here can do is leave this one card showing "unavailable".
 
+import { resolveEffectiveTenantByOrganizationId } from "./resolveParentTenant";
+
 export type KVNamespace = {
   get: <T = unknown>(key: string, type: "json") => Promise<T | null>;
   put: (key: string, value: string, options?: { expirationTtl?: number }) => Promise<void>;
@@ -155,7 +157,19 @@ export async function buildVisibilityForecastResponse(
   organizationId: string,
   env: PublicVisibilityForecastEnv
 ): Promise<Response> {
-  const cacheKey = `visibility-forecast:${organizationId}`;
+  // Parent/sub-tenant round: resolved via tenants.parent_tenant_id
+  // (migration 0059) rather than each tenant independently reading its
+  // own lat/lon - a sub-tenant linked to a parent airfield should show
+  // the SAME forecast product the parent shows, not just coincidentally
+  // similar numbers from its own separately-fetched coordinates.
+  const effective = await resolveEffectiveTenantByOrganizationId(env.DB, organizationId);
+
+  // Keyed by the EFFECTIVE tenant's own organizationId - co-located
+  // tenants linked to the same parent now share one cache entry (and
+  // one upstream Met Office call) for what's physically the same
+  // forecast, rather than each fetching and caching an identical result
+  // under its own key.
+  const cacheKey = `visibility-forecast:${effective.organizationId}`;
 
   // Array.isArray check, not just truthiness - a cache entry written by
   // the previous single-value version of this route (hours field didn't
@@ -177,16 +191,17 @@ export async function buildVisibilityForecastResponse(
     return jsonResponse({ available: false } satisfies VisibilityForecastResponse);
   }
 
-  // Each tenant's own coordinates (tenants.lat/lon), same source
-  // weather-default.ts already reads - this used to be a hardcoded
-  // Shobdon-only constant here (found during the pre-onboarding
-  // isolation/branding audit: every tenant's forecast card was silently
-  // showing SHOBDON's Met Office forecast, not their own). No
-  // coordinates on file -> unavailable, same "nothing sensible to
+  // The EFFECTIVE tenant's own coordinates (tenants.lat/lon) - its
+  // parent's, if linked; its own otherwise, same source weather-
+  // default.ts already reads via the same resolver. This used to be a
+  // hardcoded Shobdon-only constant here (found during the pre-
+  // onboarding isolation/branding audit: every tenant's forecast card
+  // was silently showing SHOBDON's Met Office forecast, not their own).
+  // No coordinates on file -> unavailable, same "nothing sensible to
   // default to" stance weather-default.ts takes, never a wrong location.
   const tenantLocation = await env.DB
     .prepare("SELECT lat, lon FROM tenants WHERE organization_id = ?")
-    .bind(organizationId)
+    .bind(effective.organizationId)
     .first<{ lat: number | null; lon: number | null }>();
   if (!tenantLocation || tenantLocation.lat === null || tenantLocation.lon === null) {
     return jsonResponse({ available: false } satisfies VisibilityForecastResponse);

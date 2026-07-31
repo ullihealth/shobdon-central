@@ -18,6 +18,7 @@
 // NOTAMINFO_FEED_URL takes priority in getProvider() below.
 
 import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantHost";
+import { resolveEffectiveTenantById } from "../_utils/resolveParentTenant";
 
 type PagesFunction<Env = unknown> = (context: { request: Request; env: Env }) => Response | Promise<Response>;
 
@@ -412,9 +413,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const tenant = await resolveTenantFromHost(host, env.DB);
   if (!tenant) return jsonResponse({ error: "Unknown tenant host" }, 404);
 
+  // Parent/sub-tenant round: resolved via tenants.parent_tenant_id
+  // (migration 0059) - a sub-tenant linked to a parent airfield reads
+  // the SAME icao/lat/lon row the parent itself uses, which also makes
+  // the cache key below (content-derived from icao/lat/lon, see
+  // buildCacheKey's own comment) converge naturally onto the same entry
+  // as the parent's own lookup - no separate cache-sharing logic needed
+  // here, unlike publicVisibilityForecast.ts which had to key explicitly
+  // by organizationId since it has no equivalent single-row lookup this
+  // clean.
+  const effective = await resolveEffectiveTenantById(env.DB, tenant.id);
   const row = await env.DB
     .prepare("SELECT icao_code AS icaoCode, lat, lon FROM tenants WHERE id = ?")
-    .bind(tenant.id)
+    .bind(effective.id)
     .first<TenantLocationRow>();
 
   const icao = row?.icaoCode ?? null;

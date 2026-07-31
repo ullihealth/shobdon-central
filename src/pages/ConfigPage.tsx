@@ -31,21 +31,25 @@ export default function ConfigPage(): JSX.Element {
   // has via resolveWeatherConfig().
   const [hasPhysicalAtc, setHasPhysicalAtc] = useState(false)
 
-  // tenant_weather_shares (migration 0029) - platform-admin-configured
-  // only (functions/api/platform/tenants/[id]/weather-share.ts owns the
-  // write side), previously invisible anywhere on this tenant's own
-  // pages - a tenant had no way to learn this was set except asking.
-  // null covers both "still loading" and "no share configured", same
-  // "render nothing rather than an empty state" convention as this
-  // page's own hasPhysicalAtc sections below.
+  // tenants.parent_tenant_id (migration 0059, renamed from
+  // tenant_weather_shares/migration 0029 - see functions/api/tenant/
+  // parent-tenant.ts's own comment for the full "why") -
+  // platform-admin-configured only (functions/api/platform/tenants/
+  // [id]/parent-tenant.ts owns the write side), previously invisible
+  // anywhere on this tenant's own pages - a tenant had no way to learn
+  // this was set except asking. null covers both "still loading" and
+  // "no parent linked", same "render nothing rather than an empty
+  // state" convention as this page's own hasPhysicalAtc sections below.
+  // Banner wording deliberately unchanged by the rename - only the
+  // fetch URL/field name underneath it moved.
   const [weatherShare, setWeatherShare] = useState<{ sourceTenantName: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/tenant/weather-share')
+    fetch('/api/tenant/parent-tenant')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled && data?.sourceTenantName) setWeatherShare({ sourceTenantName: data.sourceTenantName })
+        if (!cancelled && data?.parentTenantName) setWeatherShare({ sourceTenantName: data.parentTenantName })
       })
       .catch(() => {})
     return () => {

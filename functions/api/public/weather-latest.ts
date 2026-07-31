@@ -13,13 +13,15 @@
 // would never actually appear on any tenant's dashboard - confirmed by
 // tracing that read path before building any of this.
 //
-// Resolves the EFFECTIVE source tenant via tenant_weather_shares
-// (migration 0029): if this tenant has an active incoming share, reads
-// the SOURCE tenant's latest_conditions instead of its own - e.g. the
-// gliding club (target) displaying Shobdon's (source) station data. No
-// share -> reads its own data, the ordinary case.
+// Resolves the EFFECTIVE tenant via tenants.parent_tenant_id (migration
+// 0059, parent/sub-tenant round - previously tenant_weather_shares,
+// migration 0029): if this tenant is linked to a parent, reads the
+// PARENT's latest_conditions instead of its own - e.g. the gliding club
+// (sub-tenant) displaying Shobdon's (parent) station data. No parent ->
+// reads its own data, the ordinary case.
 
 import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantHost";
+import { resolveEffectiveTenantById } from "../_utils/resolveParentTenant";
 
 type PagesFunction<Env = unknown> = (context: { request: Request; env: Env }) => Response | Promise<Response>;
 
@@ -53,15 +55,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const tenant = await resolveTenantFromHost(host, env.DB);
   if (!tenant) return jsonResponse({ error: "Unknown tenant host" }, 404);
 
-  const shareRow = await env.DB
-    .prepare(
-      `SELECT s.source_tenant_id AS sourceTenantId, t.name AS sourceTenantName
-       FROM tenant_weather_shares s JOIN tenants t ON t.id = s.source_tenant_id
-       WHERE s.target_tenant_id = ?`
-    )
-    .bind(tenant.id)
-    .first<{ sourceTenantId: number; sourceTenantName: string }>();
-  const effectiveTenantId = shareRow?.sourceTenantId ?? tenant.id;
+  const effective = await resolveEffectiveTenantById(env.DB, tenant.id);
 
   const row = await env.DB
     .prepare(
@@ -72,7 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        JOIN weather_observations wo ON wo.id = lc.observation_id
        WHERE lc.tenant_id = ?`
     )
-    .bind(effectiveTenantId)
+    .bind(effective.id)
     .first<LatestRow>();
 
   if (!row) return jsonResponse(null, 404);
@@ -99,13 +93,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     tempC: row.tempC,
     dewpointC: row.dewpointC,
     sourceType: row.sourceType,
-    // Only set when an active share redirected this read to another
+    // Only set when a parent link redirected this read to another
     // tenant's own data (null for the ordinary own-data case) - lets
     // WeatherStatusIndicator.tsx name the actual source in its badge
     // ("Shobdon Airfield ATC") instead of a generic "Third-Party
-    // Station" label, reusing this same lookup rather than a second
-    // endpoint/query for it.
-    sourceTenantName: shareRow?.sourceTenantName ?? null,
+    // Station" label, reusing this same resolver rather than a second
+    // lookup for it.
+    sourceTenantName: effective.isInherited ? effective.name : null,
     notams,
   });
 };

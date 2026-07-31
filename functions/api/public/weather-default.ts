@@ -26,11 +26,20 @@
 // device's default should be 'ingested'" - the share only ever took
 // effect for a device someone had ALREADY manually switched to
 // Third-Party Station by hand. Checking it here, ahead of the lat/lon
-// branch, closes that gap: a share is a deliberate, more-specific
-// platform-admin choice for this tenant's weather than the generic
-// own-coordinates internet default, so it wins regardless of whether
-// lat/lon also happens to be on file.
+// branch, closes that gap: a linked parent is a deliberate, more-
+// specific platform-admin choice for this tenant's weather than the
+// generic own-coordinates internet default, so it wins regardless of
+// whether lat/lon also happens to be on file.
+//
+// Parent/sub-tenant round: repointed from tenant_weather_shares onto
+// tenants.parent_tenant_id (migration 0059) via the shared resolver -
+// see that file's own comment for why. Same "check parent first, fall
+// through to own lat/lon, then 'unavailable'" shape as before, unchanged
+// behaviourally for the one real tenant this already covered (confirmed
+// by this round's own before/after test, not assumed from the rename
+// alone).
 import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantHost";
+import { resolveEffectiveTenantById } from "../_utils/resolveParentTenant";
 
 type PagesFunction<Env = unknown> = (context: { request: Request; env: Env }) => Response | Promise<Response>;
 
@@ -57,15 +66,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const tenant = await resolveTenantFromHost(host, env.DB);
   if (!tenant) return jsonResponse({ error: "Unknown tenant host" }, 404);
 
-  const share = await env.DB
-    .prepare("SELECT 1 FROM tenant_weather_shares WHERE target_tenant_id = ?")
-    .bind(tenant.id)
-    .first();
-  if (share) {
+  const effective = await resolveEffectiveTenantById(env.DB, tenant.id);
+  if (effective.isInherited) {
     // No client-side settings to send along - 'ingested' resolves
     // entirely server-side (functions/api/public/weather-latest.ts
-    // redirects to the SOURCE tenant's own reading via this same
-    // tenant_weather_shares row), see IngestedWeatherConfigSection.tsx's
+    // redirects to the parent tenant's own reading via the same
+    // parent_tenant_id link), see IngestedWeatherConfigSection.tsx's
     // own comment.
     return jsonResponse({ activeProvider: "ingested" });
   }

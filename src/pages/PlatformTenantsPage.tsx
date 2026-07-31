@@ -187,36 +187,42 @@ function QuotaEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (by
   )
 }
 
-// Manages this tenant's tenant_weather_shares row (migration 0029) via
-// the new functions/api/platform/tenants/[id]/weather-share.ts route -
+// Manages this tenant's tenants.parent_tenant_id column (migration
+// 0059) via functions/api/platform/tenants/[id]/parent-tenant.ts -
 // built during the ATC/PC2 multi-tenant migration to support co-located
-// clubs (e.g. a future gyrocopter/microlight tenant at Shobdon reading
-// Shobdon's own ATC station instead of running their own feed). Fetches
-// the current share fresh on every tenant switch (own effect, not
-// derived from the tenants list response - that endpoint doesn't carry
-// this) since it's cross-tenant admin-only state, same posture as
-// has_physical_atc. Deliberately generic: any tenant can be picked as
-// the source, not just Shobdon - this is the same mechanism for any
-// future main-airfield-plus-neighbours arrangement.
-function WeatherShareEditor({
+// clubs (e.g. a gyrocopter/microlight tenant at Shobdon inheriting
+// Shobdon's own ATC station, forecast, NOTAMs, gas prices, and runway/
+// compass data instead of running its own of each). Renamed from
+// WeatherShareEditor/tenant_weather_shares (migration 0029) - that
+// mechanism only ever expressed this exact same "co-located, one parent
+// per tenant" relationship for weather specifically; this round
+// generalized it once four more domains needed the identical
+// relationship. Fetches the current link fresh on every tenant switch
+// (own effect, not derived from the tenants list response - that
+// endpoint doesn't carry this) since it's cross-tenant admin-only
+// state, same posture as has_physical_atc. Deliberately generic: any
+// tenant can be picked as the parent, not just Shobdon - this is the
+// same mechanism for any future main-airfield-plus-neighbours
+// arrangement.
+function ParentAirfieldEditor({
   tenant,
   allTenants,
 }: {
   tenant: PlatformTenant
   allTenants: PlatformTenant[]
 }): JSX.Element {
-  const [sourceSlug, setSourceSlug] = useState<string | null>(null)
+  const [parentSlug, setParentSlug] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetch(`${TENANTS_URL}/${tenant.id}/weather-share`)
+    fetch(`${TENANTS_URL}/${tenant.id}/parent-tenant`)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return
-        setSourceSlug(data?.sourceTenantSlug ?? null)
+        setParentSlug(data?.parentTenantSlug ?? null)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -229,28 +235,28 @@ function WeatherShareEditor({
   async function handleChange(nextSlug: string) {
     const value = nextSlug || null
     setSaving(true)
-    const response = await fetch(`${TENANTS_URL}/${tenant.id}/weather-share`, {
+    const response = await fetch(`${TENANTS_URL}/${tenant.id}/parent-tenant`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceTenantSlug: value }),
+      body: JSON.stringify({ parentTenantSlug: value }),
     })
     const data = response.ok ? await response.json().catch(() => null) : null
     setSaving(false)
-    setSourceSlug(data?.sourceTenantSlug ?? null)
+    setParentSlug(data?.parentTenantSlug ?? null)
   }
 
   const otherTenants = allTenants.filter((t) => t.id !== tenant.id)
 
   return (
     <div className="min-w-[220px]">
-      <div className="mb-1 text-xs uppercase tracking-wide text-muted-400">Reads weather from</div>
+      <div className="mb-1 text-xs uppercase tracking-wide text-muted-400">Parent Airfield</div>
       <select
-        value={sourceSlug ?? ''}
+        value={parentSlug ?? ''}
         disabled={loading || saving}
         onChange={(event) => handleChange(event.target.value)}
         className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
       >
-        <option value="">— Its own weather source —</option>
+        <option value="">— Independent (no parent) —</option>
         {otherTenants.map((t) => (
           <option key={t.id} value={t.slug}>
             {t.name} ({t.slug})
@@ -258,9 +264,11 @@ function WeatherShareEditor({
         ))}
       </select>
       <p className="mt-1 text-[11px] text-muted-500">
-        When set, this tenant's dashboard shows the selected tenant's live weather (including NOTAMs) instead of its
-        own - it must still have its own Weather Config source set to &quot;Third-Party Station&quot; for this to
-        take effect.
+        When set, this tenant's dashboard mirrors the parent's live weather station reading, Met Office forecast,
+        NOTAMs, gas prices, runway/compass data, and active-runway/circuit status - never its own stored data for
+        those, and never overwritten by this link either (unlinking cleanly reverts to whatever this tenant had on
+        its own). Clubhouse notices are never inherited. This tenant's own Weather Config source must still be set
+        to &quot;Third-Party Station&quot; for the weather reading itself to take effect.
       </p>
     </div>
   )
@@ -1395,7 +1403,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                   </div>
                   <div className="mt-4 flex flex-wrap gap-6">
                     <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
-                    <WeatherShareEditor tenant={selectedTenant} allTenants={tenants} />
+                    <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
                   </div>
 
                   {/* Suspend + Archive, grouped and visually separated

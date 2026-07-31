@@ -6,6 +6,35 @@
 // Stage 3) can share the exact same query/response shape instead of a
 // second copy to keep in sync. Both routes just resolve organizationId
 // differently (URL path segment vs. Host header) and hand it to this.
+//
+// Parent/sub-tenant round: runway_groups and gas_prices are read from
+// the EFFECTIVE tenant (tenants.parent_tenant_id, migration 0059) - a
+// linked sub-tenant's dashboard shows a read-time mirror of its
+// parent's rows for both, never writing/overwriting anything. Falls
+// back to the sub-tenant's OWN stored rows if the parent itself has
+// none (e.g. a parent that's never touched Runway Groups or Gas
+// Prices) - found during this round's own edge-case testing: without
+// this, a linked sub-tenant with perfectly good onboarding-template
+// data of its own would show a blank runway diagram / empty gas panel
+// just because the parent happened to have nothing, which is worse
+// than showing its own values were. Same "never a broken/blank read"
+// posture as resolveParentTenant.ts's own dangling-parent fallback and
+// opsPanel's own per-field fallback below - see ownRunwayRows/
+// ownGasPricesRow and their use further down. ops_panel_state is
+// deliberately NOT switched wholesale onto the effective tenant the
+// same way - that single row also holds safetyNotices/airfieldInfoText/
+// showAutoNotams/weatherSummaryChart settings, which stay tenant-local
+// per explicit instruction (clubhouse notices are never inherited).
+// Only activeRunwayEnd/circuitDirection are pulled from the parent and
+// spliced into the tenant's own otherwise-unchanged opsPanel object -
+// see the dedicated parentOpsPanelRow query and its use below.
+// Everything else in this file (theme, tenant branding/name/logo,
+// camera_slots, cameras, carouselSlots, cafeCarouselSlots,
+// cafeSettings) stays keyed by the tenant's own organizationId,
+// completely unaffected - a sub-tenant's own identity/media/layout
+// choices are never the parent's.
+
+import { resolveEffectiveTenantByOrganizationId } from "./resolveParentTenant";
 
 export type D1Database = {
   prepare: (query: string) => {
@@ -192,10 +221,16 @@ export function jsonResponse(body: unknown, status = 200): Response {
 // caller of buildPublicConfigResponse is unaffected - that function
 // below is now a thin wrapper over this one.
 export async function buildPublicConfigData(organizationId: string, env: PublicConfigEnv) {
-  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow] = await Promise.all([
+  // One resolution, reused by runway_groups/gas_prices below and by the
+  // parentOpsPanelRow query further down - see this file's own top
+  // comment for exactly which domains use `effective` vs the tenant's
+  // own `organizationId`.
+  const effective = await resolveEffectiveTenantByOrganizationId(env.DB, organizationId);
+
+  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
-      .bind(organizationId)
+      .bind(effective.organizationId)
       .all<RunwayGroupRow>(),
     env.DB.prepare("SELECT tokensJson FROM club_theme WHERE organizationId = ?").bind(organizationId).first<{ tokensJson: string }>(),
     // Real tenant display name (tenants.name) - was previously not part
@@ -391,11 +426,52 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       .first<CafeSettingsRow>(),
     env.DB
       .prepare("SELECT avgasPrice, ul91Price, jetA1Price, currency FROM gas_prices WHERE organizationId = ?")
-      .bind(organizationId)
+      .bind(effective.organizationId)
       .first<GasPricesRow>(),
+    // Parent's own activeRunwayEnd/circuitDirection ONLY - deliberately
+    // not the parent's full ops_panel_state row, which would also pull
+    // in the parent's safetyNotices/airfieldInfoText/display settings.
+    // Skipped entirely (no query at all) for the common unlinked case -
+    // Promise.resolve(null) rather than a real SELECT nobody needs.
+    effective.isInherited
+      ? env.DB
+          .prepare("SELECT activeRunwayEnd, circuitDirection FROM ops_panel_state WHERE organizationId = ?")
+          .bind(effective.organizationId)
+          .first<{ activeRunwayEnd: string; circuitDirection: string }>()
+      : Promise.resolve(null),
+    // Fallback source for runwayGroups/gasPrices below, ONLY needed when
+    // linked (unlinked already reads its own organizationId directly
+    // above) - queried unconditionally alongside the parent's own rows
+    // rather than as a conditional second round-trip after seeing the
+    // parent's rows come back empty, same "one extra cheap indexed
+    // SELECT is fine" posture as this file's own cafe_carousel_slots
+    // query takes. Not used at all, and cheap to discard, for the
+    // common case where the parent DOES have its own data.
+    effective.isInherited
+      ? env.DB
+          .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
+          .bind(organizationId)
+          .all<RunwayGroupRow>()
+      : Promise.resolve(null),
+    effective.isInherited
+      ? env.DB
+          .prepare("SELECT avgasPrice, ul91Price, jetA1Price, currency FROM gas_prices WHERE organizationId = ?")
+          .bind(organizationId)
+          .first<GasPricesRow>()
+      : Promise.resolve(null),
   ]);
 
-  const runwayGroups = runwayRows.results.map((row) => ({
+  // Parent linked but has zero runway_groups/gas_prices rows of its own
+  // (e.g. never touched those admin pages) -> fall back to the
+  // sub-tenant's own stored rows rather than showing blank/null, per
+  // this file's own top comment. Unlinked case is unaffected: runwayRows/
+  // gasPricesRow above were already queried against the tenant's own
+  // organizationId (effective.organizationId === organizationId), so
+  // these checks never trigger.
+  const effectiveRunwayRows = effective.isInherited && runwayRows.results.length === 0 ? (ownRunwayRows?.results ?? []) : runwayRows.results;
+  const effectiveGasPricesRow = effective.isInherited && !gasPricesRow ? ownGasPricesRow : gasPricesRow;
+
+  const runwayGroups = effectiveRunwayRows.map((row) => ({
     id: row.id,
     endAIdentifier: row.endAIdentifier,
     endBIdentifier: row.endBIdentifier,
@@ -490,8 +566,18 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
 
   const opsPanel = opsPanelRow
     ? {
-        activeRunwayEnd: opsPanelRow.activeRunwayEnd,
-        circuitDirection: opsPanelRow.circuitDirection,
+        // Parent/sub-tenant round: activeRunwayEnd/circuitDirection ONLY
+        // come from the parent when linked (parentOpsPanelRow, queried
+        // above) - falls back to this tenant's own value if the parent
+        // has never touched /atc-control either (no ops_panel_state row
+        // of its own yet), same "never a broken read" posture as
+        // resolveParentTenant.ts's own dangling-parent fallback.
+        // Everything else on this object is deliberately this TENANT's
+        // OWN row, unaffected by any parent link - see this file's own
+        // top comment for why (clubhouse notices/airfieldInfoText/
+        // display settings are never inherited).
+        activeRunwayEnd: parentOpsPanelRow?.activeRunwayEnd ?? opsPanelRow.activeRunwayEnd,
+        circuitDirection: parentOpsPanelRow?.circuitDirection ?? opsPanelRow.circuitDirection,
         airfieldInfoText: opsPanelRow.airfieldInfoText,
         safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as SafetyNoticeResolved[],
         showAutoNotams: !!opsPanelRow.showAutoNotams,
@@ -510,10 +596,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // renders nothing at all when every price is null rather than showing
   // empty/zero tiles.
   const gasPrices = {
-    avgasPrice: gasPricesRow?.avgasPrice ?? null,
-    ul91Price: gasPricesRow?.ul91Price ?? null,
-    jetA1Price: gasPricesRow?.jetA1Price ?? null,
-    currency: gasPricesRow?.currency ?? "£",
+    avgasPrice: effectiveGasPricesRow?.avgasPrice ?? null,
+    ul91Price: effectiveGasPricesRow?.ul91Price ?? null,
+    jetA1Price: effectiveGasPricesRow?.jetA1Price ?? null,
+    currency: effectiveGasPricesRow?.currency ?? "£",
   };
 
   const mainTemplateId = mainDisplayRow?.templateId ?? "classic";

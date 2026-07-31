@@ -141,12 +141,23 @@ export default function AtcControlPage(): JSX.Element {
   // last published - default ON matches today's expected behaviour out
   // of the box.
   const [autoLinkRunwayCircuit, setAutoLinkRunwayCircuit] = useState(true)
+  // Parent/sub-tenant round - purely informational, never changes what
+  // this page saves (still this tenant's own ops_panel_state row
+  // either way, see functions/api/tenant/ops-panel/index.ts, untouched
+  // by this round). When set, Runway In Use/Circuit Direction as staged
+  // and published HERE are stored but shadowed on the live dashboard by
+  // the parent's own value instead (functions/api/_utils/
+  // publicConfig.ts) - ATC staff on a linked sub-tenant should know that
+  // before wondering why their change didn't show up live.
+  const [parentAirfieldName, setParentAirfieldName] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
       fetch(OPS_PANEL_URL).then((response) => (response.ok ? response.json() : null)),
       fetch(PUBLIC_CONFIG_URL).then((response) => (response.ok ? response.json() : null)),
-    ]).then(([opsPanel, publicConfig]) => {
+      fetch('/api/tenant/parent-tenant').then((response) => (response.ok ? response.json() : null)),
+    ]).then(([opsPanel, publicConfig, parentTenant]) => {
+      if (parentTenant?.parentTenantName) setParentAirfieldName(parentTenant.parentTenantName)
       // endAIdentifier/endBIdentifier are admin-typed free text (e.g.
       // "08"/"26"), not a fixed enum - read the two real toggle options
       // rather than assuming which identifiers this tenant actually uses.
@@ -186,10 +197,22 @@ export default function AtcControlPage(): JSX.Element {
   // which end was endA vs endB without changing which end was
   // physically 26 vs 08. Per explicit instruction: Left<->26, Right<->08
   // is Shobdon's actual physical/fixed pairing, not something that
-  // varies with admin data entry - this app is also still genuinely
-  // single-tenant (see PUBLIC_CONFIG_URL's own comment), so there is no
-  // other tenant's convention this could silently break for. Revisit
-  // with a real per-tenant mapping if/when a second tenant is onboarded.
+  // varies with admin data entry.
+  //
+  // Revisited (parent/sub-tenant round): a second real tenant (Gyroplane
+  // Train) now exists, but this hardcode is still correct for it too -
+  // it has no runway of its own at all, it INHERITS Shobdon's exact
+  // runway/compass data when linked as a sub-tenant (tenants.
+  // parent_tenant_id, migration 0059 - see functions/api/_utils/
+  // publicConfig.ts's own comment), so runwayEnds fetched on this very
+  // page already resolves to Shobdon's real "08"/"26" for a linked
+  // sub-tenant too, not a distinct convention of its own. What this
+  // hardcode still does NOT handle correctly: a genuinely INDEPENDENT
+  // second airfield (its own physical runway, no parent link) with a
+  // different real left/right-circuit pairing - that would need real
+  // per-tenant storage for the pairing itself, which doesn't exist
+  // anywhere yet and is out of this round's scope (no such tenant exists
+  // to build it for). Revisit when one does.
   //
   // Only auto-fires when Auto-link is ON - this is what makes the link
   // avoidable rather than unconditional: with it OFF these two setters
@@ -362,6 +385,13 @@ export default function AtcControlPage(): JSX.Element {
               ? 'Selecting a runway end sets the matching circuit direction, and vice versa.'
               : 'Runway and circuit now behave independently - any combination can be set manually.'}
           </p>
+          {parentAirfieldName && (
+            <p className="mb-3 max-w-md rounded-lg border border-accent-sky-500/30 bg-accent-sky-500/10 px-3 py-2 text-xs text-accent-sky-300">
+              This tenant is linked to <span className="font-semibold">{parentAirfieldName}</span> as its parent
+              airfield. The live dashboard shows {parentAirfieldName}&apos;s Runway In Use and Circuit Direction, not
+              the selection below - it's still saved here and takes effect immediately if the link is ever removed.
+            </p>
+          )}
           <div className="mb-6 grid grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
               <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
