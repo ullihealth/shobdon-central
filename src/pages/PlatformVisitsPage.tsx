@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { LabelPill } from '../components/admin/LabelPill'
-import { ColorPicker } from '../components/admin/ColorPicker'
+import { IpLabelEditor } from '../components/admin/IpLabelEditor'
 import { resolveLabelColor } from '../utils/labelColors'
 
 const VISITS_URL = '/api/platform/visits'
 const VISITS_EXPORT_URL = '/api/platform/visits/export'
 const IP_LABELS_URL = '/api/platform/ip-labels'
+const MY_IP_URL = '/api/platform/my-ip'
 
 // The hide-set is the one piece of this page's filter state that's
 // meant to be a standing preference (labels Jeff never wants to see
@@ -168,9 +169,15 @@ export default function PlatformVisitsPage(): JSX.Element {
       // for a convenience feature.
     }
   }, [hideGroups])
-  const [labelDrafts, setLabelDrafts] = useState<Record<number, string>>({})
-  const [colorDrafts, setColorDrafts] = useState<Record<number, string | null>>({})
-  const [labelSaving, setLabelSaving] = useState<number | null>(null)
+
+  // "This is my device" - detects the caller's own IP (server-side, via
+  // the same CF-Connecting-IP header heartbeat.ts logs) and opens the
+  // SAME IpLabelEditor the per-row expand panel uses below, pre-filled
+  // with whatever this IP is already labeled as (if anything). null
+  // means the panel is closed; set means "show it, editing this IP."
+  const [myIpTarget, setMyIpTarget] = useState<{ ipAddress: string; groupName: string | null; color: string | null } | null>(null)
+  const [detectingIp, setDetectingIp] = useState(false)
+  const [detectIpError, setDetectIpError] = useState<string | null>(null)
 
   // Tenant slug -> id, accumulated (never shrunk) across every response
   // this page has seen so far - needed because tenantFilter is a slug
@@ -182,10 +189,11 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [knownTenants, setKnownTenants] = useState<Map<string, { id: number; name: string }>>(new Map())
   const [knownSlugs, setKnownSlugs] = useState<Set<string>>(new Set())
 
-  // All existing group names, fetched once - backs both the "hide
-  // these groups" filter's option list and the label input's
-  // autocomplete (a plain <datalist>, so typing a new name still just
-  // works - this is a suggestion list, not a closed set).
+  // All existing group names, fetched once - backs the sidebar's own
+  // list, the "hide these groups" filtering, and every IpLabelEditor's
+  // dropdown (both the per-row one below and the "This is my device"
+  // one) so a device gets assigned to a real existing group rather than
+  // a typo'd near-duplicate of one.
   const [allLabels, setAllLabels] = useState<IpLabel[]>([])
   const allGroupNames = useMemo(() => Array.from(new Set(allLabels.map((l) => l.groupName))).sort(), [allLabels])
 
@@ -397,34 +405,46 @@ export default function PlatformVisitsPage(): JSX.Element {
     window.location.href = query ? `${VISITS_EXPORT_URL}?${query}` : VISITS_EXPORT_URL
   }
 
-  // Single fast action, per the spec: typing a new group name creates
-  // it, typing an existing one (offered via the <datalist> below) just
-  // adds this IP to it - no separate "create group" step, no modal.
-  async function handleSaveLabel(visit: Visit) {
-    const groupName = (labelDrafts[visit.id] ?? visit.labelGroup ?? '').trim()
-    if (!groupName || !visit.ipAddress) return
-    // undefined means "picker never touched" (keep whatever this IP
-    // already had); null is a deliberate "Auto" pick, distinct from
-    // "unchanged" - both need separate handling from the draft map's
-    // absence of a key.
-    const color = visit.id in colorDrafts ? colorDrafts[visit.id] : (visit.labelColor ?? null)
-    setLabelSaving(visit.id)
+  // Shared by both IpLabelEditor mount points (the per-row expand panel
+  // and the "This is my device" panel below) - a label is per-IP, not
+  // per-visit-row or per-entry-point, so saving one updates every
+  // currently-loaded row sharing this IP immediately (not just whichever
+  // triggered it) rather than requiring a full refetch, and refreshes
+  // the sidebar's own label list either way.
+  async function handleLabelSaved(ipAddress: string, groupName: string, color: string | null) {
+    setVisits((prev) => prev.map((v) => (v.ipAddress === ipAddress ? { ...v, labelGroup: groupName, labelColor: color } : v)))
+    await loadLabels()
+    setExpandedRowId(null)
+    setMyIpTarget(null)
+  }
+
+  // Server-side detection (CF-Connecting-IP, same header heartbeat.ts
+  // logs) rather than a third-party "what's my IP" service - guarantees
+  // the detected value matches exactly what ends up in display_visits,
+  // and never writes anything itself; it only opens the editor,
+  // pre-filled with whatever this IP is already labeled as (if
+  // anything) via a lookup against the labels already loaded for the
+  // sidebar - Jeff still has to hit Save.
+  async function handleDetectMyIp() {
+    setDetectingIp(true)
+    setDetectIpError(null)
     try {
-      await fetch(IP_LABELS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ipAddress: visit.ipAddress, groupName, color }),
-      })
-      // Updates every row sharing this IP in the currently-loaded set,
-      // not just the one that was open - a label is per-IP, not
-      // per-visit-row, so every occurrence should reflect it
-      // immediately without a full refetch.
-      setVisits((prev) =>
-        prev.map((v) => (v.ipAddress === visit.ipAddress ? { ...v, labelGroup: groupName, labelColor: color } : v))
-      )
-      await loadLabels()
+      const response = await fetch(MY_IP_URL)
+      if (!response.ok) {
+        setDetectIpError("Couldn't detect your IP - please try again.")
+        return
+      }
+      const data = await response.json()
+      if (typeof data?.ip !== 'string' || !data.ip) {
+        setDetectIpError('No IP detected for this request.')
+        return
+      }
+      const existing = allLabels.find((l) => l.ipAddress === data.ip)
+      setMyIpTarget({ ipAddress: data.ip, groupName: existing?.groupName ?? null, color: existing?.color ?? null })
+    } catch {
+      setDetectIpError("Couldn't detect your IP - please try again.")
     } finally {
-      setLabelSaving(null)
+      setDetectingIp(false)
     }
   }
 
@@ -612,10 +632,40 @@ export default function PlatformVisitsPage(): JSX.Element {
           >
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
+          <button
+            type="button"
+            onClick={handleDetectMyIp}
+            disabled={detectingIp}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-sky-500 disabled:opacity-40"
+            title="Detects your current request IP server-side (the same header the heartbeat/visit log itself uses) and opens the label editor for it - nothing is saved until you hit Save"
+          >
+            {detectingIp ? 'Detecting…' : 'This is my device'}
+          </button>
           <span className="text-xs text-muted-500">
             {filtered.length} visit{filtered.length === 1 ? '' : 's'}
           </span>
         </div>
+
+        {detectIpError && <p className="mb-4 text-xs text-status-bad">{detectIpError}</p>}
+
+        {myIpTarget && (
+          <div className="mb-6 rounded-xl border border-accent-sky-500/40 bg-accent-sky-500/5 p-3">
+            <div className="mb-2 text-xs">
+              <span className="font-semibold uppercase tracking-widest text-muted-400">Detected IP: </span>
+              <span className="font-mono text-primary">{myIpTarget.ipAddress}</span>
+              {myIpTarget.groupName && <span className="ml-2 text-muted-500">(currently labeled)</span>}
+            </div>
+            <IpLabelEditor
+              key={myIpTarget.ipAddress}
+              ipAddress={myIpTarget.ipAddress}
+              initialGroupName={myIpTarget.groupName}
+              initialColor={myIpTarget.color}
+              allGroupNames={allGroupNames}
+              onSaved={(groupName, color) => handleLabelSaved(myIpTarget.ipAddress, groupName, color)}
+              onCancel={() => setMyIpTarget(null)}
+            />
+          </div>
+        )}
 
         <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-panel/60 p-3">
           <span className="text-xs font-semibold uppercase tracking-widest text-muted-500">Label filter:</span>
@@ -677,7 +727,6 @@ export default function PlatformVisitsPage(): JSX.Element {
                   const isExpanded = expandedRowId === visit.id
                   const isSelected = selectedIds.has(visit.id)
                   const geoSummary = formatGeoSummary(visit)
-                  const isLabelBusy = labelSaving === visit.id
                   return (
                     <Fragment key={visit.id}>
                       <tr
@@ -755,30 +804,18 @@ export default function PlatformVisitsPage(): JSX.Element {
                               )}
                             </div>
                             {visit.ipAddress && (
-                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                <span className="font-semibold uppercase tracking-widest text-muted-400">
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <span className="mb-1 block font-semibold uppercase tracking-widest text-muted-400">
                                   Label this IP:
                                 </span>
-                                <input
-                                  type="text"
-                                  list="ip-label-group-names"
-                                  placeholder="e.g. Jeff's Mac, Shobdon Café TV…"
-                                  value={labelDrafts[visit.id] ?? visit.labelGroup ?? ''}
-                                  onChange={(e) => setLabelDrafts((prev) => ({ ...prev, [visit.id]: e.target.value }))}
-                                  className="w-56 rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none"
+                                <IpLabelEditor
+                                  key={visit.ipAddress}
+                                  ipAddress={visit.ipAddress}
+                                  initialGroupName={visit.labelGroup}
+                                  initialColor={visit.labelColor}
+                                  allGroupNames={allGroupNames}
+                                  onSaved={(groupName, color) => handleLabelSaved(visit.ipAddress as string, groupName, color)}
                                 />
-                                <ColorPicker
-                                  value={visit.id in colorDrafts ? colorDrafts[visit.id] : visit.labelColor}
-                                  onChange={(color) => setColorDrafts((prev) => ({ ...prev, [visit.id]: color }))}
-                                />
-                                <button
-                                  type="button"
-                                  disabled={isLabelBusy}
-                                  onClick={() => handleSaveLabel(visit)}
-                                  className="rounded-lg border border-accent-sky-500/50 bg-accent-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 hover:border-accent-sky-400 disabled:opacity-40"
-                                >
-                                  {isLabelBusy ? 'Saving…' : 'Save'}
-                                </button>
                               </div>
                             )}
                           </td>
@@ -809,11 +846,6 @@ export default function PlatformVisitsPage(): JSX.Element {
           </div>
         </div>
       </div>
-      <datalist id="ip-label-group-names">
-        {allGroupNames.map((group) => (
-          <option key={group} value={group} />
-        ))}
-      </datalist>
     </div>
   )
 }
