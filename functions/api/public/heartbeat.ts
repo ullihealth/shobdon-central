@@ -45,13 +45,20 @@ function jsonResponse(body: unknown, status = 200): Response {
 // minutes (src/hooks/useDisplayHeartbeat.ts's own HEARTBEAT_INTERVAL_MS -
 // keep both in sync), which is already the row-write cadence the Uptime
 // Report assumes, so this window's job is narrower than it used to be:
-// it no longer "spaces out" otherwise-frequent pings (a 30-minute ping
-// always exceeds this window, so it always logs on the normal timer,
-// same as an IP/user-agent change always logs immediately) - it now
-// exists purely to stop a page reload (or several tabs open on the
-// same display) from writing duplicate rows seconds apart. Deliberately
-// smaller than the ping interval for exactly that reason.
-const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+// a 30-minute ping always exceeds this window, so it always logs on the
+// normal timer, same as an IP/user-agent change always logs
+// immediately - it exists purely to collapse same-IP/same-user-agent
+// pings that land closer together than this into one row. Still
+// deliberately smaller than the 30-minute ping interval for that
+// reason - real heartbeats are untouched.
+//
+// Widened 5 -> 20 minutes as a deliberate stopgap: authenticated admin
+// pages re-trigger this same public heartbeat hook on every navigation/
+// mount, so admin browsing was writing a row every 3-6 minutes instead
+// of the intended ~30. The real fix (excluding authenticated admin
+// routes from the Visit Log entirely) is parked for a later session;
+// this just shrinks the symptom in the meantime.
+const DEDUP_WINDOW_MS = 20 * 60 * 1000;
 
 // How long a tenant's visit rows are kept - chosen as a reasonable
 // window for "was this displayed recently"/"any odd IPs lately"
