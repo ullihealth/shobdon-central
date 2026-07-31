@@ -40,6 +40,22 @@ const SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const MAX_SLUG_ATTEMPTS = 20;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// Required going forward on both onboarding paths (this file and
+// trial-signup.ts) - the weather-share investigation round found a real
+// production tenant (Gyroplane Train) silently stuck showing fabricated
+// mock weather because it had no lat/lon on file at all and nothing
+// ever required it. Same range check as functions/api/tenant/config.ts's
+// own isValidLat/isValidLon (that file's the tenant-editable version of
+// this same pair, duplicated rather than shared per this codebase's
+// existing functions/-file-local-helper convention).
+function isValidLat(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLon(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
 function randomSlug(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   let suffix = "";
@@ -66,8 +82,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "Template tenant 'newcustomer' is missing or has no linked organization" }, 500);
   }
 
-  const body = (await request.json().catch(() => null)) as { slug?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { slug?: unknown; lat?: unknown; lon?: unknown } | null;
   const requestedSlug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
+
+  // Fail before creating anything, same posture as the template-tenant
+  // check above - a missing/invalid coordinate must never produce a
+  // half-onboarded tenant that then needs a manual D1 backfill (exactly
+  // how Gyroplane Train ended up with NULL lat/lon in the first place).
+  if (!isValidLat(body?.lat)) return jsonResponse({ error: "lat is required and must be a number between -90 and 90" }, 400);
+  if (!isValidLon(body?.lon)) return jsonResponse({ error: "lon is required and must be a number between -180 and 180" }, 400);
+  const lat = body!.lat as number;
+  const lon = body!.lon as number;
 
   let slug: string | null = null;
   // Subdomain-picker round: distinguishes "a human deliberately chose
@@ -139,9 +164,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare(
         `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed)
-         VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, 1, 0, NULL, ?, ?)`
+         VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, 1, 0, NULL, ?, ?)`
       )
-      .bind(slug, placeholderName, subdomain, organizationId, defaultBrandDisplay, subdomainConfirmed ? 1 : 0)
+      .bind(slug, placeholderName, subdomain, organizationId, lat, lon, defaultBrandDisplay, subdomainConfirmed ? 1 : 0)
       .run();
   } catch {
     // tenants.slug/subdomain are both UNIQUE (migration

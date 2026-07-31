@@ -61,6 +61,23 @@ const EMAIL_MAX_LENGTH = 200;
 const LOCATION_MAX_LENGTH = 200;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Required going forward - see onboard.ts's own copy of this same pair
+// for the full reasoning (the weather-share investigation round found a
+// real tenant, created before this requirement existed, silently stuck
+// on fabricated mock weather with no lat/lon on file at all). The
+// existing free-text `location` field above is kept as-is (a human-
+// readable note for Jeff's own manual follow-up, per this file's own
+// top comment) - it was never wired to weather despite its own
+// "for weather lookup" label on the form, which is exactly the gap
+// these two real fields close.
+function isValidLat(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLon(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Fail before creating anything if the template tenant itself is
   // missing/misconfigured - same check onboard.ts's invite-link flow
@@ -78,7 +95,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { clubName?: unknown; contactEmail?: unknown; location?: unknown; slug?: unknown }
+    | { clubName?: unknown; contactEmail?: unknown; location?: unknown; slug?: unknown; lat?: unknown; lon?: unknown }
     | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -95,6 +112,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (!location || location.length > LOCATION_MAX_LENGTH) {
     return jsonResponse({ error: `Location is required (max ${LOCATION_MAX_LENGTH} characters)` }, 400);
+  }
+  if (!isValidLat(body.lat)) {
+    return jsonResponse({ error: "A valid latitude (-90 to 90) is required" }, 400);
+  }
+  if (!isValidLon(body.lon)) {
+    return jsonResponse({ error: "A valid longitude (-180 to 180) is required" }, 400);
   }
   if (!slug) {
     return jsonResponse({ error: "Please choose a subdomain" }, 400);
@@ -140,14 +163,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // mutually exclusive rather than independent checkboxes.
     await env.DB
       .prepare(
-        `INSERT INTO tenants (slug, name, subdomain, organization_id, weather_public, ops_public, active, brand_display_json, subdomain_confirmed)
-         VALUES (?, ?, ?, ?, 0, 0, 1, ?, 1)`
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, lat, lon, weather_public, ops_public, active, brand_display_json, subdomain_confirmed)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, 1)`
       )
       .bind(
         slug,
         clubName,
         subdomain,
         organizationId,
+        body.lat,
+        body.lon,
         JSON.stringify({ main: { showLogo: false, showName: true, nameFontSize: "md" }, cafe: { showLogo: false, showName: true, nameFontSize: "md" } })
       )
       .run();

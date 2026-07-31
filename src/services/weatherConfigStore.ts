@@ -56,6 +56,17 @@ interface ServerWeatherDefault {
   internet?: { provider?: string; latitude?: number; longitude?: number; refreshIntervalSeconds?: number }
 }
 
+// Deliberately invalid - not a real place, just a value guaranteed to
+// make internetProvider.ts's Open-Meteo request fail its own
+// hasUsableCurrentReading() check (see that file's own comment on why a
+// malformed/missing `current` object is treated as a failure, not a
+// crash). Picked over reusing DEFAULT_WEATHER_CONFIG's own Shobdon
+// coordinates specifically because a real-looking fallback location is
+// the exact bug this file already fixed once (a fresh device on any
+// OTHER tenant silently showing Shobdon's weather) - "unavailable" must
+// never resolve to a plausible-looking place.
+const UNAVAILABLE_COORDINATES = { latitude: NaN, longitude: NaN }
+
 // Server-aware default resolution for a device that has never been
 // configured (no localStorage entry yet) - e.g. a brand-new tenant's
 // first-ever page load, or any fresh browser/kiosk. An ALREADY-
@@ -91,6 +102,33 @@ export async function resolveWeatherConfig(): Promise<WeatherConfig> {
           ...DEFAULT_WEATHER_CONFIG,
           activeProvider: 'internet',
           internet: { ...DEFAULT_WEATHER_CONFIG.internet, ...serverDefault.internet },
+        }
+      }
+      // 'ingested' - this tenant has an active incoming weather share
+      // (tenant_weather_shares) - see weather-default.ts's own comment
+      // for why that's checked ahead of lat/lon and wins regardless. No
+      // client-side settings for this provider at all (see
+      // IngestedWeatherConfigSection.tsx's own comment) - what it reads
+      // is resolved entirely server-side by weather-latest.ts.
+      if (serverDefault?.activeProvider === 'ingested') {
+        return { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'ingested' }
+      }
+      // 'unavailable' - no share and no lat/lon on file for this tenant
+      // (weather-default.ts's own comment). Deliberately NOT the same as
+      // falling through to plain DEFAULT_WEATHER_CONFIG below - that
+      // reads as a DELIBERATE 'mock' choice (WeatherContext.tsx's
+      // liveDataUnavailable is false for it), silently showing
+      // fabricated numbers as if they were live. 'internet' + guaranteed-
+      // invalid coordinates instead trips the exact same "provider fetch
+      // failed" path a real configured source's own outage already uses
+      // everywhere on the dashboard (N/A readouts, "NO LIVE READING"
+      // status) - the honest state for "no real weather source is set
+      // up for this tenant," not a demo/dev choice.
+      if (serverDefault?.activeProvider === 'unavailable') {
+        return {
+          ...DEFAULT_WEATHER_CONFIG,
+          activeProvider: 'internet',
+          internet: { ...DEFAULT_WEATHER_CONFIG.internet, ...UNAVAILABLE_COORDINATES },
         }
       }
     }

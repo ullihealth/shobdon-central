@@ -111,6 +111,15 @@ function SignupForm(): JSX.Element {
   const [clubName, setClubName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [location, setLocation] = useState('')
+  // Required (weather-share investigation round) - the free-text
+  // `location` field above was never actually wired to weather despite
+  // its own "for weather lookup" label, which let a real tenant get
+  // created with no usable coordinates at all. Kept separate from that
+  // field rather than replacing it - `location` is a human-readable note
+  // for Jeff's own manual follow-up (see this file's own top comment),
+  // these two are the real, geocodable values.
+  const [lat, setLat] = useState('')
+  const [lon, setLon] = useState('')
   const [status, setStatus] = useState<SignupStatus>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [result, setResult] = useState<SignupResult | null>(null)
@@ -124,6 +133,11 @@ function SignupForm(): JSX.Element {
   const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>(
     { status: 'idle' }
   )
+
+  const parsedLat = Number(lat)
+  const parsedLon = Number(lon)
+  const latValid = lat.trim() !== '' && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
+  const lonValid = lon.trim() !== '' && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
 
   const trimmedSlug = slug.trim()
   const slugFormatError =
@@ -157,6 +171,7 @@ function SignupForm(): JSX.Element {
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
+    if (!latValid || !lonValid) return
     setStatus('submitting')
     setErrorMessage('')
 
@@ -164,7 +179,7 @@ function SignupForm(): JSX.Element {
       const response = await fetch(TRIAL_SIGNUP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clubName, contactEmail, location, slug: trimmedSlug }),
+        body: JSON.stringify({ clubName, contactEmail, location, slug: trimmedSlug, lat: parsedLat, lon: parsedLon }),
       })
       const data = (await response.json().catch(() => null)) as
         | { ok?: boolean; slug?: string; subdomain?: string; error?: string }
@@ -257,7 +272,7 @@ function SignupForm(): JSX.Element {
         </div>
         <div>
           <label htmlFor="location" className="mb-1 block text-sm font-medium text-slate-300">
-            Location (for weather lookup)
+            Location
           </label>
           <input
             id="location"
@@ -270,13 +285,56 @@ function SignupForm(): JSX.Element {
             placeholder="e.g. Shobdon, Herefordshire or EGBS"
           />
         </div>
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label htmlFor="lat" className="mb-1 block text-sm font-medium text-slate-300">
+              Latitude
+            </label>
+            <input
+              id="lat"
+              required
+              value={lat}
+              onChange={(event) => setLat(event.target.value)}
+              inputMode="decimal"
+              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+              placeholder="52.2416"
+            />
+          </div>
+          <div className="flex-1">
+            <label htmlFor="lon" className="mb-1 block text-sm font-medium text-slate-300">
+              Longitude
+            </label>
+            <input
+              id="lon"
+              required
+              value={lon}
+              onChange={(event) => setLon(event.target.value)}
+              inputMode="decimal"
+              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+              placeholder="-2.8821"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">
+          Latitude/longitude power your dashboard's weather - find yours at{' '}
+          <a href="https://www.latlong.net" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">
+            latlong.net
+          </a>
+          .
+        </p>
       </div>
 
       {status === 'error' && <p className="mt-4 text-sm text-red-400">{errorMessage}</p>}
 
       <button
         type="submit"
-        disabled={status === 'submitting' || !!slugFormatError || slugCheck.status !== 'available'}
+        disabled={
+          status === 'submitting' ||
+          !!slugFormatError ||
+          slugCheck.status !== 'available' ||
+          (lat.trim() !== '' && !latValid) ||
+          (lon.trim() !== '' && !lonValid)
+        }
         className="mt-5 w-full rounded-lg bg-sky-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-60"
       >
         {status === 'submitting' ? 'Submitting…' : 'Start Your Free Trial'}

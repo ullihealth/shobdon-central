@@ -1066,6 +1066,23 @@ export default function PlatformTenantsPage(): JSX.Element {
     { status: 'idle' }
   )
 
+  // Weather-share investigation round: required, not optional - a
+  // tenant onboarded with no lat/lon on file has no sane weather
+  // default at all (functions/api/public/weather-default.ts), which
+  // silently cascaded to a real production tenant (Gyroplane Train)
+  // showing fabricated mock weather with no indication anything was
+  // wrong. Same plain-number-input pattern as AirfieldLocationSection.tsx's
+  // own lat/lon fields (this tenant's own later self-service edit of the
+  // same columns), not type="number" - keeps the same client-side
+  // parse-and-range-check posture rather than relying on the browser's
+  // own numeric input quirks.
+  const [lat, setLat] = useState('')
+  const [lon, setLon] = useState('')
+  const parsedLat = Number(lat)
+  const parsedLon = Number(lon)
+  const latValid = lat.trim() !== '' && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
+  const lonValid = lon.trim() !== '' && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
+
   const trimmedSlug = desiredSlug.trim()
   const slugFormatError =
     trimmedSlug && !SLUG_FORMAT.test(trimmedSlug)
@@ -1097,6 +1114,7 @@ export default function PlatformTenantsPage(): JSX.Element {
   }, [trimmedSlug, slugFormatError])
 
   async function handleOnboardTenant() {
+    if (!latValid || !lonValid) return
     setOnboarding(true)
     setOnboardError(null)
     setInviteResult(null)
@@ -1104,7 +1122,7 @@ export default function PlatformTenantsPage(): JSX.Element {
       const response = await fetch(PLATFORM_ONBOARD_TENANT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: trimmedSlug || undefined }),
+        body: JSON.stringify({ slug: trimmedSlug || undefined, lat: parsedLat, lon: parsedLon }),
       })
       const data = await response.json().catch(() => null)
       if (!response.ok) {
@@ -1114,6 +1132,8 @@ export default function PlatformTenantsPage(): JSX.Element {
       setInviteResult({ inviteUrl: data.inviteUrl, slug: data.slug })
       setDesiredSlug('')
       setSlugCheck({ status: 'idle' })
+      setLat('')
+      setLon('')
       // Refresh the list so the new tenant row appears immediately,
       // reusing the exact same fetch the initial mount already does.
       const refreshed = await fetch(TENANTS_URL)
@@ -1184,6 +1204,7 @@ export default function PlatformTenantsPage(): JSX.Element {
           <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Onboard New Tenant</div>
           <p className="mb-4 text-xs text-muted-500">
             Creates a new tenant and a single-use invite link. Choose a subdomain, or leave it blank for a random one.
+            Latitude/longitude are required - without them there's no sane weather default for the tenant to start from.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
@@ -1208,15 +1229,51 @@ export default function PlatformTenantsPage(): JSX.Element {
                 )}
               </p>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Latitude
+              </label>
+              <input
+                id="onboard-lat"
+                value={lat}
+                onChange={(event) => setLat(event.target.value)}
+                placeholder="52.2416"
+                inputMode="decimal"
+                className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Longitude
+              </label>
+              <input
+                id="onboard-lon"
+                value={lon}
+                onChange={(event) => setLon(event.target.value)}
+                placeholder="-2.8821"
+                inputMode="decimal"
+                className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+              />
+            </div>
             <button
               type="button"
               onClick={handleOnboardTenant}
-              disabled={onboarding || !!slugFormatError || slugCheck.status === 'checking' || slugCheck.status === 'unavailable'}
+              disabled={
+                onboarding ||
+                !!slugFormatError ||
+                slugCheck.status === 'checking' ||
+                slugCheck.status === 'unavailable' ||
+                !latValid ||
+                !lonValid
+              }
               className="shrink-0 rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
             >
               {onboarding ? 'Creating…' : 'Onboard new tenant'}
             </button>
           </div>
+          {(lat.trim() !== '' && !latValid) || (lon.trim() !== '' && !lonValid) ? (
+            <p className="mt-2 text-[11px] text-status-bad">Latitude must be -90 to 90, longitude -180 to 180.</p>
+          ) : null}
         </div>
 
         <p className="mb-4 max-w-2xl text-sm text-muted-400">
