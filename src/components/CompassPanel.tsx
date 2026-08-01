@@ -576,10 +576,23 @@ export default function CompassPanel(): JSX.Element {
     // activeRunwayEnd falls back to endA, the same value this always
     // used before this fix.
     const activeGroup = clubProfile.runwayGroups[0]
-    const activeRunwayHeading =
+    const resolvedRunwayHeading =
       clubProfile.activeRunwayEnd === activeGroup.endBIdentifier
         ? (activeGroup.headingDegrees + 180) % 360
         : activeGroup.headingDegrees
+    // reverseCompassNeedle (this tenant's own flag, or inherited from a
+    // parent - see publicConfig.ts's opsPanel splice) means the stored
+    // heading data itself is known to be backwards for this physical
+    // station, not just a cosmetic arrow-rotation preference. Applying
+    // the same 180° correction here, before the wind-component maths,
+    // means headwind/tailwind/crosswind stay consistent with the
+    // corrected visual strip/arrow by construction - one flip, not two
+    // separately-maintained ones that could drift out of sync. Applied
+    // after endA/endB resolution above, so it stays correct for
+    // whichever end is actually active, not hardcoded to one end.
+    const activeRunwayHeading = clubProfile.reverseCompassNeedle
+      ? (resolvedRunwayHeading + 180) % 360
+      : resolvedRunwayHeading
     const { headwind, crosswind } = calculateWindComponents(
       weather.windSpeed,
       weather.windDirection,
