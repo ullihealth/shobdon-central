@@ -428,16 +428,23 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       .prepare("SELECT avgasPrice, ul91Price, jetA1Price, currency FROM gas_prices WHERE organizationId = ?")
       .bind(effective.organizationId)
       .first<GasPricesRow>(),
-    // Parent's own activeRunwayEnd/circuitDirection ONLY - deliberately
-    // not the parent's full ops_panel_state row, which would also pull
-    // in the parent's safetyNotices/airfieldInfoText/display settings.
-    // Skipped entirely (no query at all) for the common unlinked case -
-    // Promise.resolve(null) rather than a real SELECT nobody needs.
+    // Parent's own activeRunwayEnd/circuitDirection/reverseCompassNeedle
+    // ONLY - deliberately not the parent's full ops_panel_state row,
+    // which would also pull in the parent's safetyNotices/
+    // airfieldInfoText/display settings. reverseCompassNeedle joined
+    // this splice after activeRunwayEnd/circuitDirection (it was
+    // originally left as sub-tenant-own, same as safetyNotices) - a
+    // real case (Shobdon's runway ends physically re-swapped, safety-
+    // net toggled on to compensate) showed a linked sub-tenant reading
+    // the same physical station's compass must also read the same
+    // correction, not just the same raw heading data. Skipped entirely
+    // (no query at all) for the common unlinked case - Promise.resolve(null)
+    // rather than a real SELECT nobody needs.
     effective.isInherited
       ? env.DB
-          .prepare("SELECT activeRunwayEnd, circuitDirection FROM ops_panel_state WHERE organizationId = ?")
+          .prepare("SELECT activeRunwayEnd, circuitDirection, reverseCompassNeedle FROM ops_panel_state WHERE organizationId = ?")
           .bind(effective.organizationId)
-          .first<{ activeRunwayEnd: string; circuitDirection: string }>()
+          .first<{ activeRunwayEnd: string; circuitDirection: string; reverseCompassNeedle: number }>()
       : Promise.resolve(null),
     // Fallback source for runwayGroups/gasPrices below, ONLY needed when
     // linked (unlinked already reads its own organizationId directly
@@ -566,23 +573,24 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
 
   const opsPanel = opsPanelRow
     ? {
-        // Parent/sub-tenant round: activeRunwayEnd/circuitDirection ONLY
-        // come from the parent when linked (parentOpsPanelRow, queried
-        // above) - falls back to this tenant's own value if the parent
-        // has never touched /atc-control either (no ops_panel_state row
-        // of its own yet), same "never a broken read" posture as
-        // resolveParentTenant.ts's own dangling-parent fallback.
-        // Everything else on this object is deliberately this TENANT's
-        // OWN row, unaffected by any parent link - see this file's own
-        // top comment for why (clubhouse notices/airfieldInfoText/
-        // display settings are never inherited).
+        // Parent/sub-tenant round: activeRunwayEnd/circuitDirection/
+        // reverseCompassNeedle ONLY come from the parent when linked
+        // (parentOpsPanelRow, queried above) - falls back to this
+        // tenant's own value if the parent has never touched
+        // /atc-control either (no ops_panel_state row of its own yet),
+        // same "never a broken read" posture as resolveParentTenant.ts's
+        // own dangling-parent fallback. Everything else on this object
+        // is deliberately this TENANT's OWN row, unaffected by any
+        // parent link - see this file's own top comment for why
+        // (clubhouse notices/airfieldInfoText/display settings are
+        // never inherited).
         activeRunwayEnd: parentOpsPanelRow?.activeRunwayEnd ?? opsPanelRow.activeRunwayEnd,
         circuitDirection: parentOpsPanelRow?.circuitDirection ?? opsPanelRow.circuitDirection,
         airfieldInfoText: opsPanelRow.airfieldInfoText,
         safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as SafetyNoticeResolved[],
         showAutoNotams: !!opsPanelRow.showAutoNotams,
         notamsCarouselIntervalSeconds: opsPanelRow.notamsCarouselIntervalSeconds,
-        reverseCompassNeedle: !!opsPanelRow.reverseCompassNeedle,
+        reverseCompassNeedle: !!(parentOpsPanelRow?.reverseCompassNeedle ?? opsPanelRow.reverseCompassNeedle),
         weatherSummaryChartEnabled: !!opsPanelRow.weatherSummaryChartEnabled,
         weatherSummaryStateADurationSeconds: opsPanelRow.weatherSummaryStateADurationSeconds,
         weatherSummaryStateBDurationSeconds: opsPanelRow.weatherSummaryStateBDurationSeconds,
