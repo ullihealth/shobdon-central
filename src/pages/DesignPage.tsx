@@ -29,7 +29,12 @@ import {
   deriveBackgroundTokensFromAnchor,
   isValidDesignTokens,
   loadDesignTemplates,
-  saveDesignTemplates,
+  createDesignTemplate,
+  renameDesignTemplate,
+  deleteDesignTemplate,
+  loadLegacyLocalTemplates,
+  isLegacyImportHandled,
+  markLegacyImportHandled,
 } from '../services/designTemplateStore'
 import type { DesignTemplate, DesignTokens } from '../services/designTemplateStore'
 import { TEMPLATE_SLOTS } from '../components/displayTemplates/templateRegistry'
@@ -429,7 +434,94 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
 }
 
 export default function DesignPage(): JSX.Element {
-  const [templates, setTemplates] = useState<DesignTemplate[]>(() => loadDesignTemplates())
+  // Backend-persisted now (functions/api/tenant/design-templates/*) -
+  // empty until the fetch below resolves, same "brief empty window is
+  // fine, self-corrects" stance every other tenant-data fetch on this
+  // page already takes (airfieldName/logoUrl/brandMain/mainDisplay
+  // etc.). templatesError/templatesBusy mirror swatchError/logoUploading's
+  // own existing pattern for a real network call that can now fail.
+  const [templates, setTemplates] = useState<DesignTemplate[]>([])
+  const [templatesError, setTemplatesError] = useState<string | null>(null)
+  const [templatesBusy, setTemplatesBusy] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    loadDesignTemplates().then((loaded) => {
+      if (!cancelled) setTemplates(loaded)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // One-time prompt offering to import whatever's still sitting in the
+  // pre-this-round localStorage-only store (see designTemplateStore.ts's
+  // own LEGACY_STORAGE_KEY comment) into the new backend-persisted list.
+  // null = nothing to show (either already handled, or this browser
+  // never had any legacy templates) - checked once on mount, not on
+  // every render, and deliberately never re-checked afterward (one-time,
+  // per instruction). draftName starts as "Custom Template N" per
+  // instruction, not the template's own old name - editable before
+  // confirming; the original name is still shown as a hint alongside it
+  // so renaming isn't done blind.
+  interface LegacyImportEntry {
+    original: DesignTemplate
+    draftName: string
+  }
+  const [legacyImportEntries, setLegacyImportEntries] = useState<LegacyImportEntry[] | null>(null)
+  const [legacyImportBusy, setLegacyImportBusy] = useState(false)
+  const [legacyImportError, setLegacyImportError] = useState<string | null>(null)
+  useEffect(() => {
+    if (isLegacyImportHandled()) return
+    const legacy = loadLegacyLocalTemplates()
+    if (legacy.length === 0) return
+    setLegacyImportEntries(legacy.map((original, index) => ({ original, draftName: `Custom Template ${index + 1}` })))
+  }, [])
+
+  function handleLegacyDraftNameChange(index: number, value: string) {
+    setLegacyImportEntries((prev) => (prev ? prev.map((entry, i) => (i === index ? { ...entry, draftName: value } : entry)) : prev))
+  }
+
+  // Sequential, not Promise.all - lets a partial failure leave ONLY the
+  // still-unsaved entries in the prompt for retry (removed from
+  // legacyImportEntries as each one succeeds) rather than risking
+  // duplicate rows if a retry re-submits ones that already made it to
+  // the backend on a prior attempt. Legacy localStorage data itself is
+  // untouched either way - see markLegacyImportHandled's own comment.
+  async function handleConfirmLegacyImport() {
+    if (!legacyImportEntries) return
+    setLegacyImportBusy(true)
+    setLegacyImportError(null)
+    const created: DesignTemplate[] = []
+    const stillFailed: LegacyImportEntry[] = []
+    for (const entry of legacyImportEntries) {
+      const name = entry.draftName.trim() || entry.original.name || 'Imported Theme'
+      const result = await createDesignTemplate({
+        name,
+        tokens: entry.original.tokens,
+        gradientMode: entry.original.gradientMode,
+        baseColour: entry.original.baseColour,
+      })
+      if (result) created.push(result)
+      else stillFailed.push(entry)
+    }
+    if (created.length > 0) setTemplates((prev) => [...prev, ...created])
+    setLegacyImportBusy(false)
+    if (stillFailed.length > 0) {
+      setLegacyImportError(
+        `Saved ${created.length} of ${legacyImportEntries.length} - couldn't save the rest. Try again, or Skip to dismiss (your original data stays on this device either way).`
+      )
+      setLegacyImportEntries(stillFailed)
+      return
+    }
+    markLegacyImportHandled()
+    setLegacyImportEntries(null)
+  }
+
+  function handleSkipLegacyImport() {
+    markLegacyImportHandled()
+    setLegacyImportEntries(null)
+  }
+
   const [activeTokens, setActiveTokens] = useState<DesignTokens>(CURRENT_LIVE_THEME.tokens)
   // Solid/Gradient toggle - part of the saved template (DesignTemplate.
   // gradientMode), not session-only preview state, so it round-trips
@@ -836,35 +928,44 @@ export default function DesignPage(): JSX.Element {
     setActiveTokens((prev) => ({ ...prev, ...derived }))
   }
 
-  function persistTemplates(next: DesignTemplate[]) {
-    setTemplates(next)
-    saveDesignTemplates(next)
-  }
-
-  function handleSaveAsTemplate() {
+  // Note what this deliberately does NOT do: touch activeTokens, call
+  // handleApplyToLiveScreen, or PUT TENANT_CONFIG_URL's theme field -
+  // saving a template only ever adds it to the library. It only ever
+  // reaches the live dashboard/café screen if a tenant later selects it
+  // (handleSelectTemplate, preview-only, same as picking any other
+  // template) AND explicitly clicks "Apply to live screen" - unchanged
+  // from how colour edits already worked before this round, just now
+  // also true for what gets saved into the list itself.
+  async function handleSaveAsTemplate() {
     const name = nameInput.trim()
     if (!name) return
-    const next: DesignTemplate = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name,
-      tokens: activeTokens,
-      gradientMode: activeGradientMode,
-      createdAt: new Date().toISOString(),
+    setTemplatesBusy(true)
+    setTemplatesError(null)
+    const created = await createDesignTemplate({ name, tokens: activeTokens, gradientMode: activeGradientMode })
+    setTemplatesBusy(false)
+    if (!created) {
+      setTemplatesError("Couldn't save template - please try again.")
+      return
     }
-    persistTemplates([...templates, next])
-    setSelectedId(next.id)
+    setTemplates((prev) => [...prev, created])
+    setSelectedId(created.id)
     setNameInput('')
   }
 
-  function handleDuplicate(template: DesignTemplate) {
-    const next: DesignTemplate = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  async function handleDuplicate(template: DesignTemplate) {
+    setTemplatesBusy(true)
+    setTemplatesError(null)
+    const created = await createDesignTemplate({
       name: `${template.name} (copy)`,
       tokens: template.tokens,
       gradientMode: template.gradientMode,
-      createdAt: new Date().toISOString(),
+    })
+    setTemplatesBusy(false)
+    if (!created) {
+      setTemplatesError("Couldn't duplicate template - please try again.")
+      return
     }
-    persistTemplates([...templates, next])
+    setTemplates((prev) => [...prev, created])
   }
 
   function handleStartRename(template: DesignTemplate) {
@@ -872,17 +973,34 @@ export default function DesignPage(): JSX.Element {
     setRenameInput(template.name)
   }
 
-  function handleConfirmRename() {
+  async function handleConfirmRename() {
     if (!renamingId) return
     const trimmed = renameInput.trim()
     if (!trimmed) return
-    persistTemplates(templates.map((t) => (t.id === renamingId ? { ...t, name: trimmed } : t)))
+    const id = renamingId
+    setTemplatesBusy(true)
+    setTemplatesError(null)
+    const ok = await renameDesignTemplate(id, trimmed)
+    setTemplatesBusy(false)
+    if (!ok) {
+      setTemplatesError("Couldn't rename template - please try again.")
+      return
+    }
+    setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, name: trimmed } : t)))
     setRenamingId(null)
     setRenameInput('')
   }
 
-  function handleDelete(id: string) {
-    persistTemplates(templates.filter((t) => t.id !== id))
+  async function handleDelete(id: string) {
+    setTemplatesBusy(true)
+    setTemplatesError(null)
+    const ok = await deleteDesignTemplate(id)
+    setTemplatesBusy(false)
+    if (!ok) {
+      setTemplatesError("Couldn't delete template - please try again.")
+      return
+    }
+    setTemplates((prev) => prev.filter((t) => t.id !== id))
     if (selectedId === id) {
       setActiveTokens(CURRENT_LIVE_THEME.tokens)
       setActiveGradientMode(CURRENT_LIVE_THEME.gradientMode ?? 'gradient')
@@ -993,7 +1111,7 @@ export default function DesignPage(): JSX.Element {
     if (!file) return
 
     const reader = new FileReader()
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const parsed = JSON.parse(String(reader.result))
         if (!isValidDesignTokens(parsed?.tokens)) {
@@ -1002,17 +1120,17 @@ export default function DesignPage(): JSX.Element {
         }
         const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported Theme'
         const gradientMode = parsed.gradientMode === 'solid' ? 'solid' : 'gradient'
-        const next: DesignTemplate = {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          name,
-          tokens: parsed.tokens,
-          gradientMode,
-          createdAt: new Date().toISOString(),
+        setTemplatesBusy(true)
+        const created = await createDesignTemplate({ name, tokens: parsed.tokens, gradientMode })
+        setTemplatesBusy(false)
+        if (!created) {
+          setImportError("Couldn't save the imported template - please try again.")
+          return
         }
-        persistTemplates([...templates, next])
-        setActiveTokens(next.tokens)
+        setTemplates((prev) => [...prev, created])
+        setActiveTokens(created.tokens)
         setActiveGradientMode(gradientMode)
-        setSelectedId(next.id)
+        setSelectedId(created.id)
         setImportError(null)
       } catch {
         setImportError('That file is not valid JSON - nothing was imported.')
@@ -1025,17 +1143,73 @@ export default function DesignPage(): JSX.Element {
   const activeTokenGroup = TOKEN_GROUPS.find((group) => group.id === activeTab)
 
   return (
-    // v1's outer wrapper pinned this whole page to exactly one viewport
-    // height (min-[1800px]:h-screen + overflow-hidden), with the preview
-    // pane never scrolling and only the tabs content area scrolling
-    // internally. That doesn't fit v2's shape: a permanent full-width
-    // footer below the two-column body has nowhere to go inside a
-    // viewport-height-locked page without either clipping it entirely or
-    // stealing height from the body above it. Dropped in favour of the
-    // page just scrolling normally (confirmed across this round's mockup
-    // iterations) - the left rail's own content and the footer both sit
-    // in normal document flow now, not pinned/internally-scrolled panes.
-    <div className="mx-auto max-w-[1900px] px-6 py-6">
+    <>
+      {/* One-time legacy-localStorage import prompt - see the state/
+          handlers above for the full "why". Rendered as a fragment
+          sibling (not nested inside the page's own scrolling body) so
+          it reliably overlays every tab/sub-view regardless of which is
+          active underneath. Only ever mounts when there's genuinely
+          something to offer - null the rest of the time, same as every
+          other conditional-modal pattern already on this page. */}
+      {legacyImportEntries && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-panel p-6 shadow-2xl">
+            <h2 className="text-lg font-black uppercase tracking-wide text-primary">Import your saved templates?</h2>
+            <p className="mt-2 text-sm text-muted-400">
+              This browser has {legacyImportEntries.length} custom colour template{legacyImportEntries.length === 1 ? '' : 's'} saved from
+              before templates were properly saved to your account - they were never visible anywhere else. Give each one a name and import
+              them now, or skip (nothing on this device is deleted either way).
+            </p>
+            <div className="mt-4 flex flex-col gap-3">
+              {legacyImportEntries.map((entry, index) => (
+                <div key={index} className="rounded-lg border border-border bg-slate-900/60 p-3">
+                  <input
+                    value={entry.draftName}
+                    onChange={(event) => handleLegacyDraftNameChange(index, event.target.value)}
+                    disabled={legacyImportBusy}
+                    className="w-full rounded border border-border bg-slate-900 px-2 py-1.5 text-sm text-primary"
+                  />
+                  {entry.original.name && entry.original.name !== entry.draftName && (
+                    <p className="mt-1 text-[11px] text-muted-500">Previously named "{entry.original.name}"</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {legacyImportError && <p className="mt-3 text-xs font-semibold text-status-bad">⚠️ {legacyImportError}</p>}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleSkipLegacyImport}
+                disabled={legacyImportBusy}
+                className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:opacity-50"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLegacyImport}
+                disabled={legacyImportBusy}
+                className="rounded-lg border border-accent-sky-500 bg-accent-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {legacyImportBusy
+                  ? 'Importing…'
+                  : `Import ${legacyImportEntries.length} template${legacyImportEntries.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* v1's outer wrapper pinned this whole page to exactly one viewport
+          height (min-[1800px]:h-screen + overflow-hidden), with the preview
+          pane never scrolling and only the tabs content area scrolling
+          internally. That doesn't fit v2's shape: a permanent full-width
+          footer below the two-column body has nowhere to go inside a
+          viewport-height-locked page without either clipping it entirely or
+          stealing height from the body above it. Dropped in favour of the
+          page just scrolling normally (confirmed across this round's mockup
+          iterations) - the left rail's own content and the footer both sit
+          in normal document flow now, not pinned/internally-scrolled panes. */}
+      <div className="mx-auto max-w-[1900px] px-6 py-6">
       {/* Single header row: title + info icon on the left, toggle on the
           right - the paragraph that used to sit below the title, and the
           toggle's own row above the preview, are both gone; their content
@@ -1484,6 +1658,7 @@ export default function DesignPage(): JSX.Element {
                               onChange={(event) => setRenameInput(event.target.value)}
                               onKeyDown={(event) => event.key === 'Enter' && handleConfirmRename()}
                               className="rounded border border-border bg-slate-900 px-2 py-1 text-sm text-primary"
+                              disabled={templatesBusy}
                               autoFocus
                             />
                           ) : (
@@ -1505,21 +1680,36 @@ export default function DesignPage(): JSX.Element {
 
                           <div className="flex shrink-0 gap-3 text-xs">
                             {renamingId === template.id ? (
-                              <button type="button" onClick={handleConfirmRename} className="text-accent-sky-400">
+                              <button type="button" onClick={handleConfirmRename} disabled={templatesBusy} className="text-accent-sky-400 disabled:opacity-50">
                                 Save
                               </button>
                             ) : (
                               <>
                                 {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
-                                  <button type="button" onClick={() => handleStartRename(template)} className="text-muted-400 hover:text-primary">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartRename(template)}
+                                    disabled={templatesBusy}
+                                    className="text-muted-400 hover:text-primary disabled:opacity-50"
+                                  >
                                     Rename
                                   </button>
                                 )}
-                                <button type="button" onClick={() => handleDuplicate(template)} className="text-muted-400 hover:text-primary">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDuplicate(template)}
+                                  disabled={templatesBusy}
+                                  className="text-muted-400 hover:text-primary disabled:opacity-50"
+                                >
                                   Duplicate
                                 </button>
                                 {template.id !== CURRENT_LIVE_THEME_ID && template.id !== BRIGHT_BLUE_THEME_ID && (
-                                  <button type="button" onClick={() => handleDelete(template.id)} className="text-status-bad">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(template.id)}
+                                    disabled={templatesBusy}
+                                    className="text-status-bad disabled:opacity-50"
+                                  >
                                     Delete
                                   </button>
                                 )}
@@ -1529,6 +1719,7 @@ export default function DesignPage(): JSX.Element {
                         </li>
                       ))}
                     </ul>
+                    {templatesError && <p className="mb-4 text-xs font-semibold text-status-bad">⚠️ {templatesError}</p>}
 
                     {/* "Save as new template" lives on the Custom sub-view
                         now (see below) - Export/Import stay here since
@@ -1588,12 +1779,13 @@ export default function DesignPage(): JSX.Element {
                         <button
                           type="button"
                           onClick={handleSaveAsTemplate}
-                          disabled={!nameInput.trim()}
+                          disabled={!nameInput.trim() || templatesBusy}
                           className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          Save as template
+                          {templatesBusy ? 'Saving…' : 'Save as template'}
                         </button>
                       </div>
+                      {templatesError && <p className="mt-2 text-xs font-semibold text-status-bad">⚠️ {templatesError}</p>}
                     </div>
                   </>
                 )}
@@ -1792,5 +1984,6 @@ export default function DesignPage(): JSX.Element {
         </div>
       </div>
     </div>
+    </>
   )
 }

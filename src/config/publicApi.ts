@@ -88,6 +88,12 @@ export const GAS_PRICES_URL = '/api/tenant/gas-prices'
 // library - functions/api/tenant/media-folders/*.
 export const MEDIA_FOLDERS_URL = '/api/tenant/media-folders'
 
+// Screens Design's saved custom colour-theme library - functions/api/
+// tenant/design-templates/*. Was localStorage-only (designTemplateStore.
+// ts) until this round; see that file's own comment for the full "why".
+export const DESIGN_TEMPLATES_URL = '/api/tenant/design-templates'
+export const designTemplateUrl = (id: string): string => `/api/tenant/design-templates/${id}`
+
 // Slide composer - see SlideEditor.tsx. Recipe attach is a separate PUT
 // from the upload itself (upload.ts stays completely untouched); the
 // image proxy is same-origin so an existing library image can be loaded

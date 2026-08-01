@@ -1,3 +1,5 @@
+import { DESIGN_TEMPLATES_URL, designTemplateUrl } from '../config/publicApi'
+
 export interface DesignTokens {
   '--color-page-from': string
   '--color-page-via': string
@@ -157,7 +159,21 @@ export function deriveBackgroundTokensFromAnchor(colourId: string): Partial<Desi
   }
 }
 
-const STORAGE_KEY = 'shobdon-central.design-templates.v1'
+// Legacy, localStorage-only key this whole store used to read/write
+// exclusively - the actual bug confirmed last round (saved templates
+// never left the one browser they were saved in, since nothing here
+// ever called the backend). Kept as a read-only source for the one-time
+// import prompt below; no code path writes to this key anymore.
+const LEGACY_STORAGE_KEY = 'shobdon-central.design-templates.v1'
+// Sentinel marking "the one-time legacy-import prompt has already been
+// shown and resolved (imported or skipped) in this browser" - separate
+// key from LEGACY_STORAGE_KEY itself so the prompt never re-fires on
+// every page load without ever touching (let alone deleting) the
+// legacy data it's offering to import. Deliberately never cleared by
+// any code path here, including a successful import - see
+// loadLegacyLocalTemplates's own comment for why the legacy data itself
+// is left alone too.
+const LEGACY_IMPORT_HANDLED_KEY = 'shobdon-central.design-templates-import.v1.handled'
 
 export const CURRENT_LIVE_THEME_ID = 'current-live-theme'
 
@@ -248,9 +264,65 @@ export const BRIGHT_BLUE_THEME: DesignTemplate = {
 
 export const DESIGN_TOKEN_KEYS = Object.keys(CURRENT_LIVE_THEME.tokens) as (keyof DesignTokens)[]
 
-export function loadDesignTemplates(): DesignTemplate[] {
+// Real backend persistence (functions/api/tenant/design-templates/*),
+// organizationId-scoped and owner-gated the same way every other
+// tenant-owned list on this page already is - see that route's own
+// comment for the full "why" behind this round. Every function below is
+// now a thin fetch() wrapper; DesignPage.tsx owns the actual `templates`
+// React state and calls these to keep it in sync with the server,
+// exactly the same shape as its existing persistSavedSwatches/
+// handleSaveBrandDisplay helpers already use for their own tenant data.
+
+export async function loadDesignTemplates(): Promise<DesignTemplate[]> {
+  const response = await fetch(DESIGN_TEMPLATES_URL)
+  if (!response.ok) return []
+  const data = await response.json().catch(() => null)
+  return Array.isArray(data?.templates) ? data.templates : []
+}
+
+export interface CreateDesignTemplateInput {
+  name: string
+  tokens: DesignTokens
+  gradientMode?: 'solid' | 'gradient'
+  baseColour?: string
+}
+
+// Returns the created template (server-assigned id/createdAt) on
+// success, or null on failure - callers show their own error state
+// rather than this module throwing, matching persistSavedSwatches'
+// established revert-on-failure posture.
+export async function createDesignTemplate(input: CreateDesignTemplateInput): Promise<DesignTemplate | null> {
+  const response = await fetch(DESIGN_TEMPLATES_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) return null
+  return response.json().catch(() => null)
+}
+
+export async function renameDesignTemplate(id: string, name: string): Promise<boolean> {
+  const response = await fetch(designTemplateUrl(id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return response.ok
+}
+
+export async function deleteDesignTemplate(id: string): Promise<boolean> {
+  const response = await fetch(designTemplateUrl(id), { method: 'DELETE' })
+  return response.ok
+}
+
+// Read-only - the ONE-TIME legacy-import prompt's own data source
+// (DesignPage.tsx), never written to again by this store. Same
+// try/parse/Array.isArray posture the old loadDesignTemplates() used to
+// have, now scoped to exactly this one legacy read rather than the
+// store's main load path.
+export function loadLegacyLocalTemplates(): DesignTemplate[] {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : []
@@ -259,8 +331,18 @@ export function loadDesignTemplates(): DesignTemplate[] {
   }
 }
 
-export function saveDesignTemplates(templates: DesignTemplate[]): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(templates))
+export function isLegacyImportHandled(): boolean {
+  return window.localStorage.getItem(LEGACY_IMPORT_HANDLED_KEY) === 'true'
+}
+
+// Called on both "Import" and "Skip" - per instruction, the prompt is
+// one-time regardless of which the tenant chooses, but the underlying
+// legacy localStorage data is NEVER cleared by this store either way
+// (not here, not after a successful import) - see LEGACY_STORAGE_KEY's
+// own comment. If a real reason to revisit ever comes up, the original
+// data is still sitting there untouched; only this one flag changes.
+export function markLegacyImportHandled(): void {
+  window.localStorage.setItem(LEGACY_IMPORT_HANDLED_KEY, 'true')
 }
 
 export function isValidDesignTokens(value: unknown): value is DesignTokens {
