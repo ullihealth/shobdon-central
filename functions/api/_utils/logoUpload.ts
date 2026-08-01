@@ -19,6 +19,7 @@ const ALLOWED_CONTENT_TYPES: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/svg+xml": "svg",
   "image/webp": "webp",
+  "image/avif": "avif",
 };
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2MB - generous for a logo, keeps uploads fast and cheap.
@@ -34,7 +35,7 @@ export async function validateAndUploadLogo(
   if (!ext) {
     return {
       error: jsonResponse(
-        { error: `Unsupported image type "${contentType || "unknown"}" - please upload a PNG, JPG, SVG, or WebP file.` },
+        { error: `Unsupported image type "${contentType || "unknown"}" - please upload a PNG, JPG, SVG, WebP, or AVIF file.` },
         400
       ),
     };

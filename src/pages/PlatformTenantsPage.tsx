@@ -432,7 +432,7 @@ function LogoEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (log
         {uploading ? 'Uploading…' : 'Replace'}
         <input
           type="file"
-          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+          accept="image/png,image/jpeg,image/svg+xml,image/webp,image/avif"
           onChange={handleUpload}
           disabled={uploading}
           className="hidden"

@@ -1234,14 +1234,14 @@ export default function DesignPage(): JSX.Element {
                         {logoUploading ? 'Uploading…' : logoUrl ? 'Replace' : 'Upload'}
                         <input
                           type="file"
-                          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                          accept="image/png,image/jpeg,image/svg+xml,image/webp,image/avif"
                           onChange={handleLogoUpload}
                           disabled={logoUploading}
                           className="hidden"
                         />
                       </label>
                     </div>
-                    <p className="mt-1 text-xs text-muted-500">PNG, JPG, SVG, or WebP, up to 2MB.</p>
+                    <p className="mt-1 text-xs text-muted-500">PNG, JPG, SVG, WebP, or AVIF, up to 2MB.</p>
                     {logoError && <p className="mt-1 text-xs text-status-bad">{logoError}</p>}
                   </div>
 
