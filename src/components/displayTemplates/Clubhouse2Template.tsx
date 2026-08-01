@@ -129,7 +129,7 @@ export default function Clubhouse2Template({
           >
             <div className={isDesktop ? 'h-full' : ''}>
               <div className="flex h-full flex-col rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">
-                <div className="mb-5 flex-shrink-0 text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
+                <div className="mb-5 flex-shrink-0 text-center text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
                   6-Hour Forecast
                 </div>
                 <div className="min-h-0 flex-1">

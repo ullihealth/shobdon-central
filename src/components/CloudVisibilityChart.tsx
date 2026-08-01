@@ -206,7 +206,7 @@ export default function CloudVisibilityChart({
     <div className="flex h-full flex-col gap-2">
       <div className="flex min-h-0 flex-[2] flex-col rounded-2xl border border-border bg-card p-4">
         <div className="mb-2 flex-shrink-0 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
-          Cloud Base Forecast
+          Calculated Convected Cloud Base
         </div>
         <div ref={plotWrapperRef} className="min-h-0 flex-1">
           <svg viewBox={`0 0 ${viewWidth} ${VIEW_HEIGHT}`} preserveAspectRatio="xMidYMid meet" className="h-full w-full">

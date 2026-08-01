@@ -1114,7 +1114,7 @@ export default function CafeMediaPage(): JSX.Element {
         <p className="mb-4 text-xs text-muted-500">
           A continuous scrolling strip across the bottom of the screen. Up to 10 slots, each set to a content
           type and independently switched on/off - pick a specific named notice from the Notices section above,
-          different slots can show different notices. Check "Gas" on any slot to also append the Gas Prices
+          different slots can show different notices. Check "Fuel" on any slot to also append the Fuel Prices
           container's values (Dashboard Manager) to that slot - additive, works alongside any content type
           including on its own with no other type picked. A slot's own toggles only matter while the master
           toggle above is on.
@@ -1136,7 +1136,7 @@ export default function CafeMediaPage(): JSX.Element {
               </select>
               <label
                 className="flex shrink-0 cursor-pointer items-center gap-1.5"
-                title="Additive - appends the Gas Prices tiles' values onto whatever this slot already shows (or stands alone if the slot has no other content picked)"
+                title="Additive - appends the Fuel Prices tiles' values onto whatever this slot already shows (or stands alone if the slot has no other content picked)"
               >
                 <input
                   type="checkbox"
@@ -1144,7 +1144,7 @@ export default function CafeMediaPage(): JSX.Element {
                   onChange={(event) => updateSlot(slot.position, { includeGasPrices: event.target.checked })}
                   className="h-4 w-4 accent-accent-sky-500"
                 />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">Gas</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">Fuel</span>
               </label>
               <label className="flex shrink-0 cursor-pointer items-center gap-1.5" title="Enable this slot">
                 <input

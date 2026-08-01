@@ -80,7 +80,7 @@ export default function GasPricesPanel({ gasPricesData }: GasPricesPanelProps = 
 
   return (
     <div className="flex-shrink-0 rounded-3xl border border-border bg-panel p-4 shadow-xl shadow-slate-950/20">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-muted-400">Gas Prices</div>
+      <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.25em] text-muted-400">Fuel Prices</div>
       <div className="flex gap-2">
         {tiles.map((tile) => (
           <div key={tile.key} className="flex flex-1 flex-col items-center gap-1 rounded-xl border border-border bg-card px-2 py-2.5">

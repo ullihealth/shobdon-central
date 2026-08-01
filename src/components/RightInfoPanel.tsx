@@ -143,7 +143,7 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div className="flex-shrink-0 text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMS</div>
+      <div className="flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMS</div>
       <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
         {notices.slice(0, visibleCount).map((notice, index) => (
           <div key={index} className={`mb-4 font-semibold text-primary last:mb-0 ${SIZE_CLASSES[notice.size]}`}>
@@ -194,7 +194,7 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div className="flex-shrink-0 text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
+      <div className="flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
       <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
         {notams.slice(0, visibleCount).map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-sm text-primary last:mb-0">
@@ -410,7 +410,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
 
   return (
     <div className="flex h-full flex-col rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">
-      <div className="mb-5 flex-shrink-0 text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
+      <div className="mb-5 flex-shrink-0 text-center text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
         Ops Panel
       </div>
       <div className="min-h-0 flex-1">

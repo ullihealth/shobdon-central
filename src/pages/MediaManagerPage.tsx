@@ -255,7 +255,7 @@ export default function MediaManagerPage(): JSX.Element {
       {!loading && (
         <section className="mt-8 rounded-2xl border border-border bg-panel p-6">
           <div className="mb-4 flex items-center justify-between">
-            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Gas Prices</div>
+            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Fuel Prices</div>
             <label className="flex items-center gap-2 text-xs font-semibold text-muted-400">
               Currency
               <select

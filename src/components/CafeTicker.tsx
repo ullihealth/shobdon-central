@@ -178,7 +178,7 @@ function gasPricesSegmentText(gasPrices: TickerGasPrices): string {
   if (gasPrices.avgasPrice !== null) parts.push(`AVGAS ${gasPrices.currency}${gasPrices.avgasPrice.toFixed(2)}`)
   if (gasPrices.ul91Price !== null) parts.push(`UL91 ${gasPrices.currency}${gasPrices.ul91Price.toFixed(2)}`)
   if (gasPrices.jetA1Price !== null) parts.push(`JET A1 ${gasPrices.currency}${gasPrices.jetA1Price.toFixed(2)}`)
-  return parts.length > 0 ? `GAS PRICES: ${parts.join(' · ')}` : ''
+  return parts.length > 0 ? `FUEL PRICES: ${parts.join(' · ')}` : ''
 }
 
 // Resolves each configured, ENABLED slot to its display text - built-in

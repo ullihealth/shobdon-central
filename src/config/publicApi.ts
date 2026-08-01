@@ -176,3 +176,11 @@ export const PLATFORM_ONBOARDING_CONTENT_URL = '/api/platform/onboarding-content
 export const PLATFORM_UPDATES_URL = '/api/platform/updates'
 export const PLATFORM_UPDATES_RELEASE_URL = '/api/platform/updates/release'
 export const platformUpdateUrl = (id: string): string => `/api/platform/updates/${id}`
+
+// Public, unauthenticated - functions/api/public/landing-mode.ts.
+// Consumed by RootRoute.tsx for every visitor to the bare marketing
+// domain, logged in or not. Never called on a tenant subdomain.
+export const PUBLIC_LANDING_MODE_URL = '/api/public/landing-mode'
+// Developer-only GET/PUT - functions/api/platform/landing-mode.ts.
+// Consumed by DeveloperToolsPage.tsx's toggle card.
+export const PLATFORM_LANDING_MODE_URL = '/api/platform/landing-mode'
