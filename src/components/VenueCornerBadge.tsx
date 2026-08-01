@@ -28,6 +28,20 @@ const NAME_FONT_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
   xl: 'text-2xl',
 }
 
+// Same nameFontSize value, same reuse-not-duplicate reasoning as
+// Header.tsx's own LOGO_SIZE_CLASSES - see that map's comment (showLogo/
+// showName are mutually exclusive per display, so one value already
+// unambiguously sizes whichever of the two is showing). 'md' is exactly
+// this component's own previous hardcoded h-8 max-w-[80px] - unchanged
+// default. The badge's own outer max-w-[220px] (below) still bounds the
+// total pill width, so even 'xl' leaves comfortable room for padding.
+const LOGO_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
+  sm: 'h-6 max-w-[60px]',
+  md: 'h-8 max-w-[80px]',
+  lg: 'h-10 max-w-[100px]',
+  xl: 'h-12 max-w-[120px]',
+}
+
 // Café Template's small fixed corner element - logo + name only, not
 // part of the ticker rotation. Deliberately NOT Header.tsx itself: that
 // component also carries the clock and weather-status slot, neither of
@@ -92,7 +106,7 @@ export default function VenueCornerBadge({
       className="group flex max-w-[220px] items-center gap-2 rounded-xl border border-border bg-panel/90 px-3 py-2 shadow-lg shadow-slate-950/30"
     >
       {showLogo && logoUrl && (
-        <div className="h-8 max-w-[80px] shrink-0">
+        <div className={`shrink-0 ${LOGO_SIZE_CLASSES[nameFontSize]}`}>
           <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
         </div>
       )}

@@ -1303,7 +1303,14 @@ export default function DesignPage(): JSX.Element {
                           Show brand name text
                         </label>
                         <label className="flex items-center justify-between gap-2 text-sm text-primary">
-                          <span>Name size</span>
+                          {/* Same stored field (nameFontSize) drives both - see
+                              Header.tsx's LOGO_SIZE_CLASSES for why this is one
+                              setting, not two. Label just reflects which of the
+                              two radios above is actually selected, so this
+                              reads as "the same control, now also sizing
+                              images" rather than a name-specific option that
+                              happens to do nothing while a logo is shown. */}
+                          <span>{value.showLogo ? 'Logo size' : 'Name size'}</span>
                           <select
                             value={value.nameFontSize}
                             onChange={(event) => {

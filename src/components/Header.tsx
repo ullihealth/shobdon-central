@@ -55,6 +55,27 @@ const NAME_FONT_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
   xl: 'text-2xl sm:text-5xl',
 }
 
+// Same nameFontSize value, same four-tier UI control (DesignPage.tsx's
+// Branding tab) - reused rather than a second setting, because
+// showLogo/showName are already mutually exclusive per display (see
+// DesignPage.tsx's own radio-group comment), so this one value already
+// unambiguously means "how big should whichever of these two is
+// currently showing render." Logo was previously fixed at h-8 sm:h-12
+// regardless of this value at all - the actual root cause of "logo
+// renders too small," not just a missing option. 'md' is exactly that
+// previous hardcoded h-8 max-w-[100px] sm:h-12 sm:max-w-[160px] -
+// unchanged default. Ceiling deliberately conservative: confirmed via
+// Playwright at 1920x1080/1600x900/1366x768 that this header's own box
+// (the grid row it renders in) is only ~48-70px tall including padding -
+// 'xl' stays inside that even on the smallest tested height rather than
+// growing until it visually overflows into the row below.
+const LOGO_SIZE_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
+  sm: 'h-6 max-w-[70px] sm:h-8 sm:max-w-[110px]',
+  md: 'h-8 max-w-[100px] sm:h-12 sm:max-w-[160px]',
+  lg: 'h-10 max-w-[130px] sm:h-14 sm:max-w-[190px]',
+  xl: 'h-12 max-w-[160px] sm:h-16 sm:max-w-[220px]',
+}
+
 export default function Header({
   rightSlot,
   airfieldName,
@@ -188,47 +209,41 @@ export default function Header({
         gradientMode === 'solid' ? 'bg-header-via' : 'bg-gradient-to-r from-header-from via-header-via to-header-to'
       }`}
     >
-      {/* Left - title (doubles as the Configuration nav control) with Last Updated, read as one info block.
-          min-w-0 + truncate: a flex child otherwise refuses to shrink below its text's own natural width,
-          which is what was pushing the clock (below) into overlapping it at narrow widths. */}
+      {/* Left - title only (doubles as the Configuration nav control). "Last updated" used to
+          stack directly beneath this as a second line - moved under the clock below instead
+          (see that block's own comment) so a larger logo/name has the full row height to grow
+          into rather than sharing it with a caption. min-w-0 + truncate: a flex child otherwise
+          refuses to shrink below its text's own natural width, which is what was pushing the
+          clock (below) into overlapping it at narrow widths. */}
       {(() => {
         const headerLinkContent = (
-          <>
-            <div className="flex min-w-0 items-center gap-2">
-              {showLogo && logoUrl && (
-                // shrink-0 + capped max-width: a logo of any aspect ratio must
-                // never be allowed to grow and push the centred clock (below)
-                // out of position - the exact narrow-width collision this
-                // file's own comments already document for the title text.
-                // h-full + object-contain (never object-cover/fixed w+h)
-                // guarantees no distortion and no cropping regardless of the
-                // uploaded image's native dimensions.
-                <div className="h-8 max-w-[100px] shrink-0 sm:h-12 sm:max-w-[160px]">
-                  <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
-                </div>
-              )}
-              {showName && (
-                <div
-                  className={`truncate font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 ${NAME_FONT_SIZE_CLASSES[nameFontSize]}`}
-                >
-                  {airfieldName || 'AIRFIELD CENTRAL'}
-                </div>
-              )}
-            </div>
-            {/* Hidden below sm - at that width there isn't room for a second line
-                alongside the clock and status slot without forcing the title to
-                shrink further than it already has to. Reuses this exact slot for
-                the not-provisioned-yet message rather than adding a new line -
-                same reasoning as configBackHref above, this only ever renders for
-                a tenant whose subdomain isn't live, never for Shobdon or any
-                already-working tenant, so there's no new narrow-viewport case to
-                verify beyond what this line already had. */}
-            <div className="hidden text-sm font-medium text-muted-300 leading-tight sm:block">
-              {subdomainConfirmedDown ? "Your dashboard URL isn't live yet — contact support" : `Last updated ${lastUpdatedString}`}
-            </div>
-          </>
+          <div className="flex min-w-0 items-center gap-2">
+            {showLogo && logoUrl && (
+              // shrink-0 + capped max-width/height (LOGO_SIZE_CLASSES, driven by the
+              // same nameFontSize value the name text uses - see that map's own
+              // comment): a logo of any aspect ratio must never be allowed to grow
+              // past its tier's cap and push the centred clock (below) out of
+              // position - the exact narrow-width collision this file's own
+              // comments already document for the title text. h-full + object-
+              // contain (never object-cover/fixed w+h) guarantees no distortion
+              // and no cropping regardless of the uploaded image's native
+              // dimensions.
+              <div className={`shrink-0 ${LOGO_SIZE_CLASSES[nameFontSize]}`}>
+                <img src={logoUrl} alt="" className="h-full w-full object-contain object-left" />
+              </div>
+            )}
+            {showName && (
+              <div
+                className={`truncate font-black uppercase tracking-wide text-primary transition-colors group-hover:text-accent-sky-400 ${NAME_FONT_SIZE_CLASSES[nameFontSize]}`}
+              >
+                {airfieldName || 'AIRFIELD CENTRAL'}
+              </div>
+            )}
+          </div>
         )
-        const headerLinkClassName = 'group flex min-w-0 flex-col cursor-pointer'
+        // No longer flex-col - headerLinkContent is a single row now that
+        // "Last updated" moved out from underneath it (see above).
+        const headerLinkClassName = 'group flex min-w-0 cursor-pointer'
         const headerLinkTitle = isConfigPage ? 'Back to Dashboard' : 'Weather Config'
 
         // Confirmed unreachable (not just "still checking" - see
@@ -239,7 +254,7 @@ export default function Header({
         // so nothing should look clickable.
         if (subdomainConfirmedDown) {
           return (
-            <div className="flex min-w-0 flex-col" title="Your dashboard URL isn't live yet — contact support">
+            <div className="flex min-w-0" title="Your dashboard URL isn't live yet — contact support">
               {headerLinkContent}
             </div>
           )
@@ -273,9 +288,19 @@ export default function Header({
           width from sm up. Below sm, absolute positioning is exactly what
           caused the overlap (it ignored the title's actual width entirely) -
           a normal flex item instead, sized down, takes its place in the row
-          between the title and rightSlot with no collision. */}
-      <div className="flex-shrink-0 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+          between the title and rightSlot with no collision. "Last updated"
+          used to stack beneath the title/logo on the left instead - moved
+          here (same small-caption-under-a-big-value pattern, just under the
+          clock rather than the name) so the title row is free to grow a
+          larger logo into the space that line used to reserve. Hidden below
+          sm for the same reason it always was: no room for a second line
+          alongside the title and status slot without forcing things to
+          shrink further than they already have to at that width. */}
+      <div className="flex-shrink-0 flex flex-col items-center sm:absolute sm:left-1/2 sm:-translate-x-1/2">
         <div className="text-lg font-extrabold text-primary sm:text-5xl">{timeString}</div>
+        <div className="hidden text-sm font-medium text-muted-300 leading-tight sm:block">
+          {subdomainConfirmedDown ? "Your dashboard URL isn't live yet — contact support" : `Last updated ${lastUpdatedString}`}
+        </div>
       </div>
 
       {/* Right - optional slot (e.g. weather status indicator on the dashboard) */}
