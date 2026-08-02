@@ -7,6 +7,7 @@ import LeftInfoPanel, { type OpsPanelChartConfig } from '../LeftInfoPanel'
 import RightInfoPanel, { type OpsPanelPublic } from '../RightInfoPanel'
 import WeatherStatusIndicator from '../WeatherStatusIndicator'
 import type { MediaPanelSourceData } from '../media/MediaPanel'
+import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
 interface Clubhouse1TemplateProps {
@@ -86,13 +87,19 @@ export default function Clubhouse1Template({
       // vw/vh alone) keeps the margin proportionally consistent on both
       // axes regardless of aspect ratio; clamp() keeps it from becoming
       // silly on a tiny phone or enormous on an 8K display.
-      style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
+      // position: relative - the containing block FooterTicker's own
+      // negative-offset overlay positioning resolves against (see that
+      // file's own comment for the full mechanism). Must be THIS div
+      // (not some inner one) so the overlay breaks out past exactly the
+      // padding declared here, on the real dashboard AND inside
+      // DesignPage.tsx's scaled preview box alike.
+      style={{ ...themeOverride, padding: TEMPLATE_EDGE_PADDING, position: 'relative' }}
     >
       <div
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto auto', gap: '16px' }
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -161,11 +168,6 @@ export default function Clubhouse1Template({
           </div>
         </div>
 
-        {/* FOOTER TICKER - free/universal now, not café-only. Renders
-            nothing at all when this tenant hasn't enabled it (see
-            FooterTicker.tsx's own comment) - no reserved space either way. */}
-        <FooterTicker />
-
         {/* FOOTER - small, deliberately unobtrusive "powered by" credit. */}
         <div className="flex items-center justify-center pt-1">
           <a
@@ -179,6 +181,18 @@ export default function Clubhouse1Template({
           </a>
         </div>
       </div>
+
+      {/* FOOTER TICKER - free/universal now, not café-only. A sibling of
+          the grid above, not a row inside it - it's absolutely
+          positioned (see FooterTicker.tsx's own comment) so it overlays
+          the screen's true bottom edge instead of reserving space, and
+          the panels above keep the full height they had before the
+          ticker existed. Renders nothing at all when this tenant hasn't
+          enabled it - no space reserved either way. Placed after (not
+          before) the "Powered by" credit in DOM order so it paints on
+          top of it - the ticker is the true bottom-most element on
+          screen, per its own design. */}
+      <FooterTicker />
     </div>
   )
 }

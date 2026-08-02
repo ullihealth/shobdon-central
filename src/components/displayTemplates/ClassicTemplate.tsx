@@ -7,6 +7,7 @@ import MediaPanel from '../media/MediaPanel'
 import RightInfoPanel from '../RightInfoPanel'
 import WeatherStatusIndicator from '../WeatherStatusIndicator'
 import { currentMedia } from '../../config/media'
+import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
 import type { DisplayPanelConfig } from './panelConfig'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
@@ -56,13 +57,15 @@ export default function ClassicTemplate({
       className={`w-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100 ${
         isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'
       }`}
-      style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
+      // position: relative - see Clubhouse1Template.tsx's own comment on
+      // this same declaration (FooterTicker's overlay containing block).
+      style={{ ...themeOverride, padding: TEMPLATE_EDGE_PADDING, position: 'relative' }}
     >
       <div
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto auto', gap: '16px' }
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -133,11 +136,6 @@ export default function ClassicTemplate({
           )}
         </div>
 
-        {/* FOOTER TICKER - free/universal now, not café-only. Renders
-            nothing at all when this tenant hasn't enabled it (see
-            FooterTicker.tsx's own comment) - no reserved space either way. */}
-        <FooterTicker />
-
         <div className="flex items-center justify-center pt-1">
           <a
             href="https://airfieldcentral.com"
@@ -150,6 +148,11 @@ export default function ClassicTemplate({
           </a>
         </div>
       </div>
+
+      {/* FOOTER TICKER - see Clubhouse1Template.tsx's own comment on this
+          same placement (sibling of the grid, absolutely positioned
+          overlay, not a reserved row). */}
+      <FooterTicker />
     </div>
   )
 }

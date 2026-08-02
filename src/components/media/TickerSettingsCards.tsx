@@ -70,13 +70,19 @@ function parseSlotOptionValue(value: string): Partial<TickerSlot> {
 // Base types plus one option per EXISTING notice - all notices are
 // listed regardless of their own enabled state (a slot can be pre-wired
 // to a currently-off notice, ready for later) - the "(off)" suffix
-// makes that visible rather than silently confusing.
+// makes that visible rather than silently confusing. 'fuel' - previously
+// an additive "Fuel" checkbox alongside this dropdown (task #42) - is
+// now one of the dropdown's own options, same as every other built-in
+// type; the checkbox's old UI position is now the "Text" toggle below
+// instead (manual per-slot text, an either/or with this dropdown, not
+// additive).
 function buildSlotOptions(notices: SafetyNotice[]): { value: string; label: string }[] {
   return [
     { value: '', label: '— None —' },
     { value: 'clock', label: 'Clock / Date' },
     { value: 'forecast', label: '6-Hour Met Office Forecast' },
     { value: 'conditions', label: 'Current Conditions (Temp / Wind)' },
+    { value: 'fuel', label: 'Fuel Prices' },
     ...notices.map((notice) => ({
       value: `notice:${notice.id}`,
       label: `Notice: ${notice.name || notice.text}${notice.enabled === false ? ' (off)' : ''}`,
@@ -445,47 +451,59 @@ export default function TickerSettingsCards(): JSX.Element | null {
         <p className="mb-4 text-xs text-muted-500">
           A continuous scrolling strip across the bottom of the screen. Up to 10 slots, each set to a content
           type and independently switched on/off - pick a specific named notice from ATC Control's Safety
-          Notices section, different slots can show different notices. Check "Fuel" on any slot to also append
-          the Fuel Prices container's values (below) to that slot - additive, works alongside any content type
-          including on its own with no other type picked. A slot's own toggles only matter while the master
-          toggle above is on.
+          Notices section (different slots can show different notices), or "Fuel Prices" to show the Fuel
+          Prices container's values (below). Check "Text" on a slot to type your own message instead - Text
+          replaces whatever the dropdown would otherwise show for that slot, not both at once. A slot's own
+          toggles only matter while the master toggle above is on.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {tickerSlots.map((slot) => (
-            <div key={slot.position} className="flex items-center gap-2">
-              <span className="w-6 shrink-0 text-xs font-bold text-muted-500">{slot.position}.</span>
-              <select
-                value={slotOptionValue(slot)}
-                onChange={(event) => updateSlot(slot.position, parseSlotOptionValue(event.target.value))}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-              >
-                {buildSlotOptions(notices).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <label
-                className="flex shrink-0 cursor-pointer items-center gap-1.5"
-                title="Additive - appends the Fuel Prices tiles' values onto whatever this slot already shows (or stands alone if the slot has no other content picked)"
-              >
+            <div key={slot.position} className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="w-6 shrink-0 text-xs font-bold text-muted-500">{slot.position}.</span>
+                <select
+                  value={slotOptionValue(slot)}
+                  onChange={(event) => updateSlot(slot.position, parseSlotOptionValue(event.target.value))}
+                  disabled={!!slot.textMode}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {buildSlotOptions(notices).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <label
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5"
+                  title="Type your own message for this slot instead - replaces whatever the dropdown would otherwise show, not both at once"
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!slot.textMode}
+                    onChange={(event) => updateSlot(slot.position, { textMode: event.target.checked })}
+                    className="h-4 w-4 accent-accent-sky-500"
+                  />
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">Text</span>
+                </label>
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5" title="Enable this slot">
+                  <input
+                    type="checkbox"
+                    checked={slot.enabled !== false}
+                    onChange={(event) => updateSlot(slot.position, { enabled: event.target.checked })}
+                    className="h-4 w-4 accent-accent-sky-500"
+                  />
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">On</span>
+                </label>
+              </div>
+              {slot.textMode && (
                 <input
-                  type="checkbox"
-                  checked={!!slot.includeGasPrices}
-                  onChange={(event) => updateSlot(slot.position, { includeGasPrices: event.target.checked })}
-                  className="h-4 w-4 accent-accent-sky-500"
+                  type="text"
+                  value={slot.manualText ?? ''}
+                  onChange={(event) => updateSlot(slot.position, { manualText: event.target.value })}
+                  placeholder="Type this slot's message…"
+                  className="ml-8 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">Fuel</span>
-              </label>
-              <label className="flex shrink-0 cursor-pointer items-center gap-1.5" title="Enable this slot">
-                <input
-                  type="checkbox"
-                  checked={slot.enabled !== false}
-                  onChange={(event) => updateSlot(slot.position, { enabled: event.target.checked })}
-                  className="h-4 w-4 accent-accent-sky-500"
-                />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">On</span>
-              </label>
+              )}
             </div>
           ))}
         </div>

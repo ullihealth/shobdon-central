@@ -21,7 +21,7 @@ import { weatherIconFor } from '../utils/weatherIcons'
 import type { VisibilityHour } from '../services/visibilityForecastService'
 import type { WeatherData } from '../types/weather'
 
-export type TickerSlotType = 'clock' | 'forecast' | 'conditions' | 'notice'
+export type TickerSlotType = 'clock' | 'forecast' | 'conditions' | 'notice' | 'fuel'
 
 export interface TickerSlot {
   position: number
@@ -40,12 +40,18 @@ export interface TickerSlot {
   // empty segment and is skipped, same graceful-degradation posture as
   // every other empty/unset slot - never a crash.
   noticeId?: string
-  // Task #42: additive to whatever `type`/`noticeId` already resolves
-  // to for this slot - NOT a slot type of its own, so e.g. a slot can be
-  // type: null with just gas prices as its whole segment, or type:
-  // 'notice' with both the notice text AND gas prices in one segment.
-  // See gasPricesSegmentText below for the resolved format.
-  includeGasPrices?: boolean
+  // Text/Fuel rework: when true, `manualText` REPLACES whatever `type`/
+  // `noticeId` would otherwise resolve to for this slot entirely - not
+  // additive, an either/or (see useResolvedSegments below). Retires the
+  // old `includeGasPrices` field (task #42's additive gas-prices
+  // checkbox) outright - fuel prices are now their own dropdown type
+  // ('fuel') instead, and this occupies the same UI position that
+  // checkbox used to.
+  textMode?: boolean
+  // Only meaningful when textMode is true - the tenant's own typed
+  // content for this slot, shown verbatim (trimmed) instead of any
+  // built-in type.
+  manualText?: string
 }
 
 export interface TickerGasPrices {
@@ -195,29 +201,24 @@ function useResolvedSegments(props: CafeTickerProps): string[] {
     .slice()
     .sort((a, b) => a.position - b.position)
     .map((slot) => {
-      const baseText = (() => {
-        switch (slot.type) {
-          case 'clock':
-            return clockText
-          case 'forecast':
-            return forecastSegmentText(visibilityHours)
-          case 'conditions':
-            return conditionsSegmentText(weather, liveDataUnavailable)
-          case 'notice':
-            return noticeSegmentText(slot.noticeId, safetyNotices)
-          default:
-            return ''
-        }
-      })()
-      // Additive, not a replacement (task #42) - a slot's own picked
-      // type/notice still resolves exactly as before; includeGasPrices
-      // just appends the gas prices segment onto the same slot's text
-      // when both are present, or stands alone when the slot has no
-      // other type/content configured.
-      if (!slot.includeGasPrices) return baseText
-      const gasText = gasPricesSegmentText(gasPrices)
-      if (!gasText) return baseText
-      return baseText ? `${baseText}   ${gasText}` : gasText
+      // Text/Fuel rework: manualText REPLACES type/noticeId entirely for
+      // this slot when textMode is on - not additive, an either/or (the
+      // admin UI greys out the type dropdown to match).
+      if (slot.textMode) return (slot.manualText ?? '').trim()
+      switch (slot.type) {
+        case 'clock':
+          return clockText
+        case 'forecast':
+          return forecastSegmentText(visibilityHours)
+        case 'conditions':
+          return conditionsSegmentText(weather, liveDataUnavailable)
+        case 'notice':
+          return noticeSegmentText(slot.noticeId, safetyNotices)
+        case 'fuel':
+          return gasPricesSegmentText(gasPrices)
+        default:
+          return ''
+      }
     })
     .filter((text) => text.trim().length > 0)
 }
@@ -319,8 +320,15 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
   }
 
   return (
+    // Square, not rounded-xl/full-border (its look prior to the overlay
+    // rework) - every caller now positions this flush against the true
+    // screen edges on all three sides (left/right/bottom), where a
+    // rounded corner or a border drawn right at the physical edge just
+    // looks like a stray clipped line rather than a deliberate frame.
+    // border-t only - still visually separates the ticker from whatever
+    // panel content it now overlays above it.
     <div
-      className="w-full overflow-hidden rounded-xl border border-border"
+      className="w-full overflow-hidden border-t border-border"
       style={{ height: style.heightPx, backgroundColor: hexToRgba(style.backgroundColor, style.backgroundOpacity) }}
     >
       {isStatic ? (

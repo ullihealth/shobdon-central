@@ -37,7 +37,7 @@ interface CafeSettingsRow {
   tickerGapPx: number;
 }
 
-type TickerSlotType = "clock" | "forecast" | "conditions" | "notice";
+type TickerSlotType = "clock" | "forecast" | "conditions" | "notice" | "fuel";
 
 interface TickerSlotInput {
   position: number;
@@ -52,16 +52,20 @@ interface TickerSlotInput {
   // SafetyNotice.id, same as ops-panel's own notices). Was missing from
   // this interface and silently dropped by rowToApi()/the PUT merge
   // below (both used an explicit field list) - found and fixed while
-  // adding includeGasPrices, the same class of bug.
+  // adding includeGasPrices (see textMode/manualText below for the same
+  // class of bug, caught proactively this round instead).
   noticeId?: string;
-  // Task #42: additive to whatever `type`/`noticeId` this slot already
-  // resolves to - when true, the resolved segment also has gas price
-  // text appended (functions/api/_utils/publicConfig.ts's gasPrices,
-  // rendered client-side in CafeTicker.tsx). Not a slot TYPE of its own
-  // - a slot can be type: null with includeGasPrices: true (gas prices
-  // as their own standalone segment) or type: 'notice' with
-  // includeGasPrices: true (notice text + gas prices in one segment).
-  includeGasPrices?: boolean;
+  // Text/Fuel rework: replaces the old additive `includeGasPrices`
+  // checkbox (task #42) outright - retired, zero production usage
+  // confirmed before cutover. Gas prices are now their own dropdown
+  // type ('fuel' above) instead. textMode/manualText occupy that
+  // checkbox's old UI position but mean something different: when
+  // textMode is true, manualText REPLACES whatever `type`/`noticeId`
+  // would otherwise resolve to for this slot (an either/or, not
+  // additive) - see CafeTicker.tsx's useResolvedSegments for the
+  // client-side resolution.
+  textMode?: boolean;
+  manualText?: string;
 }
 
 interface CafeSettingsInput {
@@ -80,7 +84,8 @@ interface CafeSettingsInput {
 }
 
 const VALID_LAYOUT_MODES = ["split", "full"];
-const VALID_TICKER_TYPES = ["clock", "forecast", "conditions", "notice"];
+const VALID_TICKER_TYPES = ["clock", "forecast", "conditions", "notice", "fuel"];
+const MAX_MANUAL_TEXT_LENGTH = 200;
 const VALID_FONT_FAMILIES = ["Inter", "Montserrat", "Oswald"];
 const TICKER_SLOT_COUNT = 10;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -132,7 +137,8 @@ function rowToApi(row: CafeSettingsRow) {
     // this field first appears.
     enabled: slot.enabled !== false,
     noticeId: slot.noticeId,
-    includeGasPrices: !!slot.includeGasPrices,
+    textMode: !!slot.textMode,
+    manualText: slot.manualText,
   }));
   return {
     layoutMode: row.layoutMode,
@@ -196,8 +202,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       if (slot.noticeId !== undefined && typeof slot.noticeId !== "string") {
         return jsonResponse({ error: "tickerSlots[].noticeId must be a string" }, 400);
       }
-      if (slot.includeGasPrices !== undefined && typeof slot.includeGasPrices !== "boolean") {
-        return jsonResponse({ error: "tickerSlots[].includeGasPrices must be a boolean" }, 400);
+      if (slot.textMode !== undefined && typeof slot.textMode !== "boolean") {
+        return jsonResponse({ error: "tickerSlots[].textMode must be a boolean" }, 400);
+      }
+      if (slot.manualText !== undefined) {
+        if (typeof slot.manualText !== "string") {
+          return jsonResponse({ error: "tickerSlots[].manualText must be a string" }, 400);
+        }
+        if (slot.manualText.length > MAX_MANUAL_TEXT_LENGTH) {
+          return jsonResponse({ error: `tickerSlots[].manualText must be ${MAX_MANUAL_TEXT_LENGTH} characters or fewer` }, 400);
+        }
       }
     }
   }
@@ -256,7 +270,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       type: slot.type,
       enabled: slot.enabled !== false,
       noticeId: slot.noticeId,
-      includeGasPrices: !!slot.includeGasPrices,
+      textMode: !!slot.textMode,
+      manualText: slot.manualText,
     })),
     tickerBackgroundColor: body.tickerBackgroundColor ?? currentApi.tickerBackgroundColor,
     tickerBackgroundOpacity: body.tickerBackgroundOpacity ?? currentApi.tickerBackgroundOpacity,

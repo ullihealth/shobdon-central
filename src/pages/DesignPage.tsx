@@ -363,16 +363,21 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
   const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots, tickerStyle } = settings
 
   return (
+    // position: relative - same negative-offset overlay mechanism as
+    // CafeMediaPage.tsx's own PreviewContent (see that file's comment) -
+    // this is the third hand-maintained mirror of CafeTemplate.tsx's
+    // ticker JSX (per this component's own top comment), so it needs
+    // the identical fix to stay visually consistent with the other two.
     <div
-      className={`h-full w-full p-10 text-slate-100 ${
+      className={`relative h-full w-full p-10 text-slate-100 ${
         gradientMode === 'solid' ? 'bg-page-via' : 'bg-gradient-to-b from-page-from via-page-via to-page-to'
       }`}
     >
-      <div
-        style={{ display: 'grid', gridTemplateRows: tickerEnabled ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: '16px', height: '100%' }}
-      >
-        {/* min-w-0: see the ticker wrapper's own comment below - same
-            grid-item min-width:auto blowout risk applies here too. */}
+      <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
+        {/* min-w-0: this div is a grid item in the single-row grid
+            above; grid items default to min-width:auto (content-based),
+            not 0. (The ticker below is no longer a grid item at all as
+            of this round - see CafeTemplate.tsx's own comment.) */}
         <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge
@@ -403,32 +408,33 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
           )}
         </div>
 
-        {/* overflow-hidden + min-w-0: this wrapper, not CafeTicker's own
-            inner box, is the actual grid item in the single-column grid
-            above - grid items default to min-width:auto (content-based),
-            so without this the ticker's deliberately-wider-than-viewport
-            marquee track (duplicated content for a seamless loop) wins
-            the grid track's width calculation and inflates every row in
-            this grid, including the media panel's. Same fix as
-            CafeTemplate.tsx and CafeMediaPage.tsx's own ticker wrappers -
-            this is the third hand-maintained mirror of that same JSX
-            (Screens Design's own café preview), which is why this exact
-            bug kept resurfacing in a new place each time only one copy
-            got fixed. */}
-        {tickerEnabled && (
-          <div className="min-w-0 overflow-hidden">
-            <CafeTicker
-              slots={tickerSlots}
-              weather={weather}
-              liveDataUnavailable={liveDataUnavailable}
-              visibilityHours={visibilityHours}
-              safetyNotices={safetyNotices}
-              gasPrices={gasPrices}
-              style={tickerStyle}
-            />
-          </div>
-        )}
       </div>
+
+      {/* FOOTER TICKER - overlay, matching CafeTemplate.tsx/
+          CafeMediaPage.tsx's own treatment (see their comments for the
+          full mechanism) rather than reserving a grid row - the third
+          hand-maintained mirror of that same JSX (Screens Design's own
+          café preview), which is why this exact bug (and now this exact
+          fix) keeps resurfacing in a new place each time only one copy
+          gets updated. -2.5rem = this component's own p-10 negated
+          (Tailwind spacing-10 = 2.5rem = 40px) - keep in sync with the
+          p-10 class above if it ever changes. */}
+      {tickerEnabled && (
+        <div
+          className="absolute z-10 overflow-hidden"
+          style={{ left: '-2.5rem', right: '-2.5rem', bottom: '-2.5rem' }}
+        >
+          <CafeTicker
+            slots={tickerSlots}
+            weather={weather}
+            liveDataUnavailable={liveDataUnavailable}
+            visibilityHours={visibilityHours}
+            safetyNotices={safetyNotices}
+            gasPrices={gasPrices}
+            style={tickerStyle}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -139,10 +139,21 @@ function PreviewContent({
   const { hours: visibilityHours } = useVisibilityForecast()
 
   return (
-    <div className="h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
-      <div style={{ display: 'grid', gridTemplateRows: tickerEnabled ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
-        {/* min-w-0: see the ticker wrapper's own comment below - same
-            grid-item min-width:auto blowout risk applies here too. */}
+    // position: relative - the ticker overlay below (see its own
+    // comment) breaks out past this box's own p-10 padding via a
+    // matching negative offset, same mechanism FooterTicker.tsx/
+    // CafeTemplate.tsx now use against their own clamp()-based padding -
+    // this preview uses a fixed p-10 instead of that vmin-based formula
+    // since vmin would resolve against the ADMIN PAGE's real browser
+    // viewport here, not this scaled reference box (see the investigation
+    // that first flagged this: CafeMediaPage.tsx's PreviewContent is a
+    // hand-mirrored, not byte-identical, copy of CafeTemplate.tsx).
+    <div className="relative h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
+      <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
+        {/* min-w-0: this div is a grid item in the single-row grid
+            above; grid items default to min-width:auto (content-based),
+            not 0. (The ticker below is no longer a grid item at all as
+            of this round - see its own comment.) */}
         <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge airfieldName={airfieldName} logoUrl={logoUrl} />
@@ -167,39 +178,35 @@ function PreviewContent({
           )}
         </div>
 
-        {/* overflow-hidden + min-w-0: this wrapper, not CafeTicker's own
-            inner box, is the actual grid item in the single-column grid
-            above - grid items default to min-width:auto (content-based),
-            so without this the ticker's deliberately-wider-than-viewport
-            marquee track (duplicated content for a seamless loop) wins
-            the grid track's width calculation and inflates every row in
-            this grid, including the media panel's. Same fix as
-            CafeTemplate.tsx's own ticker wrapper (see that file's
-            comment for the full mechanism and how it was confirmed live)
-            - this file wasn't touched in that round since it's a
-            separate, hand-maintained mirror of that JSX for the preview,
-            not the same component reused. Here it read as the media
-            panel going completely blank rather than "cut off on the
-            right", because this preview additionally sits inside a
-            fixed-size clipped/scaled-down box - the blown-out grid made
-            MediaPanel's own `fill` box roughly double width, and its
-            image (object-contain, centered by default) re-centered
-            around that wider box's midpoint, landing outside or at the
-            extreme edge of the small clipped preview viewport. */}
-        {tickerEnabled && (
-          <div className="min-w-0 overflow-hidden">
-            <CafeTicker
-              slots={tickerSlots}
-              weather={weather}
-              liveDataUnavailable={liveDataUnavailable}
-              visibilityHours={visibilityHours}
-              safetyNotices={safetyNotices}
-              gasPrices={gasPrices}
-              style={tickerStyle}
-            />
-          </div>
-        )}
       </div>
+
+      {/* FOOTER TICKER - matches CafeTemplate.tsx's own overlay treatment
+          (see that file's comment for the full negative-offset
+          mechanism) rather than reserving a grid row, so this preview
+          keeps accurately representing what tenants actually see live.
+          -2.5rem on each side is p-10's own value negated (Tailwind's
+          spacing-10 = 2.5rem = 40px) - must stay in sync with the p-10
+          class on this component's outer div above if that ever changes.
+          overflow-hidden (not min-w-0 - no longer a grid item, see
+          CafeTemplate.tsx's own comment on why that half of the old fix
+          is gone) still clips CafeTicker's deliberately wider-than-box
+          marquee track. */}
+      {tickerEnabled && (
+        <div
+          className="absolute z-10 overflow-hidden"
+          style={{ left: '-2.5rem', right: '-2.5rem', bottom: '-2.5rem' }}
+        >
+          <CafeTicker
+            slots={tickerSlots}
+            weather={weather}
+            liveDataUnavailable={liveDataUnavailable}
+            visibilityHours={visibilityHours}
+            safetyNotices={safetyNotices}
+            gasPrices={gasPrices}
+            style={tickerStyle}
+          />
+        </div>
+      )}
     </div>
   )
 }

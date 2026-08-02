@@ -629,24 +629,29 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     tickerSlots: (cafeSettingsRow?.tickerSlotsJson
       ? JSON.parse(cafeSettingsRow.tickerSlotsJson)
       : Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null, enabled: true }))
-    ).map((slot: { position: number; type: string | null; enabled?: boolean; noticeId?: string; includeGasPrices?: boolean }) => ({
-      position: slot.position,
-      type: slot.type,
-      // Missing on an older saved config = enabled, same
-      // `enabled !== false` convention as safetyNotices.
-      enabled: slot.enabled !== false,
-      // noticeId was previously dropped here (this mapping only ever
-      // returned position/type/enabled), which silently broke every
-      // notice-type ticker slot on the LIVE public dashboard specifically
-      // - CafeTemplate.tsx sources tickerSlots from exactly this field
-      // (see its own PUBLIC_CONFIG_URL fetch), so a slot correctly saved
-      // with a specific notice picked in CafeMediaPage.tsx would always
-      // render blank once actually live. Fixed as part of adding
-      // includeGasPrices below, the same class of "new optional field
-      // silently stripped by an explicit field list" issue.
-      noticeId: slot.noticeId,
-      includeGasPrices: !!slot.includeGasPrices,
-    })),
+    ).map(
+      (slot: { position: number; type: string | null; enabled?: boolean; noticeId?: string; textMode?: boolean; manualText?: string }) => ({
+        position: slot.position,
+        type: slot.type,
+        // Missing on an older saved config = enabled, same
+        // `enabled !== false` convention as safetyNotices.
+        enabled: slot.enabled !== false,
+        // noticeId was previously dropped here (this mapping only ever
+        // returned position/type/enabled), which silently broke every
+        // notice-type ticker slot on the LIVE public dashboard
+        // specifically - CafeTemplate.tsx/FooterTicker.tsx source
+        // tickerSlots from exactly this field (see their own
+        // PUBLIC_CONFIG_URL fetch), so a slot correctly saved with a
+        // specific notice picked in the admin editor would always
+        // render blank once actually live. textMode/manualText
+        // (Text/Fuel rework) added proactively here for the same
+        // reason, rather than waiting to rediscover this same bug a
+        // third time.
+        noticeId: slot.noticeId,
+        textMode: !!slot.textMode,
+        manualText: slot.manualText,
+      })
+    ),
     tickerBackgroundColor: cafeSettingsRow?.tickerBackgroundColor ?? "#0f172a",
     tickerBackgroundOpacity: cafeSettingsRow?.tickerBackgroundOpacity ?? 100,
     tickerHeightPx: cafeSettingsRow?.tickerHeightPx ?? 64,

@@ -5,6 +5,7 @@ import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } f
 import VenueCornerBadge from '../VenueCornerBadge'
 import { currentMedia } from '../../config/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
+import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
 import { useWeather } from '../../context/WeatherContext'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
@@ -220,13 +221,19 @@ export default function CafeTemplate({
       className={`${
         isPreview ? 'h-full w-full overflow-hidden' : `w-screen ${isDesktop ? 'h-screen overflow-hidden' : 'min-h-screen overflow-y-auto'}`
       } bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100`}
-      style={{ ...themeOverride, padding: 'clamp(12px, 3vmin, 48px)' }}
+      // position: relative - see FooterTicker.tsx's own comment on this
+      // exact mechanism (the ticker overlay below resolves its
+      // negative-offset positioning against THIS box's padding edge,
+      // not the true browser viewport) - same reasoning as the three
+      // standard templates now use via FooterTicker, hand-mirrored here
+      // since this template doesn't use that shared component.
+      style={{ ...themeOverride, padding: TEMPLATE_EDGE_PADDING, position: 'relative' }}
     >
       <div
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: tickerEnabled ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: '16px' }
+            ? { display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px' }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -234,8 +241,9 @@ export default function CafeTemplate({
             existing MediaPanel/carousel component per the layout toggle.
             min-w-0: this div is a grid item in the outer single-column
             grid below; grid items default to min-width:auto (content-
-            based), not 0 - defensive here for the same reason it's
-            required on the ticker wrapper below. */}
+            based), not 0. (The ticker below is no longer a grid item at
+            all as of this round - see its own comment - so this is now
+            the only remaining min-w-0 in this file.) */}
         <div className="relative min-h-0 min-w-0">
           <div className="absolute left-0 top-0 z-10">
             <VenueCornerBadge
@@ -327,40 +335,46 @@ export default function CafeTemplate({
           )}
         </div>
 
-        {/* FOOTER TICKER - fully collapses (not just hidden) when off, so
-            no empty space is reserved for it. No fixed height wrapper
-            here anymore - CafeTicker sets its own height from
-            tickerStyle.heightPx (Phase 2 style controls).
-            overflow-hidden + min-w-0: this wrapper is the actual grid
-            item in the outer single-column grid above (CafeTicker's own
-            div is just its child) - grid items default to
-            min-width:auto, i.e. sized to fit their content's intrinsic
-            (min-content) width, not 0. CafeTicker's animated track is
-            deliberately width:max-content with its segment list
-            duplicated for a seamless marquee loop, so its intrinsic
-            content width is routinely 2x+ the viewport - without
-            overriding the default here, THAT width was winning the
-            grid track's sizing, pushing the whole outer frame wider
-            than the screen (confirmed live: toggling the ticker off
-            alone made the whole frame render correctly, ticker back on
-            broke it immediately, independent of anything media-panel-
-            related). CafeTicker's own overflow-hidden only clips ITS
-            OWN box visually - it doesn't stop this ancestor grid item
-            from being sized by that content in the first place. */}
-        {tickerEnabled && (
-          <div className="min-w-0 overflow-hidden">
-            <CafeTicker
-              slots={tickerSlots}
-              weather={weather}
-              liveDataUnavailable={liveDataUnavailable}
-              visibilityHours={visibilityHours}
-              safetyNotices={safetyNotices}
-              gasPrices={gasPrices}
-              style={tickerStyle}
-            />
-          </div>
-        )}
       </div>
+
+      {/* FOOTER TICKER - fully collapses (not just hidden) when off, so
+          no space is reserved for it either way. Was a reserved grid row
+          (sized by tickerStyle.heightPx) until this round, which shrank
+          the main media area by that much whenever the ticker was on -
+          now a sibling of the grid above, absolutely positioned to
+          overlay the screen's true bottom edge instead (see
+          FooterTicker.tsx's own comment for the full negative-offset
+          mechanism - hand-mirrored here rather than reusing that
+          component, since this template keeps its own inline fetch).
+          No min-w-0/overflow-hidden grid-blowout concern anymore either -
+          that was specifically about being a GRID ITEM (grid items
+          default to min-width:auto, sized to fit CafeTicker's
+          deliberately-wider-than-viewport marquee track); an absolutely
+          positioned element isn't a grid item at all, and explicit
+          left+right offsets already give it a real width independent of
+          its content. overflow-hidden is kept on the outer wrapper below
+          purely to clip that same wide marquee track visually - the
+          "min-w-0" half of the old fix is no longer needed. */}
+      {tickerEnabled && (
+        <div
+          className="absolute z-10 overflow-hidden"
+          style={{
+            left: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
+            right: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
+            bottom: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
+          }}
+        >
+          <CafeTicker
+            slots={tickerSlots}
+            weather={weather}
+            liveDataUnavailable={liveDataUnavailable}
+            visibilityHours={visibilityHours}
+            safetyNotices={safetyNotices}
+            gasPrices={gasPrices}
+            style={tickerStyle}
+          />
+        </div>
+      )}
     </div>
   )
 }
