@@ -49,7 +49,7 @@ interface CarouselSlotRow {
 interface CarouselSlotInput {
   slotNumber: number;
   enabled: boolean;
-  mediaType: "image" | "mp4" | "pdf" | "webcam";
+  mediaType: "image" | "mp4" | "pdf" | "webcam" | "gyropedia";
   durationSeconds: number;
   mediaLibraryId?: string | null;
   cameraSlotNumber?: number | null;
@@ -64,7 +64,7 @@ interface CarouselSlotInput {
   zone?: "both" | "left" | "right";
 }
 
-const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam"];
+const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia"];
 const VALID_FIT_MODES = ["fill", "contain"];
 const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
 // Café Template's split-pane assignment - see migration 0033. Ignored

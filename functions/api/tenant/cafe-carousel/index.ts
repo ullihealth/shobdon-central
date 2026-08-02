@@ -53,7 +53,7 @@ interface CafeCarouselSlotRow {
 interface CafeCarouselSlotInput {
   slotNumber: number;
   enabled: boolean;
-  mediaType: "image" | "mp4" | "pdf" | "webcam";
+  mediaType: "image" | "mp4" | "pdf" | "webcam" | "gyropedia";
   durationSeconds: number;
   mediaLibraryId?: string | null;
   cameraSlotNumber?: number | null;
@@ -68,7 +68,7 @@ interface CafeCarouselSlotInput {
   zone?: "both" | "left" | "right";
 }
 
-const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam"];
+const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia"];
 const VALID_FIT_MODES = ["fill", "contain"];
 const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
 const VALID_ZONES = ["both", "left", "right"];
