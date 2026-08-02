@@ -153,10 +153,17 @@ const GYROPEDIA_LAST_UPDATED_FONT = 'clamp(6px, 1.1vh, 12px)'
 // pull (see gyropedia-departures.ts's own top comment) - any other
 // status Gyropedia might use in future falls back to the plain/neutral
 // colour below rather than being hidden or breaking.
+//
+// Flying green matches gyropedia.com's own CSS (.F { background-color:
+// green }), confirmed against the real page. Landed blue does NOT match
+// their own convention - their .L/.C/.departed classes are actually
+// black background with yellow text, not blue at all - implemented as
+// blue anyway per explicit instruction, flagging the discrepancy here
+// rather than silently "correcting" it to yellow-on-black.
 const STATUS_COLOUR: Record<string, string> = {
   Scheduled: 'text-slate-300',
-  Landed: 'text-status-good',
-  Flying: 'text-accent-sky-400',
+  Landed: 'text-accent-sky-400',
+  Flying: 'text-status-good',
 }
 
 function GyropediaLastUpdated({ fetchedAt }: { fetchedAt: string | null }): JSX.Element | null {
