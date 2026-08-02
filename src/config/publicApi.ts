@@ -184,3 +184,13 @@ export const PUBLIC_LANDING_MODE_URL = '/api/public/landing-mode'
 // Developer-only GET/PUT - functions/api/platform/landing-mode.ts.
 // Consumed by DeveloperToolsPage.tsx's toggle card.
 export const PLATFORM_LANDING_MODE_URL = '/api/platform/landing-mode'
+
+// Public, unauthenticated - functions/api/public/gyropedia-departures.ts.
+// UK-filtered gyroplane departures/arrivals feed, genuinely tenant-
+// agnostic (same data for every tenant) - consumed by MediaSlotRenderer.tsx's
+// 'gyropedia' case.
+export const GYROPEDIA_DEPARTURES_URL = '/api/public/gyropedia-departures'
+// Developer-only GET/PUT - functions/api/platform/gyropedia-interval.ts.
+// Same shape as PLATFORM_LANDING_MODE_URL above. Consumed by
+// DeveloperToolsPage.tsx's own toggle card.
+export const PLATFORM_GYROPEDIA_INTERVAL_URL = '/api/platform/gyropedia-interval'

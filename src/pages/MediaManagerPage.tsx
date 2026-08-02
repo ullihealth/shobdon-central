@@ -158,6 +158,10 @@ export default function MediaManagerPage(): JSX.Element {
   }
 
   function handleSourceChange(slot: CarouselSlot, value: string) {
+    if (value === 'gyropedia') {
+      saveSlot({ ...slot, mediaType: 'gyropedia', mediaLibraryId: null, cameraSlotNumber: null, cameraId: null })
+      return
+    }
     if (value.startsWith('webcam:cam:')) {
       const cameraId = value.slice('webcam:cam:'.length)
       saveSlot({ ...slot, mediaType: 'webcam', cameraId, cameraSlotNumber: null, mediaLibraryId: null })

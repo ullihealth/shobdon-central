@@ -52,6 +52,7 @@ export function filterAssetsForScreen(
 function sourceValueFor(slot: CarouselSlot): string {
   if (slot.mediaType === 'webcam' && slot.cameraId) return `webcam:cam:${slot.cameraId}`
   if (slot.mediaType === 'webcam' && slot.cameraSlotNumber) return `webcam:${slot.cameraSlotNumber}`
+  if (slot.mediaType === 'gyropedia') return 'gyropedia'
   if (slot.mediaLibraryId) return `file:${slot.mediaLibraryId}`
   return ''
 }
@@ -355,6 +356,7 @@ function slotSourceLabel(slot: CarouselSlot, files: MediaLibraryFile[], cameraOp
     if (slot.cameraId) return cameraOptions.find((c) => c.cameraId === slot.cameraId)?.label ?? 'Webcam'
     return cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.label ?? `Webcam ${slot.cameraSlotNumber ?? '?'}`
   }
+  if (slot.mediaType === 'gyropedia') return 'Gyropedia Departures/Arrivals'
   return files.find((f) => f.id === slot.mediaLibraryId)?.filename ?? '— none —'
 }
 
@@ -482,6 +484,13 @@ function CarouselSlotEditor({
           className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
         >
           <option value="">— none —</option>
+          {/* Zero-config data feed - no file/camera picker needed, unlike
+              every other option here. Available to every tenant, not
+              gated by anything - see this slot type's own investigation
+              report for why. */}
+          <optgroup label="Data Feeds">
+            <option value="gyropedia">Gyropedia Departures/Arrivals</option>
+          </optgroup>
           {cameraOptions.length > 0 && (
             <optgroup label="Webcams">
               {cameraOptions.map((cam) => (

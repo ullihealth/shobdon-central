@@ -660,6 +660,10 @@ export default function CafeMediaPage(): JSX.Element {
   }
 
   function handleCafeSourceChange(slot: CarouselSlot, value: string) {
+    if (value === 'gyropedia') {
+      saveCafeSlot({ ...slot, mediaType: 'gyropedia', mediaLibraryId: null, cameraSlotNumber: null, cameraId: null })
+      return
+    }
     if (value.startsWith('webcam:cam:')) {
       const cameraId = value.slice('webcam:cam:'.length)
       saveCafeSlot({ ...slot, mediaType: 'webcam', cameraId, cameraSlotNumber: null, mediaLibraryId: null })

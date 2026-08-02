@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import InvestigateStation from '../components/config/InvestigateStation'
-import { PLATFORM_LANDING_MODE_URL } from '../config/publicApi'
+import { PLATFORM_GYROPEDIA_INTERVAL_URL, PLATFORM_LANDING_MODE_URL } from '../config/publicApi'
 
 const DEVELOPER_SETTINGS_URL = '/api/tenant/developer-settings'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type LandingMode = 'coming_soon' | 'live'
+const GYROPEDIA_INTERVAL_OPTIONS = [5, 15, 30] as const
+type GyropediaIntervalMinutes = (typeof GYROPEDIA_INTERVAL_OPTIONS)[number]
 
 // Switches the PUBLIC marketing domain (airfieldcentral.com root only -
 // functions/api/public/landing-mode.ts, read by RootRoute.tsx) between
@@ -89,6 +91,86 @@ function LandingModeToggle(): JSX.Element {
         >
           Live Landing Page
         </button>
+        {status === 'saving' && <span className="text-sm font-semibold text-slate-400">Saving…</span>}
+        {status === 'saved' && <span className="text-sm font-semibold text-green-400">✅ Saved.</span>}
+        {status === 'error' && <span className="text-sm font-semibold text-red-400">❌ Couldn't save - try again.</span>}
+      </div>
+    </div>
+  )
+}
+
+// How often functions/api/public/gyropedia-departures.ts re-fetches
+// gyropedia.com/monitor.php, rather than serving its own cached copy -
+// same platform_settings-backed, requireDeveloper-gated GET/PUT shape
+// as LandingModeToggle above (functions/api/platform/gyropedia-interval.ts),
+// genuinely cross-tenant since the feed itself is one shared UK-wide
+// dataset, not tenant-specific.
+function GyropediaIntervalToggle(): JSX.Element {
+  const [loading, setLoading] = useState(true)
+  const [minutes, setMinutes] = useState<GyropediaIntervalMinutes>(15)
+  const [status, setStatus] = useState<SaveStatus>('idle')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PLATFORM_GYROPEDIA_INTERVAL_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && GYROPEDIA_INTERVAL_OPTIONS.includes(data?.minutes)) setMinutes(data.minutes)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleSetMinutes(next: GyropediaIntervalMinutes) {
+    if (next === minutes) return
+    const previous = minutes
+    setMinutes(next)
+    setStatus('saving')
+    try {
+      const response = await fetch(PLATFORM_GYROPEDIA_INTERVAL_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes: next }),
+      })
+      if (response.ok) {
+        setStatus('saved')
+      } else {
+        setMinutes(previous)
+        setStatus('error')
+      }
+    } catch {
+      setMinutes(previous)
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
+      <div className="mb-1 text-sm font-bold uppercase tracking-widest text-amber-500">Gyropedia Refresh Interval</div>
+      <p className="mb-4 text-sm text-slate-400">
+        How often the "Gyropedia Departures/Arrivals" carousel slot re-fetches live data from gyropedia.com, for
+        every tenant that has it enabled - same shared feed, one setting. Between refreshes, tenants see the
+        last successfully fetched copy.
+      </p>
+      <div className="flex items-center gap-3">
+        {GYROPEDIA_INTERVAL_OPTIONS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => handleSetMinutes(option)}
+            disabled={loading || status === 'saving'}
+            className={`rounded-lg px-4 py-2 text-sm font-bold uppercase tracking-widest transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              minutes === option ? 'bg-amber-500 text-white' : 'border border-slate-700 text-slate-300 hover:border-amber-500'
+            }`}
+          >
+            {option} min
+          </button>
+        ))}
         {status === 'saving' && <span className="text-sm font-semibold text-slate-400">Saving…</span>}
         {status === 'saved' && <span className="text-sm font-semibold text-green-400">✅ Saved.</span>}
         {status === 'error' && <span className="text-sm font-semibold text-red-400">❌ Couldn't save - try again.</span>}
@@ -182,6 +264,7 @@ export default function DeveloperToolsPage(): JSX.Element {
         <div className="mt-10">
           <LandingModeToggle />
         </div>
+        <GyropediaIntervalToggle />
 
         {/* Amber box matches this page's other developer-only tools below -
             InvestigateStation renders its own "Investigate Station" heading

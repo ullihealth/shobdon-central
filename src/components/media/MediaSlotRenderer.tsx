@@ -5,8 +5,9 @@
 // and MediaManagerPage.tsx (the /media-manager live preview while
 // editing), so what an editor sees while adjusting a slot is a genuine
 // match for what goes live - not a similar-looking approximation.
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CropRect } from '../../types/mediaLibrary'
+import { AIRFIELD_TIMEZONE, GYROPEDIA_DEPARTURES_URL } from '../../config/publicApi'
 
 export interface MediaSlotVisual {
   mediaType: string
@@ -111,6 +112,146 @@ function BannerOverlay({
   )
 }
 
+// UK gyroplane departures/arrivals - functions/api/public/
+// gyropedia-departures.ts is the single source of truth for the data
+// (fetch/parse/cache/last-known-good all live there); this component is
+// just one consumer of that endpoint's plain JSON, same separation a
+// future mobile app or other client could reuse directly. Polls its own
+// backend every POLL_INTERVAL_MS independently of the endpoint's own
+// developer-configurable KV freshness window - slots stay mounted
+// continuously once the carousel loads (see this file's own isActive
+// comment above), so without its own refetch a gyropedia slot would
+// otherwise show whatever it first loaded indefinitely. Asking our own
+// same-origin, already-cached endpoint this often is cheap regardless
+// of how rarely it actually re-fetches Gyropedia itself.
+const GYROPEDIA_POLL_INTERVAL_MS = 60_000
+
+interface GyropediaPlace {
+  place: string
+  time: string
+}
+
+interface GyropediaRow {
+  status: string
+  out: GyropediaPlace
+  in: GyropediaPlace
+  aircraft: string
+  type: string
+  persons: string
+  remark: string
+}
+
+// Same clamp(min, viewport-relative, max) technique CompassPanel.tsx/
+// LeftInfoPanel.tsx already use for their own readouts - fluid with the
+// actual display's dimensions rather than a fixed pixel size, since this
+// panel needs to adapt to whichever venue device it ends up on.
+const GYROPEDIA_HEADER_FONT = 'clamp(7px, 1.3vh, 14px)'
+const GYROPEDIA_CELL_FONT = 'clamp(8px, 1.6vh, 17px)'
+const GYROPEDIA_LAST_UPDATED_FONT = 'clamp(6px, 1.1vh, 12px)'
+
+// Scheduled/Landed/Flying are the statuses confirmed against a real
+// pull (see gyropedia-departures.ts's own top comment) - any other
+// status Gyropedia might use in future falls back to the plain/neutral
+// colour below rather than being hidden or breaking.
+const STATUS_COLOUR: Record<string, string> = {
+  Scheduled: 'text-slate-300',
+  Landed: 'text-status-good',
+  Flying: 'text-accent-sky-400',
+}
+
+function GyropediaLastUpdated({ fetchedAt }: { fetchedAt: string | null }): JSX.Element | null {
+  if (!fetchedAt) return null
+  const timeString = new Date(fetchedAt).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: AIRFIELD_TIMEZONE,
+  })
+  return (
+    <div
+      className="absolute right-2 top-2 rounded bg-black/50 px-1.5 py-0.5 font-medium text-muted-300"
+      style={{ fontSize: GYROPEDIA_LAST_UPDATED_FONT }}
+    >
+      Last updated {timeString}
+    </div>
+  )
+}
+
+function GyropediaPanel(): JSX.Element {
+  const [rows, setRows] = useState<GyropediaRow[]>([])
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    function load() {
+      fetch(GYROPEDIA_DEPARTURES_URL)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return
+          setRows(Array.isArray(data.rows) ? data.rows : [])
+          setFetchedAt(typeof data.fetchedAt === 'string' ? data.fetchedAt : null)
+        })
+        .catch(() => {})
+    }
+
+    load()
+    const interval = window.setInterval(load, GYROPEDIA_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  return (
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-950 p-2 text-white">
+      <div className="mb-1 flex-shrink-0 text-center font-bold uppercase tracking-widest text-primary" style={{ fontSize: GYROPEDIA_HEADER_FONT }}>
+        Gyropedia Departures/Arrivals — UK
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {rows.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-muted-400" style={{ fontSize: GYROPEDIA_CELL_FONT }}>
+            No UK flights currently listed
+          </div>
+        ) : (
+          <table className="w-full border-collapse" style={{ fontSize: GYROPEDIA_CELL_FONT }}>
+            <thead>
+              <tr className="text-muted-400" style={{ fontSize: GYROPEDIA_HEADER_FONT }}>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">Status</th>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">Out</th>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">In</th>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">Aircraft</th>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">Type</th>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">Persons</th>
+                <th className="px-1 py-0.5 text-left font-semibold uppercase">Remark</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={index} className="border-t border-slate-800">
+                  <td className={`px-1 py-0.5 font-semibold ${STATUS_COLOUR[row.status] ?? 'text-slate-300'}`}>{row.status}</td>
+                  <td className="px-1 py-0.5">
+                    {row.out.place}
+                    {row.out.time ? <span className="text-muted-400"> {row.out.time}</span> : null}
+                  </td>
+                  <td className="px-1 py-0.5">
+                    {row.in.place}
+                    {row.in.time ? <span className="text-muted-400"> {row.in.time}</span> : null}
+                  </td>
+                  <td className="px-1 py-0.5">{row.aircraft}</td>
+                  <td className="px-1 py-0.5">{row.type}</td>
+                  <td className="px-1 py-0.5">{row.persons}</td>
+                  <td className="px-1 py-0.5">{row.remark}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <GyropediaLastUpdated fetchedAt={fetchedAt} />
+    </div>
+  )
+}
+
 // Renders one carousel slot's visual content into whatever box the
 // caller provides (both call sites use the identical aspect-video 16:9
 // box) - fills it edge-to-edge, no internal padding of its own.
@@ -153,7 +294,10 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
     }
   }, [isActive])
 
-  if (!slot.resolvedUrl && slot.mediaType !== 'webcam') return null
+  // gyropedia has no resolvedUrl at all (no R2 file, no camera) - its
+  // content comes from GyropediaPanel's own fetch of the shared public
+  // endpoint below, not a per-slot URL.
+  if (!slot.resolvedUrl && slot.mediaType !== 'webcam' && slot.mediaType !== 'gyropedia') return null
 
   const crop = slot.cropRect ?? IDENTITY_CROP
   const hasRotation = slot.rotationDegrees % 360 !== 0
@@ -224,6 +368,9 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
           title="Document"
         />
       )
+      break
+    case 'gyropedia':
+      content = <GyropediaPanel />
       break
     default:
       return null

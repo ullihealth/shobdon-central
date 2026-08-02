@@ -54,7 +54,7 @@ export interface CropRect {
 export interface CarouselSlot {
   slotNumber: number
   enabled: boolean
-  mediaType: 'image' | 'mp4' | 'pdf' | 'webcam'
+  mediaType: 'image' | 'mp4' | 'pdf' | 'webcam' | 'gyropedia'
   durationSeconds: number
   mediaLibraryId: string | null
   cameraSlotNumber: number | null
