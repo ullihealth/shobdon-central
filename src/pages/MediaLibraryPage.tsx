@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import type { MediaFolder, MediaLibraryFile } from '../types/mediaLibrary'
-import { MEDIA_FOLDERS_URL, MEDIA_LIBRARY_UPLOAD_URL, MEDIA_LIBRARY_URL } from '../config/publicApi'
+import { MEDIA_FOLDERS_URL, MEDIA_LIBRARY_URL } from '../config/publicApi'
+import { useUpload } from '../context/UploadContext'
 
 // Dynamic import - keeps fabric.js and the self-hosted slide fonts
 // (~90KB+ gzipped combined) out of every bundle except the one fetched
@@ -626,8 +627,20 @@ export default function MediaLibraryPage(): JSX.Element {
   // media_folders id.
   const [selectedFolderId, setSelectedFolderId] = useState<string | null | 'all'>('all')
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
+  // Upload progress/status itself lives in UploadContext now, not here -
+  // it has to, for the upload to survive this page unmounting when the
+  // admin navigates away mid-upload (see UploadContext.tsx's own
+  // comment). This page just reads that shared state rather than
+  // tracking its own copy, so returning to this page later reflects
+  // what's REALLY happening (still uploading / done / failed), not a
+  // fresh default that has no idea an upload from before this mount is
+  // still in flight.
+  const { status: uploadStatus, percent: uploadPercent, errorMessage: uploadError, startUpload } = useUpload()
+  // Purely synchronous, pre-upload client-side validation (unsupported
+  // file type) - resolved before startUpload is ever called, so it has
+  // nothing to do with UploadContext's own in-flight/persisted state
+  // above and doesn't need to survive navigation either.
+  const [fileTypeError, setFileTypeError] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   // null = closed; a MediaLibraryFile (with a recipe) = re-editing that
   // slide; an empty-shell value would be wrong here - "create new" is
@@ -689,6 +702,32 @@ export default function MediaLibraryPage(): JSX.Element {
     Promise.all([loadLibrary(), loadFolders()]).finally(() => setLoading(false))
   }, [])
 
+  // Reacts to an upload finishing successfully WHILE this page happens
+  // to be mounted (either because it was open the whole time, or the
+  // admin navigated back here before UploadIndicator's own auto-dismiss
+  // timer cleared the status) - the mount-time loadLibrary() above only
+  // ever runs once, at mount, so it can't already know about a file
+  // that finishes uploading afterwards. handledRef guards against
+  // calling loadLibrary() again on every re-render while status stays
+  // 'success' (it holds until UploadIndicator dismisses it, a few
+  // seconds later) - only fires once per completed upload, and resets
+  // the moment a new upload starts so the NEXT completion is caught
+  // too. Deliberately doesn't call dismissUpload() itself - that stays
+  // UploadIndicator's own job, so the global indicator still gets to
+  // show its success/error message for its own full duration rather
+  // than being cleared out from under it the instant this page reacts.
+  const handledUploadRef = useRef<'success' | null>(null)
+  useEffect(() => {
+    if (uploadStatus === 'success') {
+      if (handledUploadRef.current !== 'success') {
+        handledUploadRef.current = 'success'
+        loadLibrary()
+      }
+    } else {
+      handledUploadRef.current = null
+    }
+  }, [uploadStatus])
+
   // Folder switch and screen-toggle both clear selection, matching
   // Finder's own "navigating away deselects" convention - simpler and
   // more predictable than trying to carry a selection across a view
@@ -710,48 +749,34 @@ export default function MediaLibraryPage(): JSX.Element {
 
     const mediaType = mediaTypeFromFile(file)
     if (!mediaType) {
-      setUploadError('Unsupported file type - only images, MP4 video, and PDF are supported.')
+      setFileTypeError('Unsupported file type - only images, MP4 video, and PDF are supported.')
       return
     }
-
-    setUploading(true)
-    setUploadError(null)
+    setFileTypeError(null)
 
     const [mp4DurationSeconds, orientation] = await Promise.all([
       mediaType === 'mp4' ? probeMp4Duration(file) : Promise.resolve(null),
       detectOrientation(file, mediaType),
     ])
 
-    // usableOn always sent as whichever screen's toggle is currently
-    // active (never left to the endpoint's own 'both' default) - a
-    // fresh upload made while looking at the Cafe Media view should
-    // come out tagged 'cafe', matching every other screen this session
+    // The actual XHR call, progress tracking, and error/success state
+    // all live in UploadContext now (see that file's own comment for
+    // why) - this just hands off the already-resolved params. usableOn
+    // always sent as whichever screen's toggle is currently active
+    // (never left to the endpoint's own 'both' default) - a fresh
+    // upload made while looking at the Cafe Media view should come out
+    // tagged 'cafe', matching every other screen this session
     // established ("new content defaults to the context you're in").
-    const params = new URLSearchParams({ filename: file.name, mediaType, usableOn: activeScreen })
-    if (mp4DurationSeconds !== null) params.set('mp4DurationSeconds', String(mp4DurationSeconds))
-    if (orientation) params.set('orientation', orientation)
-    // Drop the upload straight into whichever real folder is currently
-    // selected - 'all' and the virtual Uncategorized (null) both mean
+    // folderId: 'all' and the virtual Uncategorized (null) both mean
     // "no folder", exactly the upload endpoint's default.
-    if (selectedFolderId && selectedFolderId !== 'all') params.set('folderId', selectedFolderId)
-
-    try {
-      const response = await fetch(`${MEDIA_LIBRARY_UPLOAD_URL}?${params.toString()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        setUploadError(data.error ?? 'Upload failed')
-        return
-      }
-      await loadLibrary()
-    } catch {
-      setUploadError('Upload failed - check your connection and try again')
-    } finally {
-      setUploading(false)
-    }
+    startUpload({
+      file,
+      mediaType,
+      usableOn: activeScreen,
+      orientation,
+      mp4DurationSeconds,
+      folderId: selectedFolderId && selectedFolderId !== 'all' ? selectedFolderId : null,
+    })
   }
 
   // "Save Slide" on an existing slide updates that file in place;
@@ -957,12 +982,12 @@ export default function MediaLibraryPage(): JSX.Element {
 
             <div className="mb-4 flex flex-wrap gap-3">
               <label className="inline-block cursor-pointer rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400">
-                {uploading ? 'Uploading…' : '+ Upload file'}
+                {uploadStatus === 'uploading' ? `Uploading… ${uploadPercent}%` : '+ Upload file'}
                 <input
                   type="file"
                   accept="image/*,video/mp4,application/pdf"
                   onChange={handleUpload}
-                  disabled={uploading}
+                  disabled={uploadStatus === 'uploading'}
                   className="hidden"
                 />
               </label>
@@ -974,7 +999,8 @@ export default function MediaLibraryPage(): JSX.Element {
                 ✨ Create Slide
               </button>
             </div>
-            {uploadError && <p className="mb-4 text-sm font-semibold text-status-bad">{uploadError}</p>}
+            {fileTypeError && <p className="mb-4 text-sm font-semibold text-status-bad">{fileTypeError}</p>}
+            {uploadStatus === 'error' && uploadError && <p className="mb-4 text-sm font-semibold text-status-bad">{uploadError}</p>}
             {deleteError && <p className="mb-4 text-sm font-semibold text-status-bad">{deleteError}</p>}
 
             {/* Folder sidebar (within this page, distinct from the app's

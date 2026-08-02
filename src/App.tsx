@@ -31,13 +31,24 @@ import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
 import RootRoute from './components/RootRoute'
 import AdminLayout from './components/admin/AdminLayout'
+import UploadIndicator from './components/UploadIndicator'
+import { UploadProvider } from './context/UploadContext'
 
 export default function App(): JSX.Element {
   return (
     <BrowserRouter>
-      <PreviewBanner />
-      <RemoteRefreshWatcher />
-      <Routes>
+      {/* Wraps everything below (not just a plain sibling like
+          PreviewBanner/RemoteRefreshWatcher) - a Context provider has to
+          be an ANCESTOR of whatever consumes it (MediaLibraryPage, deep
+          inside <Routes>), unlike those two, which need no such
+          relationship. Same "mounted once above the router, survives
+          every route change" placement intent either way - see
+          UploadContext.tsx's own comment. */}
+      <UploadProvider>
+        <PreviewBanner />
+        <RemoteRefreshWatcher />
+        <UploadIndicator />
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/checklist" element={<ChecklistPage />} />
         {/* Placeholder CTA destination for CafeMediaPage's FeatureUpsellPanel
@@ -321,7 +332,8 @@ export default function App(): JSX.Element {
             than falling through to a tenant's operational dashboard. */}
         <Route path="/" element={<RootRoute />} />
         <Route path="*" element={<RootRoute />} />
-      </Routes>
+        </Routes>
+      </UploadProvider>
     </BrowserRouter>
   )
 }
