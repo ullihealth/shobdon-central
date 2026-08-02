@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import CloudVisibilityChart from '../CloudVisibilityChart'
 import CompassPanel from '../CompassPanel'
+import FooterTicker from '../FooterTicker'
 import Header from '../Header'
 import LeftInfoPanel, { type OpsPanelChartConfig } from '../LeftInfoPanel'
 import MediaPanel, { type MediaPanelSourceData } from '../media/MediaPanel'
@@ -86,7 +87,7 @@ export default function Clubhouse2Template({
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto auto', gap: '16px' }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -177,6 +178,11 @@ export default function Clubhouse2Template({
             </div>
           </div>
         </div>
+
+        {/* FOOTER TICKER - free/universal now, not café-only. Renders
+            nothing at all when this tenant hasn't enabled it (see
+            FooterTicker.tsx's own comment) - no reserved space either way. */}
+        <FooterTicker />
 
         <div className="flex items-center justify-center pt-1">
           <a

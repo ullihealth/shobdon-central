@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 import { CAROUSEL_SLOTS_URL, GAS_PRICES_URL, MEDIA_LIBRARY_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
+import TickerSettingsCards from '../components/media/TickerSettingsCards'
 
 const CURRENCY_OPTIONS = ['£', '$', '€']
 
@@ -255,6 +256,13 @@ export default function MediaManagerPage(): JSX.Element {
           </div>
         </section>
       )}
+
+      {/* Free/universal for every tenant, not gated behind café-tv
+          entitlement - a deliberate reduction in what the café paid
+          bundle uniquely offers (confirmed decision, not an oversight).
+          Genuinely self-contained: fetches/saves its own settings
+          independently, no props needed from this page. */}
+      {!loading && <TickerSettingsCards />}
 
       {!loading && (
         <section className="mt-8 rounded-2xl border border-border bg-panel p-6">

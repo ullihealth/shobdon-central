@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import MediaPanel, { type MediaPanelSourceData } from '../components/media/MediaPanel'
-import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerSlotType, type TickerStyle } from '../components/CafeTicker'
+import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../components/CafeTicker'
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import FeatureUpsellPanel from '../components/FeatureUpsellPanel'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
@@ -10,17 +10,10 @@ import { currentMedia } from '../config/media'
 import { CAFE_CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, TENANT_CONFIG_URL } from '../config/publicApi'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
-import {
-  BUILT_IN_TICKER_PRESETS,
-  DEFAULT_TICKER_STYLE,
-  loadTickerStyleTemplates,
-  saveTickerStyleTemplates,
-  type TickerStyleTemplate,
-} from '../services/tickerStyleStore'
+import { DEFAULT_TICKER_STYLE } from '../services/tickerStyleStore'
 
 const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
-const FONT_FAMILY_OPTIONS: TickerStyle['fontFamily'][] = ['Inter', 'Montserrat', 'Oswald']
 const NOTICE_NAME_MAX_LENGTH = 40
 const NOTICE_TEXT_MAX_LENGTH = 40
 
@@ -40,41 +33,6 @@ interface SafetyNotice {
 
 type SaveStatus = 'idle' | 'working' | 'success' | 'error'
 
-// A slot's <select> value is a plain string encoding both `type` and,
-// for notices, WHICH one - '' | 'clock' | 'forecast' | 'conditions' |
-// `notice:${id}`. Keeps the dropdown a single native <select> (one
-// onChange, no separate "which notice" sub-control to keep in sync)
-// while still letting each slot reference one specific notice.
-function slotOptionValue(slot: TickerSlot): string {
-  if (slot.type === 'notice') return `notice:${slot.noticeId ?? ''}`
-  return slot.type ?? ''
-}
-
-function parseSlotOptionValue(value: string): Partial<TickerSlot> {
-  if (value.startsWith('notice:')) return { type: 'notice', noticeId: value.slice('notice:'.length) }
-  return { type: (value || null) as TickerSlotType | null, noticeId: undefined }
-}
-
-// Base types plus one option per EXISTING notice - replaces the old
-// static single "Notice (from ATC Control)" entry, per Part C: each
-// slot now picks a specific named notice, so different slots can show
-// different notices independently. All notices are listed regardless
-// of their own enabled state (a slot can be pre-wired to a currently-
-// off notice, ready for later) - the "(off)" suffix makes that visible
-// rather than silently confusing.
-function buildSlotOptions(notices: SafetyNotice[]): { value: string; label: string }[] {
-  return [
-    { value: '', label: '— None —' },
-    { value: 'clock', label: 'Clock / Date' },
-    { value: 'forecast', label: '6-Hour Met Office Forecast' },
-    { value: 'conditions', label: 'Current Conditions (Temp / Wind)' },
-    ...notices.map((notice) => ({
-      value: `notice:${notice.id}`,
-      label: `Notice: ${notice.name || notice.text}${notice.enabled === false ? ' (off)' : ''}`,
-    })),
-  ]
-}
-
 function defaultTickerSlots(): TickerSlot[] {
   return Array.from({ length: TICKER_SLOT_COUNT }, (_, i) => ({ position: i + 1, type: null, enabled: true }))
 }
@@ -93,19 +51,6 @@ function tickerStyleFromApi(data: Record<string, unknown>): TickerStyle {
     fontColor: (data.tickerFontColor as string) ?? DEFAULT_TICKER_STYLE.fontColor,
     scrollSpeedPxPerSec: (data.tickerScrollSpeedPxPerSec as number) ?? DEFAULT_TICKER_STYLE.scrollSpeedPxPerSec,
     gapPx: (data.tickerGapPx as number) ?? DEFAULT_TICKER_STYLE.gapPx,
-  }
-}
-
-function tickerStyleToApi(style: TickerStyle): Record<string, unknown> {
-  return {
-    tickerBackgroundColor: style.backgroundColor,
-    tickerBackgroundOpacity: style.backgroundOpacity,
-    tickerHeightPx: style.heightPx,
-    tickerFontFamily: style.fontFamily,
-    tickerFontSizePx: style.fontSizePx,
-    tickerFontColor: style.fontColor,
-    tickerScrollSpeedPxPerSec: style.scrollSpeedPxPerSec,
-    tickerGapPx: style.gapPx,
   }
 }
 
@@ -316,23 +261,6 @@ export default function CafeMediaPage(): JSX.Element {
   const [newNoticeName, setNewNoticeName] = useState('')
   const [newNoticeText, setNewNoticeText] = useState('')
 
-  // Custom "Save as template" presets - personal/browser-local, same
-  // storage convention as Screens Design's colour theme templates
-  // (src/services/designTemplateStore.ts), not server-synced.
-  const [customTemplates, setCustomTemplates] = useState<TickerStyleTemplate[]>(() => loadTickerStyleTemplates())
-  const [templateNameInput, setTemplateNameInput] = useState('')
-
-  // Collapsed by default - styling (colour/font/speed/gap) is a "set
-  // once via a preset, rarely revisit" section, unlike the slot content
-  // editor directly below it, which is what most visits to this page
-  // are actually here to change. Collapsing it by default keeps that
-  // more frequently-used section right under the preview without an
-  // extra scroll, matching this reorg's own "reduce vertical space"
-  // goal - expand on demand costs one click, whereas a permanently
-  // expanded styling block would cost every visitor unwanted scrolling
-  // on every visit.
-  const [styleExpanded, setStyleExpanded] = useState(false)
-
   // Café's own, genuinely separate 12-slot carousel (migration 0037,
   // cafe_carousel_slots) - same shared CarouselSlotList/CarouselSlotEditor
   // components Dashboard Manager uses, pointed at a different API and a
@@ -481,10 +409,6 @@ export default function CafeMediaPage(): JSX.Element {
     }
   }, [])
 
-  function updateSlot(position: number, patch: Partial<TickerSlot>) {
-    setTickerSlots((prev) => prev.map((slot) => (slot.position === position ? { ...slot, ...patch } : slot)))
-  }
-
   // Fetches the CURRENT full ops-panel row immediately before writing,
   // rather than reusing whatever this page loaded at mount time. That
   // endpoint requires the FULL row on every PUT (activeRunwayEnd,
@@ -569,38 +493,11 @@ export default function CafeMediaPage(): JSX.Element {
     setNoticeStatus('success')
   }
 
-  function updateStyle(patch: Partial<TickerStyle>) {
-    setTickerStyle((prev) => ({ ...prev, ...patch }))
-  }
-
-  function applyPreset(style: TickerStyle) {
-    // Presets are a starting point, not a locked-in choice - applying
-    // one just seeds every control's current value; each stays fully
-    // adjustable afterwards via the controls below, per your instruction.
-    setTickerStyle(style)
-  }
-
-  function handleSaveAsTemplate() {
-    const name = templateNameInput.trim()
-    if (!name) return
-    const next: TickerStyleTemplate = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name,
-      style: tickerStyle,
-      createdAt: new Date().toISOString(),
-    }
-    const updated = [...customTemplates, next]
-    setCustomTemplates(updated)
-    saveTickerStyleTemplates(updated)
-    setTemplateNameInput('')
-  }
-
-  function handleDeleteTemplate(id: string) {
-    const updated = customTemplates.filter((t) => t.id !== id)
-    setCustomTemplates(updated)
-    saveTickerStyleTemplates(updated)
-  }
-
+  // Ticker fields deliberately omitted - no longer editable from this
+  // page (see TickerSettingsCards.tsx, now on Dashboard Manager).
+  // cafe-settings' own PUT is a fetch-current-merge-write-back (each
+  // field falls back to whatever's already stored if omitted), so this
+  // never touches/overwrites whatever the ticker is currently set to.
   async function handleSave() {
     setSaveStatus('working')
     try {
@@ -610,9 +507,6 @@ export default function CafeMediaPage(): JSX.Element {
         body: JSON.stringify({
           layoutMode,
           adLabelEnabled,
-          tickerEnabled,
-          tickerSlots,
-          ...tickerStyleToApi(tickerStyle),
         }),
       })
       if (!response.ok) {
@@ -729,9 +623,10 @@ export default function CafeMediaPage(): JSX.Element {
     <div className="mx-auto max-w-6xl px-6 py-8">
       <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Cafe Media</h1>
       <p className="mb-6 max-w-2xl text-sm text-muted-400">
-        Settings for the Café dashboard template - split/full layout, the advertisement label, and the footer
-        ticker. The preview below updates as you configure things, using this tenant's real live weather and
-        notices - nothing is saved until you click "Save Settings".
+        Settings for the Café dashboard template - split/full layout and the advertisement label. The preview
+        below updates as you configure things, using this tenant's real live weather and notices - nothing is
+        saved until you click "Save Settings". Footer ticker settings moved to Dashboard Manager (now available
+        to every tenant, not just café) - the preview below still shows it exactly as it'll appear live.
       </p>
       {loadError && (
         <p className="mb-6 text-sm font-semibold text-status-bad">Couldn't load current settings - showing defaults.</p>
@@ -809,209 +704,6 @@ export default function CafeMediaPage(): JSX.Element {
             />
           )}
         </div>
-      </section>
-
-      {/* TICKER STYLE - moved directly beneath the preview (was below
-          Footer Ticker) and made a collapsible accordion: the header
-          itself is the toggle button, controlling styleExpanded. See
-          that state's own comment for why it defaults collapsed. */}
-      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-        <button
-          type="button"
-          onClick={() => setStyleExpanded((prev) => !prev)}
-          className="flex w-full items-center justify-between text-left"
-          aria-expanded={styleExpanded}
-        >
-          <div>
-            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Ticker Style</div>
-            <p className="mt-1 text-xs text-muted-500">
-              Background, text, and scroll-speed appearance for the footer ticker.
-            </p>
-          </div>
-          <span
-            className={`shrink-0 text-lg text-muted-400 transition-transform ${styleExpanded ? 'rotate-180' : ''}`}
-            aria-hidden="true"
-          >
-            ▾
-          </span>
-        </button>
-
-        {styleExpanded && (
-          <div className="mt-4">
-            <p className="mb-4 text-xs text-muted-500">Pick a preset below as a starting point, then fine-tune anything here.</p>
-
-            {/* PRESETS */}
-            <div className="mb-6">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-400">Presets</div>
-              <div className="flex flex-wrap gap-2">
-                {BUILT_IN_TICKER_PRESETS.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => applyPreset(preset.style)}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500"
-                  >
-                    <span
-                      className="h-3 w-3 rounded-full border border-white/20"
-                      style={{ backgroundColor: preset.style.backgroundColor }}
-                    />
-                    {preset.name}
-                  </button>
-                ))}
-                {customTemplates.map((template) => (
-                  <div
-                    key={template.id}
-                    className="flex items-center gap-1 rounded-lg border border-border bg-slate-900/80 pl-1 pr-2 text-xs font-semibold text-slate-200"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => applyPreset(template.style)}
-                      className="flex items-center gap-2 rounded-md px-2 py-2 transition hover:text-accent-sky-400"
-                    >
-                      <span
-                        className="h-3 w-3 rounded-full border border-white/20"
-                        style={{ backgroundColor: template.style.backgroundColor }}
-                      />
-                      {template.name}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTemplate(template.id)}
-                      className="text-muted-500 hover:text-status-bad"
-                      title="Delete this saved template"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* CONTROLS */}
-            <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs uppercase tracking-wide text-muted-400">Background colour</span>
-                <input
-                  type="color"
-                  value={tickerStyle.backgroundColor}
-                  onChange={(event) => updateStyle({ backgroundColor: event.target.value })}
-                  className="h-9 w-full cursor-pointer rounded border border-border bg-transparent"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs uppercase tracking-wide text-muted-400">Background opacity ({tickerStyle.backgroundOpacity}%)</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={tickerStyle.backgroundOpacity}
-                  onChange={(event) => updateStyle({ backgroundOpacity: Number(event.target.value) })}
-                  className="accent-accent-sky-500"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs uppercase tracking-wide text-muted-400">Height (px)</span>
-                <input
-                  type="number"
-                  min={24}
-                  max={200}
-                  value={tickerStyle.heightPx}
-                  onChange={(event) => updateStyle({ heightPx: Number(event.target.value) })}
-                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs uppercase tracking-wide text-muted-400">Font family</span>
-                <select
-                  value={tickerStyle.fontFamily}
-                  onChange={(event) => updateStyle({ fontFamily: event.target.value as TickerStyle['fontFamily'] })}
-                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                >
-                  {FONT_FAMILY_OPTIONS.map((font) => (
-                    <option key={font} value={font}>
-                      {font}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs uppercase tracking-wide text-muted-400">Font size (px)</span>
-                <input
-                  type="number"
-                  min={8}
-                  max={72}
-                  value={tickerStyle.fontSizePx}
-                  onChange={(event) => updateStyle({ fontSizePx: Number(event.target.value) })}
-                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs uppercase tracking-wide text-muted-400">Font colour</span>
-                <input
-                  type="color"
-                  value={tickerStyle.fontColor}
-                  onChange={(event) => updateStyle({ fontColor: event.target.value })}
-                  className="h-9 w-full cursor-pointer rounded border border-border bg-transparent"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
-                <span className="text-xs uppercase tracking-wide text-muted-400">
-                  Scroll speed ({tickerStyle.scrollSpeedPxPerSec === 0 ? 'Static - no scrolling' : `${tickerStyle.scrollSpeedPxPerSec} px/sec`})
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={200}
-                  value={tickerStyle.scrollSpeedPxPerSec}
-                  onChange={(event) => updateStyle({ scrollSpeedPxPerSec: Number(event.target.value) })}
-                  className="accent-accent-sky-500"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
-                <span className="text-xs uppercase tracking-wide text-muted-400">
-                  Gap between messages ({tickerStyle.gapPx === 0 ? 'Tight (default)' : `${tickerStyle.gapPx}px`})
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={2000}
-                  value={tickerStyle.gapPx}
-                  onChange={(event) => updateStyle({ gapPx: Number(event.target.value) })}
-                  className="accent-accent-sky-500"
-                />
-                <span className="text-[11px] text-muted-500">
-                  At the high end, one message fully scrolls off-screen before the next appears - that blank moment
-                  is expected, not a bug.
-                </span>
-              </label>
-            </div>
-
-            {/* SAVE AS TEMPLATE */}
-            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
-              <input
-                value={templateNameInput}
-                onChange={(event) => setTemplateNameInput(event.target.value)}
-                placeholder="New template name"
-                className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
-              />
-              <button
-                type="button"
-                onClick={handleSaveAsTemplate}
-                disabled={!templateNameInput.trim()}
-                className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Save as template
-              </button>
-            </div>
-          </div>
-        )}
       </section>
 
       {/* NOTICES - Part C: named, tenant-manageable notices, full CRUD
@@ -1095,72 +787,6 @@ export default function CafeMediaPage(): JSX.Element {
           </button>
           {noticeStatus === 'success' && <span className="text-sm font-semibold text-status-good">Saved.</span>}
           {noticeStatus === 'error' && <span className="text-sm font-semibold text-status-bad">Couldn't save - please try again.</span>}
-        </div>
-      </section>
-
-      {/* FOOTER TICKER - directly beneath Ticker Style, per your
-          requested order: collapsed styling -> this sits right under
-          the preview; expanded styling -> this sits below the
-          expanded controls. */}
-      <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Footer Ticker</div>
-          <label className="flex cursor-pointer items-center gap-3">
-            <input
-              type="checkbox"
-              checked={tickerEnabled}
-              onChange={(event) => setTickerEnabled(event.target.checked)}
-              className="h-5 w-5 accent-accent-sky-500"
-            />
-            <span className="text-sm font-semibold text-primary">{tickerEnabled ? 'On' : 'Off'}</span>
-          </label>
-        </div>
-        <p className="mb-4 text-xs text-muted-500">
-          A continuous scrolling strip across the bottom of the screen. Up to 10 slots, each set to a content
-          type and independently switched on/off - pick a specific named notice from the Notices section above,
-          different slots can show different notices. Check "Fuel" on any slot to also append the Fuel Prices
-          container's values (Dashboard Manager) to that slot - additive, works alongside any content type
-          including on its own with no other type picked. A slot's own toggles only matter while the master
-          toggle above is on.
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {tickerSlots.map((slot) => (
-            <div key={slot.position} className="flex items-center gap-2">
-              <span className="w-6 shrink-0 text-xs font-bold text-muted-500">{slot.position}.</span>
-              <select
-                value={slotOptionValue(slot)}
-                onChange={(event) => updateSlot(slot.position, parseSlotOptionValue(event.target.value))}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-              >
-                {buildSlotOptions(notices).map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <label
-                className="flex shrink-0 cursor-pointer items-center gap-1.5"
-                title="Additive - appends the Fuel Prices tiles' values onto whatever this slot already shows (or stands alone if the slot has no other content picked)"
-              >
-                <input
-                  type="checkbox"
-                  checked={!!slot.includeGasPrices}
-                  onChange={(event) => updateSlot(slot.position, { includeGasPrices: event.target.checked })}
-                  className="h-4 w-4 accent-accent-sky-500"
-                />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">Fuel</span>
-              </label>
-              <label className="flex shrink-0 cursor-pointer items-center gap-1.5" title="Enable this slot">
-                <input
-                  type="checkbox"
-                  checked={slot.enabled !== false}
-                  onChange={(event) => updateSlot(slot.position, { enabled: event.target.checked })}
-                  className="h-4 w-4 accent-accent-sky-500"
-                />
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">On</span>
-              </label>
-            </div>
-          ))}
         </div>
       </section>
 
