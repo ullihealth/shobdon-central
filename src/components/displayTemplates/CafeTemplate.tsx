@@ -343,27 +343,22 @@ export default function CafeTemplate({
           the main media area by that much whenever the ticker was on -
           now a sibling of the grid above, absolutely positioned to
           overlay the screen's true bottom edge instead (see
-          FooterTicker.tsx's own comment for the full negative-offset
-          mechanism - hand-mirrored here rather than reusing that
-          component, since this template keeps its own inline fetch).
-          No min-w-0/overflow-hidden grid-blowout concern anymore either -
-          that was specifically about being a GRID ITEM (grid items
-          default to min-width:auto, sized to fit CafeTicker's
+          FooterTicker.tsx's own comment for the full positioning
+          mechanism - inset-x-0 bottom-0, NOT a negative offset past
+          those edges, since the containing block's own padding edge
+          already IS the true outer edge regardless of this template's
+          `padding` property - hand-mirrored here rather than reusing
+          that component, since this template keeps its own inline
+          fetch). No min-w-0/overflow-hidden grid-blowout concern anymore
+          either - that was specifically about being a GRID ITEM (grid
+          items default to min-width:auto, sized to fit CafeTicker's
           deliberately-wider-than-viewport marquee track); an absolutely
-          positioned element isn't a grid item at all, and explicit
-          left+right offsets already give it a real width independent of
-          its content. overflow-hidden is kept on the outer wrapper below
-          purely to clip that same wide marquee track visually - the
-          "min-w-0" half of the old fix is no longer needed. */}
+          positioned element isn't a grid item at all. overflow-x-hidden
+          (not overflow-hidden - see CafeTicker.tsx's own comment on why
+          vertical clipping is no longer wanted here) still clips that
+          same wide marquee track horizontally. */}
       {tickerEnabled && (
-        <div
-          className="absolute z-10 overflow-hidden"
-          style={{
-            left: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
-            right: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
-            bottom: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
-          }}
-        >
+        <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
           <CafeTicker
             slots={tickerSlots}
             weather={weather}

@@ -181,21 +181,26 @@ function PreviewContent({
       </div>
 
       {/* FOOTER TICKER - matches CafeTemplate.tsx's own overlay treatment
-          (see that file's comment for the full negative-offset
+          (see FooterTicker.tsx's own comment for the full positioning
           mechanism) rather than reserving a grid row, so this preview
           keeps accurately representing what tenants actually see live.
-          -2.5rem on each side is p-10's own value negated (Tailwind's
-          spacing-10 = 2.5rem = 40px) - must stay in sync with the p-10
-          class on this component's outer div above if that ever changes.
-          overflow-hidden (not min-w-0 - no longer a grid item, see
+          inset-x-0 bottom-0, NOT a negative offset past those edges -
+          the containing block's own padding edge already IS this
+          component's own outer edge regardless of its `p-10` property
+          (an earlier version used -2.5rem, p-10's own value negated, on
+          the wrong assumption that 0 would land inset by the padding
+          instead - confirmed wrong by direct measurement: it pushed the
+          ticker's own bottom edge past this preview's outer clipping
+          box, silently cropping roughly the bottom half of the bar).
+          overflow-x-hidden (not min-w-0 - no longer a grid item, see
           CafeTemplate.tsx's own comment on why that half of the old fix
-          is gone) still clips CafeTicker's deliberately wider-than-box
-          marquee track. */}
+          is gone; not overflow-hidden either - see CafeTicker.tsx's own
+          comment on why an oversized Font Size deliberately overflows
+          vertically now rather than being clipped) still clips
+          CafeTicker's deliberately wider-than-box marquee track
+          horizontally. */}
       {tickerEnabled && (
-        <div
-          className="absolute z-10 overflow-hidden"
-          style={{ left: '-2.5rem', right: '-2.5rem', bottom: '-2.5rem' }}
-        >
+        <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
           <CafeTicker
             slots={tickerSlots}
             weather={weather}

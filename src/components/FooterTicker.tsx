@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from './CafeTicker'
-import { TEMPLATE_EDGE_PADDING } from '../config/templateLayout'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
@@ -23,16 +22,25 @@ import { useVisibilityForecast } from '../services/visibilityForecastService'
 // comment).
 //
 // Overlay positioning (was a reserved grid row until this round): an
-// absolutely-positioned element establishes its own containing block
-// against the nearest `position: relative` ancestor's PADDING edge, not
-// its true outer edge - so `left/right/bottom: 0` here would still sit
-// INSET by the template's own clamp() padding, not actually at the
-// screen edge. Each caller (Clubhouse1Template.tsx etc.) puts
-// `position: relative` on its own outermost (padded) div specifically
-// so this negative-offset math resolves against THAT box, whatever size
-// it happens to be (the real screen, or - via isPreview - a small
-// scaled preview box elsewhere), never the browser's true viewport.
-// That's also why this is `position: absolute`, not `fixed`: fixed
+// absolutely-positioned element's containing block is its nearest
+// `position: relative` ancestor's PADDING BOX - which is bounded by
+// that ancestor's own OUTER edge (border-box minus border-width, which
+// here has no border), not narrowed by the ancestor's own `padding`
+// property at all. So `left/right/bottom: 0` already lands exactly on
+// the template's true outer edge, padding notwithstanding - no extra
+// offset needed. (An earlier version of this file used
+// `calc(-1 * TEMPLATE_EDGE_PADDING)` on the theory that 0 would land on
+// the INSET content edge instead - confirmed wrong by direct
+// measurement: that push the ticker's own bottom edge accordingly far
+// PAST the true screen edge, off the actual visible display, silently
+// cropping roughly the bottom half of the bar - the real cause of the
+// "text sits too low / gets clipped" bug, not a font-metrics issue.)
+// Each caller (Clubhouse1Template.tsx etc.) puts `position: relative`
+// on its own outermost (padded) div specifically so this positioning
+// resolves against THAT box, whatever size it happens to be (the real
+// screen, or - via isPreview - a small scaled preview box elsewhere),
+// never the browser's true viewport. That's also why this is
+// `position: absolute`, not `fixed`: fixed
 // anchors to the actual browser viewport regardless of DOM nesting,
 // which would break every scaled admin preview that reuses these same
 // template components (DesignPage.tsx renders them at ~30% scale
@@ -120,14 +128,13 @@ export default function FooterTicker(): JSX.Element | null {
   if (!tickerEnabled) return null
 
   return (
-    <div
-      className="absolute z-10 overflow-hidden"
-      style={{
-        left: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
-        right: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
-        bottom: `calc(-1 * ${TEMPLATE_EDGE_PADDING})`,
-      }}
-    >
+    // overflow-x-hidden, not overflow-hidden - see CafeTicker.tsx's own
+    // comment on its outer box. This wrapper has no explicit height
+    // (auto, sized to CafeTicker's own box), so vertical clipping here
+    // was never load-bearing for the normal case - but it WOULD re-clip
+    // the deliberate vertical overflow CafeTicker.tsx now allows through
+    // for an oversized Font Size, undoing that fix at this level.
+    <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
       <CafeTicker
         slots={tickerSlots}
         weather={weather}

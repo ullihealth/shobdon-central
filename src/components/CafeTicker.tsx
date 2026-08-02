@@ -301,8 +301,18 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
     return () => observer.disconnect()
   }, [isStatic, style.scrollSpeedPxPerSec, style.gapPx])
 
+  // lineHeight: 1 (not the browser's font-dependent "normal" default,
+  // ~1.15-1.2x fontSize but varies per font and isn't split evenly
+  // above/below the glyphs) - Inter/Montserrat/Oswald each reserve more
+  // ascent space than descent space in their own metrics, so a "normal"
+  // line box centered via flex align-items below has visibly more empty
+  // room above the text than below it - the reported "text sits too
+  // low, bottom gets clipped" bug. Tying the line box tightly to the
+  // glyphs themselves removes that asymmetric slack, so centering the
+  // line box (below) actually centers the visible text.
   const textStyle: CSSProperties = {
     fontSize: style.fontSizePx,
+    lineHeight: 1,
     color: style.fontColor,
     fontFamily: FONT_CSS_STACK[style.fontFamily],
   }
@@ -327,8 +337,27 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
     // looks like a stray clipped line rather than a deliberate frame.
     // border-t only - still visually separates the ticker from whatever
     // panel content it now overlays above it.
+    //
+    // overflow-x-hidden, not overflow-hidden (both axes) - horizontal
+    // clipping is still required (the marquee track below is
+    // deliberately wider than this box, duplicated content for a
+    // seamless loop); vertical clipping is NOT wanted here. height
+    // stays a fixed style.heightPx (the tenant's own setting, unchanged)
+    // so the normal case - text that actually fits - keeps centering
+    // via h-full/items-center below exactly as before. But if a tenant
+    // picks a Font Size (px) genuinely too large for their chosen
+    // Height (px), even lineHeight:1 above can't make oversized glyphs
+    // fit inside a shorter box - clipping the overflow would cut off
+    // the bottom of the text; letting it render past the box's own
+    // top/bottom edges instead keeps every character fully visible,
+    // even though the ticker then reads as slightly taller than its own
+    // configured Height for that specific combination. Every ancestor
+    // wrapper (FooterTicker.tsx, CafeTemplate.tsx's inline overlay,
+    // CafeMediaPage.tsx/DesignPage.tsx's preview mirrors) makes the same
+    // horizontal-only overflow trade for the same reason - see each of
+    // their own comments.
     <div
-      className="w-full overflow-hidden border-t border-border"
+      className="w-full overflow-x-hidden border-t border-border"
       style={{ height: style.heightPx, backgroundColor: hexToRgba(style.backgroundColor, style.backgroundOpacity) }}
     >
       {isStatic ? (
