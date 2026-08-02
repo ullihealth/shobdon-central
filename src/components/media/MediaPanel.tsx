@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
@@ -8,6 +9,7 @@ interface CarouselSlotResolved extends MediaSlotVisual {
   durationSeconds: number
   mp4DurationSeconds: number | null
   zone: 'both' | 'left' | 'right'
+  autoFullscreen: boolean
 }
 
 // Exported (not just the local MediaPanelProps['data'] shape) so the
@@ -272,6 +274,33 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
           renderMediaContent(item)
         )}
       </div>
+      {/* Auto-fullscreen (admin-configured per slot, see migration
+          0063's own comment) - a viewport-covering portal, not a
+          bigger version of the normal box, so it genuinely takes over
+          the whole screen the way a video/camera slide's "fullscreen"
+          is meant to read. Rendered ONLY while the currently active
+          slot has autoFullscreen set - re-evaluates every activeIndex
+          change (the same timer-driven state already cycling the
+          carousel above), so it appears and disappears automatically
+          each time this slide's turn comes around, with no separate
+          state of its own to fall out of sync. Portaled to
+          document.body rather than rendered in place, since this
+          component can sit arbitrarily deep inside a template's own
+          layout (Clubhouse1Template's centre column, Café's zone
+          panes) - position:fixed alone isn't reliable from inside an
+          ancestor that happens to set its own transform/filter, which
+          would silently confine it to that ancestor's box instead of
+          the real viewport. The slots underneath stay mounted and
+          rendering exactly as before (same "never destroy an iframe's
+          state" invariant the plain absolute-stack above already
+          relies on) - this overlay only ever sits visually on top. */}
+      {activeSlot?.autoFullscreen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 bg-black">
+            <MediaSlotRenderer slot={activeSlot} isActive />
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

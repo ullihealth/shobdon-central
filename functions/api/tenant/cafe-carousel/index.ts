@@ -48,6 +48,7 @@ interface CafeCarouselSlotRow {
   bannerOpacity: number;
   bannerFontSize: string;
   zone: string;
+  autoFullscreen: number;
 }
 
 interface CafeCarouselSlotInput {
@@ -66,6 +67,7 @@ interface CafeCarouselSlotInput {
   bannerOpacity?: number;
   bannerFontSize?: "sm" | "md" | "lg" | "xl" | "xxl";
   zone?: "both" | "left" | "right";
+  autoFullscreen?: boolean;
 }
 
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia"];
@@ -93,6 +95,7 @@ function defaultSlots(): CafeCarouselSlotRow[] {
     bannerOpacity: 70,
     bannerFontSize: "md",
     zone: "both",
+    autoFullscreen: 0,
   }));
 }
 
@@ -113,6 +116,7 @@ function rowToApi(row: CafeCarouselSlotRow) {
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
+    autoFullscreen: !!row.autoFullscreen,
   };
 }
 
@@ -125,7 +129,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone
+              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen
        FROM cafe_carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -220,15 +224,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const bannerOpacity = slot.bannerOpacity ?? 70;
     const bannerFontSize = slot.bannerFontSize ?? "md";
     const zone = slot.zone ?? "both";
+    const autoFullscreen = slot.autoFullscreen ? 1 : 0;
 
     await env.DB
       .prepare(
         `INSERT INTO cafe_carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-           bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
+           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -247,6 +252,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
            bannerOpacity = excluded.bannerOpacity,
            bannerFontSize = excluded.bannerFontSize,
            zone = excluded.zone,
+           autoFullscreen = excluded.autoFullscreen,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -269,6 +275,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         bannerOpacity,
         bannerFontSize,
         zone,
+        autoFullscreen,
         now
       )
       .run();

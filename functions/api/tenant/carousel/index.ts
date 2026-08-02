@@ -44,6 +44,7 @@ interface CarouselSlotRow {
   bannerOpacity: number;
   bannerFontSize: string;
   zone: string;
+  autoFullscreen: number;
 }
 
 interface CarouselSlotInput {
@@ -62,6 +63,10 @@ interface CarouselSlotInput {
   bannerOpacity?: number;
   bannerFontSize?: "sm" | "md" | "lg" | "xl" | "xxl";
   zone?: "both" | "left" | "right";
+  // Persisted per-slot "auto-expand when active" flag - see migration
+  // 0063's own comment for why this is an admin-configured setting, not
+  // a live-viewer click on the unattended kiosk display.
+  autoFullscreen?: boolean;
 }
 
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia"];
@@ -92,6 +97,7 @@ function defaultSlots(): CarouselSlotRow[] {
     bannerOpacity: 70,
     bannerFontSize: "md",
     zone: "both",
+    autoFullscreen: 0,
   }));
 }
 
@@ -112,6 +118,7 @@ function rowToApi(row: CarouselSlotRow) {
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
+    autoFullscreen: !!row.autoFullscreen,
   };
 }
 
@@ -124,7 +131,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone
+              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen
        FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -234,15 +241,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const bannerOpacity = slot.bannerOpacity ?? 70;
     const bannerFontSize = slot.bannerFontSize ?? "md";
     const zone = slot.zone ?? "both";
+    const autoFullscreen = slot.autoFullscreen ? 1 : 0;
 
     await env.DB
       .prepare(
         `INSERT INTO carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-           bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
+           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -261,6 +269,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
            bannerOpacity = excluded.bannerOpacity,
            bannerFontSize = excluded.bannerFontSize,
            zone = excluded.zone,
+           autoFullscreen = excluded.autoFullscreen,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -283,6 +292,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         bannerOpacity,
         bannerFontSize,
         zone,
+        autoFullscreen,
         now
       )
       .run();

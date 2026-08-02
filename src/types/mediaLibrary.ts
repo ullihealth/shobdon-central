@@ -85,4 +85,11 @@ export interface CarouselSlot {
   // both zones when split, and normally in full-16:9 mode. Ignored by
   // every other template.
   zone: 'both' | 'left' | 'right'
+  // When true, this slot renders as a full-viewport overlay for the
+  // duration it's active in the carousel rotation (MediaPanel.tsx),
+  // reverting to the normal in-flow box the moment rotation moves on -
+  // repeats every cycle, not a one-off. Admin-configured, persisted
+  // (see migration 0063's own comment for why this isn't a live-viewer
+  // click on the unattended kiosk display).
+  autoFullscreen: boolean
 }

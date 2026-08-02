@@ -112,6 +112,7 @@ interface CarouselSlotResolvedRow {
   bannerOpacity: number;
   bannerFontSize: string;
   zone: string;
+  autoFullscreen: boolean;
 }
 
 interface OpsPanelRow {
@@ -281,6 +282,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            cs.bannerOpacity AS bannerOpacity,
            cs.bannerFontSize AS bannerFontSize,
            cs.zone AS zone,
+           cs.autoFullscreen AS autoFullscreen,
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
@@ -313,6 +315,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         bannerOpacity: number;
         bannerFontSize: string;
         zone: string;
+        autoFullscreen: number;
         mp4DurationSeconds: number | null;
         r2Key: string | null;
         mediaUploadedAt: string | null;
@@ -348,6 +351,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            cs.bannerOpacity AS bannerOpacity,
            cs.bannerFontSize AS bannerFontSize,
            cs.zone AS zone,
+           cs.autoFullscreen AS autoFullscreen,
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
@@ -380,6 +384,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         bannerOpacity: number;
         bannerFontSize: string;
         zone: string;
+        autoFullscreen: number;
         mp4DurationSeconds: number | null;
         r2Key: string | null;
         mediaUploadedAt: string | null;
@@ -526,6 +531,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
+    autoFullscreen: !!row.autoFullscreen,
     // The ?v= cache-buster matters now that a slide can be edited IN
     // PLACE (same r2Key, new bytes) - without it, a browser or the R2
     // public bucket's own edge caching could keep serving the pre-edit
@@ -561,6 +567,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     bannerOpacity: row.bannerOpacity,
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
+    autoFullscreen: !!row.autoFullscreen,
     resolvedUrl:
       row.mediaType === "webcam"
         ? row.newCameraId

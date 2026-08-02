@@ -566,6 +566,23 @@ function CarouselSlotEditor({
         </select>
       </label>
 
+      {/* Persisted per-slot flag, not a live click on the kiosk display
+          itself (see migration 0063's own comment) - toggle on here and
+          this slot auto-expands to fill the whole screen every time its
+          turn comes around in the carousel, reverting when rotation
+          moves to the next slot, repeating every cycle. Works the same
+          regardless of mediaType - a table (Gyropedia) fills the
+          viewport the same way an image/video/webcam slide does. */}
+      <label className="mt-3 flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={slot.autoFullscreen}
+          onChange={(event) => onChange({ autoFullscreen: event.target.checked })}
+          className="h-4 w-4"
+        />
+        <span className="text-sm text-muted-300">Auto-expand fullscreen when active</span>
+      </label>
+
       {showAppearanceControls && (
         <button
           type="button"
