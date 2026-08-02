@@ -67,9 +67,11 @@ interface CafeSettings {
   tickerStyle: TickerStyle
 }
 
-// Matches migration 0035's own column DEFAULTs and cafe-settings/
-// index.ts's defaultSettings() - the fallback used only until the real
-// fetch below resolves (or if it fails outright).
+// Matches cafe-settings/index.ts's defaultSettings() - the fallback
+// used only until the real fetch below resolves (or if it fails
+// outright), not any tenant's actual persisted value. heightPx/
+// fontSizePx: 40/22 - see tickerStyleStore.ts's own DEFAULT_TICKER_STYLE
+// comment for why this changed from 64/16 and why it's new-tenant-only.
 const DEFAULT_CAFE_SETTINGS: CafeSettings = {
   layoutMode: 'full',
   adLabelEnabled: false,
@@ -78,9 +80,9 @@ const DEFAULT_CAFE_SETTINGS: CafeSettings = {
   tickerStyle: {
     backgroundColor: '#0f172a',
     backgroundOpacity: 100,
-    heightPx: 64,
+    heightPx: 40,
     fontFamily: 'Inter',
-    fontSizePx: 16,
+    fontSizePx: 22,
     fontColor: '#ffffff',
     scrollSpeedPxPerSec: 80,
     gapPx: 0,

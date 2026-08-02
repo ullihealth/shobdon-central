@@ -90,7 +90,7 @@ export default function Clubhouse2Template({
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px' }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -182,7 +182,15 @@ export default function Clubhouse2Template({
           </div>
         </div>
 
-        <div className="flex items-center justify-center pt-1">
+      </div>
+
+      {/* BOTTOM STACK - see Clubhouse1Template.tsx's own comment on this
+          same structure ("Powered by" + FooterTicker share one bottom-
+          anchored wrapper so document flow keeps the credit line above
+          the ticker at any configured height, instead of a z-index-only
+          fix that turned out visually illegible in practice). */}
+      <div className="absolute inset-x-0 bottom-0 z-10">
+        <div className="flex items-center justify-center pt-1" style={{ paddingBottom: TEMPLATE_EDGE_PADDING }}>
           <a
             href="https://airfieldcentral.com"
             target="_blank"
@@ -193,12 +201,8 @@ export default function Clubhouse2Template({
             <span>Powered by Airfield Central</span>
           </a>
         </div>
+        <FooterTicker />
       </div>
-
-      {/* FOOTER TICKER - see Clubhouse1Template.tsx's own comment on this
-          same placement (sibling of the grid, absolutely positioned
-          overlay, not a reserved row). */}
-      <FooterTicker />
     </div>
   )
 }

@@ -652,11 +652,20 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         manualText: slot.manualText,
       })
     ),
+    // heightPx/fontSizePx defaults: 40/22 (was 64/16) - matches
+    // tickerStyleStore.ts's own DEFAULT_TICKER_STYLE and cafe-settings/
+    // index.ts's defaultSettings() (see either's comment for why this
+    // changed and why it's new-tenant-only). Only reached for a tenant
+    // with no cafe_template_settings row at all - tickerEnabled defaults
+    // false in that same case (below), so nothing actually renders these
+    // values live until a real save happens anyway; kept in sync purely
+    // so this endpoint can never disagree with what the editor itself
+    // shows as "the default" for a brand-new tenant.
     tickerBackgroundColor: cafeSettingsRow?.tickerBackgroundColor ?? "#0f172a",
     tickerBackgroundOpacity: cafeSettingsRow?.tickerBackgroundOpacity ?? 100,
-    tickerHeightPx: cafeSettingsRow?.tickerHeightPx ?? 64,
+    tickerHeightPx: cafeSettingsRow?.tickerHeightPx ?? 40,
     tickerFontFamily: cafeSettingsRow?.tickerFontFamily ?? "Inter",
-    tickerFontSizePx: cafeSettingsRow?.tickerFontSizePx ?? 16,
+    tickerFontSizePx: cafeSettingsRow?.tickerFontSizePx ?? 22,
     tickerFontColor: cafeSettingsRow?.tickerFontColor ?? "#ffffff",
     tickerScrollSpeedPxPerSec: cafeSettingsRow?.tickerScrollSpeedPxPerSec ?? 80,
     tickerGapPx: cafeSettingsRow?.tickerGapPx ?? 0,

@@ -99,7 +99,7 @@ export default function Clubhouse1Template({
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr) auto', gap: '16px' }
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px' }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -168,8 +168,40 @@ export default function Clubhouse1Template({
           </div>
         </div>
 
-        {/* FOOTER - small, deliberately unobtrusive "powered by" credit. */}
-        <div className="flex items-center justify-center pt-1">
+      </div>
+
+      {/* BOTTOM STACK - "Powered by" credit ALWAYS renders; the footer
+          ticker renders beneath it (or not at all, when disabled - see
+          FooterTicker.tsx's own comment). Both share ONE absolutely-
+          positioned, bottom-anchored, auto-height wrapper instead of
+          being independently placed - normal document flow inside it
+          then guarantees "Powered by" always ends up directly above
+          wherever the ticker (if any) currently renders, at ANY
+          configured ticker height, with zero JS height-reporting needed.
+          A z-index-only fix (an earlier version of this file tried
+          exactly that) technically paints "Powered by" on top of the
+          ticker, but doesn't stop the ticker's own much bigger/bolder/
+          brighter scrolling text from visually dominating the same
+          screen region - confirmed by direct screenshot, not just
+          reasoned about, which is why this is a real layout fix instead.
+          Neither element is a grid row anymore (panels' own minmax(0,1fr)
+          row above no longer accounts for either of them, matching the
+          "ticker doesn't reserve space" precedent from two rounds ago -
+          "Powered by" itself now gets the same treatment). */}
+      <div className="absolute inset-x-0 bottom-0 z-10">
+        {/* paddingBottom: TEMPLATE_EDGE_PADDING - keeps this credit
+            line's own breathing room from the true bottom edge exactly
+            what it always was (the outer div's own padding) for the
+            common case where the ticker is off entirely (FooterTicker
+            renders null, contributing zero height below). Deliberately
+            on THIS div only, not the shared wrapper above - putting it
+            there would also inset the ticker itself, undoing its own
+            flush-to-the-true-edge behaviour from two rounds ago. When
+            the ticker IS on, this same padding still applies on top of
+            the ticker's own height, so "Powered by" keeps that same
+            minimum clearance from the ticker bar too, not just the
+            screen edge. */}
+        <div className="flex items-center justify-center pt-1" style={{ paddingBottom: TEMPLATE_EDGE_PADDING }}>
           <a
             href="https://airfieldcentral.com"
             target="_blank"
@@ -180,19 +212,8 @@ export default function Clubhouse1Template({
             <span>Powered by Airfield Central</span>
           </a>
         </div>
+        <FooterTicker />
       </div>
-
-      {/* FOOTER TICKER - free/universal now, not café-only. A sibling of
-          the grid above, not a row inside it - it's absolutely
-          positioned (see FooterTicker.tsx's own comment) so it overlays
-          the screen's true bottom edge instead of reserving space, and
-          the panels above keep the full height they had before the
-          ticker existed. Renders nothing at all when this tenant hasn't
-          enabled it - no space reserved either way. Placed after (not
-          before) the "Powered by" credit in DOM order so it paints on
-          top of it - the ticker is the true bottom-most element on
-          screen, per its own design. */}
-      <FooterTicker />
     </div>
   )
 }

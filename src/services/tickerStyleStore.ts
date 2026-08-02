@@ -33,16 +33,24 @@ export interface TickerStyleTemplate {
   createdAt: string
 }
 
-// Today's implicit hard-coded look (bg-panel/text-primary/font-semibold
-// text-base, ~30s sweep) translated into explicit values - the starting
-// point before any preset or custom adjustment is applied, and what a
-// freshly-migrated tenant's cafe_template_settings row defaults to.
+// The starting point before any preset or custom adjustment is applied,
+// and what a tenant with no saved ticker style yet defaults to.
+// heightPx/fontSizePx: 40/22 (was 64/16) - a new-tenant-only default
+// change, not retroactive; a tenant who already has a saved value (their
+// own choice, or these same old 64/16 defaults from before they ever
+// touched Ticker Style) keeps it untouched - this constant is only ever
+// used as a fallback before a real fetch resolves, or when no row exists
+// server-side yet (see cafe-settings/index.ts's own defaultSettings(),
+// which mirrors this exactly). The four BUILT_IN_TICKER_PRESETS below
+// are deliberately NOT touched by this change - those are separate,
+// independently-authored named looks a tenant opts into, not "the
+// default," and keep their own existing heightPx/fontSizePx values.
 export const DEFAULT_TICKER_STYLE: TickerStyle = {
   backgroundColor: '#0f172a',
   backgroundOpacity: 100,
-  heightPx: 64,
+  heightPx: 40,
   fontFamily: 'Inter',
-  fontSizePx: 16,
+  fontSizePx: 22,
   fontColor: '#ffffff',
   scrollSpeedPxPerSec: 80,
   gapPx: 0,

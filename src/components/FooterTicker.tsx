@@ -15,42 +15,31 @@ import { useVisibilityForecast } from '../services/visibilityForecastService'
 // don't each need their own copy of this fetch. CafeTemplate.tsx itself
 // is untouched on the fetch side - it already has this working, plus
 // its own extra safetyNoticesData/gasPricesData override props this
-// component doesn't need - but DOES need the exact same overlay
-// positioning below, hand-mirrored there rather than imported (it
-// doesn't use this component at all, matching this codebase's existing
-// "hand-mirrored café JSX" precedent - see CafeTemplate.tsx's own
-// comment).
+// component doesn't need.
 //
-// Overlay positioning (was a reserved grid row until this round): an
-// absolutely-positioned element's containing block is its nearest
-// `position: relative` ancestor's PADDING BOX - which is bounded by
-// that ancestor's own OUTER edge (border-box minus border-width, which
-// here has no border), not narrowed by the ancestor's own `padding`
-// property at all. So `left/right/bottom: 0` already lands exactly on
-// the template's true outer edge, padding notwithstanding - no extra
-// offset needed. (An earlier version of this file used
-// `calc(-1 * TEMPLATE_EDGE_PADDING)` on the theory that 0 would land on
-// the INSET content edge instead - confirmed wrong by direct
-// measurement: that push the ticker's own bottom edge accordingly far
-// PAST the true screen edge, off the actual visible display, silently
-// cropping roughly the bottom half of the bar - the real cause of the
-// "text sits too low / gets clipped" bug, not a font-metrics issue.)
-// Each caller (Clubhouse1Template.tsx etc.) puts `position: relative`
-// on its own outermost (padded) div specifically so this positioning
-// resolves against THAT box, whatever size it happens to be (the real
-// screen, or - via isPreview - a small scaled preview box elsewhere),
-// never the browser's true viewport. That's also why this is
-// `position: absolute`, not `fixed`: fixed
-// anchors to the actual browser viewport regardless of DOM nesting,
-// which would break every scaled admin preview that reuses these same
-// template components (DesignPage.tsx renders them at ~30% scale
-// inside a small box - `fixed` positioning would escape that box
-// entirely and pin to the real page's bottom edge instead).
+// Does NOT position itself (no position:absolute/inset here) - that's
+// deliberately the CALLER's job now (each of the three templates wraps
+// this in their own bottom-anchored stack alongside the "Powered by"
+// credit line - see e.g. Clubhouse1Template.tsx's own comment on why).
+// An earlier version of this file did its own absolute positioning
+// directly, which meant "Powered by" (a separate, always-rendered grid
+// row) had no way to know how tall this ticker currently is, so it
+// couldn't reliably avoid being visually covered by it - a z-index fix
+// alone technically painted "Powered by" on top, but the ticker's own
+// much bigger/bolder/brighter scrolling text still visually dominated
+// the same screen region, leaving the credit line practically illegible
+// (confirmed by direct screenshot, not just reasoned about). Putting
+// both under one shared, auto-sized, bottom-anchored wrapper solves
+// this with plain CSS document flow instead - "Powered by" simply
+// renders before this component in that shared wrapper, so it always
+// ends up positioned directly above whatever this renders (or directly
+// at the bottom edge, with zero gap, when this returns null) - no
+// height-reporting/callback plumbing needed.
 //
 // Height is NOT overridden or capped here - style.heightPx (CafeTicker's
 // own `height` style below) is the tenant's own Ticker Style setting,
 // unchanged by this round. "Slim by default" just falls out of
-// heightPx's existing 24-200px range (default 64px) - a tenant who
+// heightPx's existing 24-200px range (default now 40px) - a tenant who
 // deliberately sets it larger gets exactly that, even if it then
 // overlaps more of whatever panel content sits behind it (accepted
 // trade-off of overlaying instead of reserving space, not something
@@ -61,12 +50,18 @@ interface SafetyNotice {
   enabled: boolean
 }
 
+// heightPx/fontSizePx: 40/22 - matches tickerStyleStore.ts's own
+// DEFAULT_TICKER_STYLE (see that file's comment on why this changed
+// from 64/16 and why it's new-tenant-only, not retroactive). Only ever
+// used here as the pre-fetch placeholder before the real PUBLIC_CONFIG_URL
+// fetch resolves (a brief loading window, not the ticker's actual
+// server-persisted value for any tenant).
 const DEFAULT_TICKER_STYLE: TickerStyle = {
   backgroundColor: '#0f172a',
   backgroundOpacity: 100,
-  heightPx: 64,
+  heightPx: 40,
   fontFamily: 'Inter',
-  fontSizePx: 16,
+  fontSizePx: 22,
   fontColor: '#ffffff',
   scrollSpeedPxPerSec: 80,
   gapPx: 0,
@@ -92,8 +87,7 @@ function tickerStyleFromApi(cs: Record<string, unknown>): TickerStyle {
 // Renders nothing at all (not an empty box) while disabled or still
 // loading - no space reserved, matching CafeTemplate.tsx's own "fully
 // collapses when off" ticker wrapper. Must be rendered inside a
-// `position: relative` ancestor (the caller's own outer padded div) AND
-// inside a <WeatherProvider> (every real caller - DashboardPage.tsx,
+// <WeatherProvider> (every real caller - DashboardPage.tsx,
 // TenantDisplayPage.tsx - already wraps every template in one).
 export default function FooterTicker(): JSX.Element | null {
   const { weather, liveDataUnavailable } = useWeather()
@@ -128,13 +122,14 @@ export default function FooterTicker(): JSX.Element | null {
   if (!tickerEnabled) return null
 
   return (
-    // overflow-x-hidden, not overflow-hidden - see CafeTicker.tsx's own
-    // comment on its outer box. This wrapper has no explicit height
-    // (auto, sized to CafeTicker's own box), so vertical clipping here
-    // was never load-bearing for the normal case - but it WOULD re-clip
-    // the deliberate vertical overflow CafeTicker.tsx now allows through
-    // for an oversized Font Size, undoing that fix at this level.
-    <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
+    // overflow-x-hidden - clips CafeTicker's deliberately wider-than-box
+    // marquee track horizontally (not overflow-hidden - see
+    // CafeTicker.tsx's own comment on why vertical overflow is wanted
+    // here, for an oversized Font Size). No position/inset of its own
+    // anymore - see this file's own top comment; the caller's shared
+    // stack wrapper handles bottom-edge placement for both this and
+    // "Powered by" together.
+    <div className="w-full overflow-x-hidden">
       <CafeTicker
         slots={tickerSlots}
         weather={weather}

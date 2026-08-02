@@ -105,11 +105,22 @@ interface DefaultSettings {
   tickerGapPx: number;
 }
 
-// Matches migration 0035/0036's own column DEFAULTs and
-// tickerStyleStore.ts's DEFAULT_TICKER_STYLE exactly - three
-// independent copies of "today's implicit look" (SQL default, this
-// default, the frontend default) would drift; this one is the
-// authoritative fallback when no row exists yet at all.
+// Matches tickerStyleStore.ts's DEFAULT_TICKER_STYLE exactly - this is
+// the authoritative fallback when no row exists yet at all (i.e. a
+// tenant's actual first-save defaults). heightPx/fontSizePx changed
+// 64/16 -> 40/22 - a new-tenant-only default change, NOT retroactive:
+// this function is only ever consulted when no cafe_template_settings
+// row exists yet for the tenant, so any tenant with an existing saved
+// row (their own chosen values, or these same old 64/16 defaults from
+// before they ever touched Ticker Style) is completely unaffected -
+// rowToApi() below reads their real stored column values regardless of
+// what this function currently returns. migration 0035/0036's own SQL
+// column DEFAULTs (64/16) are deliberately left as-is, not updated to
+// match - those only ever apply if an INSERT omits these columns, which
+// the PUT handler below never does (every INSERT always supplies an
+// explicit value, computed from this function or the tenant's own
+// current row), so the SQL default is inert today regardless of its
+// value - not worth a migration to chase a value nothing actually reads.
 function defaultSettings(): DefaultSettings {
   return {
     layoutMode: "full",
@@ -118,9 +129,9 @@ function defaultSettings(): DefaultSettings {
     tickerSlots: Array.from({ length: TICKER_SLOT_COUNT }, (_, i) => ({ position: i + 1, type: null, enabled: true })),
     tickerBackgroundColor: "#0f172a",
     tickerBackgroundOpacity: 100,
-    tickerHeightPx: 64,
+    tickerHeightPx: 40,
     tickerFontFamily: "Inter",
-    tickerFontSizePx: 16,
+    tickerFontSizePx: 22,
     tickerFontColor: "#ffffff",
     tickerScrollSpeedPxPerSec: 80,
     tickerGapPx: 0,
