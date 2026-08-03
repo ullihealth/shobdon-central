@@ -237,12 +237,15 @@ export default function RunwaysPage(): JSX.Element {
             matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
           </p>
           {parentAirfieldName && (
-            <p className="mt-3 max-w-2xl rounded-lg border border-accent-sky-500/30 bg-accent-sky-500/10 px-3 py-2 text-xs text-accent-sky-300">
-              This tenant is linked to <span className="font-semibold">{parentAirfieldName}</span> as its parent
-              airfield. The live dashboard shows {parentAirfieldName}&apos;s runway configuration, not the
-              settings below - your own settings are still saved here and take effect immediately if the link is
-              ever removed.
-            </p>
+            <div className="mt-3 max-w-3xl rounded-lg border border-accent-sky-500/30 bg-accent-sky-500/10 px-4 py-3">
+              <p className="text-lg font-bold uppercase tracking-wide text-status-bad">Important</p>
+              <p className="mt-1 text-base text-status-bad">
+                This tenant is linked to <span className="font-semibold">{parentAirfieldName}</span> as its parent
+                airfield. The live dashboard shows {parentAirfieldName}&apos;s runway configuration, not the
+                settings below - your own settings are still saved here and take effect immediately if the link is
+                ever removed.
+              </p>
+            </div>
           )}
         </div>
 
