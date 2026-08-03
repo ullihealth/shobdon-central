@@ -386,11 +386,14 @@ export default function AtcControlPage(): JSX.Element {
               : 'Runway and circuit now behave independently - any combination can be set manually.'}
           </p>
           {parentAirfieldName && (
-            <p className="mb-3 max-w-md rounded-lg border border-accent-sky-500/30 bg-accent-sky-500/10 px-3 py-2 text-xs text-accent-sky-300">
-              This tenant is linked to <span className="font-semibold">{parentAirfieldName}</span> as its parent
-              airfield. The live dashboard shows {parentAirfieldName}&apos;s Runway In Use and Circuit Direction, not
-              the selection below - it's still saved here and takes effect immediately if the link is ever removed.
-            </p>
+            <div className="mb-3 max-w-2xl rounded-lg border border-accent-sky-500/30 bg-accent-sky-500/10 px-4 py-3">
+              <p className="text-lg font-bold uppercase tracking-wide text-status-bad">Important</p>
+              <p className="mt-1 text-base text-status-bad">
+                This tenant is linked to <span className="font-semibold">{parentAirfieldName}</span> as its parent
+                airfield. The live dashboard shows {parentAirfieldName}&apos;s Runway In Use and Circuit Direction, not
+                the selection below - it's still saved here and takes effect immediately if the link is ever removed.
+              </p>
+            </div>
           )}
           <div className="mb-6 grid grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
