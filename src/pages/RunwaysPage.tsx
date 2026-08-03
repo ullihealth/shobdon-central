@@ -46,6 +46,17 @@ export default function RunwaysPage(): JSX.Element {
   // selector replaces the old "stack every runway's full form vertically"
   // layout, so only one group is ever rendered for editing at a time.
   const [selectedIndex, setSelectedIndex] = useState(0)
+  // Parent/sub-tenant disclosure - purely informational, never changes
+  // what this page saves (still this tenant's own runway_groups rows
+  // either way, see functions/api/tenant/config.ts, untouched by this
+  // round). When set, the runway configuration staged/published HERE is
+  // stored but shadowed on the live dashboard by the parent's own
+  // runwayGroups instead (functions/api/_utils/publicConfig.ts) - an
+  // admin on a linked sub-tenant should know that before wondering why
+  // "Update Dashboard" didn't change anything live. Same endpoint/
+  // pattern AtcControlPage.tsx already uses for the identical Runway In
+  // Use/Circuit Direction disclosure.
+  const [parentAirfieldName, setParentAirfieldName] = useState<string | null>(null)
 
   // Real D1-backed read (functions/api/tenant/config.ts, the same route
   // /design already uses) - was a synchronous loadClubProfile()
@@ -54,11 +65,14 @@ export default function RunwaysPage(): JSX.Element {
   // endpoint (D1), a completely separate store nothing here ever wrote to.
   useEffect(() => {
     let cancelled = false
-    fetch(TENANT_CONFIG_URL)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
+    Promise.all([
+      fetch(TENANT_CONFIG_URL).then((response) => (response.ok ? response.json() : null)),
+      fetch('/api/tenant/parent-tenant').then((response) => (response.ok ? response.json() : null)),
+    ])
+      .then(([data, parentTenant]) => {
         if (cancelled) return
         setGroups(Array.isArray(data?.runwayGroups) ? data.runwayGroups : [])
+        if (parentTenant?.parentTenantName) setParentAirfieldName(parentTenant.parentTenantName)
       })
       .catch(() => {})
       .finally(() => {
@@ -222,6 +236,14 @@ export default function RunwaysPage(): JSX.Element {
             surface colours. These drive both the compass graphic and the headwind/crosswind maths, so accuracy
             matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
           </p>
+          {parentAirfieldName && (
+            <p className="mt-3 max-w-2xl rounded-lg border border-accent-sky-500/30 bg-accent-sky-500/10 px-3 py-2 text-xs text-accent-sky-300">
+              This tenant is linked to <span className="font-semibold">{parentAirfieldName}</span> as its parent
+              airfield. The live dashboard shows {parentAirfieldName}&apos;s runway configuration, not the
+              settings below - your own settings are still saved here and take effect immediately if the link is
+              ever removed.
+            </p>
+          )}
         </div>
 
         {!loading && (
