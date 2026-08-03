@@ -228,7 +228,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // own `organizationId`.
   const effective = await resolveEffectiveTenantByOrganizationId(env.DB, organizationId);
 
-  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(effective.organizationId)
@@ -242,10 +242,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number; brandDisplayJson: string | null }>(),
+      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number; brandDisplayJson: string | null; carouselBudgetEnabled: number }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -471,6 +471,51 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
           .bind(organizationId)
           .first<GasPricesRow>()
       : Promise.resolve(null),
+    // Reserved Owner Slots & Time Budget round - slots 5/8/12's raw rows,
+    // UNCONDITIONAL of their own `enabled` flag (unlike carouselRows
+    // above, which only returns enabled=1 rows) - a reserved slot must
+    // always appear in the live rotation regardless of whatever enabled
+    // value happens to be sitting in this tenant's own row (which might
+    // be stale/irrelevant leftover state from before this tenant was
+    // ever ON this feature). Always queried (this file's own established
+    // "one extra cheap indexed SELECT is fine" posture, same as
+    // ownRunwayRows/ownGasPricesRow above) - only actually USED below
+    // when tenantRow.carouselBudgetEnabled is true, since carouselBudgetEnabled
+    // itself is resolved in this SAME Promise.all and can't gate which
+    // queries run inside it.
+    env.DB
+      .prepare(
+        `SELECT cs.slotNumber AS slotNumber, cs.mediaType AS mediaType, cs.mediaLibraryId AS mediaLibraryId,
+                cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerContentAssigned AS ownerContentAssigned,
+                cs.fitMode AS fitMode, cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
+                cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
+                cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize,
+                ml.mp4DurationSeconds AS mp4DurationSeconds, ml.r2Key AS r2Key, ml.uploadedAt AS mediaUploadedAt
+         FROM carousel_slots cs
+         LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
+         WHERE cs.organizationId = ? AND cs.slotNumber IN (5, 8, 12)`
+      )
+      .bind(organizationId)
+      .all<{
+        slotNumber: number;
+        mediaType: string;
+        mediaLibraryId: string | null;
+        ownerSlotUnlocked: number;
+        ownerContentAssigned: number;
+        fitMode: string;
+        cropX: number;
+        cropY: number;
+        cropWidth: number;
+        cropHeight: number;
+        rotationDegrees: number;
+        brightnessPercent: number;
+        bannerText: string;
+        bannerOpacity: number;
+        bannerFontSize: string;
+        mp4DurationSeconds: number | null;
+        r2Key: string | null;
+        mediaUploadedAt: string | null;
+      }>(),
   ]);
 
   // Parent linked but has zero runway_groups/gas_prices rows of its own
@@ -552,6 +597,78 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
           ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
           : null,
   }));
+
+  // Reserved Owner Slots & Time Budget round. carouselRows above only
+  // ever returns enabled=1 rows (see that query's own WHERE clause), so
+  // a reserved slot the owner hasn't touched yet (or a tenant's own
+  // pre-existing row, now shadowed - see migration 0064's own comment on
+  // why ownerContentAssigned exists) simply wouldn't appear at all - but
+  // a reserved slot must ALWAYS be in the rotation, 10 seconds, whether
+  // or not the owner has assigned real content yet. Only slotNumbers
+  // still actually reserved for THIS tenant (carouselBudgetEnabled true
+  // AND this specific slot's ownerSlotUnlocked false) get this
+  // treatment; an unlocked reserved slot is deliberately left to flow
+  // through from carouselRows above completely normally, as if it were
+  // never reserved at all.
+  const carouselBudgetEnabled = !!tenantRow?.carouselBudgetEnabled;
+  if (carouselBudgetEnabled) {
+    // Iterate the fixed [5, 8, 12] list, not reservedSlotRows.results -
+    // a tenant who has never touched Dashboard Manager at all (or never
+    // saved these specific slots) has NO carousel_slots row yet for
+    // 5/8/12, so reservedSlotRows.results would simply omit them
+    // entirely; a reserved slot must still always appear (10s, "Media
+    // Reserved" placeholder) even then - same "row may not exist yet,
+    // fall back to defaults" posture as tenant/carousel/index.ts's own
+    // defaultSlots() fallback.
+    const reservedRowsBySlot = new Map(reservedSlotRows.results.map((row) => [row.slotNumber, row]));
+    for (const slotNumber of [5, 8, 12]) {
+      const row = reservedRowsBySlot.get(slotNumber);
+      if (row?.ownerSlotUnlocked) continue;
+      const existingIndex = carouselSlots.findIndex((slot) => slot.slotNumber === slotNumber);
+      if (existingIndex !== -1) carouselSlots.splice(existingIndex, 1);
+
+      const reservedSlot: CarouselSlotResolvedRow = row?.ownerContentAssigned
+        ? {
+            slotNumber,
+            mediaType: row.mediaType,
+            durationSeconds: 10,
+            mp4DurationSeconds: row.mp4DurationSeconds,
+            fitMode: row.fitMode,
+            cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
+            rotationDegrees: row.rotationDegrees,
+            brightnessPercent: row.brightnessPercent,
+            bannerText: row.bannerText,
+            bannerOpacity: row.bannerOpacity,
+            bannerFontSize: row.bannerFontSize,
+            zone: "both",
+            autoFullscreen: false,
+            resolvedUrl: row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}` : null,
+          }
+        : {
+            // No owner content assigned yet (or no row exists for this
+            // slot at all yet - a tenant who's never touched Dashboard
+            // Manager) - "Media Reserved" placeholder (MediaSlotRenderer.
+            // tsx's own 'reserved' case), same no-resolvedUrl-needed shape
+            // as the existing 'gyropedia' sentinel type.
+            slotNumber,
+            mediaType: "reserved",
+            durationSeconds: 10,
+            mp4DurationSeconds: null,
+            fitMode: "contain",
+            cropRect: { x: 0, y: 0, width: 100, height: 100 },
+            rotationDegrees: 0,
+            brightnessPercent: 100,
+            bannerText: "",
+            bannerOpacity: 70,
+            bannerFontSize: "md",
+            zone: "both",
+            autoFullscreen: false,
+            resolvedUrl: null,
+          };
+      carouselSlots.push(reservedSlot);
+    }
+    carouselSlots.sort((a, b) => a.slotNumber - b.slotNumber);
+  }
 
   // Identical mapping to carouselSlots above, applied to café's own rows.
   const cafeCarouselSlots: CarouselSlotResolvedRow[] = cafeCarouselRows.results.map((row) => ({

@@ -45,7 +45,17 @@ interface CarouselSlotRow {
   bannerFontSize: string;
   zone: string;
   autoFullscreen: number;
+  ownerSlotUnlocked: number;
 }
+
+// Reserved Owner Slots & Time Budget round. Slots 5/8/12 are owner-
+// controlled whenever the tenant's own carousel_budget_enabled is true
+// AND that specific slot's ownerSlotUnlocked is false - the tenant's own
+// PUT below rejects any attempt to touch one, and the tenant-facing
+// budget (durationSeconds sum) only ever counts the remaining, genuinely
+// tenant-controlled slots. See migration 0064's own comment for the full
+// "why" of ownerSlotUnlocked/ownerContentAssigned.
+const RESERVED_SLOT_NUMBERS = [5, 8, 12];
 
 interface CarouselSlotInput {
   slotNumber: number;
@@ -98,10 +108,18 @@ function defaultSlots(): CarouselSlotRow[] {
     bannerFontSize: "md",
     zone: "both",
     autoFullscreen: 0,
+    ownerSlotUnlocked: 0,
   }));
 }
 
-function rowToApi(row: CarouselSlotRow) {
+// isReserved: true means this specific slot is currently owner-
+// controlled for this tenant - the frontend uses this to grey out/lock
+// the slot instead of rendering its normal editor. budgetEnabled false
+// (the common case for a tenant this feature hasn't reached yet) means
+// every slot's isReserved is always false, regardless of slotNumber or
+// ownerSlotUnlocked - matches "OFF behaves exactly like today" exactly.
+function rowToApi(row: CarouselSlotRow, budgetEnabled: boolean) {
+  const isReserved = budgetEnabled && RESERVED_SLOT_NUMBERS.includes(row.slotNumber) && !row.ownerSlotUnlocked;
   return {
     slotNumber: row.slotNumber,
     enabled: !!row.enabled,
@@ -119,6 +137,7 @@ function rowToApi(row: CarouselSlotRow) {
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
+    isReserved,
   };
 }
 
@@ -127,15 +146,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if ("error" in result) return result.error;
   const { organizationId } = result.membership;
 
-  const { results } = await env.DB
-    .prepare(
-      `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
-              cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen
-       FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
-    )
-    .bind(organizationId)
-    .all<CarouselSlotRow>();
+  const [{ results }, tenantRow] = await Promise.all([
+    env.DB
+      .prepare(
+        `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
+                cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
+                bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked
+         FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
+      )
+      .bind(organizationId)
+      .all<CarouselSlotRow>(),
+    env.DB
+      .prepare("SELECT carousel_budget_seconds AS budgetSeconds, carousel_budget_enabled AS budgetEnabled FROM tenants WHERE organization_id = ?")
+      .bind(organizationId)
+      .first<{ budgetSeconds: number; budgetEnabled: number }>(),
+  ]);
+
+  const budgetEnabled = !!tenantRow?.budgetEnabled;
+  const budgetSeconds = tenantRow?.budgetSeconds ?? 150;
 
   // Always return a full 12-element array - missing rows (never
   // configured) fill in as disabled defaults, so the frontend doesn't
@@ -143,7 +171,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const bySlot = new Map(results.map((row) => [row.slotNumber, row]));
   const slots = defaultSlots().map((fallback) => bySlot.get(fallback.slotNumber) ?? fallback);
 
-  return jsonResponse({ slots: slots.map(rowToApi) });
+  return jsonResponse({ slots: slots.map((slot) => rowToApi(slot, budgetEnabled)), budgetSeconds, budgetEnabled });
 };
 
 // Accepts one or more slot updates (the /media-manager UI edits one
@@ -216,6 +244,101 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         .bind(slot.mediaLibraryId, organizationId)
         .first<{ id: string }>();
       if (!file) return jsonResponse({ error: `mediaLibraryId ${slot.mediaLibraryId} not found in your media library` }, 400);
+    }
+  }
+
+  // Reserved Owner Slots & Time Budget round. Both checks below are
+  // backend enforcement of what the tenant's own editor UI already
+  // prevents by construction (a locked slot has no editing controls, a
+  // duration/enable change that would exceed budget is rejected before
+  // it ever reaches this endpoint) - this is the "can't bypass via a
+  // direct API call" half of that same frontend+backend pair, matching
+  // mediaQuota.ts's own established pattern for the 100MB storage cap.
+  const [currentRowsResult, tenantBudgetRow] = await Promise.all([
+    env.DB
+      .prepare(
+        `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked
+         FROM carousel_slots WHERE organizationId = ?`
+      )
+      .bind(organizationId)
+      .all<{ slotNumber: number; enabled: number; mediaType: string; durationSeconds: number; mediaLibraryId: string | null; ownerSlotUnlocked: number }>(),
+    env.DB
+      .prepare("SELECT carousel_budget_seconds AS budgetSeconds, carousel_budget_enabled AS budgetEnabled FROM tenants WHERE organization_id = ?")
+      .bind(organizationId)
+      .first<{ budgetSeconds: number; budgetEnabled: number }>(),
+  ]);
+  const budgetEnabled = !!tenantBudgetRow?.budgetEnabled;
+  const budgetSeconds = tenantBudgetRow?.budgetSeconds ?? 150;
+  const currentBySlot = new Map(currentRowsResult.results.map((row) => [row.slotNumber, row]));
+
+  function isReservedSlot(slotNumber: number): boolean {
+    if (!budgetEnabled || !RESERVED_SLOT_NUMBERS.includes(slotNumber)) return false;
+    return !currentBySlot.get(slotNumber)?.ownerSlotUnlocked;
+  }
+
+  for (const slot of body.slots) {
+    if (isReservedSlot(slot.slotNumber)) {
+      return jsonResponse({ error: `Slot ${slot.slotNumber} is reserved by AirfieldCentral and cannot be edited.` }, 400);
+    }
+  }
+
+  if (budgetEnabled) {
+    // Merge this request's incoming slots on top of the currently stored
+    // state for every OTHER slot, so the sum below reflects what the
+    // full 12-slot set will actually be after this PUT lands - not just
+    // the (possibly partial) slots included in this specific request.
+    const incomingBySlot = new Map(body.slots.map((slot) => [slot.slotNumber, slot]));
+    const effectiveSlots = Array.from({ length: 12 }, (_, i) => i + 1)
+      .filter((slotNumber) => !isReservedSlot(slotNumber))
+      .map((slotNumber) => {
+        const incoming = incomingBySlot.get(slotNumber);
+        if (incoming) return { enabled: incoming.enabled, mediaType: incoming.mediaType, durationSeconds: incoming.durationSeconds, mediaLibraryId: incoming.mediaLibraryId ?? null };
+        const current = currentBySlot.get(slotNumber);
+        return {
+          enabled: !!current?.enabled,
+          mediaType: current?.mediaType ?? "image",
+          durationSeconds: current?.durationSeconds ?? 10,
+          mediaLibraryId: current?.mediaLibraryId ?? null,
+        };
+      })
+      .filter((slot) => slot.enabled);
+
+    // mp4 slots' EFFECTIVE duration is the file's own detected length
+    // (media_library.mp4DurationSeconds), not this table's own
+    // durationSeconds column - that field is read-only/display-only for
+    // mp4 in the editor (see CarouselSlotEditor.tsx), and MediaPanel.tsx's
+    // own rotation timer already prefers it the same way. Batched into
+    // one query rather than one per mp4 slot (at most 9 slots here).
+    const mp4LibraryIds = effectiveSlots
+      .filter((slot) => slot.mediaType === "mp4" && slot.mediaLibraryId)
+      .map((slot) => slot.mediaLibraryId as string);
+    const mp4Durations = new Map<string, number>();
+    if (mp4LibraryIds.length > 0) {
+      const placeholders = mp4LibraryIds.map(() => "?").join(", ");
+      const { results: mp4Rows } = await env.DB
+        .prepare(`SELECT id, mp4DurationSeconds FROM media_library WHERE id IN (${placeholders})`)
+        .bind(...mp4LibraryIds)
+        .all<{ id: string; mp4DurationSeconds: number | null }>();
+      for (const row of mp4Rows) {
+        if (row.mp4DurationSeconds) mp4Durations.set(row.id, row.mp4DurationSeconds);
+      }
+    }
+
+    const totalSeconds = effectiveSlots.reduce((sum, slot) => {
+      const seconds =
+        slot.mediaType === "mp4" && slot.mediaLibraryId && mp4Durations.has(slot.mediaLibraryId)
+          ? (mp4Durations.get(slot.mediaLibraryId) as number)
+          : slot.durationSeconds;
+      return sum + seconds;
+    }, 0);
+
+    if (totalSeconds > budgetSeconds) {
+      const usedLabel = `${Math.floor(totalSeconds / 60)}:${String(Math.round(totalSeconds % 60)).padStart(2, "0")}`;
+      const budgetLabel = `${Math.floor(budgetSeconds / 60)}:${String(budgetSeconds % 60).padStart(2, "0")}`;
+      return jsonResponse(
+        { error: `This would use ${usedLabel} of your ${budgetLabel} carousel time budget - remove or shorten a slide first.` },
+        400
+      );
     }
   }
 

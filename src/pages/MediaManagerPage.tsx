@@ -55,6 +55,13 @@ export default function MediaManagerPage(): JSX.Element {
   const saveTimerRef = useRef<number | undefined>(undefined)
   const [gasPrices, setGasPrices] = useState<GasPricesState>(DEFAULT_GAS_PRICES_STATE)
   const gasPricesSaveTimerRef = useRef<number | undefined>(undefined)
+  // Reserved Owner Slots & Time Budget round - budgetEnabled false (the
+  // default response shape, and every tenant this feature hasn't
+  // reached yet) means the running total/hard-stop below never
+  // triggers at all, matching "OFF behaves exactly like today".
+  const [budgetSeconds, setBudgetSeconds] = useState(150)
+  const [budgetEnabled, setBudgetEnabled] = useState(false)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
 
   function loadLibrary() {
     return fetch(MEDIA_LIBRARY_URL)
@@ -65,7 +72,11 @@ export default function MediaManagerPage(): JSX.Element {
   function loadSlots() {
     return fetch(CAROUSEL_SLOTS_URL)
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => setSlots(data?.slots ?? []))
+      .then((data) => {
+        setSlots(data?.slots ?? [])
+        setBudgetSeconds(data?.budgetSeconds ?? 150)
+        setBudgetEnabled(!!data?.budgetEnabled)
+      })
   }
 
   function loadGasPrices() {
@@ -113,6 +124,34 @@ export default function MediaManagerPage(): JSX.Element {
     Promise.all([loadLibrary(), loadSlots(), loadCameraOptions(), loadGasPrices()]).finally(() => setLoading(false))
   }, [])
 
+  // Reserved Owner Slots & Time Budget round - a reserved slot's own
+  // duration is fixed (10s, per publicConfig.ts) and never counts
+  // against the 9 tenant-controlled slots' shared budget regardless of
+  // whatever's actually stored for it. mp4's EFFECTIVE duration is the
+  // file's own detected length, not durationSeconds (read-only/display-
+  // only for mp4 in this editor) - same "file duration wins" rule the
+  // backend PUT and MediaPanel.tsx's own rotation timer both already
+  // use.
+  function effectiveSlotSeconds(slot: CarouselSlot): number {
+    if (slot.mediaType === 'mp4' && slot.mediaLibraryId) {
+      const file = files.find((f) => f.id === slot.mediaLibraryId)
+      if (file?.mp4DurationSeconds) return file.mp4DurationSeconds
+    }
+    return slot.durationSeconds
+  }
+
+  function computeUsedSeconds(slotList: CarouselSlot[]): number {
+    return slotList
+      .filter((s) => !s.isReserved && s.enabled)
+      .reduce((sum, s) => sum + effectiveSlotSeconds(s), 0)
+  }
+
+  function formatMmSs(totalSeconds: number): string {
+    return `${Math.floor(totalSeconds / 60)}:${String(Math.round(totalSeconds % 60)).padStart(2, '0')}`
+  }
+
+  const usedSeconds = computeUsedSeconds(slots)
+
   // Local state (hence the live preview) updates synchronously on every
   // call; the network PUT is batched and debounced so dragging a crop/
   // rotation/brightness slider doesn't fire a request per pixel - all
@@ -120,7 +159,34 @@ export default function MediaManagerPage(): JSX.Element {
   // request, keyed by slotNumber so rapid edits to the same slot collapse
   // to their latest value rather than being sent (and potentially
   // resolved out of order) individually.
+  //
+  // Budget hard-stop (Reserved Owner Slots & Time Budget round) lives
+  // right here, not in individual handlers - every duration/enable/
+  // source change (including an mp4 upload/assignment) already routes
+  // through this one function, so this is the single choke point that
+  // catches all of them. Rejects the change outright (no local state
+  // update, nothing queued for save) rather than saving and then
+  // showing an error, so the UI never briefly shows an over-budget state
+  // that then reverts. functions/api/tenant/carousel/index.ts's own PUT
+  // enforces the same check server-side - this is the UX half of that
+  // pair, not the real boundary (mediaQuota.ts's established pattern).
   function saveSlot(updated: CarouselSlot) {
+    if (budgetEnabled && !updated.isReserved) {
+      const candidateSlots = slots.map((s) => (s.slotNumber === updated.slotNumber ? updated : s))
+      const total = computeUsedSeconds(candidateSlots)
+      if (total > budgetSeconds) {
+        const isMp4 = updated.mediaType === 'mp4'
+        setBudgetError(
+          `This would use ${formatMmSs(total)} of your ${formatMmSs(budgetSeconds)} carousel time budget.${
+            isMp4
+              ? ' This video is longer than your remaining allocation - remove or shorten another slide, or shorten the video.'
+              : ' Remove or shorten another slide first.'
+          }`
+        )
+        return
+      }
+    }
+    setBudgetError(null)
     setSlots((prev) => prev.map((s) => (s.slotNumber === updated.slotNumber ? updated : s)))
     pendingSavesRef.current.set(updated.slotNumber, updated)
     window.clearTimeout(saveTimerRef.current)
@@ -228,6 +294,25 @@ export default function MediaManagerPage(): JSX.Element {
               Manage Media Library →
             </Link>
           </div>
+          {/* Reserved Owner Slots & Time Budget round - only shown at all
+              for a tenant with the feature switched on (budgetEnabled
+              false, the default/legacy case, renders nothing here -
+              matches "OFF behaves exactly like today"). Slots 5/8/12
+              (owner-reserved) are deliberately excluded from this total -
+              see computeUsedSeconds' own comment. */}
+          {budgetEnabled && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-border/60 bg-slate-900/60 px-4 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
+                Carousel time budget: <span className={usedSeconds > budgetSeconds ? 'text-status-bad' : 'text-white'}>{formatMmSs(usedSeconds)}</span> of{' '}
+                {formatMmSs(budgetSeconds)} used
+              </span>
+            </div>
+          )}
+          {budgetError && (
+            <p className="mb-4 rounded-lg border border-status-bad/40 bg-status-bad/10 px-3 py-2 text-xs font-semibold text-status-bad">
+              {budgetError}
+            </p>
+          )}
           {/* Compact always-visible list of all 12 slots + one shared editor
               panel for whichever slot is selected - replaces the old grid of
               12 fully-expanded cards. Stacks (list above editor) below the

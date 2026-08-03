@@ -92,4 +92,11 @@ export interface CarouselSlot {
   // (see migration 0063's own comment for why this isn't a live-viewer
   // click on the unattended kiosk display).
   autoFullscreen: boolean
+  // Reserved Owner Slots & Time Budget round - true means this slot
+  // (5/8/12, only ever from functions/api/tenant/carousel/index.ts's own
+  // GET, never cafe-carousel's) is currently owner-controlled for this
+  // tenant. Optional/undefined everywhere else (Cafe Media's own
+  // carousel has no equivalent concept) - CarouselSlotList/
+  // CarouselSlotEditor.tsx treat undefined the same as false.
+  isReserved?: boolean
 }

@@ -15,6 +15,7 @@ import MembersPage from './pages/MembersPage'
 import OnboardInvitePage from './pages/OnboardInvitePage'
 import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformCamerasPage from './pages/PlatformCamerasPage'
+import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import PlatformPreviewPage from './pages/PlatformPreviewPage'
@@ -99,6 +100,19 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformTenantsPage />
+            </RequireAuth>
+          }
+        />
+        {/* Reserved Owner Slots & Time Budget round - assigns owner ad
+            content to one specific tenant's slots 5/8/12, linked from
+            PlatformTenantsPage.tsx's own tenant detail pane. Same
+            standalone-outside-AdminLayout treatment as every other
+            /platform/* route. */}
+        <Route
+          path="/platform/tenants/:id/carousel-owner-slots"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformCarouselOwnerSlotsPage />
             </RequireAuth>
           }
         />

@@ -301,10 +301,13 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
     }
   }, [isActive])
 
-  // gyropedia has no resolvedUrl at all (no R2 file, no camera) - its
-  // content comes from GyropediaPanel's own fetch of the shared public
-  // endpoint below, not a per-slot URL.
-  if (!slot.resolvedUrl && slot.mediaType !== 'webcam' && slot.mediaType !== 'gyropedia') return null
+  // gyropedia/reserved have no resolvedUrl at all - gyropedia's content
+  // comes from GyropediaPanel's own fetch of the shared public endpoint
+  // below, not a per-slot URL; reserved (Reserved Owner Slots & Time
+  // Budget round) is the "owner hasn't assigned real content to this
+  // slot yet" placeholder - see publicConfig.ts's own comment on when a
+  // slot resolves to this mediaType instead of real content.
+  if (!slot.resolvedUrl && slot.mediaType !== 'webcam' && slot.mediaType !== 'gyropedia' && slot.mediaType !== 'reserved') return null
 
   const crop = slot.cropRect ?? IDENTITY_CROP
   const hasRotation = slot.rotationDegrees % 360 !== 0
@@ -378,6 +381,19 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
       break
     case 'gyropedia':
       content = <GyropediaPanel />
+      break
+    case 'reserved':
+      // Simple branded placeholder, matching the existing dark theme -
+      // an unsold/unassigned owner-reserved slot (slots 5/8/12) still
+      // occupies its full 10s in the rotation rather than being skipped,
+      // so viewers see a deliberate "this space is available" message
+      // instead of a blank/black slide.
+      content = (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-900 text-slate-500">
+          <span className="text-xs font-bold uppercase tracking-[0.3em]">Media Reserved</span>
+          <span className="text-[11px] tracking-wide">Airfield Central</span>
+        </div>
+      )
       break
     default:
       return null

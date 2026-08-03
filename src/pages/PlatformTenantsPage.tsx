@@ -71,6 +71,13 @@ interface PlatformTenant {
   isInternal: boolean
   hasPhysicalAtc: boolean
   storageQuotaBytes: number
+  // Reserved Owner Slots & Time Budget round (migration 0064) -
+  // carouselBudgetEnabled is the per-tenant feature toggle (manual
+  // admin-only this round, no Stripe wiring yet); carouselBudgetSeconds
+  // is the shared time budget the 9 tenant-controlled carousel slots
+  // divide between them.
+  carouselBudgetSeconds: number
+  carouselBudgetEnabled: boolean
   usedBytes: number
   logoUrl: string | null
   createdAt: string
@@ -88,7 +95,7 @@ interface PlatformTenant {
   deletedAt?: string | null
 }
 
-type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc'
+type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc' | 'carouselBudgetEnabled'
 type SortOrder = 'name-asc' | 'date-desc' | 'date-asc'
 
 function formatMb(bytes: number): string {
@@ -183,6 +190,55 @@ function QuotaEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (by
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
         <div className="h-full bg-accent-sky-500" style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  )
+}
+
+// Reserved Owner Slots & Time Budget round - editable inline (MM:SS),
+// same save-on-blur pattern as QuotaEditor above, just for
+// tenants.carousel_budget_seconds instead of storage_quota_bytes. Only
+// meaningful while carouselBudgetEnabled is on for this tenant (the
+// toggle rendered alongside it), but always editable regardless - a
+// value set while the feature is off just takes effect immediately
+// once it's turned on, matching the "live immediately" requirement.
+function CarouselBudgetEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (seconds: number) => void }): JSX.Element {
+  const toMmSs = (totalSeconds: number) => `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`
+  const [value, setValue] = useState(toMmSs(tenant.carouselBudgetSeconds))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(toMmSs(tenant.carouselBudgetSeconds))
+  }, [tenant.carouselBudgetSeconds])
+
+  async function commit() {
+    const match = value.trim().match(/^(\d+):([0-5]?\d)$/)
+    const seconds = match ? Number(match[1]) * 60 + Number(match[2]) : NaN
+    if (!Number.isFinite(seconds) || seconds <= 0 || seconds === tenant.carouselBudgetSeconds) {
+      setValue(toMmSs(tenant.carouselBudgetSeconds))
+      return
+    }
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { carouselBudgetSeconds: seconds })
+    setSaving(false)
+    if (updated) onSaved(updated.carouselBudgetSeconds)
+    else setValue(toMmSs(tenant.carouselBudgetSeconds))
+  }
+
+  return (
+    <div className="min-w-[140px]">
+      <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">Carousel time budget</div>
+      <input
+        type="text"
+        value={value}
+        disabled={saving}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+        }}
+        placeholder="2:30"
+        className="mt-1 w-20 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-right text-xs text-white focus:border-sky-500 focus:outline-none"
+      />
     </div>
   )
 }
@@ -979,6 +1035,10 @@ export default function PlatformTenantsPage(): JSX.Element {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, storageQuotaBytes: bytes } : t)))
   }
 
+  function handleCarouselBudgetSaved(tenantId: number, seconds: number) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, carouselBudgetSeconds: seconds } : t)))
+  }
+
   function handleNameSaved(tenantId: number, name: string) {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, name } : t)))
   }
@@ -1400,10 +1460,25 @@ export default function PlatformTenantsPage(): JSX.Element {
                       checked={selectedTenant.hasPhysicalAtc}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'hasPhysicalAtc', next)}
                     />
+                    <SettingsToggleRow
+                      label="Reserved owner slots + time budget"
+                      checked={selectedTenant.carouselBudgetEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'carouselBudgetEnabled', next)}
+                    />
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-6">
+                  <div className="mt-4 flex flex-wrap items-end gap-6">
                     <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
+                    <CarouselBudgetEditor
+                      tenant={selectedTenant}
+                      onSaved={(seconds) => handleCarouselBudgetSaved(selectedTenant.id, seconds)}
+                    />
                     <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
+                    <Link
+                      to={`/platform/tenants/${selectedTenant.id}/carousel-owner-slots`}
+                      className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10"
+                    >
+                      Manage reserved slots (5/8/12) →
+                    </Link>
                   </div>
 
                   {/* Suspend + Archive, grouped and visually separated

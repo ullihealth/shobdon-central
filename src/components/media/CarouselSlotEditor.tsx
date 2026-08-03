@@ -390,6 +390,35 @@ export function CarouselSlotList({
     <div className="flex flex-col gap-1.5">
       {slots.map((slot) => {
         const isSelected = slot.slotNumber === selectedSlotNumber
+        // Reserved Owner Slots & Time Budget round - a reserved slot is
+        // still selectable (so CarouselSlotEditor below can show its own
+        // "Reserved" message), just not enable-toggleable from here - it's
+        // always enabled/in the rotation regardless (see
+        // publicConfig.ts's own comment), a tenant checkbox would just be
+        // a dead control either way.
+        if (slot.isReserved) {
+          return (
+            <div
+              key={slot.slotNumber}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect(slot.slotNumber)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onSelect(slot.slotNumber)
+                }
+              }}
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition ${
+                isSelected ? 'border-accent-sky-500 bg-accent-sky-500/10' : 'border-border bg-slate-900/40 hover:border-slate-600'
+              }`}
+            >
+              <span className="w-5 flex-shrink-0 text-right text-xs font-bold text-muted-600">{slot.slotNumber}</span>
+              <span aria-hidden="true">🔒</span>
+              <span className="min-w-0 flex-1 truncate text-sm italic text-muted-500">Reserved by AirfieldCentral</span>
+            </div>
+          )
+        }
         return (
           <div
             key={slot.slotNumber}
@@ -471,6 +500,26 @@ function CarouselSlotEditor({
   // so showing this control for webcam would be a dead toggle with no
   // visible effect.
   const showFitMode = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+
+  // Reserved Owner Slots & Time Budget round - no editing controls at
+  // all for a reserved slot, just this message. Content/unlock for
+  // slots 5/8/12 is managed exclusively via /platform/tenants' own
+  // owner-slots page (functions/api/platform/tenants/[id]/carousel-
+  // owner-slots.ts) - this tenant-facing editor never writes to a
+  // reserved slot (functions/api/tenant/carousel/index.ts's own PUT
+  // rejects it server-side too, this is UX, not the real boundary).
+  if (slot.isReserved) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber} — Reserved by AirfieldCentral</div>
+        <p className="text-sm text-muted-400">
+          This slot is reserved for AirfieldCentral marketing/ad content and isn't editable here. It's always
+          included in the live rotation (10 seconds), showing a "Media Reserved" placeholder until content is
+          assigned.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl border border-border bg-card p-5">
