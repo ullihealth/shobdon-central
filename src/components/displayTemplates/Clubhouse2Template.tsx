@@ -12,6 +12,7 @@ import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
 import { useWeather } from '../../context/WeatherContext'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 import { estimateCloudBaseFt } from '../../utils/cloudBase'
+import { useElementHeight } from '../../hooks/useElementHeight'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
 interface Clubhouse2TemplateProps {
@@ -76,6 +77,11 @@ export default function Clubhouse2Template({
       ? null
       : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
   const cloudBaseCapturedAt = cloudBaseFt === null ? null : (weather?.capturedAt ?? null)
+  // See Clubhouse1Template.tsx's own comment - measures the bottom
+  // "Powered by" + FooterTicker stack's real height so the grid below
+  // can reserve exactly that much space instead of running the panels
+  // underneath it.
+  const [stackRef, stackHeight] = useElementHeight<HTMLDivElement>()
 
   return (
     <div
@@ -90,7 +96,9 @@ export default function Clubhouse2Template({
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px' }
+            // paddingBottom: stackHeight - see Clubhouse1Template.tsx's
+            // own comment on this same declaration.
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px', paddingBottom: stackHeight }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -188,8 +196,11 @@ export default function Clubhouse2Template({
           same structure ("Powered by" + FooterTicker share one bottom-
           anchored wrapper so document flow keeps the credit line above
           the ticker at any configured height, instead of a z-index-only
-          fix that turned out visually illegible in practice). */}
-      <div className="absolute inset-x-0 bottom-0 z-10">
+          fix that turned out visually illegible in practice). ref=
+          {stackRef}: measured so the grid above can reserve exactly this
+          much space (see that style's own comment) - without it, panels/
+          compass render underneath this stack instead of clearing it. */}
+      <div ref={stackRef} className="absolute inset-x-0 bottom-0 z-10">
         <div className="flex items-center justify-center pt-1" style={{ paddingBottom: TEMPLATE_EDGE_PADDING }}>
           <a
             href="https://airfieldcentral.com"

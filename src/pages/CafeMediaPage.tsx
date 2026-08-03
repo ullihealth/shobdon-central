@@ -11,6 +11,7 @@ import { CAFE_CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, TENANT_CONFI
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_TICKER_STYLE } from '../services/tickerStyleStore'
+import { useElementHeight } from '../hooks/useElementHeight'
 
 const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
@@ -137,6 +138,11 @@ function PreviewContent({
 }: PreviewContentProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
+  // See Clubhouse1Template.tsx's own comment - measures the ticker
+  // overlay's real rendered height so the media area's grid row can
+  // reserve exactly that much space, instead of rendering underneath it
+  // (this preview is meant to accurately show what tenants see live).
+  const [tickerRef, tickerHeight] = useElementHeight<HTMLDivElement>()
 
   return (
     // position: relative - the ticker overlay below (see its own
@@ -149,7 +155,7 @@ function PreviewContent({
     // that first flagged this: CafeMediaPage.tsx's PreviewContent is a
     // hand-mirrored, not byte-identical, copy of CafeTemplate.tsx).
     <div className="relative h-full w-full bg-gradient-to-b from-page-from via-page-via to-page-to p-10 text-slate-100">
-      <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%', paddingBottom: tickerHeight }}>
         {/* min-w-0: this div is a grid item in the single-row grid
             above; grid items default to min-width:auto (content-based),
             not 0. (The ticker below is no longer a grid item at all as
@@ -200,7 +206,7 @@ function PreviewContent({
           CafeTicker's deliberately wider-than-box marquee track
           horizontally. */}
       {tickerEnabled && (
-        <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
+        <div ref={tickerRef} className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
           <CafeTicker
             slots={tickerSlots}
             weather={weather}

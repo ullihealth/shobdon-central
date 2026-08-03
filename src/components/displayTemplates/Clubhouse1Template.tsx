@@ -8,6 +8,7 @@ import RightInfoPanel, { type OpsPanelPublic } from '../RightInfoPanel'
 import WeatherStatusIndicator from '../WeatherStatusIndicator'
 import type { MediaPanelSourceData } from '../media/MediaPanel'
 import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
+import { useElementHeight } from '../../hooks/useElementHeight'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
 interface Clubhouse1TemplateProps {
@@ -73,6 +74,14 @@ export default function Clubhouse1Template({
 }: Clubhouse1TemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
+  // Measures the BOTTOM STACK's own actual rendered height (see that
+  // div's own comment below) so the grid can reserve exactly that much
+  // space instead of assuming it's zero - see this hook's own comment
+  // for why the stack being position:absolute otherwise leaves the
+  // panels grid with no idea it's there at all, which is what caused
+  // panels/compass content to visually collide with "Powered by"/the
+  // ticker at the bottom edge.
+  const [stackRef, stackHeight] = useElementHeight<HTMLDivElement>()
 
   return (
     <div
@@ -99,7 +108,15 @@ export default function Clubhouse1Template({
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px' }
+            // paddingBottom: stackHeight - reserves exactly as much space
+            // as the bottom stack currently occupies (0 when the ticker
+            // is off, since "Powered by" alone is what CentreDisplay/etc
+            // already cleared before the ticker existed) so the body row
+            // below shrinks by that much instead of running underneath
+            // the stack. box-sizing: border-box (Tailwind's global reset)
+            // is what makes this subtract from the 100% height rather
+            // than add to it.
+            ? { display: 'grid', gridTemplateRows: '7% minmax(0, 1fr)', gap: '16px', paddingBottom: stackHeight }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -177,18 +194,19 @@ export default function Clubhouse1Template({
           being independently placed - normal document flow inside it
           then guarantees "Powered by" always ends up directly above
           wherever the ticker (if any) currently renders, at ANY
-          configured ticker height, with zero JS height-reporting needed.
-          A z-index-only fix (an earlier version of this file tried
-          exactly that) technically paints "Powered by" on top of the
-          ticker, but doesn't stop the ticker's own much bigger/bolder/
-          brighter scrolling text from visually dominating the same
-          screen region - confirmed by direct screenshot, not just
-          reasoned about, which is why this is a real layout fix instead.
-          Neither element is a grid row anymore (panels' own minmax(0,1fr)
-          row above no longer accounts for either of them, matching the
-          "ticker doesn't reserve space" precedent from two rounds ago -
-          "Powered by" itself now gets the same treatment). */}
-      <div className="absolute inset-x-0 bottom-0 z-10">
+          configured ticker height. A z-index-only fix (an earlier
+          version of this file tried exactly that) technically paints
+          "Powered by" on top of the ticker, but doesn't stop the
+          ticker's own much bigger/bolder/brighter scrolling text from
+          visually dominating the same screen region - confirmed by
+          direct screenshot, not just reasoned about, which is why this
+          is a real layout fix instead. ref={stackRef}: this being
+          position:absolute means the panels grid above has no natural
+          awareness of its height - useElementHeight measures it
+          directly and the grid's own paddingBottom (above) reserves
+          exactly that much, so panels/compass never render underneath
+          it regardless of the tenant's configured ticker Height. */}
+      <div ref={stackRef} className="absolute inset-x-0 bottom-0 z-10">
         {/* paddingBottom: TEMPLATE_EDGE_PADDING - keeps this credit
             line's own breathing room from the true bottom edge exactly
             what it always was (the outer div's own padding) for the

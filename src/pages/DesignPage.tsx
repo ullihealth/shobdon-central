@@ -39,6 +39,7 @@ import {
 import type { DesignTemplate, DesignTokens } from '../services/designTemplateStore'
 import { TEMPLATE_SLOTS } from '../components/displayTemplates/templateRegistry'
 import { DEFAULT_TICKER_STYLE } from '../services/tickerStyleStore'
+import { useElementHeight } from '../hooks/useElementHeight'
 
 // Forces the preview to mock data regardless of whatever weather source is
 // actually configured for the real dashboard right now - this page's own
@@ -325,6 +326,10 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
   const [settings, setSettings] = useState<CafePreviewSettings>(DEFAULT_CAFE_PREVIEW_SETTINGS)
   const [safetyNotices, setSafetyNotices] = useState<SafetyNoticeLike[]>([])
   const [gasPrices, setGasPrices] = useState<GasPricesPublic>(DEFAULT_GAS_PRICES)
+  // See Clubhouse1Template.tsx's own comment - measures the ticker
+  // overlay's real rendered height so the media area's grid row can
+  // reserve exactly that much space, instead of rendering underneath it.
+  const [tickerRef, tickerHeight] = useElementHeight<HTMLDivElement>()
 
   useEffect(() => {
     let cancelled = false
@@ -373,7 +378,7 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
         gradientMode === 'solid' ? 'bg-page-via' : 'bg-gradient-to-b from-page-from via-page-via to-page-to'
       }`}
     >
-      <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%', paddingBottom: tickerHeight }}>
         {/* min-w-0: this div is a grid item in the single-row grid
             above; grid items default to min-width:auto (content-based),
             not 0. (The ticker below is no longer a grid item at all as
@@ -428,7 +433,7 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
           oversized Font Size deliberately overflows vertically now
           rather than being clipped). */}
       {tickerEnabled && (
-        <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
+        <div ref={tickerRef} className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
           <CafeTicker
             slots={tickerSlots}
             weather={weather}

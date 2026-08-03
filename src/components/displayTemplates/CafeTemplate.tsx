@@ -8,6 +8,7 @@ import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
 import { useWeather } from '../../context/WeatherContext'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
+import { useElementHeight } from '../../hooks/useElementHeight'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
 interface CafeTemplateProps {
@@ -137,6 +138,11 @@ export default function CafeTemplate({
   const isDesktop = isPreview || detectedDesktop
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
+  // See Clubhouse1Template.tsx's own comment (same "ticker overlay is
+  // position:absolute so the grid has no natural awareness of its
+  // height" issue applies here too - the media area was overflowing
+  // into it at larger configured ticker heights).
+  const [tickerRef, tickerHeight] = useElementHeight<HTMLDivElement>()
 
   // null (not DEFAULT_CAFE_SETTINGS) until the real fetch resolves -
   // this used to initialize straight to DEFAULT_CAFE_SETTINGS
@@ -235,7 +241,10 @@ export default function CafeTemplate({
         className={isDesktop ? 'h-full' : ''}
         style={
           isDesktop
-            ? { display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px' }
+            // paddingBottom: tickerHeight - see Clubhouse1Template.tsx's
+            // own comment on this same declaration (0 when the ticker's
+            // off, since tickerRef then measures an empty/absent box).
+            ? { display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', paddingBottom: tickerHeight }
             : { display: 'flex', flexDirection: 'column', gap: '16px' }
         }
       >
@@ -360,7 +369,7 @@ export default function CafeTemplate({
           vertical clipping is no longer wanted here) still clips that
           same wide marquee track horizontally. */}
       {tickerEnabled && (
-        <div className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
+        <div ref={tickerRef} className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
           <CafeTicker
             slots={tickerSlots}
             weather={weather}
