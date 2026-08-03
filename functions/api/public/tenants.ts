@@ -26,6 +26,16 @@
 // organizationId-scoped table (camera_slots/carousel_slots/etc.) - this
 // only ever reads the tenants/weather_observations/latest_conditions/
 // operational_events tables from Stage 2.
+//
+// loadWeather/loadActiveOps resolve through resolveEffectiveTenantById
+// (same helper weather-latest.ts/notams.ts already use) before querying
+// latest_conditions/weather_observations/operational_events - those
+// tables are keyed by tenants.id, and a linked sub-tenant (migration
+// 0059, tenants.parent_tenant_id) has none of its own rows there, only
+// its parent's. Missed when parent-tenant linking landed; this file was
+// never updated to match the pattern until now.
+
+import { resolveEffectiveTenantById } from "../_utils/resolveParentTenant";
 
 type D1Database = {
   prepare: (query: string) => {
@@ -53,6 +63,7 @@ interface TenantRow {
   lon: number | null;
   weather_public: number;
   ops_public: number;
+  global_link_enabled: number;
 }
 
 interface LatestConditionsRow {
@@ -85,6 +96,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 async function loadWeather(tenantId: number, db: D1Database) {
+  const effective = await resolveEffectiveTenantById(db, tenantId);
   const row = await db
     .prepare(
       `SELECT
@@ -102,7 +114,7 @@ async function loadWeather(tenantId: number, db: D1Database) {
        LEFT JOIN weather_observations wo ON wo.id = lc.observation_id
        WHERE lc.tenant_id = ?`
     )
-    .bind(tenantId)
+    .bind(effective.id)
     .first<LatestConditionsRow>();
 
   if (!row) return null;
@@ -129,11 +141,12 @@ async function loadWeather(tenantId: number, db: D1Database) {
 }
 
 async function loadActiveOps(tenantId: number, db: D1Database) {
+  const effective = await resolveEffectiveTenantById(db, tenantId);
   const rows = await db
     .prepare(
       "SELECT id, category, severity, message, starts_at AS startsAt, expires_at AS expiresAt FROM operational_events WHERE tenant_id = ? AND status = 'active' ORDER BY starts_at"
     )
-    .bind(tenantId)
+    .bind(effective.id)
     .all<OperationalEventRow>();
   return rows.results;
 }
@@ -141,7 +154,7 @@ async function loadActiveOps(tenantId: number, db: D1Database) {
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   const tenantRows = await env.DB
     .prepare(
-      "SELECT id, slug, name, subdomain, icao_code, lat, lon, weather_public, ops_public FROM tenants WHERE active = 1 AND is_internal = 0 AND (weather_public = 1 OR ops_public = 1)"
+      "SELECT id, slug, name, subdomain, icao_code, lat, lon, weather_public, ops_public, global_link_enabled FROM tenants WHERE active = 1 AND is_internal = 0 AND (weather_public = 1 OR ops_public = 1)"
     )
     .all<TenantRow>();
 
@@ -159,6 +172,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
         icaoCode: tenant.icao_code,
         lat: tenant.lat,
         lon: tenant.lon,
+        globalLinkEnabled: !!tenant.global_link_enabled,
         ...(weather !== undefined ? { weather } : {}),
         ...(ops !== undefined ? { ops } : {}),
       };

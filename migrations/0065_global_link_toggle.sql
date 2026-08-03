@@ -1,0 +1,15 @@
+-- /global "Show live dashboard link" toggle - independent of
+-- weather_public/ops_public, which control whether a tenant is LISTED
+-- on /global at all and whether their weather/ops data is included.
+-- This new field only ever affects whether the "View live dashboard"
+-- link renders on an already-listed card - a tenant can share weather/
+-- ops data on /global without also exposing a link to their full live
+-- dashboard (carousel/media content included).
+--
+-- DEFAULT 0 for both new and existing tenants - a deliberate opt-in,
+-- not a default-on convenience. ADD COLUMN...DEFAULT applies to every
+-- existing row immediately (confirmed behaviour, see migration 0064's
+-- own comment), so this preserves current /global behaviour for every
+-- tenant already listed today - no link appears until an owner
+-- explicitly turns this on via the new Platform Tenants toggle.
+ALTER TABLE tenants ADD COLUMN global_link_enabled INTEGER NOT NULL DEFAULT 0;

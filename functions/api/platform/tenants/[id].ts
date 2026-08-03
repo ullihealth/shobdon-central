@@ -40,6 +40,7 @@ interface TenantRow {
   storageQuotaBytes: number;
   carouselBudgetSeconds: number;
   carouselBudgetEnabled: number;
+  globalLinkEnabled: number;
   subscriptionStatus: string;
   subscriptionNotes: string;
   deletedAt: string | null;
@@ -60,6 +61,10 @@ interface PatchBody {
   // budget the 9 tenant-controlled carousel slots divide between them.
   carouselBudgetSeconds?: number;
   carouselBudgetEnabled?: boolean;
+  // /global "Show live dashboard link" toggle (migration 0065) -
+  // independent of weatherPublic/opsPublic, which control listing/data;
+  // this only controls whether the link itself renders on that card.
+  globalLinkEnabled?: boolean;
   subscriptionStatus?: string;
   subscriptionNotes?: string;
   // Migration 0044 - true archives (see this file's own handling below,
@@ -101,6 +106,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "storageQuotaBytes",
     "carouselBudgetSeconds",
     "carouselBudgetEnabled",
+    "globalLinkEnabled",
     "subscriptionStatus",
     "subscriptionNotes",
     "archived",
@@ -111,7 +117,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.name !== undefined && (typeof body.name !== "string" || !body.name.trim())) {
     return jsonResponse({ error: "name must be a non-empty string" }, 400);
   }
-  for (const field of ["active", "weatherPublic", "opsPublic", "isInternal", "hasPhysicalAtc", "carouselBudgetEnabled"] as const) {
+  for (const field of ["active", "weatherPublic", "opsPublic", "isInternal", "hasPhysicalAtc", "carouselBudgetEnabled", "globalLinkEnabled"] as const) {
     if (body[field] !== undefined && typeof body[field] !== "boolean") {
       return jsonResponse({ error: `${field} must be a boolean` }, 400);
     }
@@ -137,6 +143,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       `SELECT name, organization_id AS organizationId, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal,
               has_physical_atc AS hasPhysicalAtc, storage_quota_bytes AS storageQuotaBytes,
               carousel_budget_seconds AS carouselBudgetSeconds, carousel_budget_enabled AS carouselBudgetEnabled,
+              global_link_enabled AS globalLinkEnabled,
               subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
               deleted_at AS deletedAt
        FROM tenants WHERE id = ?`
@@ -162,6 +169,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     storageQuotaBytes: body.storageQuotaBytes ?? current.storageQuotaBytes,
     carouselBudgetSeconds: body.carouselBudgetSeconds ?? current.carouselBudgetSeconds,
     carouselBudgetEnabled: body.carouselBudgetEnabled ?? !!current.carouselBudgetEnabled,
+    globalLinkEnabled: body.globalLinkEnabled ?? !!current.globalLinkEnabled,
     subscriptionStatus: body.subscriptionStatus ?? current.subscriptionStatus,
     subscriptionNotes: body.subscriptionNotes ?? current.subscriptionNotes,
     deletedAt: body.archived === true ? now : body.archived === false ? null : current.deletedAt,
@@ -170,7 +178,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await env.DB
     .prepare(
       `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, has_physical_atc = ?, storage_quota_bytes = ?,
-              carousel_budget_seconds = ?, carousel_budget_enabled = ?,
+              carousel_budget_seconds = ?, carousel_budget_enabled = ?, global_link_enabled = ?,
               subscription_status = ?, subscription_notes = ?, deleted_at = ?, updated_at = ?
        WHERE id = ?`
     )
@@ -184,6 +192,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.storageQuotaBytes,
       next.carouselBudgetSeconds,
       next.carouselBudgetEnabled ? 1 : 0,
+      next.globalLinkEnabled ? 1 : 0,
       next.subscriptionStatus,
       next.subscriptionNotes,
       next.deletedAt,

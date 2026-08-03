@@ -43,6 +43,11 @@ interface TenantListing {
   icaoCode: string | null
   lat: number | null
   lon: number | null
+  // /global "Show live dashboard link" toggle (migration 0065) -
+  // independent of whether weather/ops data is present below; a tenant
+  // can share conditions here without exposing their full live
+  // dashboard (carousel/media content included).
+  globalLinkEnabled: boolean
   weather?: WeatherListing
   ops?: OpsEventListing[]
 }
@@ -129,12 +134,14 @@ function TenantCard({ tenant }: { tenant: TenantListing }): JSX.Element {
         {tenant.weather && <WeatherBlock weather={tenant.weather} />}
         {tenant.ops && <OpsBlock ops={tenant.ops} />}
       </div>
-      <a
-        href={`https://${tenant.subdomain}/`}
-        className="mt-4 inline-block text-sm font-medium text-sky-400 hover:text-sky-300 hover:underline"
-      >
-        View live dashboard →
-      </a>
+      {tenant.globalLinkEnabled && (
+        <a
+          href={`https://${tenant.subdomain}/`}
+          className="mt-4 inline-block text-sm font-medium text-sky-400 hover:text-sky-300 hover:underline"
+        >
+          View live dashboard →
+        </a>
+      )}
     </div>
   )
 }

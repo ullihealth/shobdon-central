@@ -78,6 +78,11 @@ interface PlatformTenant {
   // divide between them.
   carouselBudgetSeconds: number
   carouselBudgetEnabled: boolean
+  // /global "Show live dashboard link" toggle (migration 0065) -
+  // independent of weatherPublic/opsPublic, which control whether the
+  // tenant is listed on /global at all; this only controls whether the
+  // "View live dashboard" link renders on that already-listed card.
+  globalLinkEnabled: boolean
   usedBytes: number
   logoUrl: string | null
   createdAt: string
@@ -95,7 +100,7 @@ interface PlatformTenant {
   deletedAt?: string | null
 }
 
-type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc' | 'carouselBudgetEnabled'
+type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc' | 'carouselBudgetEnabled' | 'globalLinkEnabled'
 type SortOrder = 'name-asc' | 'date-desc' | 'date-asc'
 
 function formatMb(bytes: number): string {
@@ -1464,6 +1469,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                       label="Reserved owner slots + time budget"
                       checked={selectedTenant.carouselBudgetEnabled}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'carouselBudgetEnabled', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Show live dashboard link on /global"
+                      checked={selectedTenant.globalLinkEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'globalLinkEnabled', next)}
                     />
                   </div>
                   <div className="mt-4 flex flex-wrap items-end gap-6">
