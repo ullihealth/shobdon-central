@@ -6,6 +6,7 @@ import ConfigPage from './pages/ConfigPage'
 import CafeMediaPage from './pages/CafeMediaPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
+import FeatureRequestsPage from './pages/FeatureRequestsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
 import HelpPage from './pages/HelpPage'
 import LoginPage from './pages/LoginPage'
@@ -249,6 +250,19 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin']}>
                 <MembersPage />
+              </RequireAuth>
+            }
+          />
+          {/* Platform-wide shared feature request board - owner/admin can
+              view + submit, but status editing is developer-only (enforced
+              server-side too, see functions/api/tenant/feature-requests/
+              [id].ts). Same requireRole shape as /members, not requireDeveloper
+              - this page itself is reachable by any tenant admin. */}
+          <Route
+            path="/features"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <FeatureRequestsPage />
               </RequireAuth>
             }
           />

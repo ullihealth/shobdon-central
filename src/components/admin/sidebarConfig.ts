@@ -106,4 +106,14 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
 // to the role/group system, so it doesn't belong inside one. Help has
 // neither allowedRoles nor requireDeveloper - visible to every logged-in
 // role (isItemVisible's default), matching /help's own bare <RequireAuth>.
-export const STANDALONE_ITEMS: SidebarItem[] = [{ to: '/help', label: 'Help' }]
+//
+// Feature Requests is owner/admin-only (allowedRoles, same as /members),
+// not developer-only - it's a platform-wide SHARED board any tenant admin
+// can view and submit to, matching /features's own requireRole shape in
+// App.tsx. Only status-editing (inside the page itself) is developer-
+// gated, enforced server-side too - see functions/api/tenant/
+// feature-requests/[id].ts.
+export const STANDALONE_ITEMS: SidebarItem[] = [
+  { to: '/help', label: 'Help' },
+  { to: '/features', label: 'Feature Requests', allowedRoles: ['owner', 'admin'] },
+]
