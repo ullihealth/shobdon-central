@@ -39,7 +39,7 @@ const STAT_VALUE_FONT = 'clamp(11px, 2.55vh, 28px)'
 // Sized and coloured distinctly from STAT_LABEL_FONT, not just a smaller
 // version of the same style - a parenthetical qualifier ("(Shobdon
 // Calculated)", "(Met Office Forecast)") is secondary to the main label
-// it clarifies, not a second heading of equal weight. Two of five cards
+// it clarifies, not a second heading of equal weight. Two of the cards
 // carry one; those two previously had the SAME font-size as the three
 // one-word labels, so their qualifier text wrapped the row's label onto
 // a second line at full label height, eating noticeably more of the
@@ -53,7 +53,7 @@ const STAT_VALUE_FONT = 'clamp(11px, 2.55vh, 28px)'
 const STAT_QUALIFIER_FONT = 'clamp(5px, 0.75vh, 8px)'
 
 interface LeftInfoPanelProps {
-  // When true, the 5-stat grid (Wind/QNH/Temperature/Cloud Base/
+  // When true, the stat grid (Wind/QNH/QFE/Temperature/Cloud Base/
   // Visibility Outlook) stays permanently shown - the A/B flip timer to
   // the internal CloudVisibilityChart state never starts. Clubhouse
   // Template 2 shows a standalone Met Office forecast panel elsewhere on
@@ -67,10 +67,17 @@ interface LeftInfoPanelProps {
   // half the vertical room Template 1 always has (a shared lower half,
   // not the full body height), so the default floor - tuned assuming a
   // near-full-height allocation - overflowed its own container at short
-  // viewport heights (confirmed at 1280x720/1366x768). The 5 real
-  // values here are short (e.g. "NNE 9 kt"), legible well below the
-  // default floor. Default false/undefined - Template 1/Café's sizing
-  // is completely unaffected.
+  // viewport heights (confirmed at 1280x720/1366x768). The real values
+  // here are short (e.g. "NNE 9 kt"), legible well below the default
+  // floor. Default false/undefined - Template 1's sizing is completely
+  // unaffected.
+  //
+  // QFE round: a 6th row (QFE, under QNH) was not re-verified against
+  // real 1280x720/1366x768 hardware after this comment's original 5-row
+  // tuning - gridTemplateRows already computes repeat(data.length, ...)
+  // dynamically, so the row itself sizes correctly, but whether 6 rows
+  // still comfortably fit this template's shorter allocation the way 5
+  // did is unverified pending a real-device check, not assumed safe.
   compactStats?: boolean
   // When provided, skips the self-fetch below entirely and uses this -
   // same reasoning/story as RightInfoPanel.tsx's own opsPanelData prop
@@ -142,6 +149,14 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
       value: !weather || liveDataUnavailable ? 'N/A' : `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt`,
     },
     { label: 'QNH', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
+    {
+      // Only ever populated by the 'atc' provider (see WeatherData's own
+      // comment) - N/A for every other source, same posture as Cloud
+      // Base below, not a new gating mechanism of its own.
+      label: 'QFE',
+      qualifier: null,
+      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${weather.qfe} hPa`,
+    },
     { label: 'Temperature', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
     {
       // Only ever meaningful from Shobdon's own station (dewpoint has no
@@ -162,7 +177,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
     },
   ]
 
-  // State A (today's 5 cards) <-> State B (Cloud/Visibility Chart), with
+  // State A (today's stat cards) <-> State B (Cloud/Visibility Chart), with
   // INDEPENDENT durations per state - unlike RightInfoPanel/NOTAMS'
   // single shared setInterval (which can only express one symmetric
   // period), this reuses MediaPanel.tsx's recursive-setTimeout carousel

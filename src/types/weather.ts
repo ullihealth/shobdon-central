@@ -6,6 +6,12 @@ export interface WeatherData {
   windGust?: number // knots
   temperature: number // Celsius
   qnh: number // hPa
+  // Only ever populated by the 'atc' provider (Shobdon's own Vantage
+  // Pro2 station reports it as its own distinct field, not derived) -
+  // undefined for mock/internet/ingested, same scope as dewpoint below.
+  // Powers the Weather Summary QFE card; a missing value means that
+  // card shows N/A rather than presenting QNH twice.
+  qfe?: number // hPa
   pressureTrend: PressureTrend
   notams: string[] // active NOTAM text(s); empty array means genuinely none, not "unknown"
   // Only ever populated by the 'atc' provider (Shobdon's own Vantage Pro2

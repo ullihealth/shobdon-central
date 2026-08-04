@@ -91,6 +91,9 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
   // fail the whole weather fetch. numberField() already returns null for
   // anything missing/malformed; that null just becomes undefined here.
   const dewpoint = numberField(reading.parsed, 'dewpoint_c') ?? undefined
+  // Same "supplementary, not required" posture as dewpoint - QFE feeds
+  // only its own Weather Summary card, right under QNH.
+  const qfe = numberField(reading.parsed, 'qfe_hpa') ?? undefined
 
   const notams = stringArrayField(reading.parsed, 'notams')
 
@@ -102,6 +105,7 @@ export const fetchAtcWeather: WeatherProviderFetcher = async () => {
     windDirection,
     temperature,
     qnh,
+    qfe,
     pressureTrend: 'steady',
     notams,
     dewpoint,

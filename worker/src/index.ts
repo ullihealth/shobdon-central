@@ -390,6 +390,7 @@ async function forwardToIngest(parsed: Record<string, unknown>, capturedAt: stri
   const windSpeedKt = parsed.wind_speed_kt
   const windDirDeg = parsed.wind_dir_deg
   const qnhHpa = parsed.qnh_hpa
+  const qfeHpa = parsed.qfe_hpa
   const tempC = parsed.temp_c
   // Required fields on the ingest endpoint's own side - a watchdog-error
   // or otherwise incomplete capture simply isn't forwarded this cycle,
@@ -420,6 +421,12 @@ async function forwardToIngest(parsed: Record<string, unknown>, capturedAt: stri
       windSpeedKt,
       windDirDeg,
       qnhHpa,
+      // QFE round: optional, same "don't fail the whole forward over one
+      // supplementary field" posture as dewpointC below - parsed already
+      // (parseQfe(), confirmed present in every real capture seen so
+      // far), just never included in this specific forward call until
+      // now.
+      qfeHpa: typeof qfeHpa === 'number' ? qfeHpa : null,
       tempC,
       dewpointC: typeof parsed.dewpoint_c === 'number' ? parsed.dewpoint_c : null,
       notams,

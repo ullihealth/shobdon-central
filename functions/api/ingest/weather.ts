@@ -52,6 +52,11 @@ interface IngestBody {
   windDirDeg?: unknown;
   windGustKt?: unknown;
   qnhHpa?: unknown;
+  // Optional - not every source has QFE (pressure referenced to airfield
+  // elevation rather than sea level); only Shobdon's own Vantage Pro2
+  // station reports it today (worker/src/index.ts's forwardToIngest()).
+  // Same "supplementary, not required" posture as dewpointC below.
+  qfeHpa?: unknown;
   tempC?: unknown;
   dewpointC?: unknown;
   visibilityM?: unknown;
@@ -98,6 +103,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "windSpeedKt, windDirDeg, qnhHpa, and tempC are required numeric fields" }, 400);
   }
   const windGustKt = numberOrNull(body.windGustKt);
+  const qfeHpa = numberOrNull(body.qfeHpa);
   const dewpointC = numberOrNull(body.dewpointC);
   const visibilityM = numberOrNull(body.visibilityM);
   const rawSnapshotId = typeof body.rawSnapshotId === "string" ? body.rawSnapshotId : null;
@@ -108,10 +114,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const insertResult = await env.DB
     .prepare(
       `INSERT INTO weather_observations
-         (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type, notams_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, qfe_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type, notams_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(tenantId, observedAt, windSpeedKt, windDirDeg, windGustKt, qnhHpa, tempC, dewpointC, visibilityM, rawSnapshotId, sourceType, JSON.stringify(notams))
+    .bind(tenantId, observedAt, windSpeedKt, windDirDeg, windGustKt, qnhHpa, qfeHpa, tempC, dewpointC, visibilityM, rawSnapshotId, sourceType, JSON.stringify(notams))
     .run();
 
   if (!insertResult.success) return jsonResponse({ error: "Failed to store observation" }, 500);
