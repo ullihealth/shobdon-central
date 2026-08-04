@@ -27,31 +27,72 @@ interface UpdateRow {
 const DESCRIPTION_MAX_LENGTH = 2000;
 const TITLE_MAX_LENGTH = 200;
 
+// version is free-text (whatever the developer types into the release
+// form - see release.ts), so it can't be sorted correctly with a plain
+// SQL string ORDER BY: 'v1.10.0' < 'v1.2.0' lexicographically, since
+// '1' < '2' at the first differing character - confirmed this was
+// silently displaying v1.12.0 (the true latest release) below v1.6.0
+// through v1.9.0 in production. Segment-by-segment numeric comparison
+// instead, done here in JS rather than in SQL (D1/SQLite has no
+// semver-aware ORDER BY) - same "one fetch, split/sort client-side"
+// posture PlatformUpdatesPage.tsx's own grouping already relies on.
+// Optional leading 'v' stripped so both the pre-renumbering mixed
+// '1.5.0'/'v1.6.0' formats and any future free-text version compare
+// correctly; non-numeric segments fall back to 0 rather than throwing,
+// since this is developer-typed text, not a validated format.
+function parseVersionSegments(version: string): number[] {
+  return version
+    .replace(/^v/i, "")
+    .split(".")
+    .map((segment) => {
+      const n = parseInt(segment, 10);
+      return Number.isFinite(n) ? n : 0;
+    });
+}
+
+// Descending (newest version first) - returns negative when `a` is the
+// newer version, matching Array.prototype.sort's "negative means a
+// comes first" contract.
+function compareVersionsDesc(a: string, b: string): number {
+  const segmentsA = parseVersionSegments(a);
+  const segmentsB = parseVersionSegments(b);
+  const length = Math.max(segmentsA.length, segmentsB.length);
+  for (let i = 0; i < length; i++) {
+    const diff = (segmentsB[i] ?? 0) - (segmentsA[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
   if ("error" in result) return result.error;
 
-  // Ordering: draft/reviewed entries newest-first (that's the "pending"
-  // queue, most recent work at the top); released entries grouped by
-  // version, newest version first, oldest-created-within-a-version
-  // first (a natural reading order within each release). Done as one
-  // ORDER BY rather than two separate queries - PlatformUpdatesPage.tsx
-  // itself splits the single result set into pending/released sections
-  // client-side (status !== 'released' vs. status === 'released'), same
-  // "one fetch, split client-side" shape as DisplayUrlList.tsx's own
-  // displays list.
   const rows = await env.DB
     .prepare(
       `SELECT id, title, description, status, version, created_at AS createdAt, released_at AS releasedAt
-       FROM platform_updates
-       ORDER BY
-         CASE WHEN status = 'released' THEN 1 ELSE 0 END,
-         version DESC,
-         created_at DESC`
+       FROM platform_updates`
     )
     .all<UpdateRow>();
 
-  return jsonResponse({ updates: rows.results });
+  // Ordering, now applied in JS: draft/reviewed entries newest-first
+  // (the "pending" queue, most recent work at the top); released
+  // entries grouped by version, newest version first, newest-created
+  // first within a tied version - same shape the original SQL ORDER BY
+  // intended, with a correct numeric version comparison in place of the
+  // buggy string one above.
+  const updates = [...rows.results].sort((a, b) => {
+    const aReleased = a.status === "released" ? 1 : 0;
+    const bReleased = b.status === "released" ? 1 : 0;
+    if (aReleased !== bReleased) return aReleased - bReleased;
+    if (aReleased && a.version && b.version) {
+      const versionDiff = compareVersionsDesc(a.version, b.version);
+      if (versionDiff !== 0) return versionDiff;
+    }
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+
+  return jsonResponse({ updates });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
