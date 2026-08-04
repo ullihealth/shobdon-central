@@ -73,33 +73,20 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
     ],
   },
-  // Cross-tenant, requireDeveloper-only pages - previously scattered
-  // (Developer Tools was the only one with any nav entry at all;
-  // /platform/tenants and /platform/onboarding-content existed in code,
-  // properly gated server-side, but had zero sidebar entry anywhere, so
-  // reaching them meant already knowing the exact URL). Grouped here
-  // instead of left as standalone items: AdminSidebar.tsx's own
-  // visibleGroups filter already drops a group entirely once every one
-  // of its items fails isItemVisible, so this whole group correctly
-  // disappears for a non-developer user with no code beyond this list -
-  // same per-item requireDeveloper flag Developer Tools already used,
-  // not a new gating mechanism.
+  // Formerly an 11-item "Platform Admin" group listing every /platform/*
+  // page individually - had grown too long for this sidebar. Collapsed to
+  // one entry: clicking it lands on /platform/tenants (the most-used page,
+  // confirmed as the intended default), which now sits inside
+  // DeveloperLayout - its own persistent internal sidebar (see
+  // DeveloperSidebar.tsx/developerSidebarConfig.ts) lists all 11 pages,
+  // grouped by function, exactly like this one does for the main app.
+  // requireDeveloper still gates visibility of this single entry here,
+  // same mechanism as before - AdminSidebar.tsx's own isItemVisible is
+  // unchanged.
   {
     id: 'platform',
     label: 'Platform Admin',
-    items: [
-      { to: '/platform/tenants', label: 'Platform Tenants', requireDeveloper: true },
-      { to: '/platform/preview', label: 'Tenant Preview', requireDeveloper: true },
-      { to: '/platform/cameras', label: 'Cameras', requireDeveloper: true },
-      { to: '/platform/onboarding-content', label: 'Onboarding Content', requireDeveloper: true },
-      { to: '/platform/visits', label: 'Visit Log', requireDeveloper: true },
-      { to: '/platform/known-devices', label: 'Known Devices', requireDeveloper: true },
-      { to: '/platform/uptime-report', label: 'Uptime Report', requireDeveloper: true },
-      { to: '/platform/ip-directory', label: 'IP Directory', requireDeveloper: true },
-      { to: '/platform/updates', label: 'Developer Updates', requireDeveloper: true },
-      { to: '/platform/dev-features', label: 'Developer Features', requireDeveloper: true },
-      { to: '/developertools', label: 'Developer Tools', requireDeveloper: true },
-    ],
+    items: [{ to: '/platform/tenants', label: 'Developer', requireDeveloper: true }],
   },
 ]
 

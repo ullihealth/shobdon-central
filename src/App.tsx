@@ -34,6 +34,7 @@ import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
 import RequireAuth from './components/RequireAuth'
 import RootRoute from './components/RootRoute'
 import AdminLayout from './components/admin/AdminLayout'
+import DeveloperLayout from './components/admin/DeveloperLayout'
 import UploadIndicator from './components/UploadIndicator'
 import { UploadProvider } from './context/UploadContext'
 
@@ -89,133 +90,61 @@ export default function App(): JSX.Element {
             DashboardPage) is untouched and keeps working exactly as
             before - this is a new, additional route, not a replacement. */}
         <Route path="/d/:displaySlug" element={<TenantDisplayPage />} />
-        {/* Platform-admin, cross-tenant tenant list/control - deliberately
-            OUTSIDE AdminLayout (no org-switcher/tenant-admin sidebar chrome;
-            a tenant owner should never see a link to this, and it has
-            nothing to do with "which org am I currently switched to" -
-            it operates on every tenant regardless). requireDeveloper is
-            the same user.developer gate /developertools uses, enforced
-            again server-side by every functions/api/platform/* route -
-            this client-side check is a UX nicety, not the real boundary. */}
+        {/* All 11 previously-scattered platform-admin pages (formerly the
+            main sidebar's own "Platform Admin" group, each individually
+            wrapped in RequireAuth requireDeveloper below its own route)
+            collapsed under one shared DeveloperLayout shell - see that
+            component's own comment for why it's a sibling of AdminLayout,
+            not nested inside it. requireDeveloper applied ONCE here,
+            around the whole block, rather than per child route - every
+            child already shared this exact gate (confirmed before
+            consolidating), so this removes 11x duplicated wrapping with
+            no change in effective access. Server-side requirePlatformAdmin
+            on every functions/api/platform/* route is unchanged and
+            remains the real boundary - this is still only a UX nicety. */}
         <Route
-          path="/platform/tenants"
           element={
             <RequireAuth requireDeveloper>
-              <PlatformTenantsPage />
+              <DeveloperLayout />
             </RequireAuth>
           }
-        />
-        {/* Reserved Owner Slots & Time Budget round - assigns owner ad
-            content to one specific tenant's slots 5/8/12, linked from
-            PlatformTenantsPage.tsx's own tenant detail pane. Same
-            standalone-outside-AdminLayout treatment as every other
-            /platform/* route. */}
-        <Route
-          path="/platform/tenants/:id/carousel-owner-slots"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformCarouselOwnerSlotsPage />
-            </RequireAuth>
-          }
-        />
-        {/* Same standalone-outside-AdminLayout treatment as the route
-            above - dev-tenant-preview feature: a single tenant picker
-            that drives /config, /media-manager, /runways, /members, and
-            Screens Design's own live dashboard preview together, via
-            requireTenant's own tier-3 resolution (tenantAuth.ts) rather
-            than duplicate pages. Gated the same way. */}
-        <Route
-          path="/platform/preview"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformPreviewPage />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/platform/cameras"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformCamerasPage />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/platform/onboarding-content"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformOnboardingContentPage />
-            </RequireAuth>
-          }
-        />
-        {/* Same standalone-outside-AdminLayout treatment as the two
-            routes above - a reverse-chronological log viewer over
-            display_visits (migration 0041), gated the same way. */}
-        <Route
-          path="/platform/visits"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformVisitsPage />
-            </RequireAuth>
-          }
-        />
-        {/* Same standalone-outside-AdminLayout treatment as the route
-            above - Phase B of the visit-log uptime work (migration
-            0056): confirm/dismiss which IPs are a tenant's real
-            display, gated the same way. */}
-        <Route
-          path="/platform/known-devices"
-          element={
-            <RequireAuth requireDeveloper>
-              <KnownDevicesPage />
-            </RequireAuth>
-          }
-        />
-        {/* Same standalone-outside-AdminLayout treatment as the route
-            above - Phase C of the visit-log uptime work: the audit
-            report itself, computed only from Known Devices' confirmed
-            IPs, gated the same way. */}
-        <Route
-          path="/platform/uptime-report"
-          element={
-            <RequireAuth requireDeveloper>
-              <UptimeReportPage />
-            </RequireAuth>
-          }
-        />
-        {/* Same standalone-outside-AdminLayout treatment as the route
-            above - the global IP directory (migration 0057), gated the
-            same way. */}
-        <Route
-          path="/platform/ip-directory"
-          element={
-            <RequireAuth requireDeveloper>
-              <IpDirectoryPage />
-            </RequireAuth>
-          }
-        />
-        {/* Same standalone-outside-AdminLayout treatment as the routes
-            above - internal, app-wide running changelog (migration
-            0050), gated the same way. */}
-        <Route
-          path="/platform/updates"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformUpdatesPage />
-            </RequireAuth>
-          }
-        />
-        {/* Private developer workspace (migration 0067) - mirrors /features
-            read-through plus developer-private entries. Same requireDeveloper
-            gate as /platform/updates, its own linked system. */}
-        <Route
-          path="/platform/dev-features"
-          element={
-            <RequireAuth requireDeveloper>
-              <PlatformDevFeaturesPage />
-            </RequireAuth>
-          }
-        />
+        >
+          <Route path="/platform/tenants" element={<PlatformTenantsPage />} />
+          {/* Reserved Owner Slots & Time Budget round - assigns owner ad
+              content to one specific tenant's slots 5/8/12, linked from
+              PlatformTenantsPage.tsx's own tenant detail pane. */}
+          <Route path="/platform/tenants/:id/carousel-owner-slots" element={<PlatformCarouselOwnerSlotsPage />} />
+          {/* Dev-tenant-preview feature: a single tenant picker that
+              drives /config, /media-manager, /runways, /members, and
+              Screens Design's own live dashboard preview together, via
+              requireTenant's own tier-3 resolution (tenantAuth.ts) rather
+              than duplicate pages. */}
+          <Route path="/platform/preview" element={<PlatformPreviewPage />} />
+          <Route path="/platform/cameras" element={<PlatformCamerasPage />} />
+          <Route path="/platform/onboarding-content" element={<PlatformOnboardingContentPage />} />
+          {/* Reverse-chronological log viewer over display_visits
+              (migration 0041). */}
+          <Route path="/platform/visits" element={<PlatformVisitsPage />} />
+          {/* Phase B of the visit-log uptime work (migration 0056):
+              confirm/dismiss which IPs are a tenant's real display. */}
+          <Route path="/platform/known-devices" element={<KnownDevicesPage />} />
+          {/* Phase C of the visit-log uptime work: the audit report
+              itself, computed only from Known Devices' confirmed IPs. */}
+          <Route path="/platform/uptime-report" element={<UptimeReportPage />} />
+          {/* The global IP directory (migration 0057). */}
+          <Route path="/platform/ip-directory" element={<IpDirectoryPage />} />
+          {/* Internal, app-wide running changelog (migration 0050). */}
+          <Route path="/platform/updates" element={<PlatformUpdatesPage />} />
+          {/* Private developer workspace (migration 0067) - mirrors
+              /features read-through plus developer-private entries. */}
+          <Route path="/platform/dev-features" element={<PlatformDevFeaturesPage />} />
+          {/* Moved in from AdminLayout's own block below - isDeveloper-
+              gated, NOT role-gated, exactly as before; now sharing this
+              layout with the rest of Platform Admin instead of the main
+              app's AdminSidebar, which never actually listed it under
+              any org-relevant context anyway. */}
+          <Route path="/developertools" element={<DeveloperToolsPage />} />
+        </Route>
         {/* Shared sidebar shell (AdminLayout.tsx) for every authenticated
             admin page - a React Router layout route rendering <Outlet/>.
             Per-route access gating below is completely unchanged: each
@@ -349,17 +278,6 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth>
                 <HelpPage />
-              </RequireAuth>
-            }
-          />
-          {/* isDeveloper-gated, NOT role-gated - the real developer account
-              also happens to hold 'owner' role at Shobdon, but every other
-              owner/admin must be denied here regardless of role. */}
-          <Route
-            path="/developertools"
-            element={
-              <RequireAuth requireDeveloper>
-                <DeveloperToolsPage />
               </RequireAuth>
             }
           />
