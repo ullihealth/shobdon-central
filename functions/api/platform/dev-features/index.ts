@@ -1,21 +1,25 @@
 // Platform-admin only: GET/POST /api/platform/dev-features - the private
-// Developer Features workspace (migration 0067). Mirrors every /features
+// Developer Features workspace (migration 0067), now also the sole
+// entry-creation path for the whole Updates workflow (dev-features/
+// Updates consolidation round - functions/api/platform/updates/index.ts's
+// own POST is gone; this is the only place a new entry, tenant-mirrored
+// or developer-authored, ever originates). Mirrors every /features
 // (feature_requests) entry read-through, PLUS developer-private entries
 // with no public origin at all (linked_feature_request_id NULL).
 //
 // GET auto-materializes: any feature_requests row with no matching
-// dev_features row yet gets one created on the fly (status='idea', no
-// folder/notes, title/description left NULL so they stay read-through -
-// see migration 0067's own comment) before the merged list is returned.
-// This is a genuine implementation decision beyond the approved schema
-// itself - "every /features entry shows up automatically" (no separate
-// import step) combined with "PATCH by dev_features id" requires every
-// entry to already have a stable id the moment the developer might act
-// on it, which only auto-materialization on read guarantees. The
+// dev_features row yet gets one created on the fly (no folder/notes,
+// title/description left NULL so they stay read-through - see migration
+// 0067's own comment) before the merged list is returned. The
 // materialized row's created_at is backdated to the ORIGINAL
 // feature_requests.created_at (not "whenever the developer's browser
 // first loaded this page") so "sortable by date" reflects genuine
 // submission chronology.
+//
+// The old idea/planned/built/parked status column (migration 0067) is
+// retired from this round on - eligibleForRelease/completedAt/
+// releasedUpdateId fully replace what it used to drive (see migration
+// 0068's own comment); nothing here reads or writes it any more.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -35,12 +39,14 @@ interface OrphanFeatureRequestRow {
 interface DevFeatureRow {
   id: string;
   linkedFeatureRequestId: string | null;
-  status: string;
   notes: string | null;
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  eligibleForRelease: number;
+  releasedUpdateId: string | null;
+  releasedVersion: string | null;
   title: string | null;
   description: string | null;
   submittedByTenantName: string | null;
@@ -63,8 +69,8 @@ async function materializeMissingRows(db: D1Database): Promise<void> {
   for (const orphan of orphans) {
     await db
       .prepare(
-        `INSERT INTO dev_features (id, linked_feature_request_id, title, description, status, notes, folder_id, created_at, updated_at, completed_at)
-         VALUES (?, ?, NULL, NULL, 'idea', NULL, NULL, ?, ?, NULL)`
+        `INSERT INTO dev_features (id, linked_feature_request_id, title, description, notes, folder_id, created_at, updated_at, completed_at, eligible_for_release, released_update_id)
+         VALUES (?, ?, NULL, NULL, NULL, NULL, ?, ?, NULL, 0, NULL)`
       )
       .bind(crypto.randomUUID(), orphan.id, orphan.createdAt, now)
       .run();
@@ -83,14 +89,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // match, fr.title is NULL).
   const { results } = await env.DB
     .prepare(
-      `SELECT dv.id AS id, dv.linked_feature_request_id AS linkedFeatureRequestId, dv.status AS status,
+      `SELECT dv.id AS id, dv.linked_feature_request_id AS linkedFeatureRequestId,
               dv.notes AS notes, dv.folder_id AS folderId, dv.created_at AS createdAt, dv.updated_at AS updatedAt,
-              dv.completed_at AS completedAt,
+              dv.completed_at AS completedAt, dv.eligible_for_release AS eligibleForRelease, dv.released_update_id AS releasedUpdateId,
+              pu.version AS releasedVersion,
               COALESCE(fr.title, dv.title) AS title, COALESCE(fr.description, dv.description) AS description,
               t.name AS submittedByTenantName
        FROM dev_features dv
        LEFT JOIN feature_requests fr ON fr.id = dv.linked_feature_request_id
        LEFT JOIN tenants t ON t.organization_id = fr.submitted_by_org_id
+       LEFT JOIN platform_updates pu ON pu.id = dv.released_update_id
        ORDER BY dv.created_at DESC`
     )
     .all<DevFeatureRow>();
@@ -115,11 +123,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
-      `INSERT INTO dev_features (id, linked_feature_request_id, title, description, status, notes, folder_id, created_at, updated_at, completed_at)
-       VALUES (?, NULL, ?, ?, 'idea', NULL, NULL, ?, ?, NULL)`
+      `INSERT INTO dev_features (id, linked_feature_request_id, title, description, notes, folder_id, created_at, updated_at, completed_at, eligible_for_release, released_update_id)
+       VALUES (?, NULL, ?, ?, NULL, NULL, ?, ?, NULL, 0, NULL)`
     )
     .bind(id, title, description, now, now)
     .run();
 
-  return jsonResponse({ id, title, description, status: "idea", createdAt: now });
+  return jsonResponse({ id, title, description, createdAt: now });
 };

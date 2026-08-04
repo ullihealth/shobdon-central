@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 type FeatureStatus = 'idea' | 'planned' | 'built' | 'parked'
 
@@ -116,7 +117,12 @@ export default function FeatureRequestsPage(): JSX.Element {
 
   return (
     <div className="mx-auto max-w-4xl px-5 pb-16 pt-10">
-      <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Feature Requests</h1>
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Feature Requests</h1>
+        <Link to="/versions" className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+          Versions →
+        </Link>
+      </div>
       <p className="mb-8 max-w-2xl text-sm text-muted-400">
         A shared board across every Airfield Central tenant - suggest something, or see what other clubs have
         already asked for. Status is set by the Airfield Central team.

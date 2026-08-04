@@ -1,35 +1,27 @@
-// Platform-admin only: POST /api/platform/updates/release - the "select
-// a set of reviewed entries and assign them a version number" bulk
-// action. Its own dedicated endpoint rather than folded into [id].ts's
-// PATCH, since this operates on many rows atomically (one version
-// number, one released_at timestamp, applied together) - a single-row
-// PATCH can't express "these five entries become v1.6.0 together"
-// without risking a half-released version if one row's PATCH succeeded
-// and another's didn't.
+// Platform-admin only: POST /api/platform/updates/release - the
+// "select a batch of REVIEWED dev-features entries and assign them one
+// version number" action, relocated here from operating on
+// platform_updates rows directly (dev-features/Updates consolidation
+// round). platform_updates has no draft state of its own any more - a
+// row in that table is now created for the FIRST time by this endpoint,
+// at the moment of an actual release, one row per dev_features entry
+// being released, not an UPDATE of a pre-existing draft row.
 //
-// Only entries currently status = 'reviewed' are eligible - draft
-// entries must be marked reviewed first (PATCH .../[id].ts), matching
-// the stated draft -> reviewed -> released workflow. Rejects the whole
-// batch (no partial release) if any requested id isn't currently
-// reviewed, rather than silently skipping it - a release action should
-// never leave the caller unsure which entries actually ended up in the
-// version they asked for.
+// Eligible = the same three-column check REVIEWED-tab membership itself
+// uses (functions/api/platform/dev-features/index.ts's own GET) -
+// completedAt set, eligibleForRelease true, releasedUpdateId still NULL.
+// Rejects the whole batch (no partial release) if any requested id
+// isn't currently eligible, same "never leave the caller unsure which
+// entries actually ended up in the version they asked for" reasoning
+// the old version of this endpoint already used.
 //
-// Developer Features linkage (migration 0067): releasing is also the
-// trigger that reports a completed feature back to its public /features
-// submission as "Built". Two-hop lookup per released entry -
-// platform_updates.source_dev_feature_id -> dev_features.
-// linked_feature_request_id - both single FKs rather than a third
-// denormalized column pointing straight at feature_requests, so the
-// full "which public submission (if any) this release note came from"
-// chain stays reconstructable. Either hop can legitimately be NULL (a
-// manually-created draft never went through Developer Features at all;
-// a Developer Features entry can be developer-private with no public
-// origin) - both cases just skip the write-back with no error, same
-// "degrades cleanly" behaviour this round's own investigation confirmed
-// for both. Releasing several entries that all trace back to the same
-// feature_requests row, or one that's already 'built', is a harmless
-// idempotent overwrite - not special-cased.
+// feature_requests write-back is now a direct, single-hop read off the
+// SAME rows already being processed (dev_features.linked_feature_request_id)
+// - no more indirection through platform_updates.source_dev_feature_id,
+// since that column is only ever written by THIS request, not read back
+// by it. A dev-features entry with no linked_feature_request_id (a
+// developer-private entry) just skips the write-back entirely - no
+// error, no special-casing beyond the NULL check itself.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -39,6 +31,22 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+}
+
+interface DevFeatureRow {
+  id: string;
+  linkedFeatureRequestId: string | null;
+  title: string | null;
+  description: string | null;
+  completedAt: string | null;
+  eligibleForRelease: number;
+  releasedUpdateId: string | null;
+}
+
+interface LinkedFeatureRequestRow {
+  id: string;
+  title: string;
+  description: string;
 }
 
 const VERSION_MAX_LENGTH = 40;
@@ -63,39 +71,61 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const placeholders = ids.map(() => "?").join(", ");
   const rows = await env.DB
-    .prepare(`SELECT id, status FROM platform_updates WHERE id IN (${placeholders})`)
+    .prepare(
+      `SELECT id, linked_feature_request_id AS linkedFeatureRequestId, title, description,
+              completed_at AS completedAt, eligible_for_release AS eligibleForRelease, released_update_id AS releasedUpdateId
+       FROM dev_features WHERE id IN (${placeholders})`
+    )
     .bind(...ids)
-    .all<{ id: string; status: string }>();
+    .all<DevFeatureRow>();
 
-  const foundIds = new Set(rows.results.map((row) => row.id));
-  const missing = ids.filter((id) => !foundIds.has(id));
+  const foundById = new Map(rows.results.map((row) => [row.id, row]));
+  const missing = ids.filter((id) => !foundById.has(id));
   if (missing.length > 0) {
     return jsonResponse({ error: `Unknown id(s): ${missing.join(", ")}` }, 400);
   }
-  const notReviewed = rows.results.filter((row) => row.status !== "reviewed").map((row) => row.id);
-  if (notReviewed.length > 0) {
-    return jsonResponse({ error: `Only 'reviewed' entries can be released - not currently reviewed: ${notReviewed.join(", ")}` }, 400);
+  const notEligible = ids.filter((id) => {
+    const row = foundById.get(id)!;
+    return row.completedAt === null || !row.eligibleForRelease || row.releasedUpdateId !== null;
+  });
+  if (notEligible.length > 0) {
+    return jsonResponse({ error: `Only completed, eligible, not-yet-released entries can be released - not currently eligible: ${notEligible.join(", ")}` }, 400);
+  }
+
+  // Live read-through for linked entries' title/description, same
+  // COALESCE-at-read-time posture as dev-features' own GET - batch
+  // query rather than one lookup per id.
+  const linkedIds = ids.map((id) => foundById.get(id)!.linkedFeatureRequestId).filter((id): id is string => id !== null);
+  const linkedById = new Map<string, LinkedFeatureRequestRow>();
+  if (linkedIds.length > 0) {
+    const linkedPlaceholders = linkedIds.map(() => "?").join(", ");
+    const { results: linkedRows } = await env.DB
+      .prepare(`SELECT id, title, description FROM feature_requests WHERE id IN (${linkedPlaceholders})`)
+      .bind(...linkedIds)
+      .all<LinkedFeatureRequestRow>();
+    for (const row of linkedRows) linkedById.set(row.id, row);
   }
 
   const now = new Date().toISOString();
   for (const id of ids) {
+    const devFeature = foundById.get(id)!;
+    const linked = devFeature.linkedFeatureRequestId ? linkedById.get(devFeature.linkedFeatureRequestId) : undefined;
+    const title = linked?.title ?? devFeature.title ?? "";
+    const description = linked?.description ?? devFeature.description ?? "";
+
+    const updateId = crypto.randomUUID();
     await env.DB
-      .prepare("UPDATE platform_updates SET status = 'released', version = ?, released_at = ? WHERE id = ?")
-      .bind(version, now, id)
+      .prepare(
+        `INSERT INTO platform_updates (id, title, description, status, version, created_at, released_at, source_dev_feature_id)
+         VALUES (?, ?, ?, 'released', ?, ?, ?, ?)`
+      )
+      .bind(updateId, title, description, version, now, now, id)
       .run();
+
+    await env.DB.prepare("UPDATE dev_features SET released_update_id = ? WHERE id = ?").bind(updateId, id).run();
   }
 
-  const linkedRows = await env.DB
-    .prepare(
-      `SELECT df.linked_feature_request_id AS linkedFeatureRequestId
-       FROM platform_updates pu
-       JOIN dev_features df ON df.id = pu.source_dev_feature_id
-       WHERE pu.id IN (${placeholders}) AND df.linked_feature_request_id IS NOT NULL`
-    )
-    .bind(...ids)
-    .all<{ linkedFeatureRequestId: string }>();
-
-  const featureRequestIds = [...new Set(linkedRows.results.map((row) => row.linkedFeatureRequestId))];
+  const featureRequestIds = [...new Set(ids.map((id) => foundById.get(id)!.linkedFeatureRequestId).filter((id): id is string => id !== null))];
   if (featureRequestIds.length > 0) {
     const featurePlaceholders = featureRequestIds.map(() => "?").join(", ");
     await env.DB

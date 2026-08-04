@@ -172,13 +172,25 @@ export const PLATFORM_ONBOARDING_CONTENT_URL = '/api/platform/onboarding-content
 
 // Platform-admin only: internal, app-wide "Developer Updates" running
 // changelog (migration 0050) - functions/api/platform/updates/. Not
-// tenant-facing. Consumed by PlatformUpdatesPage.tsx.
+// tenant-facing. Dev-features/Updates consolidation round: this page is
+// now released-only (no draft/reviewed state or creation endpoint of
+// its own - see that file's own comment) - platformUpdateUrl(id)'s PATCH
+// target is gone along with it. PLATFORM_UPDATES_RELEASE_URL's endpoint
+// moved tables but not paths, and is now called from
+// PlatformDevFeaturesPage.tsx instead of PlatformUpdatesPage.tsx.
 export const PLATFORM_UPDATES_URL = '/api/platform/updates'
 export const PLATFORM_UPDATES_RELEASE_URL = '/api/platform/updates/release'
-export const platformUpdateUrl = (id: string): string => `/api/platform/updates/${id}`
+
+// Public, unauthenticated - functions/api/public/versions.ts. The same
+// released/version-grouped data PLATFORM_UPDATES_URL serves, minus the
+// auth - consumed by VersionsPage.tsx (/versions) and linked from
+// /features's own "Versions" button.
+export const PUBLIC_VERSIONS_URL = '/api/public/versions'
 
 // Platform-admin only: the private Developer Features workspace
-// (migration 0067) - functions/api/platform/dev-features/,
+// (migration 0067), now also the sole entry-creation/workflow-management
+// path for the whole Updates system (dev-features/Updates consolidation
+// round) - functions/api/platform/dev-features/,
 // functions/api/platform/dev-feature-folders/. Mirrors /features
 // (feature_requests) read-through plus developer-private entries; not
 // tenant-facing. Consumed by PlatformDevFeaturesPage.tsx.

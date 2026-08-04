@@ -8,6 +8,7 @@ import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
 import FeatureRequestsPage from './pages/FeatureRequestsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
+import VersionsPage from './pages/VersionsPage'
 import HelpPage from './pages/HelpPage'
 import LoginPage from './pages/LoginPage'
 import MediaLibraryPage from './pages/MediaLibraryPage'
@@ -82,6 +83,10 @@ export default function App(): JSX.Element {
             anywhere in the existing dashboard/nav yet (direct URL only) -
             wiring it into the root landing page is separately parked. */}
         <Route path="/global" element={<GlobalDashboardPage />} />
+        {/* Public, unauthenticated released-version history (dev-features/
+            Updates consolidation round) - linked from /features's own
+            "Versions" button. */}
+        <Route path="/versions" element={<VersionsPage />} />
         {/* Named per-tenant displays (tenant_displays, migration 0027) -
             e.g. /d/main, /d/cafe-tv. Same Host-based tenant resolution
             as '/' (server-side, via functions/api/public/display.ts);
