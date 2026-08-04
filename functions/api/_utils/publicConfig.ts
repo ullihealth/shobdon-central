@@ -242,10 +242,20 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
-      .first<{ name: string; logoR2Key: string | null; hasPhysicalAtc: number; brandDisplayJson: string | null; carouselBudgetEnabled: number }>(),
+      .first<{
+        name: string;
+        logoR2Key: string | null;
+        hasPhysicalAtc: number;
+        brandDisplayJson: string | null;
+        carouselBudgetEnabled: number;
+        afisoOpen: number;
+        afisoFrequency: string;
+        pilotTickerSlotsJson: string;
+        mobileEnabled: number;
+      }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -544,6 +554,28 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   const logoUrl = tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null;
   const hasPhysicalAtc = !!tenantRow?.hasPhysicalAtc;
   const brandDisplay = parseBrandDisplay(tenantRow?.brandDisplayJson);
+  // Pilot View round (migration 0070) - manual AFISO status, no live
+  // data source exists for this anywhere (see that migration's own
+  // comment). pilotTicker.slots defaults to [] when unset/malformed
+  // rather than throwing - PilotViewPage.tsx's own ticker treats an
+  // empty array as "nothing configured yet", same graceful-degradation
+  // posture every other optional public-config field already takes.
+  const afiso = { open: !!tenantRow?.afisoOpen, frequency: tenantRow?.afisoFrequency ?? "" };
+  let pilotTickerSlots: unknown[] = [];
+  try {
+    pilotTickerSlots = tenantRow?.pilotTickerSlotsJson ? JSON.parse(tenantRow.pilotTickerSlotsJson) : [];
+  } catch {
+    pilotTickerSlots = [];
+  }
+  const pilotTicker = { slots: pilotTickerSlots };
+  // Mobile access gating round (migration 0071) - PilotViewPage.tsx
+  // renders its locked-state screen instead of the full view when this
+  // is false. Testing-phase only right now (see that migration's own
+  // comment) - every existing tenant was backfilled to true, so this is
+  // not yet an active restriction for anyone. mobile_free_until is a
+  // placeholder-only column, deliberately not read/exposed here - no
+  // gating logic depends on it yet.
+  const mobileEnabled = !!tenantRow?.mobileEnabled;
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -804,6 +836,9 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     mainTemplateId,
     mainDisplayActive,
     cafeSettings,
+    afiso,
+    pilotTicker,
+    mobileEnabled,
   };
 }
 

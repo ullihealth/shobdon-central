@@ -41,6 +41,9 @@ interface TenantRow {
   carouselBudgetSeconds: number;
   carouselBudgetEnabled: number;
   globalLinkEnabled: number;
+  afisoOpen: number;
+  afisoFrequency: string;
+  mobileEnabled: number;
   subscriptionStatus: string;
   subscriptionNotes: string;
   deletedAt: string | null;
@@ -65,6 +68,19 @@ interface PatchBody {
   // independent of weatherPublic/opsPublic, which control listing/data;
   // this only controls whether the link itself renders on that card.
   globalLinkEnabled?: boolean;
+  // Pilot View round (migration 0070) - manual AFISO status, no live
+  // data source exists for this anywhere. afisoFrequency is deliberately
+  // free text (see that migration's own comment on why validating a
+  // strict pattern risks rejecting a real value).
+  afisoOpen?: boolean;
+  afisoFrequency?: string;
+  // Mobile access gating round (migration 0071) - platform-admin switch
+  // for the /pilot route (PilotViewPage.tsx renders a locked-state
+  // screen instead of the full view when this is false). Testing-phase
+  // only right now - not yet a live restriction anyone actually hits.
+  // mobile_free_until is a placeholder column for future Stripe billing
+  // and deliberately has no field/route here yet - nothing to PATCH.
+  mobileEnabled?: boolean;
   subscriptionStatus?: string;
   subscriptionNotes?: string;
   // Migration 0044 - true archives (see this file's own handling below,
@@ -107,6 +123,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "carouselBudgetSeconds",
     "carouselBudgetEnabled",
     "globalLinkEnabled",
+    "afisoOpen",
+    "afisoFrequency",
+    "mobileEnabled",
     "subscriptionStatus",
     "subscriptionNotes",
     "archived",
@@ -117,10 +136,23 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.name !== undefined && (typeof body.name !== "string" || !body.name.trim())) {
     return jsonResponse({ error: "name must be a non-empty string" }, 400);
   }
-  for (const field of ["active", "weatherPublic", "opsPublic", "isInternal", "hasPhysicalAtc", "carouselBudgetEnabled", "globalLinkEnabled"] as const) {
+  for (const field of [
+    "active",
+    "weatherPublic",
+    "opsPublic",
+    "isInternal",
+    "hasPhysicalAtc",
+    "carouselBudgetEnabled",
+    "globalLinkEnabled",
+    "afisoOpen",
+    "mobileEnabled",
+  ] as const) {
     if (body[field] !== undefined && typeof body[field] !== "boolean") {
       return jsonResponse({ error: `${field} must be a boolean` }, 400);
     }
+  }
+  if (body.afisoFrequency !== undefined && typeof body.afisoFrequency !== "string") {
+    return jsonResponse({ error: "afisoFrequency must be a string" }, 400);
   }
   if (body.storageQuotaBytes !== undefined && (!Number.isInteger(body.storageQuotaBytes) || body.storageQuotaBytes <= 0)) {
     return jsonResponse({ error: "storageQuotaBytes must be a positive integer" }, 400);
@@ -144,6 +176,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               has_physical_atc AS hasPhysicalAtc, storage_quota_bytes AS storageQuotaBytes,
               carousel_budget_seconds AS carouselBudgetSeconds, carousel_budget_enabled AS carouselBudgetEnabled,
               global_link_enabled AS globalLinkEnabled,
+              afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
+              mobile_enabled AS mobileEnabled,
               subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
               deleted_at AS deletedAt
        FROM tenants WHERE id = ?`
@@ -170,6 +204,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     carouselBudgetSeconds: body.carouselBudgetSeconds ?? current.carouselBudgetSeconds,
     carouselBudgetEnabled: body.carouselBudgetEnabled ?? !!current.carouselBudgetEnabled,
     globalLinkEnabled: body.globalLinkEnabled ?? !!current.globalLinkEnabled,
+    afisoOpen: body.afisoOpen ?? !!current.afisoOpen,
+    afisoFrequency: body.afisoFrequency ?? current.afisoFrequency,
+    mobileEnabled: body.mobileEnabled ?? !!current.mobileEnabled,
     subscriptionStatus: body.subscriptionStatus ?? current.subscriptionStatus,
     subscriptionNotes: body.subscriptionNotes ?? current.subscriptionNotes,
     deletedAt: body.archived === true ? now : body.archived === false ? null : current.deletedAt,
@@ -179,6 +216,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     .prepare(
       `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, has_physical_atc = ?, storage_quota_bytes = ?,
               carousel_budget_seconds = ?, carousel_budget_enabled = ?, global_link_enabled = ?,
+              afiso_open = ?, afiso_frequency = ?,
+              mobile_enabled = ?,
               subscription_status = ?, subscription_notes = ?, deleted_at = ?, updated_at = ?
        WHERE id = ?`
     )
@@ -193,6 +232,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.carouselBudgetSeconds,
       next.carouselBudgetEnabled ? 1 : 0,
       next.globalLinkEnabled ? 1 : 0,
+      next.afisoOpen ? 1 : 0,
+      next.afisoFrequency,
+      next.mobileEnabled ? 1 : 0,
       next.subscriptionStatus,
       next.subscriptionNotes,
       next.deletedAt,

@@ -1,0 +1,17 @@
+-- Reverses migration 0071's one-time backfill. That migration set
+-- mobile_enabled = 1 for every tenant that existed at the time, as a
+-- convenience so the newly-built Pilot View was reachable everywhere
+-- during its own build/verification. The column's own DEFAULT (0,
+-- locked) was always the intended steady-state behaviour - mobile
+-- access is opt-in per tenant, switched on explicitly by a platform
+-- admin via the "Mobile Pilot View enabled" toggle in
+-- PlatformTenantsPage.tsx, not something every tenant starts with.
+--
+-- No schema change here - mobile_enabled's column default is already 0
+-- (set in 0071) and neither tenant-creation INSERT
+-- (functions/api/platform/tenants/onboard.ts,
+-- functions/api/public/trial-signup.ts) references the column, so new
+-- tenants already default to locked with no code change. This is a
+-- pure one-time data correction against tenants that already existed
+-- before this migration.
+UPDATE tenants SET mobile_enabled = 0;

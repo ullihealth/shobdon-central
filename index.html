@@ -13,13 +13,29 @@
     <!-- Site-wide favicon (Airfield Central's jet icon) - covers both the
          landing page and every tenant dashboard automatically, since this
          is the one index.html shell every hostname shares. Sized set
-         (16/32/48/192) plus apple-touch-icon (180) for iOS home-screen
-         bookmarking - no manifest.json, not asked for here. -->
+         (16/32/48/192) plus apple-touch-icon (180) as the generic
+         fallback for every route except /pilot, which overwrites this
+         apple-touch-icon (and apple-mobile-web-app-title, added by
+         usePilotHomeScreenMeta.ts) with the tenant's own real logo/name
+         once branding data resolves - this shared shell has no way to
+         know which tenant a request belongs to, so nothing tenant-
+         specific can be baked in here directly. -->
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon/favicon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/favicon-180.png" />
+    <!-- Pilot View PWA ("Add to Home Screen") - the manifest link always
+         points at the dynamic per-tenant route (functions/api/public/
+         manifest.json.ts), which resolves by Host header the same way
+         every other public config fetch already does; harmless on every
+         non-/pilot route (nothing else reads it). apple-mobile-web-app-
+         capable enables standalone (chromeless) launch from iOS's home
+         screen - the one iOS-specific piece a manifest alone can't
+         provide. -->
+    <link rel="manifest" href="/api/public/manifest.json" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
     <div id="root"></div>

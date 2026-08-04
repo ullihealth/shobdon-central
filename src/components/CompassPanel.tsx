@@ -707,8 +707,26 @@ export default function CompassPanel(): JSX.Element {
           position:relative + left:-18px shifts ONLY this instrument left -
           unlike a negative margin, it doesn't drag the readout panel
           (the next flex sibling) along with it, since relative positioning
-          doesn't affect where following siblings are laid out. */}
-      <div className="relative left-[-18px] h-full aspect-square max-w-full flex-shrink-0">
+          doesn't affect where following siblings are laid out.
+
+          Below `sm:` the parent switches to flex-col (circle stacked above
+          the readout, not beside it) - h-full there would ask this item to
+          claim its ENTIRE flex-column container's height as an unshrinkable
+          (flex-shrink-0) flex-basis, leaving strictly zero room for the
+          readout grid below regardless of how tall that container is (the
+          claim is always exactly 100%, not "whatever's left over") - the
+          readout would then overflow the container's bottom edge by its own
+          full height, bleeding into whatever content follows in the page.
+          Every existing caller (ClassicTemplate/Clubhouse2Template/
+          CentreDisplayPanel) renders this on a fixed-width TV/kiosk canvas
+          that's never actually narrower than `sm:`, so h-full's original
+          row-mode behaviour there is completely unaffected by adding a
+          width-driven variant below it - w-full+aspect-square derives a
+          proportionate height FROM the (always-defined) column width
+          instead, so the circle and readout both fit within whatever
+          natural height the column ends up needing, no ancestor-supplied
+          fixed height required. */}
+      <div className="relative left-[-18px] aspect-square max-w-full w-full flex-shrink-0 sm:h-full sm:w-auto">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg

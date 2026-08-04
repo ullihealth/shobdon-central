@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AccountPage from './pages/AccountPage'
 import AtcControlPage from './pages/AtcControlPage'
 import ChecklistPage from './pages/ChecklistPage'
+import PilotViewPage from './pages/PilotViewPage'
 import ConfigPage from './pages/ConfigPage'
 import CafeMediaPage from './pages/CafeMediaPage'
 import DesignPage from './pages/DesignPage'
@@ -56,6 +57,12 @@ export default function App(): JSX.Element {
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/checklist" element={<ChecklistPage />} />
+        {/* Mobile-first, single-column, read-only per-tenant pilot info
+            screen - same standalone-no-Host-special-handling treatment as
+            /checklist above. Tenant identity resolves the same way it
+            already does for PUBLIC_CONFIG_URL, via whatever subdomain the
+            request actually arrived on - no path-based resolution needed. */}
+        <Route path="/pilot" element={<PilotViewPage />} />
         {/* Placeholder CTA destination for CafeMediaPage's FeatureUpsellPanel
             (cafe-tv entitled=0 case) - no real checkout/marketing content
             yet, see UpgradeCafeDisplayPage.tsx's own comment. Bare route,

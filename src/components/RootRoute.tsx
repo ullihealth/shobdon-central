@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import DashboardPage from '../pages/DashboardPage'
 import LandingPage from '../pages/LandingPage'
 import ComingSoonPage from '../pages/ComingSoonPage'
 import { PUBLIC_LANDING_MODE_URL } from '../config/publicApi'
+import { isMobileDevice } from '../utils/isMobileDevice'
 
 // Used as the element for both "/" and "*" in App.tsx - the client-side
 // half of Stage 5's landing page. resolveTenantHost.ts (server-side)
@@ -51,6 +53,16 @@ export default function RootRoute(): JSX.Element {
     }
   }, [isLandingHost])
 
-  if (!isLandingHost) return <DashboardPage />
+  // Mobile gating round - phones land on /pilot instead of the TV/
+  // carousel dashboard; tablets and desktop browsers are unaffected (see
+  // isMobileDevice's own comment on why both signals - UA and screen
+  // width - are required together). Deliberately only in this branch,
+  // not the landing-host one above: a mobile visit to the bare marketing
+  // domain has no tenant identity for /pilot to resolve against, so
+  // there's nothing to redirect it to. /pilot's own mobile_enabled
+  // gating (migration 0071) decides locked vs unlocked from here - this
+  // redirect doesn't duplicate or pre-check that, it just gets a phone
+  // to the right ROUTE.
+  if (!isLandingHost) return isMobileDevice() ? <Navigate to="/pilot" replace /> : <DashboardPage />
   return mode === 'live' ? <LandingPage /> : <ComingSoonPage />
 }

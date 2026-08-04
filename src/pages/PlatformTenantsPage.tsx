@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { PLATFORM_CHECK_SLUG_URL, PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
 import type { MemberRole } from '../types/member'
+import PilotTickerSlotsEditor from '../components/platform/PilotTickerSlotsEditor'
 
 const TENANTS_URL = '/api/platform/tenants'
 
@@ -83,6 +84,18 @@ interface PlatformTenant {
   // tenant is listed on /global at all; this only controls whether the
   // "View live dashboard" link renders on that already-listed card.
   globalLinkEnabled: boolean
+  // Pilot View round (migration 0070) - manual AFISO status, no live
+  // data source exists anywhere for this. afisoFrequency stays free
+  // text (see that migration's own comment on why).
+  afisoOpen: boolean
+  afisoFrequency: string
+  // Mobile access gating round (migration 0071) - gates the /pilot route
+  // (PilotViewPage.tsx shows a locked-state screen when false). Testing-
+  // phase only right now, every existing tenant was backfilled to true -
+  // see that migration's own comment. mobile_free_until is a placeholder
+  // column for future Stripe billing, deliberately not surfaced here -
+  // no UI/route wiring for it yet.
+  mobileEnabled: boolean
   usedBytes: number
   logoUrl: string | null
   createdAt: string
@@ -100,7 +113,16 @@ interface PlatformTenant {
   deletedAt?: string | null
 }
 
-type BooleanField = 'active' | 'weatherPublic' | 'opsPublic' | 'isInternal' | 'hasPhysicalAtc' | 'carouselBudgetEnabled' | 'globalLinkEnabled'
+type BooleanField =
+  | 'active'
+  | 'weatherPublic'
+  | 'opsPublic'
+  | 'isInternal'
+  | 'hasPhysicalAtc'
+  | 'carouselBudgetEnabled'
+  | 'globalLinkEnabled'
+  | 'afisoOpen'
+  | 'mobileEnabled'
 type SortOrder = 'name-asc' | 'date-desc' | 'date-asc'
 
 function formatMb(bytes: number): string {
@@ -243,6 +265,48 @@ function CarouselBudgetEditor({ tenant, onSaved }: { tenant: PlatformTenant; onS
         }}
         placeholder="2:30"
         className="mt-1 w-20 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-right text-xs text-white focus:border-sky-500 focus:outline-none"
+      />
+    </div>
+  )
+}
+
+// Pilot View round - same save-on-blur pattern as CarouselBudgetEditor
+// above, for tenants.afiso_frequency. Free text deliberately (see
+// migration 0070's own comment on why validating a strict frequency
+// pattern risks rejecting a real value) - no format check here either,
+// just non-empty-vs-changed to avoid a no-op save.
+function AfisoFrequencyEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (frequency: string) => void }): JSX.Element {
+  const [value, setValue] = useState(tenant.afisoFrequency)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(tenant.afisoFrequency)
+  }, [tenant.afisoFrequency])
+
+  async function commit() {
+    const trimmed = value.trim()
+    if (trimmed === tenant.afisoFrequency) return
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { afisoFrequency: trimmed })
+    setSaving(false)
+    if (updated) onSaved(updated.afisoFrequency)
+    else setValue(tenant.afisoFrequency)
+  }
+
+  return (
+    <div className="min-w-[140px]">
+      <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">AFISO frequency</div>
+      <input
+        type="text"
+        value={value}
+        disabled={saving}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+        }}
+        placeholder="122.250"
+        className="mt-1 w-24 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
       />
     </div>
   )
@@ -1044,6 +1108,10 @@ export default function PlatformTenantsPage(): JSX.Element {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, carouselBudgetSeconds: seconds } : t)))
   }
 
+  function handleAfisoFrequencySaved(tenantId: number, frequency: string) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, afisoFrequency: frequency } : t)))
+  }
+
   function handleNameSaved(tenantId: number, name: string) {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, name } : t)))
   }
@@ -1475,12 +1543,26 @@ export default function PlatformTenantsPage(): JSX.Element {
                       checked={selectedTenant.globalLinkEnabled}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'globalLinkEnabled', next)}
                     />
+                    <SettingsToggleRow
+                      label="AFISO open"
+                      checked={selectedTenant.afisoOpen}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'afisoOpen', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Mobile Pilot View enabled"
+                      checked={selectedTenant.mobileEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'mobileEnabled', next)}
+                    />
                   </div>
                   <div className="mt-4 flex flex-wrap items-end gap-6">
                     <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
                     <CarouselBudgetEditor
                       tenant={selectedTenant}
                       onSaved={(seconds) => handleCarouselBudgetSaved(selectedTenant.id, seconds)}
+                    />
+                    <AfisoFrequencyEditor
+                      tenant={selectedTenant}
+                      onSaved={(frequency) => handleAfisoFrequencySaved(selectedTenant.id, frequency)}
                     />
                     <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
                     <Link
@@ -1490,6 +1572,8 @@ export default function PlatformTenantsPage(): JSX.Element {
                       Manage reserved slots (5/8/12) →
                     </Link>
                   </div>
+
+                  <PilotTickerSlotsEditor tenantId={selectedTenant.id} />
 
                   {/* Suspend + Archive, grouped and visually separated
                       from the four unrelated checkboxes above - both are
