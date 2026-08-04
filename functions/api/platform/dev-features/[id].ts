@@ -122,5 +122,28 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     .bind(next.title, next.description, next.notes, next.folderId, next.eligibleForRelease ? 1 : 0, next.completedAt, now, id)
     .run();
 
-  return jsonResponse({ id, ...next });
+  // Bug found this round: next.title/description above are the RAW
+  // dev_features columns (always NULL for a linked entry, by design -
+  // see index.ts's own comment), correct for what gets WRITTEN, but
+  // wrong for what gets returned here whenever the patch didn't touch
+  // title/description itself (e.g. a folder change) - the frontend
+  // trusts this response and merges it straight into its local list, so
+  // a linked entry's real (live-joined) title/description was getting
+  // clobbered to blank the moment ANY other field was patched. Same
+  // COALESCE-at-read-time fix as index.ts's own GET, applied here to
+  // the RESPONSE only, never to what was just written.
+  let responseTitle = next.title;
+  let responseDescription = next.description;
+  if (current.linkedFeatureRequestId) {
+    const linked = await env.DB
+      .prepare("SELECT title, description FROM feature_requests WHERE id = ?")
+      .bind(current.linkedFeatureRequestId)
+      .first<{ title: string; description: string }>();
+    if (linked) {
+      responseTitle = linked.title;
+      responseDescription = linked.description;
+    }
+  }
+
+  return jsonResponse({ id, ...next, title: responseTitle, description: responseDescription });
 };
