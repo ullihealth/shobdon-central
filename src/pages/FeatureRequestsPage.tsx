@@ -119,7 +119,10 @@ export default function FeatureRequestsPage(): JSX.Element {
     <div className="mx-auto max-w-4xl px-5 pb-16 pt-10">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-2xl font-black uppercase tracking-wide text-primary">Feature Requests</h1>
-        <Link to="/versions" className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+        <Link
+          to="/versions"
+          className="rounded-lg border-2 border-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400 transition hover:bg-accent-sky-500/10"
+        >
           Versions →
         </Link>
       </div>

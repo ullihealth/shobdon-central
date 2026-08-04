@@ -250,7 +250,7 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-6 pb-16 pt-10 text-slate-100">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-7xl">
         <Link to="/platform/tenants" className="mb-4 inline-block text-xs font-semibold text-accent-sky-400 hover:text-accent-sky-500">
           ← Platform · Tenants
         </Link>
@@ -274,220 +274,237 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
               </div>
             )}
 
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">New entry</div>
-              <div className="flex flex-col gap-3">
-                <input
-                  value={newTitle}
-                  onChange={(event) => setNewTitle(event.target.value)}
-                  placeholder="Title"
-                  className="w-full rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white"
-                />
-                <textarea
-                  value={newDescription}
-                  onChange={(event) => setNewDescription(event.target.value)}
-                  placeholder="Description"
-                  rows={2}
-                  className="w-full rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white"
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateEntry}
-                  disabled={creating || !newTitle.trim() || !newDescription.trim()}
-                  className="self-start rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {creating ? 'Adding…' : '+ Add entry'}
-                </button>
-              </div>
-            </section>
-
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Folders</div>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <input
-                  value={newFolderName}
-                  onChange={(event) => setNewFolderName(event.target.value)}
-                  placeholder="New folder name"
-                  className="rounded border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white"
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateFolder}
-                  disabled={creatingFolder || !newFolderName.trim()}
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400 disabled:opacity-50"
-                >
-                  + Create folder
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedFolderId('all')}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                    selectedFolderId === 'all' ? 'bg-accent-sky-500 text-white' : 'bg-slate-800 text-muted-400 hover:text-white'
-                  }`}
-                >
-                  All ({entries.length})
-                </button>
-                {folders.map((folder) => (
-                  <button
-                    key={folder.id}
-                    type="button"
-                    onClick={() => setSelectedFolderId(folder.id)}
-                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                      selectedFolderId === folder.id ? 'bg-accent-sky-500 text-white' : 'bg-slate-800 text-muted-400 hover:text-white'
-                    }`}
-                  >
-                    {folder.name} ({entries.filter((e) => e.folderId === folder.id).length})
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex gap-2">
-                  {(['all', 'reviewed', 'devlog'] as Tab[]).map((tab) => (
+            {/* Left sidebar + right content, same fixed-width-pane
+                convention as PlatformTenantsPage.tsx's own two-pane
+                layout (w-72 left pane, flex-1 right) - reused directly
+                rather than a new layout mechanism. No lg: breakpoint
+                here (unlike that page) - every Developer-section page is
+                already desktop-only, so this doesn't need a stacked
+                mobile fallback. */}
+            <div className="flex min-h-[600px] gap-6">
+              <div className="flex w-72 shrink-0 flex-col gap-4">
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Folders</div>
+                  <div className="mb-4 flex flex-col gap-2">
+                    <input
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.target.value)}
+                      placeholder="New folder name"
+                      className="rounded border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white"
+                    />
                     <button
-                      key={tab}
                       type="button"
-                      onClick={() => setActiveTab(tab)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
-                        activeTab === tab ? 'bg-accent-sky-500 text-white' : 'border border-border text-muted-400 hover:text-white'
+                      onClick={handleCreateFolder}
+                      disabled={creatingFolder || !newFolderName.trim()}
+                      className="self-start rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-primary transition hover:border-accent-sky-500 hover:text-accent-sky-400 disabled:opacity-50"
+                    >
+                      + Create folder
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFolderId('all')}
+                      className={`rounded-lg px-3 py-2 text-left text-sm transition ${
+                        selectedFolderId === 'all'
+                          ? 'border border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
+                          : 'border border-transparent text-muted-300 hover:bg-slate-800/60'
                       }`}
                     >
-                      {tab === 'all' ? 'All' : tab === 'reviewed' ? 'Reviewed' : 'Dev Log'} (
-                      {tab === 'all' ? tabCounts.all : tab === 'reviewed' ? tabCounts.reviewed : tabCounts.devlog})
+                      All ({entries.length})
                     </button>
-                  ))}
-                </div>
-                <select
-                  value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as SortMode)}
-                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-xs text-white focus:border-sky-500 focus:outline-none"
-                >
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                  <option value="title-asc">Title A–Z</option>
-                  <option value="title-desc">Title Z–A</option>
-                </select>
+                    {folders.map((folder) => (
+                      <button
+                        key={folder.id}
+                        type="button"
+                        onClick={() => setSelectedFolderId(folder.id)}
+                        className={`truncate rounded-lg px-3 py-2 text-left text-sm transition ${
+                          selectedFolderId === folder.id
+                            ? 'border border-accent-sky-500 bg-accent-sky-500/10 font-semibold text-white'
+                            : 'border border-transparent text-muted-300 hover:bg-slate-800/60'
+                        }`}
+                      >
+                        {folder.name} ({entries.filter((e) => e.folderId === folder.id).length})
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
 
-              {activeTab === 'reviewed' && tabCounts.reviewed > 0 && (
-                <div className="mb-6 rounded-xl border border-accent-sky-500/40 bg-accent-sky-500/5 p-4">
-                  <div className="mb-3 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
-                    Release {selectedForRelease.size} selected {selectedForRelease.size === 1 ? 'entry' : 'entries'}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-6">
+                <section className="rounded-2xl border border-border bg-panel p-6">
+                  <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">New entry</div>
+                  <div className="flex flex-col gap-3">
                     <input
-                      value={releaseVersion}
-                      onChange={(event) => setReleaseVersion(event.target.value)}
-                      placeholder="Version, e.g. 1.0.14"
-                      className="w-48 rounded border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white"
+                      value={newTitle}
+                      onChange={(event) => setNewTitle(event.target.value)}
+                      placeholder="Title"
+                      className="w-full rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white"
+                    />
+                    <textarea
+                      value={newDescription}
+                      onChange={(event) => setNewDescription(event.target.value)}
+                      placeholder="Description"
+                      rows={2}
+                      className="w-full rounded border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white"
                     />
                     <button
                       type="button"
-                      onClick={handleRelease}
-                      disabled={releasing || selectedForRelease.size === 0 || !releaseVersion.trim()}
-                      className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={handleCreateEntry}
+                      disabled={creating || !newTitle.trim() || !newDescription.trim()}
+                      className="self-start rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {releasing ? 'Releasing…' : 'Release'}
+                      {creating ? 'Adding…' : '+ Add entry'}
                     </button>
-                    {releaseError && <span className="text-sm text-status-bad">{releaseError}</span>}
                   </div>
-                </div>
-              )}
+                </section>
 
-              {visibleEntries.length === 0 && <p className="text-xs text-muted-500">Nothing here yet.</p>}
-
-              <div className="flex flex-col gap-3">
-                {visibleEntries.map((entry) => (
-                  <div key={entry.id} className="rounded-xl border border-border bg-card p-4">
-                    <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-[220px] flex-1">
-                        <div className="flex items-center gap-2">
-                          {!entry.linkedFeatureRequestId && (
-                            <span className="rounded border border-amber-500/40 bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-                              DEV
-                            </span>
-                          )}
-                          <div className="text-sm font-semibold text-white">{entry.title}</div>
-                        </div>
-                        <p className="mt-1 text-sm text-muted-400">{entry.description}</p>
-                        <div className="mt-2 text-xs text-muted-500">
-                          {entry.linkedFeatureRequestId
-                            ? `From /features · ${entry.submittedByTenantName ?? 'Unknown tenant'}`
-                            : 'Private entry'}{' '}
-                          · {formatDate(entry.createdAt)}
-                          {entry.folderId && folderName.get(entry.folderId) && ` · ${folderName.get(entry.folderId)}`}
-                          {entry.releasedVersion && (
-                            <span className="ml-1 font-semibold text-status-good">
-                              · Released v{entry.releasedVersion.replace(/^v/i, '')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        {activeTab === 'reviewed' && (
-                          <input
-                            type="checkbox"
-                            checked={selectedForRelease.has(entry.id)}
-                            onChange={() => toggleSelectedForRelease(entry.id)}
-                            className="h-4 w-4 accent-accent-sky-500"
-                            title="Select for release"
-                          />
-                        )}
-                        <select
-                          value={entry.folderId ?? ''}
-                          onChange={(event) => handleFolderChange(entry, event.target.value)}
-                          disabled={!!entry.releasedUpdateId}
-                          className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+                <section className="rounded-2xl border border-border bg-panel p-6">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex gap-2">
+                      {(['all', 'reviewed', 'devlog'] as Tab[]).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setActiveTab(tab)}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
+                            activeTab === tab ? 'bg-accent-sky-500 text-white' : 'border border-border text-muted-400 hover:text-white'
+                          }`}
                         >
-                          <option value="">No folder</option>
-                          {folders.map((folder) => (
-                            <option key={folder.id} value={folder.id}>
-                              {folder.name}
-                            </option>
-                          ))}
-                        </select>
-                        {!entry.releasedUpdateId && (
-                          <label className="flex items-center gap-1.5 text-xs text-muted-400">
-                            <input
-                              type="checkbox"
-                              checked={entry.eligibleForRelease}
-                              disabled={!!entry.completedAt}
-                              onChange={(event) => handleEligibleChange(entry, event.target.checked)}
-                              className="h-3.5 w-3.5 accent-accent-sky-500"
-                            />
-                            Eligible for release
-                          </label>
-                        )}
-                        {!entry.completedAt && !entry.releasedUpdateId && (
-                          <button
-                            type="button"
-                            onClick={() => handleComplete(entry)}
-                            className="rounded-lg bg-accent-sky-500 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400"
-                          >
-                            Complete
-                          </button>
-                        )}
-                        {entry.completedAt && !entry.releasedUpdateId && (
-                          <span className="text-[11px] text-muted-500">Completed {formatDate(entry.completedAt)}</span>
-                        )}
+                          {tab === 'all' ? 'All' : tab === 'reviewed' ? 'Reviewed' : 'Dev Log'} (
+                          {tab === 'all' ? tabCounts.all : tab === 'reviewed' ? tabCounts.reviewed : tabCounts.devlog})
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      value={sortMode}
+                      onChange={(event) => setSortMode(event.target.value as SortMode)}
+                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+                    >
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="title-asc">Title A–Z</option>
+                      <option value="title-desc">Title Z–A</option>
+                    </select>
+                  </div>
+
+                  {activeTab === 'reviewed' && tabCounts.reviewed > 0 && (
+                    <div className="mb-6 rounded-xl border border-accent-sky-500/40 bg-accent-sky-500/5 p-4">
+                      <div className="mb-3 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
+                        Release {selectedForRelease.size} selected {selectedForRelease.size === 1 ? 'entry' : 'entries'}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          value={releaseVersion}
+                          onChange={(event) => setReleaseVersion(event.target.value)}
+                          placeholder="Version, e.g. 1.0.14"
+                          className="w-48 rounded border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRelease}
+                          disabled={releasing || selectedForRelease.size === 0 || !releaseVersion.trim()}
+                          className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {releasing ? 'Releasing…' : 'Release'}
+                        </button>
+                        {releaseError && <span className="text-sm text-status-bad">{releaseError}</span>}
                       </div>
                     </div>
-                    <textarea
-                      defaultValue={entry.notes ?? ''}
-                      onBlur={(event) => handleNotesBlur(entry, event.target.value)}
-                      placeholder="Private notes…"
-                      rows={2}
-                      disabled={!!entry.releasedUpdateId}
-                      className="w-full rounded border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs text-white disabled:opacity-50"
-                    />
+                  )}
+
+                  {visibleEntries.length === 0 && <p className="text-xs text-muted-500">Nothing here yet.</p>}
+
+                  <div className="flex flex-col gap-3">
+                    {visibleEntries.map((entry) => (
+                      <div key={entry.id} className="rounded-xl border border-border bg-card p-4">
+                        <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-[220px] flex-1">
+                            <div className="flex items-center gap-2">
+                              {!entry.linkedFeatureRequestId && (
+                                <span className="rounded border border-amber-500/40 bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                                  DEV
+                                </span>
+                              )}
+                              <div className="text-sm font-semibold text-white">{entry.title}</div>
+                            </div>
+                            <p className="mt-1 text-sm text-muted-400">{entry.description}</p>
+                            <div className="mt-2 text-xs text-muted-500">
+                              {entry.linkedFeatureRequestId
+                                ? `From /features · ${entry.submittedByTenantName ?? 'Unknown tenant'}`
+                                : 'Private entry'}{' '}
+                              · {formatDate(entry.createdAt)}
+                              {entry.folderId && folderName.get(entry.folderId) && ` · ${folderName.get(entry.folderId)}`}
+                              {entry.releasedVersion && (
+                                <span className="ml-1 font-semibold text-status-good">
+                                  · Released v{entry.releasedVersion.replace(/^v/i, '')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            {activeTab === 'reviewed' && (
+                              <input
+                                type="checkbox"
+                                checked={selectedForRelease.has(entry.id)}
+                                onChange={() => toggleSelectedForRelease(entry.id)}
+                                className="h-4 w-4 accent-accent-sky-500"
+                                title="Select for release"
+                              />
+                            )}
+                            <select
+                              value={entry.folderId ?? ''}
+                              onChange={(event) => handleFolderChange(entry, event.target.value)}
+                              disabled={!!entry.releasedUpdateId}
+                              className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+                            >
+                              <option value="">No folder</option>
+                              {folders.map((folder) => (
+                                <option key={folder.id} value={folder.id}>
+                                  {folder.name}
+                                </option>
+                              ))}
+                            </select>
+                            {!entry.releasedUpdateId && (
+                              <label className="flex items-center gap-1.5 text-xs text-muted-400">
+                                <input
+                                  type="checkbox"
+                                  checked={entry.eligibleForRelease}
+                                  disabled={!!entry.completedAt}
+                                  onChange={(event) => handleEligibleChange(entry, event.target.checked)}
+                                  className="h-3.5 w-3.5 accent-accent-sky-500"
+                                />
+                                Eligible for release
+                              </label>
+                            )}
+                            {!entry.completedAt && !entry.releasedUpdateId && (
+                              <button
+                                type="button"
+                                onClick={() => handleComplete(entry)}
+                                className="rounded-lg bg-accent-sky-500 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400"
+                              >
+                                Complete
+                              </button>
+                            )}
+                            {entry.completedAt && !entry.releasedUpdateId && (
+                              <span className="text-[11px] text-muted-500">Completed {formatDate(entry.completedAt)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <textarea
+                          defaultValue={entry.notes ?? ''}
+                          onBlur={(event) => handleNotesBlur(entry, event.target.value)}
+                          placeholder="Private notes…"
+                          rows={2}
+                          disabled={!!entry.releasedUpdateId}
+                          className="w-full rounded border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs text-white disabled:opacity-50"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </section>
               </div>
-            </section>
+            </div>
           </>
         )}
       </div>
