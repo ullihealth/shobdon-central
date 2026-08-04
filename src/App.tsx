@@ -20,6 +20,7 @@ import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPa
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import PlatformPreviewPage from './pages/PlatformPreviewPage'
+import PlatformDevFeaturesPage from './pages/PlatformDevFeaturesPage'
 import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
 import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import KnownDevicesPage from './pages/KnownDevicesPage'
@@ -201,6 +202,17 @@ export default function App(): JSX.Element {
           element={
             <RequireAuth requireDeveloper>
               <PlatformUpdatesPage />
+            </RequireAuth>
+          }
+        />
+        {/* Private developer workspace (migration 0067) - mirrors /features
+            read-through plus developer-private entries. Same requireDeveloper
+            gate as /platform/updates, its own linked system. */}
+        <Route
+          path="/platform/dev-features"
+          element={
+            <RequireAuth requireDeveloper>
+              <PlatformDevFeaturesPage />
             </RequireAuth>
           }
         />

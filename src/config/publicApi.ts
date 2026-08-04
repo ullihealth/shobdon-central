@@ -177,6 +177,15 @@ export const PLATFORM_UPDATES_URL = '/api/platform/updates'
 export const PLATFORM_UPDATES_RELEASE_URL = '/api/platform/updates/release'
 export const platformUpdateUrl = (id: string): string => `/api/platform/updates/${id}`
 
+// Platform-admin only: the private Developer Features workspace
+// (migration 0067) - functions/api/platform/dev-features/,
+// functions/api/platform/dev-feature-folders/. Mirrors /features
+// (feature_requests) read-through plus developer-private entries; not
+// tenant-facing. Consumed by PlatformDevFeaturesPage.tsx.
+export const PLATFORM_DEV_FEATURES_URL = '/api/platform/dev-features'
+export const platformDevFeatureUrl = (id: string): string => `/api/platform/dev-features/${id}`
+export const PLATFORM_DEV_FEATURE_FOLDERS_URL = '/api/platform/dev-feature-folders'
+
 // Public, unauthenticated - functions/api/public/landing-mode.ts.
 // Consumed by RootRoute.tsx for every visitor to the bare marketing
 // domain, logged in or not. Never called on a tenant subdomain.

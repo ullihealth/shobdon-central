@@ -14,6 +14,22 @@
 // reviewed, rather than silently skipping it - a release action should
 // never leave the caller unsure which entries actually ended up in the
 // version they asked for.
+//
+// Developer Features linkage (migration 0067): releasing is also the
+// trigger that reports a completed feature back to its public /features
+// submission as "Built". Two-hop lookup per released entry -
+// platform_updates.source_dev_feature_id -> dev_features.
+// linked_feature_request_id - both single FKs rather than a third
+// denormalized column pointing straight at feature_requests, so the
+// full "which public submission (if any) this release note came from"
+// chain stays reconstructable. Either hop can legitimately be NULL (a
+// manually-created draft never went through Developer Features at all;
+// a Developer Features entry can be developer-private with no public
+// origin) - both cases just skip the write-back with no error, same
+// "degrades cleanly" behaviour this round's own investigation confirmed
+// for both. Releasing several entries that all trace back to the same
+// feature_requests row, or one that's already 'built', is a harmless
+// idempotent overwrite - not special-cased.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -66,6 +82,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare("UPDATE platform_updates SET status = 'released', version = ?, released_at = ? WHERE id = ?")
       .bind(version, now, id)
+      .run();
+  }
+
+  const linkedRows = await env.DB
+    .prepare(
+      `SELECT df.linked_feature_request_id AS linkedFeatureRequestId
+       FROM platform_updates pu
+       JOIN dev_features df ON df.id = pu.source_dev_feature_id
+       WHERE pu.id IN (${placeholders}) AND df.linked_feature_request_id IS NOT NULL`
+    )
+    .bind(...ids)
+    .all<{ linkedFeatureRequestId: string }>();
+
+  const featureRequestIds = [...new Set(linkedRows.results.map((row) => row.linkedFeatureRequestId))];
+  if (featureRequestIds.length > 0) {
+    const featurePlaceholders = featureRequestIds.map(() => "?").join(", ");
+    await env.DB
+      .prepare(`UPDATE feature_requests SET status = 'built', updated_at = ? WHERE id IN (${featurePlaceholders})`)
+      .bind(now, ...featureRequestIds)
       .run();
   }
 
