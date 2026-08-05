@@ -47,7 +47,7 @@ export default function RunwayInUseCard({ refreshSignal }: { refreshSignal?: num
 
   return (
     <section className="rounded-2xl border border-border bg-panel p-4">
-      <div className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.25em] text-muted-400">Runway In Use</div>
+      <div className="mb-3 text-center text-base font-semibold uppercase tracking-[0.25em] text-muted-400">Runway In Use</div>
       {opsPanel?.runwaysClosed ? (
         <div className="rounded-xl border border-status-bad/40 bg-status-bad/10 p-4 text-center text-2xl font-semibold text-status-bad">
           RUNWAYS CLOSED

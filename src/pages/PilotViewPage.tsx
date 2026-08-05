@@ -124,7 +124,6 @@ export default function PilotViewPage(): JSX.Element {
 
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
           <WeatherStatGrid />
-          <RunwayInUseCard refreshSignal={refreshTick} />
           {/* No fixed-height wrapper here (unlike every other section, which
               is already naturally-flowing) - CompassPanel itself now sizes
               its circle off width below `sm:` (see that component's own
@@ -132,6 +131,11 @@ export default function PilotViewPage(): JSX.Element {
               route; a percentage h-full with no definite ancestor height
               simply resolves as auto, matching natural page flow. */}
           <CompassPanel />
+          {/* Moved below the compass (was directly under Weather Summary) -
+              keeps the compass as high on the page as possible before the
+              user needs to scroll, per the font-size round's own height
+              constraint. */}
+          <RunwayInUseCard refreshSignal={refreshTick} />
           {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
               title always visible, tap to expand. Each panel keeps
               fetching/refreshing on its own existing schedule regardless
@@ -146,13 +150,13 @@ export default function PilotViewPage(): JSX.Element {
           <PilotCollapsibleSection
             title="Notices"
             sectionClassName="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4"
-            titleClassName="text-sm font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
+            titleClassName="text-base font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
             chevronClassName="text-accent-sky-400"
           >
             <PilotNoticesPanel refreshSignal={refreshTick} />
           </PilotCollapsibleSection>
           <PilotCollapsibleSection title="Fuel Prices">
-            <GasPricesPanel hideTitle />
+            <GasPricesPanel hideTitle largeText />
           </PilotCollapsibleSection>
         </div>
 

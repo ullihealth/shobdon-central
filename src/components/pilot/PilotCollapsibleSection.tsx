@@ -28,7 +28,7 @@ export default function PilotCollapsibleSection({
   title,
   children,
   sectionClassName = 'rounded-2xl border border-border bg-panel p-4',
-  titleClassName = 'text-sm font-semibold uppercase tracking-[0.25em] text-muted-400',
+  titleClassName = 'text-base font-semibold uppercase tracking-[0.25em] text-muted-400',
   chevronClassName = 'text-muted-400',
   defaultExpanded = false,
 }: PilotCollapsibleSectionProps): JSX.Element {

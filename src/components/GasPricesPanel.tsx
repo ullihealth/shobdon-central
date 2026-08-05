@@ -22,6 +22,11 @@ interface GasPricesPanelProps {
   // (render it) - every existing caller (Clubhouse1Template.tsx etc.)
   // omits this prop entirely and is completely unaffected.
   hideTitle?: boolean
+  // Same opt-in-prop precedent as hideTitle above - Pilot View's font-
+  // size round bumps the tile labels/prices for phone readability without
+  // touching this component's own defaults, which every existing TV-
+  // dashboard caller still renders unchanged.
+  largeText?: boolean
 }
 
 // Simple hand-rolled droplet - this repo has no icon library (see
@@ -48,7 +53,7 @@ interface Tile {
 // out as a tight horizontal row of self-contained tiles instead of a
 // label/value grid, since three independent prices read better as
 // separate at-a-glance chips than as one shared table.
-export default function GasPricesPanel({ gasPricesData, hideTitle = false }: GasPricesPanelProps = {}): JSX.Element | null {
+export default function GasPricesPanel({ gasPricesData, hideTitle = false, largeText = false }: GasPricesPanelProps = {}): JSX.Element | null {
   const [gasPrices, setGasPrices] = useState<GasPricesPublic | null>(gasPricesData ?? null)
 
   useEffect(() => {
@@ -93,8 +98,8 @@ export default function GasPricesPanel({ gasPricesData, hideTitle = false }: Gas
         {tiles.map((tile) => (
           <div key={tile.key} className="flex flex-1 flex-col items-center gap-1 rounded-xl border border-border bg-card px-2 py-2.5">
             <FuelDropletIcon className="h-4 w-4 text-accent-sky-400" />
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-500">{tile.label}</div>
-            <div className="text-xl font-extrabold leading-none text-primary">
+            <div className={`font-semibold uppercase tracking-wide text-muted-500 ${largeText ? 'text-xs' : 'text-[10px]'}`}>{tile.label}</div>
+            <div className={`font-extrabold leading-none text-primary ${largeText ? 'text-2xl' : 'text-xl'}`}>
               {gasPrices.currency}
               {tile.price.toFixed(2)}
             </div>

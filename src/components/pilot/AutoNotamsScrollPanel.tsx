@@ -61,7 +61,7 @@ export default function AutoNotamsScrollPanel({ refreshSignal }: { refreshSignal
   ) : (
     <div className="flex flex-col gap-3">
       {sorted.map((notam) => (
-        <div key={notam.id} className="flex items-start gap-2 rounded-xl border border-border bg-card p-3 text-sm text-primary">
+        <div key={notam.id} className="flex items-start gap-2 rounded-xl border border-border bg-card p-3 text-base text-primary">
           <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
           <span>{notam.text}</span>
         </div>
