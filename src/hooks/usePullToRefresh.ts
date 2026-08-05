@@ -47,6 +47,22 @@ export function usePullToRefresh(onRefresh: () => void): { pulling: boolean; pul
         armedRef.current = false
         return
       }
+      // Real bug, not just a nicety: without this, real iOS Safari (most
+      // visible in home-screen standalone mode) is free to treat this same
+      // downward drag as its own native elastic-overscroll gesture. Once
+      // WebKit's gesture recogniser decides that's what's happening, it
+      // terminates the touch sequence with `touchcancel` instead of
+      // `touchend` - which this hook had no listener for at all, so
+      // armedRef's state was simply never checked and onRefresh() never
+      // ran. Confirmed this hook's own logic was otherwise correct (a
+      // simulated drag via CDP touch events fired onRefresh reliably) -
+      // this preventDefault is what stops WebKit from ever taking the
+      // gesture away from us on a real device in the first place, so
+      // touchend (not touchcancel) is what actually ends the sequence.
+      // Deliberately called only in this branch - normal scrolling
+      // (delta <= 0, or already scrolled past the top) is never touched,
+      // so this can't block real scroll gestures anywhere on the page.
+      event.preventDefault()
       setPulling(true)
       setPullDistance(delta)
       armedRef.current = delta > REFRESH_THRESHOLD_PX
@@ -60,13 +76,30 @@ export function usePullToRefresh(onRefresh: () => void): { pulling: boolean; pul
       setPullDistance(0)
     }
 
+    // Safety net, not the primary fix (the preventDefault above is what
+    // actually stops this from happening on a real device) - if a touch
+    // sequence is ever interrupted for some other reason (an incoming
+    // call, a multi-touch gesture, etc.), this resets state cleanly
+    // without firing onRefresh, the same as an upward flick already does,
+    // rather than leaving armedRef/startYRef stuck for the next gesture.
+    function handleTouchCancel() {
+      startYRef.current = null
+      armedRef.current = false
+      setPulling(false)
+      setPullDistance(0)
+    }
+
     window.addEventListener('touchstart', handleTouchStart, { passive: true })
-    window.addEventListener('touchmove', handleTouchMove, { passive: true })
+    // Not passive - handleTouchMove needs to call preventDefault() while
+    // actively tracking a pull, which a passive listener can never do.
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
     window.addEventListener('touchend', handleTouchEnd, { passive: true })
+    window.addEventListener('touchcancel', handleTouchCancel, { passive: true })
     return () => {
       window.removeEventListener('touchstart', handleTouchStart)
       window.removeEventListener('touchmove', handleTouchMove)
       window.removeEventListener('touchend', handleTouchEnd)
+      window.removeEventListener('touchcancel', handleTouchCancel)
     }
   }, [onRefresh])
 
