@@ -38,6 +38,25 @@
 // behaviourally for the one real tenant this already covered (confirmed
 // by this round's own before/after test, not assumed from the rename
 // alone).
+//
+// ATC-default round: checked ahead of the lat/lon branch too, for the
+// same reason the parent check is - has_physical_atc (migration 0038)
+// is a deliberate, more-specific admin fact about THIS tenant's real
+// weather source than "does it have coordinates for a generic regional
+// forecast." Previously this endpoint never considered 'atc' as an
+// option at all, so every brand-new device on Shobdon (the one tenant
+// that actually has a real station) defaulted to Internet/Open-Meteo
+// exactly like every tenant with no station - not a deliberate choice,
+// just never-considered. fetchAtcWeather() (atcProvider.ts) doesn't
+// need the requesting device to be anywhere near the station itself -
+// it reads from the public capture Worker relay, reachable from any
+// device anywhere - so there's no "only default to atc for local
+// devices" concern here; the existing ATC-primary/Met-Office-fallback
+// auto-switch in WeatherContext.tsx already handles a real probe
+// failure gracefully once this default hands it 'atc' to try. No
+// per-provider config needs sending along - DEFAULT_WEATHER_CONFIG.atc
+// already has sensible defaults, same "no client-side settings" shape
+// 'ingested' above already uses.
 import { resolveTenantFromHost, type D1Database } from "../_utils/resolveTenantHost";
 import { resolveEffectiveTenantById } from "../_utils/resolveParentTenant";
 
@@ -57,6 +76,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface TenantLocationRow {
   lat: number | null;
   lon: number | null;
+  hasPhysicalAtc: number;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -76,7 +96,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ activeProvider: "ingested" });
   }
 
-  const row = await env.DB.prepare("SELECT lat, lon FROM tenants WHERE id = ?").bind(tenant.id).first<TenantLocationRow>();
+  const row = await env.DB
+    .prepare("SELECT lat, lon, has_physical_atc AS hasPhysicalAtc FROM tenants WHERE id = ?")
+    .bind(tenant.id)
+    .first<TenantLocationRow>();
+
+  if (row?.hasPhysicalAtc) {
+    return jsonResponse({ activeProvider: "atc" });
+  }
 
   if (row && row.lat !== null && row.lon !== null) {
     return jsonResponse({

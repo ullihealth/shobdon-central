@@ -48,6 +48,7 @@ export function loadWeatherConfig(): WeatherConfig {
 }
 
 export function saveWeatherConfig(config: WeatherConfig): void {
+  console.log('[DEBUG-ATC-PROBE] (3) about to write weather-config to localStorage', { key: STORAGE_KEY, activeProvider: config.activeProvider })
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
 }
 
@@ -112,6 +113,18 @@ export async function resolveWeatherConfig(): Promise<WeatherConfig> {
       // is resolved entirely server-side by weather-latest.ts.
       if (serverDefault?.activeProvider === 'ingested') {
         return { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'ingested' }
+      }
+      // 'atc' - this tenant has real physical ATC/PC2 hardware
+      // (has_physical_atc, migration 0038) - see weather-default.ts's
+      // own comment for why a brand-new device should try the real
+      // station before ever falling back to a generic regional
+      // forecast. No per-provider config to merge in either, same
+      // "no client-side settings" shape as 'ingested' above -
+      // DEFAULT_WEATHER_CONFIG.atc's own stationUrl/refreshInterval/
+      // timeout/autoReconnect defaults are already exactly what a
+      // fresh device should start with.
+      if (serverDefault?.activeProvider === 'atc') {
+        return { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'atc' }
       }
       // 'unavailable' - no share and no lat/lon on file for this tenant
       // (weather-default.ts's own comment). Deliberately NOT the same as
