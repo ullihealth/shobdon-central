@@ -130,7 +130,16 @@ export default function PilotViewPage(): JSX.Element {
               comment), so it needs no ancestor-supplied height on this
               route; a percentage h-full with no definite ancestor height
               simply resolves as auto, matching natural page flow. */}
-          <CompassPanel spacious />
+          {/* Extra mb-4 on top of this flex column's own gap-4 - the QNH row
+              (this block's last readout line) was sitting right on top of
+              the Runway card below it with only the shared gap, too close
+              given how different in purpose the two are. Margin on this
+              wrapper, not a change to the shared gap-4 itself, since that
+              gap is reused uniformly between every other section on this
+              page and only this one boundary needed more room. */}
+          <div className="mb-4">
+            <CompassPanel spacious />
+          </div>
           {/* Moved below the compass (was directly under Weather Summary) -
               keeps the compass as high on the page as possible before the
               user needs to scroll, per the font-size round's own height

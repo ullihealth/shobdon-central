@@ -709,7 +709,7 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 pt-6 sm:flex-row sm:gap-7">
+    <div className={`flex h-full flex-col items-center justify-center ${spacious ? 'gap-8' : 'gap-4'} pt-6 sm:flex-row sm:gap-7`}>
       {/* ── COMPASS INSTRUMENT ─────────────────────────────────────────
           Two overlapping SVGs sharing the same 400×400 viewBox.
           Layer 1 (bottom): static — compass rose and runway reference.
