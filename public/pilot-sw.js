@@ -52,15 +52,41 @@ self.addEventListener('fetch', (event) => {
   // always go straight to the network, untouched.
   if (event.request.method !== 'GET') return
 
+  // Cross-origin requests are never touched by this service worker at
+  // all - not cached, not network-first-wrapped, nothing. Confirmed the
+  // hard way: isLiveDataRequest() below only ever checked pathname
+  // (correct for same-origin /api/* live data), so a cross-origin
+  // live-data request - the weather station's own capture Worker,
+  // *.workers.dev, a genuinely different origin from this app - fell
+  // through as NOT live data, got intercepted, and this handler tried
+  // to fetch(event.request) again from inside the service worker's own
+  // execution context to service it. Re-dispatching a cross-origin
+  // Request from within a SW fetch handler is a known WebKit trouble
+  // spot; on affected Safari sessions that refetch failed, landed in
+  // the generic (non-live-data) catch branch below, found nothing in
+  // cache (cross-origin responses are never written there either - see
+  // the origin check inside the .then() below), and returned
+  // Response.error() - a literal network-error Response, which is
+  // exactly what Safari's console reports as "Response served by
+  // service worker is an error". Bailing out here before any of that
+  // logic runs means the browser's own normal, un-intercepted network
+  // handling takes over completely for every cross-origin request -
+  // this app only ever has one such family (the capture Worker's
+  // /latest, /theme, /refresh-check etc, see captureEndpoint.ts), none
+  // of which need or benefit from SW involvement anyway.
+  if (new URL(event.request.url).origin !== self.location.origin) return
+
   const isLiveData = isLiveDataRequest(event.request.url)
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Only cache genuinely successful, same-origin, non-API
-        // responses - never cache an error page, an opaque cross-origin
-        // response, or any live-data endpoint as if it were a static
-        // asset (see the file-level comment above).
+        // Only cache genuinely successful, non-API responses - never
+        // cache an error page or any live-data endpoint as if it were a
+        // static asset (see the file-level comment above). The origin
+        // check that used to live here is now redundant (the early
+        // return above already guarantees same-origin) but costs
+        // nothing to leave as a second, explicit guard.
         if (response.ok && !isLiveData && new URL(event.request.url).origin === self.location.origin) {
           const responseClone = response.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone))

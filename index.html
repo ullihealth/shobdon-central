@@ -2,12 +2,20 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <!-- Deliberately no user-scalable=no / maximum-scale lock here - native
-         pinch-to-zoom and drag-to-pan must keep working on phone/tablet
-         browsers. This dashboard is a fixed canvas (same layout as desktop/
-         TV) that a mobile user zooms/pans into, rather than a separately
-         reflowed compact mobile layout - a dedicated phase-2 mobile layout
-         is a possible future improvement, out of scope for now. -->
+    <!-- Deliberately no user-scalable=no / maximum-scale lock here - one
+         shared tag across every route (this is a client-rendered SPA, so
+         there's no per-route <head>), and it's the right baseline for
+         both of this app's now-different mobile behaviours. The TV/
+         carousel dashboard (/, /d/:slug) is still a fixed canvas sized
+         for a kiosk viewport - a phone visitor zooms/pans into it rather
+         than getting a reflowed layout, and pinch-zoom must keep working
+         there for that to be usable at all. /pilot (added later - see
+         RootRoute.tsx's own mobile-redirect comment) is the dedicated
+         single-column mobile layout that used to not exist - it already
+         renders at native scale with zero horizontal overflow on a real
+         phone (verified directly: documentElement.scrollWidth equals
+         window.innerWidth), so it never NEEDS zoom, but nothing here
+         blocks a user from pinch-zooming it anyway if they want to. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shobdon Central — Weather Connectivity Test</title>
     <!-- Site-wide favicon (Airfield Central's jet icon) - covers both the
