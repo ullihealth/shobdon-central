@@ -197,7 +197,7 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
       <div className="flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
       <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
         {notams.slice(0, visibleCount).map((notam) => (
-          <div key={notam.id} className="mb-3 flex items-start gap-2 text-sm text-primary last:mb-0">
+          <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
             <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
             <span>{notam.text}</span>
           </div>
@@ -467,7 +467,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs</div>
                 <div className="mt-3 flex flex-col gap-2">
                   {visibleAutoNotams.map((notam) => (
-                    <div key={notam.id} className="flex items-start gap-2 text-sm text-primary">
+                    <div key={notam.id} className="flex items-start gap-2 text-[15px] text-primary">
                       <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
                       <span>{notam.text}</span>
                     </div>

@@ -9,7 +9,6 @@ import type { PressureTrend } from '../types/weather'
 interface CompassState {
   windSpeed: number
   windDirection: number
-  windGust?: number
   temperature: number
   qnh: number
   pressureTrend: PressureTrend
@@ -624,7 +623,6 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
     return {
       windSpeed: weather.windSpeed,
       windDirection: weather.windDirection,
-      windGust: weather.windGust,
       temperature: weather.temperature,
       qnh: weather.qnh,
       pressureTrend: weather.pressureTrend,
@@ -922,17 +920,20 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
       {/* INSTRUMENT READOUT PANEL — fixed-width right-aligned labels, left-aligned values, no cards/borders/dividers.
           liveDataUnavailable: the selected source's fetch failed and compassState is actually
           derived from the substituted mock fixture - show N/A rather than presenting that fake
-          data as if it were a real reading. */}
+          data as if it were a real reading.
+          No Gust row any more - confirmed directly against the Davis
+          Vantage Pro2's own station page (every id-tagged element across
+          20 stored historic captures) that it has never exposed a
+          distinct gust value, only current wind and a separate 10-minute
+          average - this was never a fixable UI gap, so the row (which
+          only ever read 'N/A'/'—' off real hardware) is gone rather than
+          left showing a permanently-empty reading. Auto-flow grid rows
+          (no fixed row template), so removing it closes the gap on its
+          own - every row below shifts up automatically. */}
       <div className={`grid grid-cols-[120px_1fr] items-baseline gap-x-4 ${spacious ? 'gap-y-4' : 'gap-y-2.5'}`}>
         <ReadoutRow
           label="Wind"
           value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-        <ReadoutRow
-          label="Gust"
-          value={liveDataUnavailable ? 'N/A' : compassState.windGust ? `${compassState.windGust} kt` : '—'}
-          valueClassName={compassState.windGust && !liveDataUnavailable ? 'text-amber-500' : 'text-slate-500'}
           labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
         />
         <ReadoutRow
