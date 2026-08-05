@@ -707,7 +707,15 @@ export default function CompassPanel(): JSX.Element {
           position:relative + left:-18px shifts ONLY this instrument left -
           unlike a negative margin, it doesn't drag the readout panel
           (the next flex sibling) along with it, since relative positioning
-          doesn't affect where following siblings are laid out.
+          doesn't affect where following siblings are laid out. Only
+          meaningful in sm:flex-row mode, where the readout sits BESIDE
+          the circle and this shift makes room for it visually - sm:-gated
+          (not unconditional) since below `sm:` the readout stacks BELOW
+          the circle instead (nothing beside it to make room for), and an
+          unconditional shift there just pushes the whole instrument off
+          true-center with nothing compensating for it (confirmed the
+          hard way - this exact offset was reported as "compass slightly
+          off-centre to the left" on the Pilot View mobile layout).
 
           Below `sm:` the parent switches to flex-col (circle stacked above
           the readout, not beside it) - h-full there would ask this item to
@@ -726,7 +734,7 @@ export default function CompassPanel(): JSX.Element {
           instead, so the circle and readout both fit within whatever
           natural height the column ends up needing, no ancestor-supplied
           fixed height required. */}
-      <div className="relative left-[-18px] aspect-square max-w-full w-full flex-shrink-0 sm:h-full sm:w-auto">
+      <div className="relative aspect-square max-w-full w-full flex-shrink-0 sm:left-[-18px] sm:h-full sm:w-auto">
 
           {/* LAYER 1 — Static reference: compass rose + runway */}
           <svg

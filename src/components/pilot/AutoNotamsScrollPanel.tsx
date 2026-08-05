@@ -52,21 +52,20 @@ export default function AutoNotamsScrollPanel({ refreshSignal }: { refreshSignal
 
   const sorted = [...(notams ?? [])].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
 
-  return (
-    <section className="rounded-2xl border border-border bg-panel p-4">
-      <div className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.25em] text-muted-400">NOTAMs</div>
-      {sorted.length === 0 ? (
-        <p className="text-sm text-muted-500">No active NOTAMs.</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {sorted.map((notam) => (
-            <div key={notam.id} className="flex items-start gap-2 rounded-xl border border-border bg-card p-3 text-sm text-primary">
-              <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
-              <span>{notam.text}</span>
-            </div>
-          ))}
+  // No outer section/title of its own any more - PilotViewPage.tsx now
+  // wraps this in PilotCollapsibleSection, which owns the card chrome
+  // and title uniformly across NOTAMs/Forecast/Notices. Bare content
+  // only, same list this always rendered.
+  return sorted.length === 0 ? (
+    <p className="text-sm text-muted-500">No active NOTAMs.</p>
+  ) : (
+    <div className="flex flex-col gap-3">
+      {sorted.map((notam) => (
+        <div key={notam.id} className="flex items-start gap-2 rounded-xl border border-border bg-card p-3 text-sm text-primary">
+          <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
+          <span>{notam.text}</span>
         </div>
-      )}
-    </section>
+      ))}
+    </div>
   )
 }

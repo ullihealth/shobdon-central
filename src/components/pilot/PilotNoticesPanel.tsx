@@ -51,19 +51,18 @@ export default function PilotNoticesPanel({ refreshSignal }: { refreshSignal?: n
         ? manualNotices
         : [{ text: 'No active notices', size: 'md', enabled: true }]
 
+  // No outer section/title of its own any more - PilotViewPage.tsx now
+  // wraps this in PilotCollapsibleSection (passed its own distinct
+  // accent-sky sectionClassName/titleClassName there, so the "visually
+  // distinct from NOTAMs" requirement from the original spec still
+  // holds even collapsed). Bare content only.
   return (
-    // Visually distinct from the NOTAMs panel above it (different
-    // border colour/background tint) per spec, so the two sections
-    // don't blur together at a glance.
-    <section className="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4">
-      <div className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.25em] text-accent-sky-400">Notices</div>
-      <div className="flex flex-col gap-3">
-        {noticesForDisplay.map((notice, index) => (
-          <div key={index} className={`font-semibold text-primary ${SIZE_CLASSES[notice.size]}`}>
-            {notice.text}
-          </div>
-        ))}
-      </div>
-    </section>
+    <div className="flex flex-col gap-3">
+      {noticesForDisplay.map((notice, index) => (
+        <div key={index} className={`font-semibold text-primary ${SIZE_CLASSES[notice.size]}`}>
+          {notice.text}
+        </div>
+      ))}
+    </div>
   )
 }

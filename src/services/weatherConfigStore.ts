@@ -48,7 +48,6 @@ export function loadWeatherConfig(): WeatherConfig {
 }
 
 export function saveWeatherConfig(config: WeatherConfig): void {
-  console.log('[DEBUG-ATC-PROBE] (3) about to write weather-config to localStorage', { key: STORAGE_KEY, activeProvider: config.activeProvider })
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
 }
 

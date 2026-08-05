@@ -16,6 +16,12 @@ interface GasPricesPanelProps {
   // tenant's real prices. Every real public-dashboard caller omits this
   // and self-fetches PUBLIC_CONFIG_URL instead, same as that file.
   gasPricesData?: GasPricesPublic | null
+  // Pilot View passes this true - PilotCollapsibleSection already
+  // renders its own "Fuel Prices" title as the accordion header, so
+  // this component's own internal one would show twice. Defaults false
+  // (render it) - every existing caller (Clubhouse1Template.tsx etc.)
+  // omits this prop entirely and is completely unaffected.
+  hideTitle?: boolean
 }
 
 // Simple hand-rolled droplet - this repo has no icon library (see
@@ -42,7 +48,7 @@ interface Tile {
 // out as a tight horizontal row of self-contained tiles instead of a
 // label/value grid, since three independent prices read better as
 // separate at-a-glance chips than as one shared table.
-export default function GasPricesPanel({ gasPricesData }: GasPricesPanelProps = {}): JSX.Element | null {
+export default function GasPricesPanel({ gasPricesData, hideTitle = false }: GasPricesPanelProps = {}): JSX.Element | null {
   const [gasPrices, setGasPrices] = useState<GasPricesPublic | null>(gasPricesData ?? null)
 
   useEffect(() => {
@@ -80,7 +86,9 @@ export default function GasPricesPanel({ gasPricesData }: GasPricesPanelProps = 
 
   return (
     <div className="flex-shrink-0 rounded-3xl border border-border bg-panel p-4 shadow-xl shadow-slate-950/20">
-      <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.25em] text-muted-400">Fuel Prices</div>
+      {!hideTitle && (
+        <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.25em] text-muted-400">Fuel Prices</div>
+      )}
       <div className="flex gap-2">
         {tiles.map((tile) => (
           <div key={tile.key} className="flex flex-1 flex-col items-center gap-1 rounded-xl border border-border bg-card px-2 py-2.5">

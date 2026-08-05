@@ -14,6 +14,7 @@ import ForecastCloudbaseCluster from '../components/pilot/ForecastCloudbaseClust
 import RunwayInUseCard from '../components/pilot/RunwayInUseCard'
 import AutoNotamsScrollPanel from '../components/pilot/AutoNotamsScrollPanel'
 import PilotNoticesPanel from '../components/pilot/PilotNoticesPanel'
+import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 import PilotFooterTicker from '../components/pilot/PilotFooterTicker'
 import CompassPanel from '../components/CompassPanel'
 import GasPricesPanel from '../components/GasPricesPanel'
@@ -123,7 +124,6 @@ export default function PilotViewPage(): JSX.Element {
 
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
           <WeatherStatGrid />
-          <ForecastCloudbaseCluster />
           <RunwayInUseCard refreshSignal={refreshTick} />
           {/* No fixed-height wrapper here (unlike every other section, which
               is already naturally-flowing) - CompassPanel itself now sizes
@@ -132,9 +132,28 @@ export default function PilotViewPage(): JSX.Element {
               route; a percentage h-full with no definite ancestor height
               simply resolves as auto, matching natural page flow. */}
           <CompassPanel />
-          <AutoNotamsScrollPanel refreshSignal={refreshTick} />
-          <PilotNoticesPanel refreshSignal={refreshTick} />
-          <GasPricesPanel />
+          {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
+              title always visible, tap to expand. Each panel keeps
+              fetching/refreshing on its own existing schedule regardless
+              of collapsed state - see PilotCollapsibleSection's own
+              comment for why. */}
+          <PilotCollapsibleSection title="NOTAMs">
+            <AutoNotamsScrollPanel refreshSignal={refreshTick} />
+          </PilotCollapsibleSection>
+          <PilotCollapsibleSection title="Forecast & Visibility">
+            <ForecastCloudbaseCluster />
+          </PilotCollapsibleSection>
+          <PilotCollapsibleSection
+            title="Notices"
+            sectionClassName="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4"
+            titleClassName="text-sm font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
+            chevronClassName="text-accent-sky-400"
+          >
+            <PilotNoticesPanel refreshSignal={refreshTick} />
+          </PilotCollapsibleSection>
+          <PilotCollapsibleSection title="Fuel Prices">
+            <GasPricesPanel hideTitle />
+          </PilotCollapsibleSection>
         </div>
 
         <div className="fixed bottom-0 left-0 right-0 z-10">
