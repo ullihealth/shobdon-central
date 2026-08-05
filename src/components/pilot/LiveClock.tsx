@@ -27,5 +27,9 @@ export default function LiveClock(): JSX.Element {
     timeZone: AIRFIELD_TIMEZONE,
   })
 
-  return <span className="font-mono text-sm font-semibold text-primary">{timeString}</span>
+  // text-3xl/font-extrabold matches Header.tsx's own TV-dashboard clock
+  // treatment (that file's own comment: "text-lg font-extrabold
+  // text-primary sm:text-5xl") - no font-mono here, this app's standard
+  // sans-serif face throughout, not a monospace/typewriter fallback.
+  return <span className="text-3xl font-extrabold text-primary">{timeString}</span>
 }
