@@ -7,10 +7,21 @@ interface OpsPanelPublic {
   runwaysClosed: boolean
 }
 
-// 'Left'/'Right' - same condensed labels RightInfoPanel.tsx uses so the
-// value fits its own grid cell on one line.
-function circuitDirectionLabel(direction: string): string {
-  return direction === 'right' ? 'Right' : 'Left'
+interface RunwayGroupPublic {
+  endAIdentifier: string
+  endBIdentifier: string
+}
+
+// 'RIGHT HAND'/'LEFT HAND' - ops_panel_state.circuitDirection
+// (migrations/0009_ops_panel_state.sql) is a single 'left'|'right' field
+// tied to whichever end is currently activeRunwayEnd - there is no
+// independently-stored circuit direction for the reciprocal end. This is
+// why the reciprocal end below never gets a hand label of its own: one
+// isn't real stored data, only ever a guess, and guessing it wrong is
+// exactly the kind of thing that shouldn't ship on a safety-relevant
+// runway-in-use readout (confirmed with the user before building this).
+function handLabel(direction: string): string {
+  return direction === 'right' ? 'RIGHT HAND' : 'LEFT HAND'
 }
 
 // Pilot View extraction (Section 5 - Runway in use / circuit direction) -
@@ -26,15 +37,25 @@ function circuitDirectionLabel(direction: string): string {
 // Self-fetches PUBLIC_CONFIG_URL, same pattern RightInfoPanel itself uses.
 // refreshSignal (bumped by PilotViewPage.tsx's 60s tick) triggers a re-
 // fetch without remounting.
+//
+// Redesigned to a single compact full-width row (was a titled card with
+// its own padded sub-card) - this is safety-relevant, at-a-glance
+// information a pilot shouldn't have to spend a full card's worth of
+// scroll-space on, not something needing NOTAMs/Forecast's own
+// collapsible treatment either (it's the opposite of "collapse this away
+// by default" - it should always be immediately visible).
 export default function RunwayInUseCard({ refreshSignal }: { refreshSignal?: number }): JSX.Element {
   const [opsPanel, setOpsPanel] = useState<OpsPanelPublic | null>(null)
+  const [runwayGroup, setRunwayGroup] = useState<RunwayGroupPublic | null>(null)
 
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled) setOpsPanel(data?.opsPanel ?? null)
+        if (cancelled) return
+        setOpsPanel(data?.opsPanel ?? null)
+        setRunwayGroup(data?.runwayGroups?.[0] ?? null)
       })
       .catch(() => {})
     return () => {
@@ -42,22 +63,28 @@ export default function RunwayInUseCard({ refreshSignal }: { refreshSignal?: num
     }
   }, [refreshSignal])
 
-  const runwayStatusValue = opsPanel ? opsPanel.activeRunwayEnd : '08/26'
-  const circuitDirectionValue = `${circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left')} circuit`
+  const activeEnd = opsPanel?.activeRunwayEnd ?? '08'
+  const reciprocalEnd = runwayGroup
+    ? runwayGroup.endAIdentifier === activeEnd
+      ? runwayGroup.endBIdentifier
+      : runwayGroup.endAIdentifier
+    : null
+
+  if (opsPanel?.runwaysClosed) {
+    return (
+      <div className="rounded-xl border-2 border-status-bad/50 bg-status-bad/10 px-4 py-2 text-center text-xl font-extrabold uppercase tracking-wide text-status-bad">
+        Runways Closed
+      </div>
+    )
+  }
 
   return (
-    <section className="rounded-2xl border border-border bg-panel p-4">
-      <div className="mb-3 text-center text-base font-semibold uppercase tracking-[0.25em] text-muted-400">Runway In Use</div>
-      {opsPanel?.runwaysClosed ? (
-        <div className="rounded-xl border border-status-bad/40 bg-status-bad/10 p-4 text-center text-2xl font-semibold text-status-bad">
-          RUNWAYS CLOSED
-        </div>
-      ) : (
-        <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
-          <div className="flex-shrink-0 text-2xl font-semibold text-primary">{runwayStatusValue}</div>
-          <div className="flex-1 text-2xl font-semibold text-primary">{circuitDirectionValue}</div>
-        </div>
-      )}
-    </section>
+    <div className="flex items-baseline justify-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-panel px-4 py-2 text-center">
+      <span className="text-sm font-semibold uppercase tracking-wide text-muted-400">Runway:</span>
+      <span className="text-xl font-extrabold text-primary">
+        {activeEnd} {handLabel(opsPanel?.circuitDirection ?? 'left')}
+      </span>
+      {reciprocalEnd && <span className="text-base font-medium text-muted-500">({reciprocalEnd})</span>}
+    </div>
   )
 }

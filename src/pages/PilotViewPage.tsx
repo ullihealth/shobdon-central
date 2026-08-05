@@ -130,7 +130,7 @@ export default function PilotViewPage(): JSX.Element {
               comment), so it needs no ancestor-supplied height on this
               route; a percentage h-full with no definite ancestor height
               simply resolves as auto, matching natural page flow. */}
-          <CompassPanel />
+          <CompassPanel spacious />
           {/* Moved below the compass (was directly under Weather Summary) -
               keeps the compass as high on the page as possible before the
               user needs to scroll, per the font-size round's own height

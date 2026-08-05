@@ -476,6 +476,7 @@ interface ReadoutRowProps {
   label: string
   value: string
   valueClassName?: string
+  labelFontSizeOverride?: string
 }
 
 // Sized off vh directly, not rem (which would inherit the global root
@@ -501,12 +502,22 @@ interface ReadoutRowProps {
 const READOUT_VALUE_FONT = 'clamp(9px, 2.6vh, 28px)'
 const READOUT_LABEL_FONT = 'clamp(7px, 1.5vh, 16px)'
 
-function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowProps): JSX.Element {
+// Pilot View's own opt-in ("spacious" prop below) - a fixed size, not a
+// vh-clamp(), matching every other Pilot View file's own plain-Tailwind-
+// size convention (see WeatherStatGrid.tsx's own comment on why: this
+// page's actual height budget is the whole scrolling document, not a
+// fixed kiosk viewport, so vh doesn't track "how much room is there" the
+// way it deliberately does for the TV dashboard's fixed-height row above).
+// Every existing TV-dashboard caller omits `spacious` and keeps the
+// original vh-based READOUT_LABEL_FONT untouched.
+const PILOT_READOUT_LABEL_FONT = '14px'
+
+function ReadoutRow({ label, value, valueClassName = 'text-white', labelFontSizeOverride }: ReadoutRowProps): JSX.Element {
   return (
     <>
       <div
         className="text-right font-semibold uppercase leading-none tracking-widest text-slate-400"
-        style={{ fontSize: READOUT_LABEL_FONT }}
+        style={{ fontSize: labelFontSizeOverride ?? READOUT_LABEL_FONT }}
       >
         {label}
       </div>
@@ -517,7 +528,17 @@ function ReadoutRow({ label, value, valueClassName = 'text-white' }: ReadoutRowP
   )
 }
 
-export default function CompassPanel(): JSX.Element {
+interface CompassPanelProps {
+  // Pilot View passes this true - its readout list sits directly below
+  // the compass with nothing beside it (see the sm:-gated left offset
+  // comment above), and felt cramped against the compass at the default
+  // TV-dashboard spacing/label size. Defaults false: every existing TV-
+  // dashboard caller (ClassicTemplate/Clubhouse2Template/CentreDisplayPanel)
+  // omits this prop and renders exactly as before.
+  spacious?: boolean
+}
+
+export default function CompassPanel({ spacious = false }: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
   // async fetch of the tenant-scoped public config endpoint, so
@@ -902,26 +923,46 @@ export default function CompassPanel(): JSX.Element {
           liveDataUnavailable: the selected source's fetch failed and compassState is actually
           derived from the substituted mock fixture - show N/A rather than presenting that fake
           data as if it were a real reading. */}
-      <div className="grid grid-cols-[120px_1fr] items-baseline gap-x-4 gap-y-2.5">
-        <ReadoutRow label="Wind" value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`} />
+      <div className={`grid grid-cols-[120px_1fr] items-baseline gap-x-4 ${spacious ? 'gap-y-4' : 'gap-y-2.5'}`}>
+        <ReadoutRow
+          label="Wind"
+          value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+        />
         <ReadoutRow
           label="Gust"
           value={liveDataUnavailable ? 'N/A' : compassState.windGust ? `${compassState.windGust} kt` : '—'}
           valueClassName={compassState.windGust && !liveDataUnavailable ? 'text-amber-500' : 'text-slate-500'}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
         />
         <ReadoutRow
           label={liveDataUnavailable ? 'Headwind' : headwindLabel}
           value={liveDataUnavailable ? 'N/A' : `${headwindMagnitude.toFixed(1)} kt`}
           valueClassName={liveDataUnavailable ? 'text-slate-500' : headwindColour}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
         />
         <ReadoutRow
           label="Crosswind"
           value={liveDataUnavailable ? 'N/A' : `${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
           valueClassName={liveDataUnavailable ? 'text-slate-500' : crosswindColour}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
         />
-        <ReadoutRow label="Trend" value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`} valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour} />
-        <ReadoutRow label="Temp" value={liveDataUnavailable ? 'N/A' : `${compassState.temperature}°C`} />
-        <ReadoutRow label="QNH" value={liveDataUnavailable ? 'N/A' : `${compassState.qnh} hPa`} />
+        <ReadoutRow
+          label="Trend"
+          value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`}
+          valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+        />
+        <ReadoutRow
+          label="Temp"
+          value={liveDataUnavailable ? 'N/A' : `${compassState.temperature}°C`}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+        />
+        <ReadoutRow
+          label="QNH"
+          value={liveDataUnavailable ? 'N/A' : `${compassState.qnh} hPa`}
+          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+        />
       </div>
     </div>
   )
