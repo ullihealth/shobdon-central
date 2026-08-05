@@ -3,6 +3,26 @@ import { degreesToCardinal } from '../../utils/windCalculations'
 import { estimateCloudBaseFt } from '../../utils/cloudBase'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 
+// publicVisibilityForecast.ts's own rangeLabel format (e.g. "20.1km-40km",
+// "<1km", ">40km") is shared verbatim with LeftInfoPanel.tsx's desktop
+// card - not something this mobile-only file can change at the source
+// without also changing the TV dashboard. This reformats it locally,
+// purely for display here: drops the decimal (20.1km -> 20km, matching
+// the whole-km precision the category bands are already defined in) and
+// collapses the repeated "km" in a closed range down to one, at the end
+// only ("20.1km-40km" -> "20-40km") - what was actually forcing this
+// card's value onto three lines at the larger font size this round
+// introduced. Falls through to the raw label unchanged for any shape
+// that doesn't match (defensive only - every real category band above
+// is one of these two shapes).
+function formatVisibilityRange(rangeLabel: string): string {
+  const closedRange = rangeLabel.match(/^(\d+(?:\.\d+)?)km-(\d+(?:\.\d+)?)km$/)
+  if (closedRange) return `${Math.round(Number(closedRange[1]))}-${Math.round(Number(closedRange[2]))}km`
+  const openRange = rangeLabel.match(/^([<>])(\d+(?:\.\d+)?)km$/)
+  if (openRange) return `${openRange[1]}${Math.round(Number(openRange[2]))}km`
+  return rangeLabel
+}
+
 // Pilot View extraction (Section 2 - Weather Summary) - the same six
 // stat cards LeftInfoPanel.tsx's compact state renders (Wind/QNH/QFE/
 // Temperature/Cloud Base/Visibility Outlook), pulled out into their own
@@ -22,9 +42,15 @@ export default function WeatherStatGrid(): JSX.Element {
     !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
       ? null
       : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
-  const visibilityOutlookText = visibilityHours[0]
-    ? `${visibilityHours[0].category} (${visibilityHours[0].rangeLabel})`
-    : 'Unavailable'
+  // Category (Very Good/Poor/etc) dropped from this value entirely, not
+  // just the decimal/double-km cleanup above - even with those fixes,
+  // "Very Good" plus a range still wrapped to two lines on a real phone
+  // card (measured), pushing this card taller than its siblings and the
+  // compass lower down the page with it. The range alone is what's left
+  // once "Cloud Base"/"QFE" etc are already just numbers with no
+  // descriptive word either - consistent with the rest of this grid, not
+  // a special case.
+  const visibilityOutlookText = visibilityHours[0] ? formatVisibilityRange(visibilityHours[0].rangeLabel) : 'Unavailable'
 
   const stats = [
     {
