@@ -156,7 +156,7 @@ export default function PilotViewPage(): JSX.Element {
           <PilotCollapsibleSection
             title="Club Safety Notices"
             sectionClassName="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4"
-            titleClassName="text-base font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
+            titleClassName="text-xl font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
             chevronClassName="text-accent-sky-400"
           >
             <PilotNoticesPanel refreshSignal={refreshTick} />

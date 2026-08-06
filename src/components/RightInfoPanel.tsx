@@ -143,7 +143,13 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div className="flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMS</div>
+      {/* text-base, not the previous text-xs - this panel's title reads
+          "NOTAMS" but actually renders manual Safety Notices content
+          (see the file-level explanation above this component), so this
+          is treated as the desktop equivalent of Pilot View's "Club
+          Safety Notices" title for sizing purposes, not the automated
+          NOTAM feed title below. */}
+      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMS</div>
       <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
         {notices.slice(0, visibleCount).map((notice, index) => (
           <div key={index} className={`mb-4 font-semibold text-primary last:mb-0 ${SIZE_CLASSES[notice.size]}`}>
@@ -194,7 +200,7 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div className="flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
+      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
       <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
         {notams.slice(0, visibleCount).map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
@@ -464,7 +470,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
                 are unaffected by this flag either way). */}
             {showAutoNotams && visibleAutoNotams.length > 0 && (
               <div className="rounded-3xl border border-border bg-card p-5">
-                <div className="text-xs uppercase tracking-[0.25em] text-muted-500">NOTAMs</div>
+                <div className="text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs</div>
                 <div className="mt-3 flex flex-col gap-2">
                   {visibleAutoNotams.map((notam) => (
                     <div key={notam.id} className="flex items-start gap-2 text-[15px] text-primary">

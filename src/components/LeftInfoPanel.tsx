@@ -53,6 +53,18 @@ export interface OpsPanelChartConfig {
 // (below, bumped slightly from 7e7852c's 4.5rem) becomes the binding
 // constraint instead of font-size.
 const STAT_LABEL_FONT = 'clamp(6px, 0.95vh, 10px)'
+// QNH/QFE/Cloud Base/Visibility Outlook only - not applied to every row
+// (Wind and Temperature deliberately keep STAT_LABEL_FONT unchanged, per
+// the specific label list this round asked for). Same clamp() shape,
+// scaled up ~40% at each tier so it stays proportional across viewport
+// heights rather than becoming a fixed size that ignores this panel's
+// existing vh-based scaling approach.
+const STAT_LABEL_FONT_LARGE = 'clamp(9px, 1.35vh, 14px)'
+// Title-only, specific-labels-only round - Wind and Temperature are
+// deliberately excluded (not in the requested list), so this is an
+// explicit label set rather than a blanket "make every title bigger"
+// change.
+const LARGE_TITLE_LABELS = new Set(['QNH', 'QFE', 'Cloud Base', 'Visibility Outlook'])
 const STAT_VALUE_FONT = 'clamp(11px, 2.55vh, 28px)'
 // Sized and coloured distinctly from STAT_LABEL_FONT, not just a smaller
 // version of the same style - a parenthetical qualifier ("(Shobdon
@@ -166,14 +178,16 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
       qualifier: null,
       value: !weather || liveDataUnavailable ? 'N/A' : `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt`,
     },
-    { label: 'QNH', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
+    // Math.round, not truncation - see WeatherStatGrid.tsx's identical
+    // fix on the mobile side of this same value.
+    { label: 'QNH', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${Math.round(weather.qnh)} hPa` },
     {
       // Only ever populated by the 'atc' provider (see WeatherData's own
       // comment) - N/A for every other source, same posture as Cloud
       // Base below, not a new gating mechanism of its own.
       label: 'QFE',
       qualifier: null,
-      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${weather.qfe} hPa`,
+      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${Math.round(weather.qfe)} hPa`,
     },
     {
       // Net-new predicted data (Shobdon has no visibility sensor at all) -
@@ -237,7 +251,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
   return (
     <div className="flex h-full flex-col rounded-3xl border border-border bg-panel p-6 shadow-xl shadow-slate-950/20">
       <div className="mb-5 flex-shrink-0 text-center text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
-        Weather Summary
+        Summary
       </div>
       <div className="min-h-0 flex-1">
         {showChartState ? (
@@ -305,7 +319,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
               <div key={item.label} className="min-h-0 overflow-hidden rounded-3xl border border-border bg-card p-2">
                 <div
                   className="uppercase tracking-[0.25em] text-muted-500"
-                  style={{ fontSize: STAT_LABEL_FONT, paddingLeft: '4px' }}
+                  style={{ fontSize: LARGE_TITLE_LABELS.has(item.label) ? STAT_LABEL_FONT_LARGE : STAT_LABEL_FONT, paddingLeft: '4px' }}
                 >
                   {item.label}
                   {item.qualifier && (

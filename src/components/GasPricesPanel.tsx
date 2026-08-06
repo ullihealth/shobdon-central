@@ -91,8 +91,13 @@ export default function GasPricesPanel({ gasPricesData, hideTitle = false, large
 
   return (
     <div className="flex-shrink-0 rounded-3xl border border-border bg-panel p-4 shadow-xl shadow-slate-950/20">
+      {/* text-base, not the previous text-xs - this title only ever
+          renders on the real TV dashboard (Clubhouse1Template.tsx); every
+          Pilot View caller passes hideTitle and uses
+          PilotCollapsibleSection's own "Fuel Prices" title instead (see
+          that file for the mobile-side equivalent of this same bump). */}
       {!hideTitle && (
-        <div className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.25em] text-muted-400">Fuel Prices</div>
+        <div className="mb-3 text-center text-base font-semibold uppercase tracking-[0.25em] text-muted-400">Fuel Prices</div>
       )}
       <div className="flex gap-2">
         {tiles.map((tile) => (

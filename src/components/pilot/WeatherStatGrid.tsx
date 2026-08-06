@@ -55,12 +55,18 @@ export default function WeatherStatGrid(): JSX.Element {
   const visibilityOutlookText = visibilityHours[0] ? formatVisibilityRange(visibilityHours[0].rangeLabel) : 'Unavailable'
 
   const stats = [
-    { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
+    // Math.round, not truncation - "1018.6 hPa" must read "1019 hPa", not
+    // "1018 hPa". Both QNH and QFE come straight off the ATC station
+    // reading with a decimal; the whole-number precision is a display
+    // choice made here, not a change to the underlying stored/fetched
+    // value (nothing else reads weather.qnh/qfe for a calculation that
+    // would need the decimal).
+    { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${Math.round(weather.qnh)} hPa` },
     {
       // Only ever populated by the 'atc' provider - see WeatherData's
       // own comment. N/A for every other source.
       label: 'QFE',
-      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${weather.qfe} hPa`,
+      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${Math.round(weather.qfe)} hPa`,
     },
     {
       label: 'Cloud Base',
@@ -76,7 +82,7 @@ export default function WeatherStatGrid(): JSX.Element {
 
   return (
     <section className="rounded-2xl border border-border bg-panel p-4">
-      <div className="mb-3 text-center text-base font-semibold uppercase tracking-[0.25em] text-muted-400">Weather Summary</div>
+      <div className="mb-3 text-center text-base font-semibold uppercase tracking-[0.25em] text-muted-400">Summary</div>
       <div className="grid grid-cols-2 gap-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border bg-card p-2.5">
@@ -94,7 +100,7 @@ export default function WeatherStatGrid(): JSX.Element {
                 annotation, not itself one of the card labels the
                 brightness/size increase was asked for, and giving it the
                 same size is exactly what would push this back over one line. */}
-            <div className="flex items-baseline gap-0.5 whitespace-nowrap text-[11px] font-semibold uppercase tracking-normal text-muted-400">
+            <div className="flex items-baseline gap-0.5 whitespace-nowrap text-[14px] font-semibold uppercase tracking-normal text-muted-400">
               <span>{stat.label}</span>
               {stat.qualifier && <span className="text-[8px] font-normal tracking-normal text-accent-sky-400">({stat.qualifier})</span>}
             </div>

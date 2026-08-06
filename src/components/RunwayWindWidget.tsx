@@ -222,6 +222,12 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   const outerClass = bare ? 'flex w-full flex-col items-center' : 'flex flex-col items-center rounded-2xl border border-border bg-panel p-4 sm:p-6'
   const topRowClass = bare ? 'flex w-full items-start justify-center gap-3' : 'flex items-start justify-center gap-4 sm:gap-8'
   const titleClass = bare ? 'text-lg font-bold uppercase tracking-wide text-muted-400' : 'text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl'
+  // Trend/Circuit only, bare mode only - titleClass above stays exactly
+  // as-is for Crosswind/Headwind (not part of the requested label list
+  // this round). Non-bare (the /runway-widget-test prototype, the only
+  // other caller) is untouched - Trend/Circuit have no equivalent title
+  // anywhere on the real desktop dashboard to match against.
+  const bottomTitleClass = bare ? 'text-xl font-bold uppercase tracking-wide text-muted-400' : titleClass
   // One shared value size for all four readouts (Crosswind/Headwind/
   // Circuit/Trend) - round 3 explicitly asked for Circuit/Trend to match
   // Crosswind/Headwind exactly, not just visually close, so this is the
@@ -290,7 +296,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
             style={{ transform: mirrored ? 'scaleX(-1)' : undefined }}
           />
           <div className={trendItemClass}>
-            <span className={titleClass}>Trend</span>
+            <span className={bottomTitleClass}>Trend</span>
             <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
           </div>
         </div>
@@ -317,7 +323,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
             <div className={identifierClass}>{activeIdentifier || '--'}</div>
           </div>
           <div className={bottomItemClass}>
-            <span className={titleClass}>Circuit</span>
+            <span className={bottomTitleClass}>Circuit</span>
             <span className={`${valueClass} ${CIRCUIT_CLASS}${valueSmClass}`}>{circuitLabelFor(circuitDirection)}</span>
           </div>
         </div>
