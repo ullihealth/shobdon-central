@@ -6,6 +6,24 @@ import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import CloudVisibilityChart from './CloudVisibilityChart'
 
+// publicVisibilityForecast.ts's own rangeLabel format (e.g. "20.1km-40km",
+// "<1km", ">40km") carries a decimal and, for a closed range, repeats
+// "km" on both ends - reformatted here purely for display (20.1km-40km
+// -> 20-40km), same fix WeatherStatGrid.tsx's own Pilot View equivalent
+// already applies, duplicated rather than shared since the two files
+// already intentionally diverge on nearly everything else about how
+// these stats render (see this file's own STAT_LABEL_FONT comment).
+// Falls through to the raw label unchanged for any shape that doesn't
+// match (defensive only - every real category band is one of these two
+// shapes).
+function formatVisibilityRange(rangeLabel: string): string {
+  const closedRange = rangeLabel.match(/^(\d+(?:\.\d+)?)km-(\d+(?:\.\d+)?)km$/)
+  if (closedRange) return `${Math.round(Number(closedRange[1]))}-${Math.round(Number(closedRange[2]))}km`
+  const openRange = rangeLabel.match(/^([<>])(\d+(?:\.\d+)?)km$/)
+  if (openRange) return `${openRange[1]}${Math.round(Number(openRange[2]))}km`
+  return rangeLabel
+}
+
 export interface OpsPanelChartConfig {
   weatherSummaryChartEnabled: boolean
   weatherSummaryStateADurationSeconds: number
@@ -136,7 +154,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
   // that isn't actually being shown.
   const cloudBaseCapturedAt = cloudBaseFt === null ? null : (weather?.capturedAt ?? null)
   const visibilityOutlookText = visibilityHours[0]
-    ? `${visibilityHours[0].category} (${visibilityHours[0].rangeLabel})`
+    ? `${visibilityHours[0].category} (${formatVisibilityRange(visibilityHours[0].rangeLabel)})`
     : 'Unavailable'
 
   // qualifier split out from label (was inline in the label string, e.g.
@@ -157,7 +175,17 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
       qualifier: null,
       value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${weather.qfe} hPa`,
     },
-    { label: 'Temperature', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
+    {
+      // Net-new predicted data (Shobdon has no visibility sensor at all) -
+      // "Unavailable" rather than N/A distinguishes "Met Office couldn't
+      // be reached this cycle" from the other cards' "no live reading",
+      // and never shows a value held over past its own 60-minute TTL.
+      // Swapped with Temperature (now last) - no functional reason,
+      // purely a requested card-order change.
+      label: 'Visibility Outlook',
+      qualifier: '(Met Office Forecast)',
+      value: visibilityOutlookText,
+    },
     {
       // Only ever meaningful from Shobdon's own station (dewpoint has no
       // internet/mock equivalent) - N/A whenever that's not genuinely the
@@ -166,15 +194,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
       qualifier: '(Shobdon Calculated)',
       value: cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`,
     },
-    {
-      // Net-new predicted data (Shobdon has no visibility sensor at all) -
-      // "Unavailable" rather than N/A distinguishes "Met Office couldn't
-      // be reached this cycle" from the other cards' "no live reading",
-      // and never shows a value held over past its own 60-minute TTL.
-      label: 'Visibility Outlook',
-      qualifier: '(Met Office Forecast)',
-      value: visibilityOutlookText,
-    },
+    { label: 'Temperature', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
   ]
 
   // State A (today's stat cards) <-> State B (Cloud/Visibility Chart), with

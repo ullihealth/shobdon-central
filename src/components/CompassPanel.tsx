@@ -9,8 +9,6 @@ import type { PressureTrend } from '../types/weather'
 interface CompassState {
   windSpeed: number
   windDirection: number
-  temperature: number
-  qnh: number
   pressureTrend: PressureTrend
   headwind: number
   crosswind: number
@@ -623,8 +621,6 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
     return {
       windSpeed: weather.windSpeed,
       windDirection: weather.windDirection,
-      temperature: weather.temperature,
-      qnh: weather.qnh,
       pressureTrend: weather.pressureTrend,
       headwind,
       crosswind,
@@ -929,7 +925,14 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
           only ever read 'N/A'/'—' off real hardware) is gone rather than
           left showing a permanently-empty reading. Auto-flow grid rows
           (no fixed row template), so removing it closes the gap on its
-          own - every row below shifts up automatically. */}
+          own - every row below shifts up automatically.
+          Temp/QNH also gone now, same auto-flow closing - both are
+          already shown in the Weather Summary panel next to this one on
+          the desktop dashboard (and in the equivalent grid above the
+          compass on Pilot View mobile), so duplicating them a second
+          time in this readout was redundant, not a second useful view of
+          the same numbers. Wind/Headwind/Crosswind/Trend are the only
+          things genuinely specific to this instrument. */}
       <div className={`grid grid-cols-[120px_1fr] items-baseline gap-x-4 ${spacious ? 'gap-y-4' : 'gap-y-2.5'}`}>
         <ReadoutRow
           label="Wind"
@@ -952,16 +955,6 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
           label="Trend"
           value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`}
           valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-        <ReadoutRow
-          label="Temp"
-          value={liveDataUnavailable ? 'N/A' : `${compassState.temperature}°C`}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-        <ReadoutRow
-          label="QNH"
-          value={liveDataUnavailable ? 'N/A' : `${compassState.qnh} hPa`}
           labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
         />
       </div>
