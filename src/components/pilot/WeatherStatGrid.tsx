@@ -70,12 +70,12 @@ export default function WeatherStatGrid(): JSX.Element {
     },
     {
       label: 'Cloud Base',
-      qualifier: 'Shobdon Calc',
+      qualifier: 'Shobdon Calculated',
       value: cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`,
     },
     {
       label: 'Visibility',
-      qualifier: 'Met Forecast',
+      qualifier: 'Met Office Forecast',
       value: visibilityOutlookText,
     },
   ]
@@ -86,24 +86,18 @@ export default function WeatherStatGrid(): JSX.Element {
       <div className="grid grid-cols-2 gap-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border bg-card p-2.5">
-            {/* flex + whitespace-nowrap (not the plain wrapping block this
-                started as) - the shortened qualifiers above exist for the
-                same reason as this row layout: "Cloud Base (Shobdon Calc)"
-                must render on one line, not wrap, at the larger label size
-                below. Letter-spacing (tracking) is deliberately dropped
-                back to normal here, not just kept smaller than the title -
-                it was the single biggest cost toward the two-line wrap this
-                is fixing (measured: removing it alone recovered ~26px of a
-                card that's only ~145px wide on a real phone viewport). The
-                qualifier keeps its own smaller/dimmer styling rather than
-                inheriting the bumped label size - it's a secondary
-                annotation, not itself one of the card labels the
-                brightness/size increase was asked for, and giving it the
-                same size is exactly what would push this back over one line. */}
-            <div className="flex items-baseline gap-0.5 whitespace-nowrap text-[14px] font-semibold uppercase tracking-normal text-muted-400">
-              <span>{stat.label}</span>
-              {stat.qualifier && <span className="text-[8px] font-normal tracking-normal text-accent-sky-400">({stat.qualifier})</span>}
-            </div>
+            {/* Title and qualifier each on their own row now (was one
+                inline row, tracking dropped to normal to fit the
+                abbreviated qualifier on one line) - restored to the full
+                qualifier text ("Shobdon Calculated"/"Met Office Forecast")
+                per request, which no longer fits alongside the title on
+                this card's ~145px width at the title's own font size, so
+                it gets its own row between title and value instead. Same
+                small/dim blue styling as before, just relocated. */}
+            <div className="text-[14px] font-semibold uppercase tracking-normal text-muted-400">{stat.label}</div>
+            {stat.qualifier && (
+              <div className="text-[8px] font-normal tracking-normal text-accent-sky-400">({stat.qualifier})</div>
+            )}
             <div className="mt-1 text-[22px] font-semibold text-primary">{stat.value}</div>
           </div>
         ))}
