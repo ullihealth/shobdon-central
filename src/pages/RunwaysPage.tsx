@@ -15,6 +15,16 @@ const DEFAULT_IDENTIFIER_FONT_SIZE_PX = 14
 
 type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
 
+interface WindsockThresholds {
+  fullKt: number
+  mediumKt: number
+}
+
+// Same real-world-convention defaults the backend seeds (migration
+// 0073/publicConfig.ts) - used here only as the initial staged value
+// before the real fetch resolves, so the form never briefly shows 0/0.
+const DEFAULT_WINDSOCK: WindsockThresholds = { fullKt: 15, mediumKt: 6 }
+
 // The end opposite endAIdentifier's heading - shown in that field's own
 // label so it's self-evidently "the other end", grounded in a number the
 // admin can check against the real runway, not an implicit position
@@ -57,6 +67,11 @@ export default function RunwaysPage(): JSX.Element {
   // pattern AtcControlPage.tsx already uses for the identical Runway In
   // Use/Circuit Direction disclosure.
   const [parentAirfieldName, setParentAirfieldName] = useState<string | null>(null)
+  // Windsock/Wind widget prototype (RunwayWindWidget.tsx) - per-airfield,
+  // not per-runway (one physical windsock, even with two runways), so
+  // this is its own staged field alongside `groups` rather than a
+  // property duplicated onto every RunwayGroup.
+  const [windsock, setWindsock] = useState<WindsockThresholds>(DEFAULT_WINDSOCK)
 
   // Real D1-backed read (functions/api/tenant/config.ts, the same route
   // /design already uses) - was a synchronous loadClubProfile()
@@ -72,6 +87,7 @@ export default function RunwaysPage(): JSX.Element {
       .then(([data, parentTenant]) => {
         if (cancelled) return
         setGroups(Array.isArray(data?.runwayGroups) ? data.runwayGroups : [])
+        if (data?.windsock) setWindsock({ fullKt: data.windsock.fullKt ?? DEFAULT_WINDSOCK.fullKt, mediumKt: data.windsock.mediumKt ?? DEFAULT_WINDSOCK.mediumKt })
         if (parentTenant?.parentTenantName) setParentAirfieldName(parentTenant.parentTenantName)
       })
       .catch(() => {})
@@ -182,6 +198,15 @@ export default function RunwaysPage(): JSX.Element {
     setSelectedIndex(groups.length)
   }
 
+  // Cleared or non-positive/non-numeric falls back to the same seeded
+  // default as every other numeric field on this page (strip width/
+  // length/font size above) rather than staging an invalid value.
+  function handleWindsockChange(field: keyof WindsockThresholds, rawValue: string) {
+    const parsed = Number(rawValue)
+    const value = rawValue.trim() === '' || !Number.isFinite(parsed) || parsed <= 0 ? DEFAULT_WINDSOCK[field] : parsed
+    setWindsock((prev) => ({ ...prev, [field]: value }))
+  }
+
   function handleRemoveGroup() {
     if (groups.length <= 1) return
     setGroups((prev) => prev.filter((_, i) => i !== selectedIndex))
@@ -208,7 +233,7 @@ export default function RunwaysPage(): JSX.Element {
       const response = await fetch(TENANT_CONFIG_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runwayGroups: groups }),
+        body: JSON.stringify({ runwayGroups: groups, windsock }),
       })
       if (!response.ok) {
         setApplyStatus('error')
@@ -467,6 +492,38 @@ export default function RunwaysPage(): JSX.Element {
               </p>
             </div>
           </div>
+
+          {/* Windsock strength thresholds (RunwayWindWidget.tsx prototype) -
+              per-airfield, not per-runway, so this is its own card rather
+              than living inside the runway selector/form above; staged
+              into `windsock` state alongside `groups` and published by
+              the same "Update Dashboard" button. */}
+          <section className="mt-6 rounded-2xl border border-border bg-panel p-6">
+            <h2 className="mb-2 text-sm font-bold uppercase tracking-widest text-muted-400">Windsock</h2>
+            <p className="mb-4 max-w-2xl text-sm text-muted-400">
+              Crosswind speed (knots) at which the runway/wind widget's windsock graphic changes strength. Above
+              "Full", the sock shows fully extended; between the two, it droops to a medium angle; below "Medium",
+              it's shown fully drooped.
+            </p>
+            <div className="grid max-w-sm grid-cols-[minmax(0,auto)_1fr] items-center gap-x-4 gap-y-3">
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Full at (kt)</span>
+              <input
+                type="number"
+                min={1}
+                value={windsock.fullKt}
+                onChange={(event) => handleWindsockChange('fullKt', event.target.value)}
+                className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Medium at (kt)</span>
+              <input
+                type="number"
+                min={1}
+                value={windsock.mediumKt}
+                onChange={(event) => handleWindsockChange('mediumKt', event.target.value)}
+                className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+          </section>
         </>
       )}
     </div>

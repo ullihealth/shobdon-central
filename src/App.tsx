@@ -3,6 +3,7 @@ import AccountPage from './pages/AccountPage'
 import AtcControlPage from './pages/AtcControlPage'
 import ChecklistPage from './pages/ChecklistPage'
 import PilotViewPage from './pages/PilotViewPage'
+import RunwayWidgetTestPage from './pages/RunwayWidgetTestPage'
 import ConfigPage from './pages/ConfigPage'
 import CafeMediaPage from './pages/CafeMediaPage'
 import DesignPage from './pages/DesignPage'
@@ -63,6 +64,10 @@ export default function App(): JSX.Element {
             already does for PUBLIC_CONFIG_URL, via whatever subdomain the
             request actually arrived on - no path-based resolution needed. */}
         <Route path="/pilot" element={<PilotViewPage />} />
+        {/* Standalone, unlinked prototype for RunwayWindWidget.tsx - not in
+            any nav, not wired into /pilot or the dashboard yet. Same bare
+            "no RequireAuth" posture as /checklist above. */}
+        <Route path="/runway-widget-test" element={<RunwayWidgetTestPage />} />
         {/* Placeholder CTA destination for CafeMediaPage's FeatureUpsellPanel
             (cafe-tv entitled=0 case) - no real checkout/marketing content
             yet, see UpgradeCafeDisplayPage.tsx's own comment. Bare route,

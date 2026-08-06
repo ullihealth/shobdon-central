@@ -242,7 +242,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_full_kt AS windsockFullKt, windsock_medium_kt AS windsockMediumKt FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -255,6 +255,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         afisoFrequency: string;
         pilotTickerSlotsJson: string;
         mobileEnabled: number;
+        windsockFullKt: number;
+        windsockMediumKt: number;
       }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
@@ -576,6 +578,15 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // placeholder-only column, deliberately not read/exposed here - no
   // gating logic depends on it yet.
   const mobileEnabled = !!tenantRow?.mobileEnabled;
+  // Runway/Wind widget prototype (RunwayWindWidget.tsx) - falls back to
+  // the same real-world-convention defaults migration 0073 seeds
+  // (15kt/6kt) if this tenant's row predates the migration somehow, same
+  // defensive posture every other tenantRow field on this page already
+  // takes.
+  const windsock = {
+    fullKt: tenantRow?.windsockFullKt ?? 15,
+    mediumKt: tenantRow?.windsockMediumKt ?? 6,
+  };
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -839,6 +850,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     afiso,
     pilotTicker,
     mobileEnabled,
+    windsock,
   };
 }
 

@@ -16,7 +16,7 @@ import AutoNotamsScrollPanel from '../components/pilot/AutoNotamsScrollPanel'
 import PilotNoticesPanel from '../components/pilot/PilotNoticesPanel'
 import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 import PilotFooterTicker from '../components/pilot/PilotFooterTicker'
-import CompassPanel from '../components/CompassPanel'
+import PilotRunwayWindPanel from '../components/pilot/PilotRunwayWindPanel'
 import GasPricesPanel from '../components/GasPricesPanel'
 
 const REFRESH_INTERVAL_MS = 60_000
@@ -124,26 +124,17 @@ export default function PilotViewPage(): JSX.Element {
 
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
           <WeatherStatGrid />
-          {/* No fixed-height wrapper here (unlike every other section, which
-              is already naturally-flowing) - CompassPanel itself now sizes
-              its circle off width below `sm:` (see that component's own
-              comment), so it needs no ancestor-supplied height on this
-              route; a percentage h-full with no definite ancestor height
-              simply resolves as auto, matching natural page flow. */}
-          {/* Extra mb-4 on top of this flex column's own gap-4 - the QNH row
-              (this block's last readout line) was sitting right on top of
-              the Runway card below it with only the shared gap, too close
-              given how different in purpose the two are. Margin on this
-              wrapper, not a change to the shared gap-4 itself, since that
-              gap is reused uniformly between every other section on this
-              page and only this one boundary needed more room. */}
+          {/* Confirmed production round: replaces the compass instrument
+              entirely on Pilot View mobile (was <CompassPanel spacious />)
+              with the runway/windsock widget prototyped at
+              /runway-widget-test - see PilotRunwayWindPanel.tsx's own
+              comment for the full reasoning, including why
+              reverseCompassNeedle doesn't need to apply here. Desktop
+              dashboard is untouched - CompassPanel itself is unmodified
+              and still renders there via a completely separate call site. */}
           <div className="mb-4">
-            <CompassPanel spacious />
+            <PilotRunwayWindPanel refreshSignal={refreshTick} />
           </div>
-          {/* Moved below the compass (was directly under Weather Summary) -
-              keeps the compass as high on the page as possible before the
-              user needs to scroll, per the font-size round's own height
-              constraint. */}
           <RunwayInUseCard refreshSignal={refreshTick} />
           {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
               title always visible, tap to expand. Each panel keeps

@@ -135,6 +135,16 @@ function isValidLon(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
 }
 
+// Windsock strength thresholds (knots) - a sanity ceiling (100kt), not a
+// real aviation limit, purely to reject obvious typos/garbage rather than
+// silently accepting them; no floor beyond "positive", since an admin
+// setting an unusually low threshold for their own airfield's windsock is
+// a legitimate real-world choice, not something this endpoint should
+// second-guess.
+function isValidWindsockKt(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 100;
+}
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
@@ -159,7 +169,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // only ever hand-inserted directly into D1.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, windsock_full_kt AS windsockFullKt, windsock_medium_kt AS windsockMediumKt FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -170,6 +180,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         icaoCode: string | null;
         lat: number | null;
         lon: number | null;
+        windsockFullKt: number;
+        windsockMediumKt: number;
       }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
@@ -212,6 +224,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     icaoCode: tenantRow?.icaoCode ?? null,
     lat: tenantRow?.lat ?? null,
     lon: tenantRow?.lon ?? null,
+    // Runway/Wind widget prototype - same real-world-convention fallback
+    // as publicConfig.ts's own copy of this same default.
+    windsock: {
+      fullKt: tenantRow?.windsockFullKt ?? 15,
+      mediumKt: tenantRow?.windsockMediumKt ?? 6,
+    },
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
     cameras: publicConfigData.cameras,
     carouselSlots: publicConfigData.carouselSlots,
@@ -240,6 +258,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     icaoCode?: unknown;
     lat?: unknown;
     lon?: unknown;
+    windsock?: { fullKt?: unknown; mediumKt?: unknown };
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -294,6 +313,21 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB
       .prepare("UPDATE tenants SET lat = ?, lon = ?, updated_at = ? WHERE organization_id = ?")
       .bind(body.lat, body.lon, now, organizationId)
+      .run();
+  }
+
+  // Same "both or neither" posture as lat/lon above - a lone threshold
+  // is meaningless without the other to compare against.
+  if (body.windsock !== undefined) {
+    if (!isValidWindsockKt(body.windsock?.fullKt)) {
+      return jsonResponse({ error: "windsock.fullKt must be a number between 0 and 100" }, 400);
+    }
+    if (!isValidWindsockKt(body.windsock?.mediumKt)) {
+      return jsonResponse({ error: "windsock.mediumKt must be a number between 0 and 100" }, 400);
+    }
+    await env.DB
+      .prepare("UPDATE tenants SET windsock_full_kt = ?, windsock_medium_kt = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(body.windsock.fullKt, body.windsock.mediumKt, now, organizationId)
       .run();
   }
 
