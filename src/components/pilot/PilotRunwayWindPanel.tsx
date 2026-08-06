@@ -8,6 +8,7 @@ interface ConfigState {
   runwayGroups: RunwayGroup[]
   activeRunwayEnd: string
   circuitDirection: string
+  reverseCompassNeedle: boolean
   windsock: WindsockThresholds
 }
 
@@ -48,13 +49,19 @@ function isConfigured(group: RunwayGroup): boolean {
 // background, same treatment as the compass above it - see
 // RunwayWindWidget.tsx's own comment.
 //
-// reverseCompassNeedle (ops_panel_state, /developertools) is NOT applied
-// here, deliberately, not by oversight - it only ever corrects
-// CompassPanel's own arrow SVG's visual ROTATION, never the underlying
-// headwind/crosswind maths (calculateWindComponents, shared by both
-// components unmodified). RunwayWindWidget's own arrow never rotates -
-// colour only - so there is nothing for that flag to correct here even
-// though it's currently true for Shobdon.
+// reverseCompassNeedle (ops_panel_state, /developertools) IS threaded
+// through to RunwayWindWidget below - correcting an earlier mistake in
+// this exact comment, which claimed the flag only ever affects
+// CompassPanel's own arrow SVG rotation. It doesn't: CompassPanel also
+// applies it to activeRunwayHeading before calculateWindComponents,
+// because the flag means the tenant's stored runway heading data is
+// itself known to be backwards for this physical station - genuinely
+// required for a correct headwind/crosswind result, not a cosmetic-only
+// correction. Traced and fixed after Shobdon's own real production data
+// (reverseCompassNeedle=true) produced an inverted Headwind/Tailwind
+// colour here while CompassPanel showed the correct one for the same
+// live wind - the two components were applying different corrections to
+// the same underlying heading.
 export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?: number }): JSX.Element | null {
   const { weather, liveDataUnavailable } = useWeather()
   const [config, setConfig] = useState<ConfigState | null>(null)
@@ -69,6 +76,7 @@ export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?
           runwayGroups: Array.isArray(data.runwayGroups) ? data.runwayGroups : [],
           activeRunwayEnd: data.opsPanel?.activeRunwayEnd ?? '',
           circuitDirection: data.opsPanel?.circuitDirection ?? 'left',
+          reverseCompassNeedle: !!data.opsPanel?.reverseCompassNeedle,
           windsock: { fullKt: data.windsock?.fullKt ?? DEFAULT_WINDSOCK.fullKt, mediumKt: data.windsock?.mediumKt ?? DEFAULT_WINDSOCK.mediumKt },
         })
       })
@@ -101,6 +109,7 @@ export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?
             group={group}
             activeEnd={config.activeRunwayEnd}
             circuitDirection={config.circuitDirection}
+            reverseCompassNeedle={config.reverseCompassNeedle}
             weather={weather}
             liveDataUnavailable={liveDataUnavailable}
             windsock={config.windsock}

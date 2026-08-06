@@ -11,6 +11,11 @@ interface ConfigState {
   // already read - one airfield-wide value (ops_panel_state), not
   // per-runway, same reasoning as activeRunwayEnd above.
   circuitDirection: string
+  // Same opsPanel.reverseCompassNeedle CompassPanel.tsx applies to its own
+  // headwind/crosswind maths (not just its arrow's visual rotation) -
+  // RunwayWindWidget needs it for the identical reason, see that file's
+  // own comment for the full story of why this was missing originally.
+  reverseCompassNeedle: boolean
   windsock: WindsockThresholds
 }
 
@@ -61,6 +66,7 @@ function WidgetGrid({ config }: { config: ConfigState }): JSX.Element {
               group={group}
               activeEnd={config.activeRunwayEnd}
               circuitDirection={config.circuitDirection}
+              reverseCompassNeedle={config.reverseCompassNeedle}
               weather={weather}
               liveDataUnavailable={liveDataUnavailable}
               windsock={config.windsock}
@@ -91,6 +97,7 @@ export default function RunwayWidgetTestPage(): JSX.Element {
           runwayGroups: Array.isArray(data.runwayGroups) ? data.runwayGroups : [],
           activeRunwayEnd: data.opsPanel?.activeRunwayEnd ?? '',
           circuitDirection: data.opsPanel?.circuitDirection ?? 'left',
+          reverseCompassNeedle: !!data.opsPanel?.reverseCompassNeedle,
           windsock: { fullKt: data.windsock?.fullKt ?? DEFAULT_WINDSOCK.fullKt, mediumKt: data.windsock?.mediumKt ?? DEFAULT_WINDSOCK.mediumKt },
         })
       })
