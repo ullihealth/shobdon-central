@@ -26,6 +26,17 @@ interface RunwayWindWidgetProps {
   weather: WeatherData | null
   liveDataUnavailable: boolean
   windsock: WindsockThresholds
+  // Pilot View mobile round: this widget now sits directly on the page
+  // background there (no card/border, full page width), below the
+  // restored compass, in place of its old text readout row - a visually
+  // different context from /runway-widget-test's own centred half-width
+  // card, which is unaffected (every existing caller omits this and
+  // keeps the original chrome). Sizing is also fixed/larger when true,
+  // not just chrome-less - the old mobile-default sizes were tuned to
+  // fit two columns inside a padded half-width card, noticeably smaller
+  // than the room a full-width, no-padding layout actually has to work
+  // with now.
+  bare?: boolean
 }
 
 type ArrowColour = 'green' | 'red' | 'amber'
@@ -137,7 +148,7 @@ function ArrowIcon({ className }: { className?: string }): JSX.Element {
 // this - same "mobile default, sm:-gated desktop size" technique
 // CompassPanel.tsx's own instrument sizing already established earlier
 // this session, reused here rather than a new one-off pattern.
-export default function RunwayWindWidget({ group, activeEnd, circuitDirection, weather, liveDataUnavailable, windsock }: RunwayWindWidgetProps): JSX.Element {
+export default function RunwayWindWidget({ group, activeEnd, circuitDirection, weather, liveDataUnavailable, windsock, bare = false }: RunwayWindWidgetProps): JSX.Element {
   // opsPanel.activeRunwayEnd is a single airfield-wide field (see
   // RunwayInUseCard.tsx's own comment on ops_panel_state) - it was only
   // ever designed around one physical runway (CompassPanel.tsx only ever
@@ -174,23 +185,37 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
   // right" with no transform; mirroring it depicts "from the left".
   const mirrored = hasWind && crosswind < 0
 
+  const chromeClass = bare ? 'flex w-full items-start justify-center gap-6' : 'flex items-start gap-4 rounded-2xl border border-border bg-panel p-4 sm:gap-8 sm:p-6'
+  const titleClass = bare ? 'text-base font-bold uppercase tracking-wide text-muted-400' : 'text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl'
+  const bigValueClass = bare ? 'text-2xl font-black' : 'text-base font-black'
+  const bigValueSmClass = bare ? '' : ' sm:text-4xl'
+  const smallValueClass = bare ? 'text-xl font-black' : 'text-sm font-black'
+  const smallValueSmClass = bare ? '' : ' sm:text-3xl'
+  const windsockClass = bare ? 'h-24 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
+  const subBlockClass = bare ? 'mt-3 flex flex-col items-center gap-1' : 'mt-2 flex flex-col items-center gap-1 sm:mt-4'
+  const arrowClass = bare ? 'h-8 w-6' : 'h-6 w-5 sm:h-10 sm:w-8'
+  const runwayWrapClass = bare ? 'relative w-48' : 'relative w-36 sm:w-64'
+  const identifierClass = bare
+    ? 'absolute inset-x-0 top-[14%] text-center text-3xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]'
+    : 'absolute inset-x-0 top-[14%] text-center text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] sm:text-4xl'
+
   return (
-    <div className="flex items-start gap-4 rounded-2xl border border-border bg-panel p-4 sm:gap-8 sm:p-6">
+    <div className={chromeClass}>
       {/* Left column: Crosswind + windsock + Circuit + Trend. items-start
           on the outer flex row (not items-center) is what lets this
           shorter column sit top-aligned beside the taller runway column
           instead of being vertically centred against it - matches the
           approved mockup, where Trend sits roughly level with the runway
           image's midpoint, not its own column's full height. */}
-      <div className="flex flex-col items-center gap-1 sm:gap-2">
-        <span className="text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl">Crosswind</span>
-        <span className={`text-base font-black ${ACCENT_CLASS} sm:text-4xl`}>
+      <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
+        <span className={titleClass}>Crosswind</span>
+        <span className={`${bigValueClass} ${ACCENT_CLASS}${bigValueSmClass}`}>
           {hasWind ? `${Math.abs(crosswind).toFixed(1)} kts ${crosswind >= 0 ? 'Right' : 'Left'}` : 'N/A'}
         </span>
         <img
           src={WINDSOCK_IMAGE[windsockStrength]}
           alt={`Windsock, ${windsockStrength}`}
-          className="h-16 w-auto object-contain sm:h-28"
+          className={windsockClass}
           style={{ transform: mirrored ? 'scaleX(-1)' : undefined }}
         />
         {/* Circuit - not a wind reading at all (see CIRCUIT_CLASS's own
@@ -198,13 +223,13 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
             ACCENT_CLASS with Crosswind/Trend), but placed in this same
             column/stack per the approved mockup, between the windsock
             and Trend. */}
-        <div className="mt-2 flex flex-col items-center gap-1 sm:mt-4">
-          <span className="text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl">Circuit</span>
-          <span className={`text-sm font-black ${CIRCUIT_CLASS} sm:text-3xl`}>{circuitLabelFor(circuitDirection)}</span>
+        <div className={subBlockClass}>
+          <span className={titleClass}>Circuit</span>
+          <span className={`${smallValueClass} ${CIRCUIT_CLASS}${smallValueSmClass}`}>{circuitLabelFor(circuitDirection)}</span>
         </div>
-        <div className="mt-2 flex flex-col items-center gap-1 sm:mt-4">
-          <span className="text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl">Trend</span>
-          <span className={`text-sm font-black ${ACCENT_CLASS} sm:text-3xl`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
+        <div className={subBlockClass}>
+          <span className={titleClass}>Trend</span>
+          <span className={`${smallValueClass} ${ACCENT_CLASS}${smallValueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
         </div>
       </div>
 
@@ -213,24 +238,21 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
           swap) - the colour (green/red/amber, same ARROW_COLOUR_CLASS as
           the arrow itself) already unambiguously carries which one it
           actually is, per the approved mockup. Runway image sized ~2x
-          the windsock's own height at every breakpoint (w-36/h-16 vs
-          w-64/h-28) - "noticeably larger" per the spec, not a precise
-          ratio. */}
-      <div className="flex flex-col items-center gap-1 sm:gap-2">
-        <span className="text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl">Headwind</span>
-        <span className={`text-base font-black ${ARROW_COLOUR_CLASS[arrowColour]} sm:text-4xl`}>
+          the windsock's own height at every breakpoint/mode -
+          "noticeably larger" per the spec, not a precise ratio. */}
+      <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
+        <span className={titleClass}>Headwind</span>
+        <span className={`${bigValueClass} ${ARROW_COLOUR_CLASS[arrowColour]}${bigValueSmClass}`}>
           {hasWind ? `${Math.abs(headwind).toFixed(1)} kts` : 'N/A'}
         </span>
-        <ArrowIcon className={`h-6 w-5 ${ARROW_COLOUR_CLASS[arrowColour]} sm:h-10 sm:w-8`} />
-        <div className="relative w-36 sm:w-64">
+        <ArrowIcon className={`${arrowClass} ${ARROW_COLOUR_CLASS[arrowColour]}`} />
+        <div className={runwayWrapClass}>
           <img src={runwayImg} alt={`Runway ${activeIdentifier}`} className="w-full" />
           {/* Positioned in the clear tarmac area between the top of the
               image and the threshold stripes (which sit roughly in the
               lower-middle third of Runway.png) - "ahead of" them per the
               spec, never overlapping. */}
-          <div className="absolute inset-x-0 top-[14%] text-center text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] sm:text-4xl">
-            {activeIdentifier || '--'}
-          </div>
+          <div className={identifierClass}>{activeIdentifier || '--'}</div>
         </div>
       </div>
     </div>

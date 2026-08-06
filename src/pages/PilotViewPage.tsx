@@ -11,12 +11,12 @@ import PilotLockedScreen from '../components/pilot/PilotLockedScreen'
 import PilotHeader from '../components/pilot/PilotHeader'
 import WeatherStatGrid from '../components/pilot/WeatherStatGrid'
 import ForecastCloudbaseCluster from '../components/pilot/ForecastCloudbaseCluster'
-import RunwayInUseCard from '../components/pilot/RunwayInUseCard'
 import AutoNotamsScrollPanel from '../components/pilot/AutoNotamsScrollPanel'
 import PilotNoticesPanel from '../components/pilot/PilotNoticesPanel'
 import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 import PilotFooterTicker from '../components/pilot/PilotFooterTicker'
 import PilotRunwayWindPanel from '../components/pilot/PilotRunwayWindPanel'
+import CompassPanel from '../components/CompassPanel'
 import GasPricesPanel from '../components/GasPricesPanel'
 
 const REFRESH_INTERVAL_MS = 60_000
@@ -86,7 +86,7 @@ export default function PilotViewPage(): JSX.Element {
 
   // Single 60s tick, bumped by both the interval and pull-to-refresh -
   // passed to whichever child panels don't already self-poll
-  // (RunwayInUseCard, AutoNotamsScrollPanel). Weather/forecast poll
+  // (PilotRunwayWindPanel, AutoNotamsScrollPanel). Weather/forecast poll
   // independently via WeatherContext/useVisibilityForecast's own
   // intervals (already ~60s and 15min respectively - see the approved
   // plan's own note on why the forecast interval is deliberately not
@@ -124,18 +124,27 @@ export default function PilotViewPage(): JSX.Element {
 
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
           <WeatherStatGrid />
-          {/* Confirmed production round: replaces the compass instrument
-              entirely on Pilot View mobile (was <CompassPanel spacious />)
-              with the runway/windsock widget prototyped at
-              /runway-widget-test - see PilotRunwayWindPanel.tsx's own
-              comment for the full reasoning, including why
-              reverseCompassNeedle doesn't need to apply here. Desktop
-              dashboard is untouched - CompassPanel itself is unmodified
-              and still renders there via a completely separate call site. */}
+          {/* Correction round: the compass instrument is restored here -
+              it should never have been replaced, only its own text
+              readout row was meant to be. hideReadout drops just that
+              list (Wind/Headwind/Crosswind/Trend); the rose/arrow/centre-
+              label instrument itself renders exactly as it always has,
+              same as every TV-dashboard caller. Desktop dashboard remains
+              completely untouched either way - CompassPanel itself only
+              gained an opt-in prop, defaulted off everywhere else. */}
+          <CompassPanel spacious hideReadout />
+          {/* Runway/windsock widget now sits directly below the compass,
+              in the spot the old readout row used to occupy - replacing
+              that row, not the compass. bare (set inside
+              PilotRunwayWindPanel) renders it full-width with no card
+              chrome, sitting on the page background the same way the
+              compass above it does. The old standalone "Runway In Use"
+              card is gone entirely - redundant now that the active
+              runway/identifier is already shown inside this widget's own
+              runway image. */}
           <div className="mb-4">
             <PilotRunwayWindPanel refreshSignal={refreshTick} />
           </div>
-          <RunwayInUseCard refreshSignal={refreshTick} />
           {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
               title always visible, tap to expand. Each panel keeps
               fetching/refreshing on its own existing schedule regardless

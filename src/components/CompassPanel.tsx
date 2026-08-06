@@ -533,9 +533,21 @@ interface CompassPanelProps {
   // dashboard caller (ClassicTemplate/Clubhouse2Template/CentreDisplayPanel)
   // omits this prop and renders exactly as before.
   spacious?: boolean
+  // Pilot View round: the runway/windsock widget (RunwayWindWidget.tsx,
+  // via PilotRunwayWindPanel.tsx) now sits directly below the compass on
+  // that route instead of this readout list - Headwind/Crosswind/Trend
+  // live inside that widget instead, and Wind is already shown in the
+  // compass's own centre label (the rotating "280 / 7" pill), so the
+  // whole list is redundant there rather than needing a trimmed
+  // replacement. Defaults false: every existing caller (every TV-
+  // dashboard template, and Pilot View itself before this round) omits
+  // this and keeps the readout exactly as before - the compass
+  // INSTRUMENT (rose + wind arrow + centre label) is never affected by
+  // this prop, only the separate list below/beside it.
+  hideReadout?: boolean
 }
 
-export default function CompassPanel({ spacious = false }: CompassPanelProps = {}): JSX.Element {
+export default function CompassPanel({ spacious = false, hideReadout = false }: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
   // async fetch of the tenant-scoped public config endpoint, so
@@ -933,31 +945,33 @@ export default function CompassPanel({ spacious = false }: CompassPanelProps = {
           time in this readout was redundant, not a second useful view of
           the same numbers. Wind/Headwind/Crosswind/Trend are the only
           things genuinely specific to this instrument. */}
-      <div className={`grid grid-cols-[120px_1fr] items-baseline gap-x-4 ${spacious ? 'gap-y-4' : 'gap-y-2.5'}`}>
-        <ReadoutRow
-          label="Wind"
-          value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-        <ReadoutRow
-          label={liveDataUnavailable ? 'Headwind' : headwindLabel}
-          value={liveDataUnavailable ? 'N/A' : `${headwindMagnitude.toFixed(1)} kt`}
-          valueClassName={liveDataUnavailable ? 'text-slate-500' : headwindColour}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-        <ReadoutRow
-          label="Crosswind"
-          value={liveDataUnavailable ? 'N/A' : `${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
-          valueClassName={liveDataUnavailable ? 'text-slate-500' : crosswindColour}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-        <ReadoutRow
-          label="Trend"
-          value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`}
-          valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour}
-          labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-        />
-      </div>
+      {!hideReadout && (
+        <div className={`grid grid-cols-[120px_1fr] items-baseline gap-x-4 ${spacious ? 'gap-y-4' : 'gap-y-2.5'}`}>
+          <ReadoutRow
+            label="Wind"
+            value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`}
+            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+          />
+          <ReadoutRow
+            label={liveDataUnavailable ? 'Headwind' : headwindLabel}
+            value={liveDataUnavailable ? 'N/A' : `${headwindMagnitude.toFixed(1)} kt`}
+            valueClassName={liveDataUnavailable ? 'text-slate-500' : headwindColour}
+            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+          />
+          <ReadoutRow
+            label="Crosswind"
+            value={liveDataUnavailable ? 'N/A' : `${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
+            valueClassName={liveDataUnavailable ? 'text-slate-500' : crosswindColour}
+            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+          />
+          <ReadoutRow
+            label="Trend"
+            value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`}
+            valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour}
+            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
+          />
+        </div>
+      )}
     </div>
   )
 }

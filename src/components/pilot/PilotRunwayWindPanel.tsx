@@ -22,25 +22,26 @@ function isConfigured(group: RunwayGroup): boolean {
   return group.endAIdentifier.trim() !== '' && group.endBIdentifier.trim() !== ''
 }
 
-// Confirmed /pilot production round: replaces CompassPanel in this exact
-// spot on Pilot View mobile only - the desktop dashboard still renders
-// the real compass and is untouched (a separate call site, this file
-// isn't imported there). Self-fetches PUBLIC_CONFIG_URL, same
-// established pattern every other self-contained /pilot panel already
-// uses (RunwayInUseCard, WeatherStatGrid) rather than threading props
-// down from PilotViewPage - real production data, not the
+// Confirmed /pilot production round: sits directly below the compass
+// (CompassPanel with hideReadout - see that component's own comment)
+// on Pilot View mobile only, replacing its old Headwind/Crosswind/Trend
+// text rows - the desktop dashboard still renders CompassPanel's full
+// readout and is untouched (a separate call site, this file isn't
+// imported there). Self-fetches PUBLIC_CONFIG_URL, same established
+// pattern every other self-contained /pilot panel already uses
+// (RunwayInUseCard, WeatherStatGrid) rather than threading props down
+// from PilotViewPage - real production data, not the
 // /runway-widget-test prototype route's own (identical) fetch, which
 // stays live and unrelated to this file. refreshSignal (PilotViewPage's
 // 60s tick) triggers a re-fetch without remounting, same as
 // RunwayInUseCard's own prop of the same name.
 //
-// Owns the single, page-level "Wind" reading shown above the widget -
-// Headwind/Crosswind/Trend used to also render as flat text rows here
-// (CompassPanel's own readout, which this component fully replaces on
-// this route), but now live inside RunwayWindWidget itself instead, so
-// only Wind remains as a standalone line. No compass rose graphic
-// either - this widget doesn't have one, replacing that too, per the
-// approved plan.
+// No standalone "Wind" line here (unlike the /runway-widget-test
+// prototype's own page-level one) - the restored compass above already
+// shows wind speed/direction in its own centre label, so repeating it
+// here would be redundant. `bare` renders the widget full-width with no
+// card/border, directly on the page background, same treatment as the
+// compass itself above it - see RunwayWindWidget.tsx's own comment.
 //
 // reverseCompassNeedle (ops_panel_state, /developertools) is NOT applied
 // here, deliberately, not by oversight - it only ever corrects
@@ -74,30 +75,22 @@ export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?
 
   if (!config) return null
   const configuredGroups = config.runwayGroups.filter(isConfigured)
-  const hasWind = !!weather && !liveDataUnavailable
+  if (configuredGroups.length === 0) return null
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex items-baseline gap-2">
-        <span className="text-sm font-bold uppercase tracking-wide text-muted-400">Wind</span>
-        <span className="text-2xl font-black text-primary">{hasWind && weather ? `${weather.windDirection}° / ${weather.windSpeed} kt` : 'N/A'}</span>
-      </div>
-
-      {configuredGroups.length > 0 && (
-        <div className="flex flex-col items-center gap-4">
-          {configuredGroups.map((group) => (
-            <RunwayWindWidget
-              key={group.id}
-              group={group}
-              activeEnd={config.activeRunwayEnd}
-              circuitDirection={config.circuitDirection}
-              weather={weather}
-              liveDataUnavailable={liveDataUnavailable}
-              windsock={config.windsock}
-            />
-          ))}
-        </div>
-      )}
+    <div className="flex w-full flex-col items-center gap-4">
+      {configuredGroups.map((group) => (
+        <RunwayWindWidget
+          key={group.id}
+          group={group}
+          activeEnd={config.activeRunwayEnd}
+          circuitDirection={config.circuitDirection}
+          weather={weather}
+          liveDataUnavailable={liveDataUnavailable}
+          windsock={config.windsock}
+          bare
+        />
+      ))}
     </div>
   )
 }
