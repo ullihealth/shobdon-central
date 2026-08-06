@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { useWeather } from '../../context/WeatherContext'
 import { estimateCloudBaseFt } from '../../utils/cloudBase'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
+import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 
 // publicVisibilityForecast.ts's own rangeLabel format (e.g. "20.1km-40km",
 // "<1km", ">40km") is shared verbatim with LeftInfoPanel.tsx's desktop
@@ -39,6 +41,26 @@ function formatVisibilityRange(rangeLabel: string): string {
 export default function WeatherStatGrid(): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
+  // Consistent QNH/QFE rounding round (migration 0074) - null for every
+  // tenant except Shobdon and tenants linked to it (see publicConfig.ts's
+  // own qnhQfeOffsetHpa comment for the full mechanism). Self-fetched
+  // here rather than threaded down from PilotViewPage, same "each panel
+  // independently fetches what it needs" convention every other self-
+  // contained /pilot panel already uses.
+  const [qnhQfeOffsetHpa, setQnhQfeOffsetHpa] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) setQnhQfeOffsetHpa(typeof data?.qnhQfeOffsetHpa === 'number' ? data.qnhQfeOffsetHpa : null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const cloudBaseFt =
     !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
@@ -54,19 +76,38 @@ export default function WeatherStatGrid(): JSX.Element {
   // a special case.
   const visibilityOutlookText = visibilityHours[0] ? formatVisibilityRange(visibilityHours[0].rangeLabel) : 'Unavailable'
 
+  const hasWeather = !!weather && !liveDataUnavailable
+  // Math.round, not truncation - "1018.6 hPa" must read "1019 hPa", not
+  // "1018 hPa". QNH always rounds independently, same as every other
+  // tenant - only QFE's rounding changes when a fixed offset is known.
+  const roundedQnh = hasWeather ? Math.round(weather.qnh) : null
+  // Shobdon/linked-tenant round: QNH and QFE are known to always differ
+  // by exactly qnhQfeOffsetHpa in reality - rounding each independently
+  // could display a difference of 12 instead of 11 whenever the two raw
+  // decimals straddle a .5 boundary in opposite directions. Deriving QFE
+  // from QNH's own (already-rounded) value instead guarantees the
+  // displayed gap is always exactly right, and - as a side effect - also
+  // produces a real QFE value for a linked tenant on the 'ingested'
+  // provider even though that provider doesn't carry its own qfe field
+  // at all today. Every other tenant (qnhQfeOffsetHpa null) falls
+  // through to the original independent-rounding-with-N/A-gate behaviour
+  // unchanged.
+  const qfeText = !hasWeather
+    ? 'N/A'
+    : qnhQfeOffsetHpa !== null && roundedQnh !== null
+      ? `${roundedQnh - qnhQfeOffsetHpa} hPa`
+      : weather.qfe === undefined
+        ? 'N/A'
+        : `${Math.round(weather.qfe)} hPa`
+
   const stats = [
-    // Math.round, not truncation - "1018.6 hPa" must read "1019 hPa", not
-    // "1018 hPa". Both QNH and QFE come straight off the ATC station
-    // reading with a decimal; the whole-number precision is a display
-    // choice made here, not a change to the underlying stored/fetched
-    // value (nothing else reads weather.qnh/qfe for a calculation that
-    // would need the decimal).
-    { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${Math.round(weather.qnh)} hPa` },
+    { label: 'QNH', value: roundedQnh === null ? 'N/A' : `${roundedQnh} hPa` },
     {
-      // Only ever populated by the 'atc' provider - see WeatherData's
-      // own comment. N/A for every other source.
+      // Only ever populated by the 'atc' provider (independent-rounding
+      // path only) - see WeatherData's own comment. N/A for every other
+      // source unless qnhQfeOffsetHpa makes it derivable from QNH alone.
       label: 'QFE',
-      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${Math.round(weather.qfe)} hPa`,
+      value: qfeText,
     },
     {
       label: 'Cloud Base',

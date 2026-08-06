@@ -154,6 +154,29 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
     }
   }, [opsPanelChartData])
 
+  // Consistent QNH/QFE rounding round (migration 0074) - null for every
+  // tenant except Shobdon and tenants linked to it (see publicConfig.ts's
+  // own qnhQfeOffsetHpa comment). Its own independent, unconditional
+  // fetch - not folded into chartConfig's above (that one is deliberately
+  // scoped to just the three chart-rotation fields, see its own comment,
+  // and is skippable via opsPanelChartData for the admin-preview leak
+  // fix) - this is a lower-stakes display nicety, not real tenant
+  // content, so it's fine for an admin preview to always self-fetch it.
+  const [qnhQfeOffsetHpa, setQnhQfeOffsetHpa] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) setQnhQfeOffsetHpa(typeof data?.qnhQfeOffsetHpa === 'number' ? data.qnhQfeOffsetHpa : null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // liveDataUnavailable: the selected source's fetch failed and weather
   // is actually the substituted mock fixture - show N/A rather than
   // presenting that fake data as if it were a real reading.
@@ -169,6 +192,27 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
     ? `${visibilityHours[0].category} (${formatVisibilityRange(visibilityHours[0].rangeLabel)})`
     : 'Unavailable'
 
+  const hasWeather = !!weather && !liveDataUnavailable
+  // Math.round, not truncation - see WeatherStatGrid.tsx's identical fix
+  // on the mobile side of this same value. QNH always rounds
+  // independently, same as every other tenant - only QFE's rounding
+  // changes when a fixed offset is known.
+  const roundedQnh = hasWeather ? Math.round(weather.qnh) : null
+  // Shobdon/linked-tenant round (migration 0074) - see
+  // WeatherStatGrid.tsx's identical derivation and its own comment for
+  // the full reasoning (independent rounding can display an 11 hPa
+  // physical offset as 12 whenever the two raw decimals straddle a .5
+  // boundary in opposite directions; deriving QFE from QNH's own
+  // rounding instead guarantees the displayed gap is always exactly
+  // right). Every other tenant (qnhQfeOffsetHpa null) is unaffected.
+  const qfeText = !hasWeather
+    ? 'N/A'
+    : qnhQfeOffsetHpa !== null && roundedQnh !== null
+      ? `${roundedQnh - qnhQfeOffsetHpa} hPa`
+      : weather.qfe === undefined
+        ? 'N/A'
+        : `${Math.round(weather.qfe)} hPa`
+
   // qualifier split out from label (was inline in the label string, e.g.
   // "Cloud Base (Shobdon Calculated)") so it can be rendered at its own
   // smaller size/colour - see STAT_QUALIFIER_FONT above.
@@ -178,16 +222,14 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
       qualifier: null,
       value: !weather || liveDataUnavailable ? 'N/A' : `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt`,
     },
-    // Math.round, not truncation - see WeatherStatGrid.tsx's identical
-    // fix on the mobile side of this same value.
-    { label: 'QNH', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${Math.round(weather.qnh)} hPa` },
+    { label: 'QNH', qualifier: null, value: roundedQnh === null ? 'N/A' : `${roundedQnh} hPa` },
     {
-      // Only ever populated by the 'atc' provider (see WeatherData's own
-      // comment) - N/A for every other source, same posture as Cloud
-      // Base below, not a new gating mechanism of its own.
+      // Only ever populated by the 'atc' provider (independent-rounding
+      // path only, see WeatherData's own comment) - N/A for every other
+      // source unless qnhQfeOffsetHpa makes it derivable from QNH alone.
       label: 'QFE',
       qualifier: null,
-      value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${Math.round(weather.qfe)} hPa`,
+      value: qfeText,
     },
     {
       // Net-new predicted data (Shobdon has no visibility sensor at all) -

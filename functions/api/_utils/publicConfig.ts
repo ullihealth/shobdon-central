@@ -228,7 +228,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // own `organizationId`.
   const effective = await resolveEffectiveTenantByOrganizationId(env.DB, organizationId);
 
-  const [runwayRows, themeRow, tenantRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, effectiveOffsetRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(effective.organizationId)
@@ -242,7 +242,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_full_kt AS windsockFullKt, windsock_medium_kt AS windsockMediumKt FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_full_kt AS windsockFullKt, windsock_medium_kt AS windsockMediumKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -257,7 +257,23 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mobileEnabled: number;
         windsockFullKt: number;
         windsockMediumKt: number;
+        qnhQfeOffsetHpa: number | null;
       }>(),
+    // Consistent QNH/QFE rounding round - this is a physical fact about
+    // Shobdon's own station (its QFE datum vs QNH sea-level datum), not a
+    // per-tenant preference, so it's read from the EFFECTIVE tenant here
+    // (same reasoning as runway_groups/gas_prices' own effective-tenant
+    // read above) rather than only ever the requesting tenant's own row -
+    // a tenant linked to Shobdon inherits Shobdon's 11 automatically,
+    // with no separate value needing to be set on its own row. Falls
+    // back to the requesting tenant's own qnhQfeOffsetHpa (from tenantRow
+    // above) when this comes back null - see the fallback computed below
+    // this Promise.all, same "prefer parent, fall back to own" posture
+    // as effectiveGasPricesRow.
+    env.DB
+      .prepare("SELECT qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?")
+      .bind(effective.organizationId)
+      .first<{ qnhQfeOffsetHpa: number | null }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
       .bind(organizationId)
@@ -555,6 +571,13 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   const airfieldName = tenantRow?.name ?? null;
   const logoUrl = tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null;
   const hasPhysicalAtc = !!tenantRow?.hasPhysicalAtc;
+  // Prefer the effective (parent, if linked) tenant's own value; fall
+  // back to this tenant's own row only when the effective one is null -
+  // same "prefer parent, fall back to own" shape as
+  // effectiveGasPricesRow below. In the common unlinked case,
+  // effectiveOffsetRow and tenantRow point at the exact same row, so
+  // this is a no-op fallback (both already agree).
+  const qnhQfeOffsetHpa = effectiveOffsetRow?.qnhQfeOffsetHpa ?? tenantRow?.qnhQfeOffsetHpa ?? null;
   const brandDisplay = parseBrandDisplay(tenantRow?.brandDisplayJson);
   // Pilot View round (migration 0070) - manual AFISO status, no live
   // data source exists for this anywhere (see that migration's own
@@ -837,6 +860,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     airfieldName,
     logoUrl,
     hasPhysicalAtc,
+    qnhQfeOffsetHpa,
     brandDisplay,
     cameraSlots,
     cameras,

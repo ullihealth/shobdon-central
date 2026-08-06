@@ -46,6 +46,7 @@ interface TenantRow {
   mobileEnabled: number;
   subscriptionStatus: string;
   subscriptionNotes: string;
+  qnhQfeOffsetHpa: number | null;
   deletedAt: string | null;
 }
 
@@ -83,6 +84,16 @@ interface PatchBody {
   mobileEnabled?: boolean;
   subscriptionStatus?: string;
   subscriptionNotes?: string;
+  // Consistent QNH/QFE rounding round (migration 0074) - null (every
+  // tenant's default) means "no known fixed offset, round QNH/QFE
+  // independently"; a number means "this tenant's QNH and QFE always
+  // differ by exactly this many hPa in reality" (11 for Shobdon). Read
+  // from the EFFECTIVE tenant by publicConfig.ts (a linked sub-tenant
+  // inherits Shobdon's own value automatically - see that file's own
+  // comment) - setting this on a linked sub-tenant's own row has no
+  // visible effect while the link exists, same posture as
+  // runwayGroups/gasPrices edits on a linked tenant today.
+  qnhQfeOffsetHpa?: number | null;
   // Migration 0044 - true archives (see this file's own handling below,
   // which also forces active false in the same write); false explicitly
   // un-archives (restores deleted_at to NULL, but deliberately does NOT
@@ -128,6 +139,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "mobileEnabled",
     "subscriptionStatus",
     "subscriptionNotes",
+    "qnhQfeOffsetHpa",
     "archived",
   ];
   if (!fields.some((field) => body[field] !== undefined)) {
@@ -154,6 +166,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.afisoFrequency !== undefined && typeof body.afisoFrequency !== "string") {
     return jsonResponse({ error: "afisoFrequency must be a string" }, 400);
   }
+  // null is a valid, meaningful value here (explicitly clears the fixed
+  // offset, reverting to independent rounding) - unlike storageQuotaBytes
+  // below, this field's "unset" state is a real state a platform admin
+  // can deliberately choose, not just "field omitted from this request".
+  if (body.qnhQfeOffsetHpa !== undefined && body.qnhQfeOffsetHpa !== null && !Number.isInteger(body.qnhQfeOffsetHpa)) {
+    return jsonResponse({ error: "qnhQfeOffsetHpa must be an integer or null" }, 400);
+  }
   if (body.storageQuotaBytes !== undefined && (!Number.isInteger(body.storageQuotaBytes) || body.storageQuotaBytes <= 0)) {
     return jsonResponse({ error: "storageQuotaBytes must be a positive integer" }, 400);
   }
@@ -179,6 +198,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
               mobile_enabled AS mobileEnabled,
               subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
+              qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
               deleted_at AS deletedAt
        FROM tenants WHERE id = ?`
     )
@@ -209,6 +229,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     mobileEnabled: body.mobileEnabled ?? !!current.mobileEnabled,
     subscriptionStatus: body.subscriptionStatus ?? current.subscriptionStatus,
     subscriptionNotes: body.subscriptionNotes ?? current.subscriptionNotes,
+    // NOT `body.qnhQfeOffsetHpa ?? current.qnhQfeOffsetHpa` - null is a
+    // real, meaningful value a caller can deliberately send (clear the
+    // offset), which `??` would otherwise silently discard in favour of
+    // the current value. Only an actually-omitted field (undefined)
+    // falls back to current.
+    qnhQfeOffsetHpa: body.qnhQfeOffsetHpa !== undefined ? body.qnhQfeOffsetHpa : current.qnhQfeOffsetHpa,
     deletedAt: body.archived === true ? now : body.archived === false ? null : current.deletedAt,
   };
 
@@ -218,7 +244,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               carousel_budget_seconds = ?, carousel_budget_enabled = ?, global_link_enabled = ?,
               afiso_open = ?, afiso_frequency = ?,
               mobile_enabled = ?,
-              subscription_status = ?, subscription_notes = ?, deleted_at = ?, updated_at = ?
+              subscription_status = ?, subscription_notes = ?, qnh_qfe_offset_hpa = ?, deleted_at = ?, updated_at = ?
        WHERE id = ?`
     )
     .bind(
@@ -237,6 +263,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.mobileEnabled ? 1 : 0,
       next.subscriptionStatus,
       next.subscriptionNotes,
+      next.qnhQfeOffsetHpa,
       next.deletedAt,
       now,
       tenantId

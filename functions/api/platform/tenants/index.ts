@@ -49,6 +49,7 @@ interface TenantRow {
   afisoOpen: number;
   afisoFrequency: string;
   mobileEnabled: number;
+  qnhQfeOffsetHpa: number | null;
   organizationId: string | null;
   logoR2Key: string | null;
   createdAt: string;
@@ -110,7 +111,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                 carousel_budget_seconds AS carouselBudgetSeconds, carousel_budget_enabled AS carouselBudgetEnabled,
                 global_link_enabled AS globalLinkEnabled,
                 afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
-                mobile_enabled AS mobileEnabled,
+                mobile_enabled AS mobileEnabled, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
                 organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt,
                 subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes
          FROM tenants WHERE deleted_at IS NULL ORDER BY created_at`
@@ -209,6 +210,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       afisoOpen: !!tenant.afisoOpen,
       afisoFrequency: tenant.afisoFrequency,
       mobileEnabled: !!tenant.mobileEnabled,
+      qnhQfeOffsetHpa: tenant.qnhQfeOffsetHpa,
       usedBytes: (tenant.organizationId && usageByOrg.get(tenant.organizationId)) || 0,
       logoUrl: tenant.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenant.logoR2Key}` : null,
       createdAt: tenant.createdAt,

@@ -96,6 +96,15 @@ interface PlatformTenant {
   // column for future Stripe billing, deliberately not surfaced here -
   // no UI/route wiring for it yet.
   mobileEnabled: boolean
+  // Consistent QNH/QFE rounding round (migration 0074) - null (every
+  // tenant's default) means "no known fixed offset, round QNH/QFE
+  // independently"; a number means "this tenant's QNH and QFE always
+  // differ by exactly this many hPa in reality" (11 for Shobdon).
+  // Editable via QnhQfeOffsetEditor below. Read from the EFFECTIVE
+  // tenant server-side (publicConfig.ts) - editing this on a tenant
+  // that's linked to a parent has no visible effect while the link
+  // exists, since the parent's own value wins.
+  qnhQfeOffsetHpa: number | null
   usedBytes: number
   logoUrl: string | null
   createdAt: string
@@ -146,7 +155,7 @@ function formatDateTime(iso: string): string {
   })
 }
 
-async function patchTenant(id: number, body: Record<string, boolean | number | string>): Promise<PlatformTenant | null> {
+async function patchTenant(id: number, body: Record<string, boolean | number | string | null>): Promise<PlatformTenant | null> {
   const response = await fetch(`${TENANTS_URL}/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -307,6 +316,69 @@ function AfisoFrequencyEditor({ tenant, onSaved }: { tenant: PlatformTenant; onS
         }}
         placeholder="122.250"
         className="mt-1 w-24 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+      />
+    </div>
+  )
+}
+
+// Same save-on-blur pattern as CarouselBudgetEditor/AfisoFrequencyEditor
+// above, for tenants.qnh_qfe_offset_hpa (migration 0074). Empty field
+// commits null (independent rounding, every tenant's default) - a
+// meaningful, deliberately-chosen state, not just "nothing typed yet",
+// so it's handled as its own branch below rather than falling through
+// to a no-op. A non-empty value must be a plain integer - this is a
+// physical hPa offset, not a free-text field like AFISO frequency.
+// Read from the EFFECTIVE tenant server-side (publicConfig.ts) - see
+// this field's own comment on PlatformTenant for why setting this on a
+// tenant linked to a parent has no visible effect while the link
+// exists.
+function QnhQfeOffsetEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (offset: number | null) => void }): JSX.Element {
+  const toInputValue = (offset: number | null) => (offset === null ? '' : String(offset))
+  const [value, setValue] = useState(toInputValue(tenant.qnhQfeOffsetHpa))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(toInputValue(tenant.qnhQfeOffsetHpa))
+  }, [tenant.qnhQfeOffsetHpa])
+
+  async function commit() {
+    const trimmed = value.trim()
+    if (trimmed === '') {
+      if (tenant.qnhQfeOffsetHpa === null) return
+      setSaving(true)
+      const updated = await patchTenant(tenant.id, { qnhQfeOffsetHpa: null })
+      setSaving(false)
+      if (updated) onSaved(updated.qnhQfeOffsetHpa)
+      else setValue(toInputValue(tenant.qnhQfeOffsetHpa))
+      return
+    }
+    const offset = Number(trimmed)
+    if (!Number.isInteger(offset) || offset === tenant.qnhQfeOffsetHpa) {
+      setValue(toInputValue(tenant.qnhQfeOffsetHpa))
+      return
+    }
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { qnhQfeOffsetHpa: offset })
+    setSaving(false)
+    if (updated) onSaved(updated.qnhQfeOffsetHpa)
+    else setValue(toInputValue(tenant.qnhQfeOffsetHpa))
+  }
+
+  return (
+    <div className="min-w-[140px]">
+      <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">QNH/QFE fixed offset (hPa)</div>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={value}
+        disabled={saving}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+        }}
+        placeholder="Off"
+        className="mt-1 w-20 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-right text-xs text-white focus:border-sky-500 focus:outline-none"
       />
     </div>
   )
@@ -1112,6 +1184,10 @@ export default function PlatformTenantsPage(): JSX.Element {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, afisoFrequency: frequency } : t)))
   }
 
+  function handleQnhQfeOffsetSaved(tenantId: number, offset: number | null) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, qnhQfeOffsetHpa: offset } : t)))
+  }
+
   function handleNameSaved(tenantId: number, name: string) {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, name } : t)))
   }
@@ -1563,6 +1639,10 @@ export default function PlatformTenantsPage(): JSX.Element {
                     <AfisoFrequencyEditor
                       tenant={selectedTenant}
                       onSaved={(frequency) => handleAfisoFrequencySaved(selectedTenant.id, frequency)}
+                    />
+                    <QnhQfeOffsetEditor
+                      tenant={selectedTenant}
+                      onSaved={(offset) => handleQnhQfeOffsetSaved(selectedTenant.id, offset)}
                     />
                     <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
                     <Link
