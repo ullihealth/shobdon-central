@@ -142,6 +142,14 @@ const FALLBACK_VIEW_WIDTH = 220
 // factor).
 const AXIS_FONT_SIZE_DEFAULT = '12'
 const AXIS_FONT_SIZE_LARGE = '22'
+// /pilot-only brightness bump (SVG fill, not a Tailwind class - this
+// text lives inside the <svg>) - rgba(148, 163, 184, ...) is
+// text-muted-400's own colour value at 0.85 opacity; the TV dashboard
+// keeps that exact value unchanged. AXIS_FILL_LARGE is text-muted-300's
+// colour (#cbd5e1) at full opacity - a real, visible step up, not just
+// removing the transparency on the same colour.
+const AXIS_FILL_DEFAULT = 'rgba(148, 163, 184, 0.85)'
+const AXIS_FILL_LARGE = '#cbd5e1'
 const PLOT_LEFT_DEFAULT = 52
 // Matching left-margin increase for AXIS_FONT_SIZE_LARGE - without this
 // the wider glyphs simply clip off the SVG viewBox's own left edge
@@ -286,7 +294,7 @@ export default function CloudVisibilityChart({
     // gap between.
     <div className="flex h-full flex-col gap-2">
       <div className="flex min-h-0 flex-[2] flex-col rounded-2xl border border-border bg-card p-4">
-        <div className="mb-2 flex-shrink-0 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
+        <div className={`mb-2 flex-shrink-0 text-center text-sm font-bold uppercase tracking-widest ${largeText ? 'text-muted-300' : 'text-muted-500'}`}>
           Calculated Convected Cloud Base
         </div>
         <div ref={plotWrapperRef} className="min-h-0 flex-1">
@@ -312,7 +320,7 @@ export default function CloudVisibilityChart({
                 one screen can render very differently on another -
                 verified against both a real iPhone viewport and a real
                 1920x1080 desktop viewport, not just one screenshot. */}
-            <g fill="rgba(148, 163, 184, 0.85)" fontSize={largeText ? AXIS_FONT_SIZE_LARGE : AXIS_FONT_SIZE_DEFAULT} fontWeight="600">
+            <g fill={largeText ? AXIS_FILL_LARGE : AXIS_FILL_DEFAULT} fontSize={largeText ? AXIS_FONT_SIZE_LARGE : AXIS_FONT_SIZE_DEFAULT} fontWeight="600">
               {gridlines.map((ft) => (
                 <text key={ft} x={plotLeft - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
                   {ft}ft
@@ -345,7 +353,7 @@ export default function CloudVisibilityChart({
           </svg>
         </div>
         {cloudBaseCapturedAt && (
-          <div className={`mt-1 flex-shrink-0 text-center text-muted-500 ${largeText ? 'text-sm' : 'text-[0.625rem]'}`}>
+          <div className={`mt-1 flex-shrink-0 text-center ${largeText ? 'text-sm text-muted-300' : 'text-[0.625rem] text-muted-500'}`}>
             Last updated {formatTime(cloudBaseCapturedAt)}
           </div>
         )}
@@ -367,7 +375,7 @@ export default function CloudVisibilityChart({
             {displayHours.map((hour, i) => (
               <div key={i} className="flex flex-col items-center">
                 <span className={`leading-none ${largeText ? 'text-4xl' : 'text-xl'}`}>{weatherIconFor(hour.weatherCode)}</span>
-                <span className={`mt-1.5 font-semibold text-muted-500 ${largeText ? 'text-base' : 'text-xs'}`}>{hourLabelForIndex(i)}</span>
+                <span className={`mt-1.5 font-semibold ${largeText ? 'text-base text-muted-300' : 'text-xs text-muted-500'}`}>{hourLabelForIndex(i)}</span>
               </div>
             ))}
           </div>
