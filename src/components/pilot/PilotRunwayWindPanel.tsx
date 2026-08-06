@@ -23,31 +23,22 @@ function isConfigured(group: RunwayGroup): boolean {
   return group.endAIdentifier.trim() !== '' && group.endBIdentifier.trim() !== ''
 }
 
-// Confirmed /pilot production round: sits directly below the compass
-// (CompassPanel with hideReadout - see that component's own comment)
-// on Pilot View mobile only, replacing its old Headwind/Crosswind/Trend
-// text rows - the desktop dashboard still renders CompassPanel's full
-// readout and is untouched (a separate call site, this file isn't
-// imported there). Self-fetches PUBLIC_CONFIG_URL, same established
-// pattern every other self-contained /pilot panel already uses
-// (RunwayInUseCard, WeatherStatGrid) rather than threading props down
-// from PilotViewPage - real production data, not the
-// /runway-widget-test prototype route's own (identical) fetch, which
-// stays live and unrelated to this file. refreshSignal (PilotViewPage's
-// 60s tick) triggers a re-fetch without remounting, same as
-// RunwayInUseCard's own prop of the same name.
-//
-// Standalone "Wind" reading restored above the widget (round 2 - it was
-// dropped as redundant with the compass's own centre label, but that
-// label reads small/secondary next to a full instrument; this is meant
-// to be the single most prominent number on the page, distinct from
-// that). mt-8/mb-8 on this block are deliberate, not incidental -
-// generous, visually separate gaps from both the compass above and the
-// Crosswind/Headwind row below, on top of (not instead of) the page's
-// own shared gap-4 between sibling sections. `bare` renders the widget
-// itself full-width with no card/border, directly on the page
-// background, same treatment as the compass above it - see
-// RunwayWindWidget.tsx's own comment.
+// Confirmed /pilot production round: renders the crosswind/headwind/
+// windsock/runway/circuit/trend widget group only - the standalone
+// "WIND" readout that used to live inline at the top of this component
+// has moved out into its own full-width card (PilotWindCard.tsx, see
+// that file's own comment) as of the reorder round, so it can sit
+// higher up the page, above Weather Summary. Self-fetches
+// PUBLIC_CONFIG_URL, same established pattern every other self-
+// contained /pilot panel already uses (RunwayInUseCard, WeatherStatGrid)
+// rather than threading props down from PilotViewPage - real production
+// data, not the /runway-widget-test prototype route's own (identical)
+// fetch, which stays live and unrelated to this file. refreshSignal
+// (PilotViewPage's 60s tick) triggers a re-fetch without remounting,
+// same as RunwayInUseCard's own prop of the same name. `bare` renders
+// the widget itself full-width with no card/border, directly on the
+// page background, matching the rest of this page's non-card sections -
+// see RunwayWindWidget.tsx's own comment.
 //
 // reverseCompassNeedle (ops_panel_state, /developertools) IS threaded
 // through to RunwayWindWidget below - correcting an earlier mistake in
@@ -90,33 +81,25 @@ export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?
   const configuredGroups = config.runwayGroups.filter(isConfigured)
   if (configuredGroups.length === 0) return null
 
-  const hasWind = !!weather && !liveDataUnavailable
-
   return (
     // mb-8 here (not on the last child inside) is what creates the
-    // breathing room before NOTAMs below - on top of the page's own
-    // shared gap-4 between sibling sections, same "layered, not
-    // instead-of" spacing approach as the Wind block's own mt-8/mb-8.
+    // breathing room before the compass below - on top of the page's
+    // own shared gap-4 between sibling sections, same "layered, not
+    // instead-of" spacing approach used throughout this page.
     <div className="mb-8 flex w-full flex-col items-center">
-      <div className="mb-8 mt-8 flex items-baseline gap-3">
-        <span className="text-2xl font-bold uppercase tracking-wide text-muted-400">Wind</span>
-        <span className="text-5xl font-black text-primary">{hasWind && weather ? `${weather.windDirection}° / ${weather.windSpeed} kt` : 'N/A'}</span>
-      </div>
-      <div className="flex w-full flex-col items-center gap-4">
-        {configuredGroups.map((group) => (
-          <RunwayWindWidget
-            key={group.id}
-            group={group}
-            activeEnd={config.activeRunwayEnd}
-            circuitDirection={config.circuitDirection}
-            reverseCompassNeedle={config.reverseCompassNeedle}
-            weather={weather}
-            liveDataUnavailable={liveDataUnavailable}
-            windsock={config.windsock}
-            bare
-          />
-        ))}
-      </div>
+      {configuredGroups.map((group) => (
+        <RunwayWindWidget
+          key={group.id}
+          group={group}
+          activeEnd={config.activeRunwayEnd}
+          circuitDirection={config.circuitDirection}
+          reverseCompassNeedle={config.reverseCompassNeedle}
+          weather={weather}
+          liveDataUnavailable={liveDataUnavailable}
+          windsock={config.windsock}
+          bare
+        />
+      ))}
     </div>
   )
 }

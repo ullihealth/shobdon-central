@@ -16,6 +16,7 @@ import PilotNoticesPanel from '../components/pilot/PilotNoticesPanel'
 import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 import PilotFooterTicker from '../components/pilot/PilotFooterTicker'
 import PilotRunwayWindPanel from '../components/pilot/PilotRunwayWindPanel'
+import PilotWindCard from '../components/pilot/PilotWindCard'
 import CompassPanel from '../components/CompassPanel'
 import GasPricesPanel from '../components/GasPricesPanel'
 
@@ -123,14 +124,15 @@ export default function PilotViewPage(): JSX.Element {
         <PilotHeader airfieldName={airfieldName} logoUrl={logoUrl} afisoOpen={afisoOpen} afisoFrequency={afisoFrequency} />
 
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
+          {/* Second reorder round: standalone WIND readout now leads the
+              page, in its own full-width card (PilotWindCard.tsx) -
+              pulled out of PilotRunwayWindPanel, which used to render it
+              inline above its own widget group. Order below is now:
+              Wind card -> Weather Summary -> runway/windsock group ->
+              compass -> NOTAMs -> Forecast & Visibility -> Notices ->
+              Fuel Prices. */}
+          <PilotWindCard />
           <WeatherStatGrid />
-          {/* Reorder round: widget group now sits ABOVE the compass (was
-              below) - purely a vertical-order swap, no change to either
-              component's own internals. PilotRunwayWindPanel still owns
-              its own top/bottom spacing internally (Wind reading's
-              padding above, mb-8 before the compass below it now instead
-              of before NOTAMs - same mb-8 still does that job one
-              position later in the DOM). */}
           <PilotRunwayWindPanel refreshSignal={refreshTick} />
           {/* Compass instrument - hideReadout drops its own text readout
               list (Wind/Headwind/Crosswind/Trend), since the widget above
