@@ -40,6 +40,7 @@ export default function ForecastCloudbaseCluster(): JSX.Element {
         cloudBaseCapturedAt={cloudBaseCapturedAt}
         visibilityHours={visibilityHours}
         visibilityFetchedAt={visibilityFetchedAt}
+        largeText
       />
     </div>
   )

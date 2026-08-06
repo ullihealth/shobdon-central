@@ -13,6 +13,14 @@ interface CloudVisibilityChartProps {
   // ISO timestamp of when the Met Office forecast was actually fetched
   // (server-side, then cached) - null whenever visibilityHours is empty.
   visibilityFetchedAt: string | null
+  // Pilot View mobile round: this card renders noticeably larger on a
+  // real phone than the TV dashboard's sizes were ever tuned for (see
+  // PLOT_LEFT_DEFAULT's own comment on how sensitive those sizes are to the
+  // TV/kiosk viewport specifically). Opt-in only - LeftInfoPanel.tsx and
+  // Clubhouse2Template.tsx (both TV dashboard callers) omit this and
+  // keep their exact existing sizing untouched; ForecastCloudbaseCluster
+  // (the /pilot caller) is the only one that passes it.
+  largeText?: boolean
 }
 
 // Same "Last updated HH:MM" formatting Header.tsx already uses for the
@@ -28,27 +36,61 @@ function formatTime(iso: string): string {
 }
 
 // How often the "+Nh" labels below re-derive from the real clock - see
-// hourLabelFor's own comment for why this exists at all. 1 minute, not
+// anchorIndexFor's own comment for why this exists at all. 1 minute, not
 // Header.tsx's 1-second clock tick: these labels round to whole hours,
 // so nothing they'd display can change faster than that; a slower tick
 // is just cheaper for the same visible result.
 const LABEL_TICK_MS = 60 * 1000
+const MS_PER_HOUR = 60 * 60 * 1000
 
-// Was previously just the array index (`+${i + 1}h`) - looked plausible
-// but was silently wrong by up to just under an hour, growing worse the
-// longer this data's 60-minute server-side cache had been sitting: the
-// label claimed "distance from now", but was actually always "distance
-// from whenever this was fetched". Found investigating a reported
-// forecast discrepancy - this labelling gap wasn't the actual cause
-// that time (the cache was fresh when it was reported), but is a real,
-// separate inaccuracy in its own right. Rounds to the nearest hour
-// (not floor/ceil) so a step that's, say, 26 minutes away doesn't read
-// as a full "+1h" out - "Now" covers anything that rounds to zero or
-// (rarely, right before this cache's own 60-minute TTL expires) has
-// already slipped a few minutes into the past.
-function hourLabelFor(forecastForUtc: string, nowMs: number): string {
-  const deltaHours = Math.round((Date.parse(forecastForUtc) - nowMs) / (60 * 60 * 1000))
-  return deltaHours <= 0 ? 'Now' : `+${deltaHours}h`
+// Round 2 of this same bug, traced live rather than just re-labelled:
+// the PREVIOUS version (`Math.round((forecast - now) / 1h)`, "Now" for
+// anything <= 0) computed each hour's label independently, and that
+// independence was the actual defect. This route's cache can
+// legitimately go on serving an entry that's already up to 59 minutes
+// old (pickUpcomingHours only filters "upcoming" once, at fetch time,
+// against a 60-minute KV TTL - see publicVisibilityForecast.ts) - once
+// real elapsed time pushed that first entry's raw delta past -30
+// minutes, Math.round sent it to -1, which the old `<= 0` check still
+// called "Now" (it never distinguished "-1h, already elapsed" from "0h,
+// current" - both were the same bucket). At the exact same moment the
+// NEXT hourly entry (exactly 60 minutes later by construction) had its
+// own raw delta cross +30 minutes, which Math.round also sends to 0 -
+// "Now" again. Two independent roundings, two "Now"s, and every label
+// after them one hour behind where it should read. A same-shape fix
+// that instead floors to calendar-hour buckets was tried and rejected
+// once actually traced against this route's real data: it stopped the
+// collision, but the fetch-time-only filter means the closest entry the
+// cache holds is very often already MORE than an hour out (Met Office's
+// hourly steps land on the following full hour boundary, not "however
+// much of the current hour remains"), so most of the time no entry ever
+// rounds to "Now" at all - "+1h, +2h, ... +6h" with no anchor, not the
+// attached Met Office SAWS reference's "Now, +1h, ..., +5h".
+//
+// Fixed by treating the array as one ordered sequence instead of six
+// independent lookups: find the LATEST entry whose raw delta still
+// rounds to <= 0 (the true current anchor - any earlier entry sharing
+// that bucket is stale, already superseded, and dropped rather than
+// mislabelled); if none does (the fresh-cache case above), the nearest
+// upcoming entry becomes the anchor by definition, same as the SAWS
+// reference's own "Now" evidently means "nearest available step", not
+// "occurring this exact instant". Every entry from the anchor onward is
+// then labelled purely by its position after it (Now, +1h, +2h...), not
+// by re-deriving its own delta - correct because Met Office's hourly
+// steps are always genuinely one hour apart, so position alone is
+// exactly right once the anchor is, and two entries can never again
+// collide on the same label.
+function anchorIndexFor(hoursArr: VisibilityHour[], nowMs: number): number {
+  let anchor = 0
+  for (let i = 0; i < hoursArr.length; i += 1) {
+    const deltaHours = Math.round((Date.parse(hoursArr[i].forecastForUtc) - nowMs) / MS_PER_HOUR)
+    if (deltaHours <= 0) anchor = i
+  }
+  return anchor
+}
+
+function hourLabelForIndex(indexAfterAnchor: number): string {
+  return indexAfterAnchor === 0 ? 'Now' : `+${indexAfterAnchor}h`
 }
 
 // Previously a FIXED viewBox (220x300, a portrait ratio picked as "close
@@ -83,7 +125,15 @@ const FALLBACK_VIEW_WIDTH = 220
 // computed from the font-size change alone. Fixed, not width-relative -
 // it's sized to comfortably fit the "0000ft" label text at the font size
 // below, which doesn't itself change with the box's aspect ratio.
-const PLOT_LEFT = 36
+const PLOT_LEFT_DEFAULT = 36
+// largeText's axis fontSize is 2x PLOT_LEFT_DEFAULT's own tuned font
+// size (8 -> 16) - without a matching left-margin increase the wider
+// glyphs simply clip off the SVG viewBox's own left edge (confirmed:
+// "6000ft" rendered as "00ft" at the old margin). Not an exact 2x
+// scale-up of PLOT_LEFT_DEFAULT itself (that overshot, per the comment
+// above this constant) - measured empirically against the actual
+// rendered "0000ft" text width at the larger font size.
+const PLOT_LEFT_LARGE = 70
 const PLOT_TOP = 20
 const HEIGHT_SCALE_BOTTOM = 280
 
@@ -142,6 +192,7 @@ export default function CloudVisibilityChart({
   cloudBaseCapturedAt,
   visibilityHours,
   visibilityFetchedAt,
+  largeText = false,
 }: CloudVisibilityChartProps): JSX.Element {
   // Tracks the plot SVG's own real rendered box so viewWidth (and
   // everything derived from it below) always matches the box's actual
@@ -150,7 +201,7 @@ export default function CloudVisibilityChart({
   const plotWrapperRef = useRef<HTMLDivElement>(null)
   const [viewWidth, setViewWidth] = useState(FALLBACK_VIEW_WIDTH)
 
-  // See hourLabelFor's own comment - ticks independently of
+  // See anchorIndexFor's own comment - ticks independently of
   // visibilityHours (which only changes every 15 minutes, or whenever
   // the server-side cache refreshes) so the labels keep correcting
   // themselves against the real clock in between.
@@ -174,6 +225,12 @@ export default function CloudVisibilityChart({
   }, [])
 
   const plotRight = viewWidth - 10
+  const plotLeft = largeText ? PLOT_LEFT_LARGE : PLOT_LEFT_DEFAULT
+
+  // See anchorIndexFor's own comment - the 6-Hour Forecast strip below
+  // renders this sliced/anchored array, not visibilityHours directly, so
+  // its labels are never computed per-entry independently again.
+  const displayHours = visibilityHours.slice(anchorIndexFor(visibilityHours, nowMs))
 
   const scaleMaxFt = scaleMaxFtFor(cloudBaseFt)
   const gridlines: number[] = []
@@ -181,7 +238,7 @@ export default function CloudVisibilityChart({
 
   const cloudY = cloudBaseFt === null ? null : ftToY(cloudBaseFt, scaleMaxFt)
   const iconStyle = VISIBILITY_ICON_STYLE[visibilityHours[0]?.category ?? ''] ?? DEFAULT_ICON_STYLE
-  const usableWidth = plotRight - PLOT_LEFT
+  const usableWidth = plotRight - plotLeft
   // Shrinks as count grows (1 icon at count=1 up to 11 at Very Poor) so
   // the densest case never overlaps - capped at 22 so the sparse cases
   // (1-3 icons) don't blow up into oversized shapes. The 0.9 factor is a
@@ -195,7 +252,7 @@ export default function CloudVisibilityChart({
   const cloudIconSize = Math.min(22, (usableWidth / (iconStyle.count + 1)) * 0.9)
   const cloudIconXs = Array.from({ length: iconStyle.count }, (_, i) => {
     const spacing = usableWidth / (iconStyle.count + 1)
-    return PLOT_LEFT + spacing * (i + 1)
+    return plotLeft + spacing * (i + 1)
   })
 
   return (
@@ -215,7 +272,7 @@ export default function CloudVisibilityChart({
                 unambiguously as altitude data. */}
             <g stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
               {gridlines.map((ft) => (
-                <line key={ft} x1={PLOT_LEFT} y1={ftToY(ft, scaleMaxFt)} x2={plotRight} y2={ftToY(ft, scaleMaxFt)} />
+                <line key={ft} x1={plotLeft} y1={ftToY(ft, scaleMaxFt)} x2={plotRight} y2={ftToY(ft, scaleMaxFt)} />
               ))}
             </g>
             {/* fontSize deliberately well under the card title's real
@@ -230,9 +287,9 @@ export default function CloudVisibilityChart({
                 stay small enough to beat the title's real height even
                 at the largest observed scale factor, not just the
                 screen a single screenshot happened to be taken on. */}
-            <g fill="rgba(148, 163, 184, 0.85)" fontSize="8" fontWeight="600">
+            <g fill="rgba(148, 163, 184, 0.85)" fontSize={largeText ? '16' : '8'} fontWeight="600">
               {gridlines.map((ft) => (
-                <text key={ft} x={PLOT_LEFT - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
+                <text key={ft} x={plotLeft - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
                   {ft}ft
                 </text>
               ))}
@@ -249,7 +306,7 @@ export default function CloudVisibilityChart({
               ))
             ) : (
               <text
-                x={(PLOT_LEFT + plotRight) / 2}
+                x={(plotLeft + plotRight) / 2}
                 y={(PLOT_TOP + HEIGHT_SCALE_BOTTOM) / 2}
                 textAnchor="middle"
                 dominantBaseline="middle"
@@ -263,14 +320,14 @@ export default function CloudVisibilityChart({
           </svg>
         </div>
         {cloudBaseCapturedAt && (
-          <div className="mt-1 flex-shrink-0 text-center text-[0.625rem] text-muted-500">
+          <div className={`mt-1 flex-shrink-0 text-center text-muted-500 ${largeText ? 'text-sm' : 'text-[0.625rem]'}`}>
             Last updated {formatTime(cloudBaseCapturedAt)}
           </div>
         )}
       </div>
 
       <div className="flex-shrink-0 rounded-2xl border border-border bg-card p-4">
-        <div className="mb-4 text-center text-sm font-bold uppercase tracking-widest text-muted-500">
+        <div className={`mb-4 text-center font-bold uppercase tracking-widest text-muted-500 ${largeText ? 'text-lg' : 'text-sm'}`}>
           6-Hour Forecast
         </div>
         {/* Plain HTML, not SVG, deliberately - a flow-layout emoji glyph
@@ -278,14 +335,14 @@ export default function CloudVisibilityChart({
             stretched the way an SVG scaled to fill an arbitrary box can
             be. Visibility itself isn't shown here at all (see the
             cluster above) - this row is weather TYPE only. */}
-        {visibilityHours.length === 0 ? (
+        {displayHours.length === 0 ? (
           <div className="py-2 text-center text-xs font-semibold text-muted-500">Weather trend unavailable</div>
         ) : (
           <div className="flex items-start justify-around">
-            {visibilityHours.map((hour, i) => (
+            {displayHours.map((hour, i) => (
               <div key={i} className="flex flex-col items-center">
-                <span className="text-xl leading-none">{weatherIconFor(hour.weatherCode)}</span>
-                <span className="mt-1.5 text-xs font-semibold text-muted-500">{hourLabelFor(hour.forecastForUtc, nowMs)}</span>
+                <span className={`leading-none ${largeText ? 'text-4xl' : 'text-xl'}`}>{weatherIconFor(hour.weatherCode)}</span>
+                <span className={`mt-1.5 font-semibold text-muted-500 ${largeText ? 'text-base' : 'text-xs'}`}>{hourLabelForIndex(i)}</span>
               </div>
             ))}
           </div>
