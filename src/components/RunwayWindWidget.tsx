@@ -141,8 +141,8 @@ function ArrowIcon({ className }: { className?: string }): JSX.Element {
 }
 
 // Two columns, each a self-contained stack: Crosswind reading + windsock
-// + Circuit on the left, Headwind reading + arrow + runway image (with
-// the active end's identifier overlaid) + Trend on the right. See
+// + Trend on the left, Headwind reading + arrow + runway image (with
+// the active end's identifier overlaid) + Circuit on the right. See
 // RunwayWidgetTestPage.tsx (the
 // original standalone prototype route, still live) and PilotRunwayWindPanel.tsx
 // (the /pilot mobile integration) for this component's two real callers -
@@ -236,14 +236,15 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // each sits alone atop its own column instead of sharing a column with
   // three other stacked text blocks.
   const windsockClass = bare ? 'h-40 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
-  // Circuit/Trend now share one row below both columns (round 4) rather
-  // than each sitting under its own column - bottomRowClass is that row
-  // (margin-top for separation from the columns above it, same gap as
-  // chromeClass's own column gap so Circuit/Trend land roughly under
-  // Crosswind/Headwind); bottomItemClass is just the individual
-  // label+value stack, no margin of its own any more.
-  const bottomRowClass = bare ? 'mt-6 flex justify-center gap-3' : 'mt-2 flex justify-center gap-4 sm:mt-4 sm:gap-8'
-  const bottomItemClass = 'flex flex-col items-center gap-1'
+  // Round 5: Circuit and Trend swapped AND moved off their shared row,
+  // each now a literal child of its own top column (Trend under
+  // Crosswind/windsock, Circuit under Headwind/runway) - this guarantees
+  // exact horizontal centering under that column regardless of how much
+  // wider the runway column is than the windsock column, which a
+  // separate shared row (the previous approach) could only approximate.
+  // bottomItemClass is that per-column wrapper - same margin-top the old
+  // shared row used for separation from the content above it.
+  const bottomItemClass = bare ? 'mt-6 flex flex-col items-center gap-1' : 'mt-2 flex flex-col items-center gap-1 sm:mt-4'
   const arrowClass = bare ? 'h-9 w-7' : 'h-6 w-5 sm:h-10 sm:w-8'
   const runwayWrapClass = bare ? 'relative w-56' : 'relative w-36 sm:w-64'
   const identifierClass = bare
@@ -263,11 +264,10 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   return (
     <div className={outerClass}>
       <div className={topRowClass}>
-        {/* Left column: Crosswind + windsock. Right column: Headwind +
-            arrow + runway. Circuit/Trend both moved out of these columns
-            into their own shared row below (see the second row) per the
-            approved layout - each column here is now just its top-level
-            reading + image. */}
+        {/* Left column: Crosswind + windsock + Trend (swapped in from the
+            right column, round 5 - Trend is embedded as a literal child
+            here, not a separate row, so it centers exactly under this
+            column regardless of the two columns' differing widths). */}
         <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
           <span className={titleClass}>Crosswind</span>
           <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>
@@ -279,12 +279,19 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
             className={`${windsockClass} ${windsockOffsetClass}`}
             style={{ transform: mirrored ? 'scaleX(-1)' : undefined }}
           />
+          <div className={bottomItemClass}>
+            <span className={titleClass}>Trend</span>
+            <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
+          </div>
         </div>
 
         {/* Headwind is deliberately a static label regardless of sign
             (not a Headwind/Tailwind swap) - the colour (green/red/amber,
             same ARROW_COLOUR_CLASS as the arrow itself) already
-            unambiguously carries which one it actually is. */}
+            unambiguously carries which one it actually is. Right column:
+            Headwind + arrow + runway + Circuit (swapped in from the left
+            column, round 5 - same embedded-child approach as Trend
+            above, for the same exact-centering reason). */}
         <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
           <span className={titleClass}>Headwind</span>
           <span className={`${valueClass} ${ARROW_COLOUR_CLASS[arrowColour]}${valueSmClass}`}>
@@ -299,23 +306,10 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
                 spec, never overlapping. */}
             <div className={identifierClass}>{activeIdentifier || '--'}</div>
           </div>
-        </div>
-      </div>
-
-      {/* Circuit + Trend share one row below both columns, Circuit on
-          the left (under the windsock/Crosswind side) and Trend on the
-          right (under the runway/Headwind side) - matches the approved
-          reference layout. Circuit isn't a wind reading at all (see
-          CIRCUIT_CLASS's own comment for why it gets its own colour
-          rather than sharing ACCENT_CLASS with Crosswind/Trend). */}
-      <div className={bottomRowClass}>
-        <div className={bottomItemClass}>
-          <span className={titleClass}>Circuit</span>
-          <span className={`${valueClass} ${CIRCUIT_CLASS}${valueSmClass}`}>{circuitLabelFor(circuitDirection)}</span>
-        </div>
-        <div className={bottomItemClass}>
-          <span className={titleClass}>Trend</span>
-          <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
+          <div className={bottomItemClass}>
+            <span className={titleClass}>Circuit</span>
+            <span className={`${valueClass} ${CIRCUIT_CLASS}${valueSmClass}`}>{circuitLabelFor(circuitDirection)}</span>
+          </div>
         </div>
       </div>
     </div>
