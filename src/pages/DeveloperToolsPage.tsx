@@ -250,6 +250,98 @@ function ReverseNeedleToggle(): JSX.Element {
   )
 }
 
+const PILOT_CLOCK_MODE_OPTIONS = [
+  { value: 'summer', label: 'Summer Time', description: 'Local time, "BST" while the UK is actually observing daylight saving, "GMT" the rest of the year.' },
+  { value: 'gmt', label: 'GMT', description: 'Fixed UTC+0 year-round, never shifts for BST - suffix always "GMT".' },
+  { value: 'utc', label: 'UTC / Zulu', description: 'Same fixed UTC+0 as GMT above, suffix always "Z" instead.' },
+] as const
+type PilotClockMode = (typeof PILOT_CLOCK_MODE_OPTIONS)[number]['value']
+
+// /pilot header clock round - same GET/PUT round trip as
+// ReverseNeedleToggle above, sharing the same developer-settings
+// endpoint (two independent fields on the same ops_panel_state row,
+// see that endpoint's own comment), but its own independent
+// fetch/save, matching this page's existing convention of each control
+// being self-contained rather than one shared form. 'summer' (this
+// page's default before a real value loads) matches
+// ops_panel_state.pilot_clock_mode's own DEFAULT - never a flash of a
+// wrong selected button while loading.
+function PilotClockModeToggle(): JSX.Element {
+  const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState<PilotClockMode>('summer')
+  const [status, setStatus] = useState<SaveStatus>('idle')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(DEVELOPER_SETTINGS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && (data?.pilotClockMode === 'summer' || data?.pilotClockMode === 'gmt' || data?.pilotClockMode === 'utc')) {
+          setMode(data.pilotClockMode)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleSetMode(next: PilotClockMode) {
+    if (next === mode) return
+    const previous = mode
+    setMode(next)
+    setStatus('saving')
+    try {
+      const response = await fetch(DEVELOPER_SETTINGS_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pilotClockMode: next }),
+      })
+      if (response.ok) {
+        setStatus('saved')
+      } else {
+        setMode(previous)
+        setStatus('error')
+      }
+    } catch {
+      setMode(previous)
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
+      <div className="mb-1 text-sm font-bold uppercase tracking-widest text-amber-500">Pilot View Header Clock</div>
+      <p className="mb-4 text-sm text-slate-400">
+        Controls the time-of-day suffix shown after the clock in /pilot's header only - the main TV dashboard's own
+        clock, and every other clock in the app, are unaffected either way.
+      </p>
+      <div className="flex flex-wrap items-start gap-3">
+        {PILOT_CLOCK_MODE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => handleSetMode(option.value)}
+            disabled={loading || status === 'saving'}
+            title={option.description}
+            className={`rounded-lg px-4 py-2 text-sm font-bold uppercase tracking-widest transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              mode === option.value ? 'bg-amber-500 text-white' : 'border border-slate-700 text-slate-300 hover:border-amber-500'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+        {status === 'saving' && <span className="text-sm font-semibold text-slate-400">Saving…</span>}
+        {status === 'saved' && <span className="text-sm font-semibold text-green-400">✅ Saved.</span>}
+        {status === 'error' && <span className="text-sm font-semibold text-red-400">❌ Couldn't save - try again.</span>}
+      </div>
+    </div>
+  )
+}
+
 export default function DeveloperToolsPage(): JSX.Element {
   return (
     <div className="mx-auto max-w-3xl px-6 pb-10 pt-10">
@@ -273,6 +365,7 @@ export default function DeveloperToolsPage(): JSX.Element {
           <InvestigateStation />
         </div>
         <ReverseNeedleToggle />
+        <PilotClockModeToggle />
       </div>
     </div>
   )

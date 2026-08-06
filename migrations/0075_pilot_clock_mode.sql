@@ -1,0 +1,18 @@
+-- /pilot header clock time-mode round. Tenant-local display preference
+-- (how THIS tenant wants its own header clock to read), not inherited
+-- via parent_tenant_id the way reverseCompassNeedle is - see
+-- publicConfig.ts's own comment on why safetyNotices/airfieldInfoText
+-- stay tenant-local; this follows the same posture, since it isn't a
+-- physical fact about the shared station.
+--
+-- 'summer' (every tenant's default) means "Europe/London local time,
+-- dynamic BST/GMT suffix depending on whether the UK is actually
+-- observing daylight saving right now" - exactly what LiveClock.tsx
+-- already computed before this column existed (no suffix shown at
+-- all), so this default is a genuine no-op for every existing tenant's
+-- displayed clock. 'gmt' forces fixed UTC+0 / suffix "GMT" year-round,
+-- regardless of real DST. 'utc' forces UTC / suffix "Z". Validated at
+-- the API layer (functions/api/tenant/developer-settings), not a DB
+-- CHECK constraint - same convention this app's other enum-ish text
+-- columns (e.g. ops_panel_state.circuitDirection) already use.
+ALTER TABLE ops_panel_state ADD COLUMN pilot_clock_mode TEXT NOT NULL DEFAULT 'summer';

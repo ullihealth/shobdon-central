@@ -127,6 +127,13 @@ interface OpsPanelRow {
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
   runwaysClosed: number;
+  // /pilot header clock round (migration 0075) - tenant-local display
+  // preference, deliberately NOT inherited via parent_tenant_id the way
+  // reverseCompassNeedle a few lines above is (see this file's own
+  // "ops_panel_state is deliberately NOT switched wholesale onto the
+  // effective tenant" comment further up - same posture as
+  // safetyNotices/airfieldInfoText).
+  pilotClockMode: string;
 }
 
 // Dedicated Gas Prices store (migration 0049) - deliberately separate
@@ -423,7 +430,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         newCameraId: string | null;
       }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
       .bind(organizationId)
       .first<OpsPanelRow>(),
     // Which dashboard template renders at "/" for this tenant - the
@@ -785,6 +792,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         weatherSummaryStateADurationSeconds: opsPanelRow.weatherSummaryStateADurationSeconds,
         weatherSummaryStateBDurationSeconds: opsPanelRow.weatherSummaryStateBDurationSeconds,
         runwaysClosed: !!opsPanelRow.runwaysClosed,
+        // Tenant-local, never inherited - see OpsPanelRow's own comment.
+        pilotClockMode: opsPanelRow.pilotClockMode || "summer",
       }
     : null;
 
