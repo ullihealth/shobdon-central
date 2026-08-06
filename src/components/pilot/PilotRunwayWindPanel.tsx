@@ -36,12 +36,17 @@ function isConfigured(group: RunwayGroup): boolean {
 // 60s tick) triggers a re-fetch without remounting, same as
 // RunwayInUseCard's own prop of the same name.
 //
-// No standalone "Wind" line here (unlike the /runway-widget-test
-// prototype's own page-level one) - the restored compass above already
-// shows wind speed/direction in its own centre label, so repeating it
-// here would be redundant. `bare` renders the widget full-width with no
-// card/border, directly on the page background, same treatment as the
-// compass itself above it - see RunwayWindWidget.tsx's own comment.
+// Standalone "Wind" reading restored above the widget (round 2 - it was
+// dropped as redundant with the compass's own centre label, but that
+// label reads small/secondary next to a full instrument; this is meant
+// to be the single most prominent number on the page, distinct from
+// that). mt-8/mb-8 on this block are deliberate, not incidental -
+// generous, visually separate gaps from both the compass above and the
+// Crosswind/Headwind row below, on top of (not instead of) the page's
+// own shared gap-4 between sibling sections. `bare` renders the widget
+// itself full-width with no card/border, directly on the page
+// background, same treatment as the compass above it - see
+// RunwayWindWidget.tsx's own comment.
 //
 // reverseCompassNeedle (ops_panel_state, /developertools) is NOT applied
 // here, deliberately, not by oversight - it only ever corrects
@@ -77,20 +82,32 @@ export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?
   const configuredGroups = config.runwayGroups.filter(isConfigured)
   if (configuredGroups.length === 0) return null
 
+  const hasWind = !!weather && !liveDataUnavailable
+
   return (
-    <div className="flex w-full flex-col items-center gap-4">
-      {configuredGroups.map((group) => (
-        <RunwayWindWidget
-          key={group.id}
-          group={group}
-          activeEnd={config.activeRunwayEnd}
-          circuitDirection={config.circuitDirection}
-          weather={weather}
-          liveDataUnavailable={liveDataUnavailable}
-          windsock={config.windsock}
-          bare
-        />
-      ))}
+    // mb-8 here (not on the last child inside) is what creates the
+    // breathing room before NOTAMs below - on top of the page's own
+    // shared gap-4 between sibling sections, same "layered, not
+    // instead-of" spacing approach as the Wind block's own mt-8/mb-8.
+    <div className="mb-8 flex w-full flex-col items-center">
+      <div className="mb-8 mt-8 flex items-baseline gap-3">
+        <span className="text-lg font-bold uppercase tracking-wide text-muted-400">Wind</span>
+        <span className="text-5xl font-black text-primary">{hasWind && weather ? `${weather.windDirection}° / ${weather.windSpeed} kt` : 'N/A'}</span>
+      </div>
+      <div className="flex w-full flex-col items-center gap-4">
+        {configuredGroups.map((group) => (
+          <RunwayWindWidget
+            key={group.id}
+            group={group}
+            activeEnd={config.activeRunwayEnd}
+            circuitDirection={config.circuitDirection}
+            weather={weather}
+            liveDataUnavailable={liveDataUnavailable}
+            windsock={config.windsock}
+            bare
+          />
+        ))}
+      </div>
     </div>
   )
 }

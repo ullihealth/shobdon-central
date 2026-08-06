@@ -185,18 +185,24 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
   // right" with no transform; mirroring it depicts "from the left".
   const mirrored = hasWind && crosswind < 0
 
-  const chromeClass = bare ? 'flex w-full items-start justify-center gap-6' : 'flex items-start gap-4 rounded-2xl border border-border bg-panel p-4 sm:gap-8 sm:p-6'
-  const titleClass = bare ? 'text-base font-bold uppercase tracking-wide text-muted-400' : 'text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl'
-  const bigValueClass = bare ? 'text-2xl font-black' : 'text-base font-black'
+  // Round 2 size-up (~10-20% over the first bare pass) achieved by
+  // shrinking the gap BETWEEN the two columns (gap-6 -> gap-3), not by
+  // adding horizontal padding to the outer container (bare has none,
+  // deliberately, so this stays flush with every other full-width
+  // section on the page) - freed-up width goes straight to the content
+  // itself rather than sitting unused as a wider gutter.
+  const chromeClass = bare ? 'flex w-full items-start justify-center gap-3' : 'flex items-start gap-4 rounded-2xl border border-border bg-panel p-4 sm:gap-8 sm:p-6'
+  const titleClass = bare ? 'text-lg font-bold uppercase tracking-wide text-muted-400' : 'text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl'
+  const bigValueClass = bare ? 'text-[27px] font-black' : 'text-base font-black'
   const bigValueSmClass = bare ? '' : ' sm:text-4xl'
-  const smallValueClass = bare ? 'text-xl font-black' : 'text-sm font-black'
+  const smallValueClass = bare ? 'text-[23px] font-black' : 'text-sm font-black'
   const smallValueSmClass = bare ? '' : ' sm:text-3xl'
-  const windsockClass = bare ? 'h-24 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
+  const windsockClass = bare ? 'h-28 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
   const subBlockClass = bare ? 'mt-3 flex flex-col items-center gap-1' : 'mt-2 flex flex-col items-center gap-1 sm:mt-4'
-  const arrowClass = bare ? 'h-8 w-6' : 'h-6 w-5 sm:h-10 sm:w-8'
-  const runwayWrapClass = bare ? 'relative w-48' : 'relative w-36 sm:w-64'
+  const arrowClass = bare ? 'h-9 w-7' : 'h-6 w-5 sm:h-10 sm:w-8'
+  const runwayWrapClass = bare ? 'relative w-56' : 'relative w-36 sm:w-64'
   const identifierClass = bare
-    ? 'absolute inset-x-0 top-[14%] text-center text-3xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]'
+    ? 'absolute inset-x-0 top-[14%] text-center text-[34px] font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]'
     : 'absolute inset-x-0 top-[14%] text-center text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] sm:text-4xl'
 
   return (

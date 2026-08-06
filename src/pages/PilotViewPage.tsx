@@ -141,10 +141,12 @@ export default function PilotViewPage(): JSX.Element {
               compass above it does. The old standalone "Runway In Use"
               card is gone entirely - redundant now that the active
               runway/identifier is already shown inside this widget's own
-              runway image. */}
-          <div className="mb-4">
-            <PilotRunwayWindPanel refreshSignal={refreshTick} />
-          </div>
+              runway image. No wrapping margin div here any more -
+              PilotRunwayWindPanel owns its own top/bottom spacing
+              internally now (the Wind reading's generous padding above,
+              and its own mb-8 before NOTAMs below), see that file's own
+              comment for why. */}
+          <PilotRunwayWindPanel refreshSignal={refreshTick} />
           {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
               title always visible, tap to expand. Each panel keeps
               fetching/refreshing on its own existing schedule regardless
