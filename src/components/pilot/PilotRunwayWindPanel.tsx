@@ -91,7 +91,7 @@ export default function PilotRunwayWindPanel({ refreshSignal }: { refreshSignal?
     // instead-of" spacing approach as the Wind block's own mt-8/mb-8.
     <div className="mb-8 flex w-full flex-col items-center">
       <div className="mb-8 mt-8 flex items-baseline gap-3">
-        <span className="text-lg font-bold uppercase tracking-wide text-muted-400">Wind</span>
+        <span className="text-2xl font-bold uppercase tracking-wide text-muted-400">Wind</span>
         <span className="text-5xl font-black text-primary">{hasWind && weather ? `${weather.windDirection}° / ${weather.windSpeed} kt` : 'N/A'}</span>
       </div>
       <div className="flex w-full flex-col items-center gap-4">

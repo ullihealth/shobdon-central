@@ -130,9 +130,10 @@ function ArrowIcon({ className }: { className?: string }): JSX.Element {
   )
 }
 
-// Two columns: Crosswind reading + windsock + Circuit + Trend on the
-// left, Headwind reading + arrow + runway image (with the active end's
-// identifier overlaid) on the right. See RunwayWidgetTestPage.tsx (the
+// Two columns, each a self-contained stack: Crosswind reading + windsock
+// + Circuit on the left, Headwind reading + arrow + runway image (with
+// the active end's identifier overlaid) + Trend on the right. See
+// RunwayWidgetTestPage.tsx (the
 // original standalone prototype route, still live) and PilotRunwayWindPanel.tsx
 // (the /pilot mobile integration) for this component's two real callers -
 // both own their own page-level "Wind" reading above this widget, see
@@ -193,11 +194,20 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
   // itself rather than sitting unused as a wider gutter.
   const chromeClass = bare ? 'flex w-full items-start justify-center gap-3' : 'flex items-start gap-4 rounded-2xl border border-border bg-panel p-4 sm:gap-8 sm:p-6'
   const titleClass = bare ? 'text-lg font-bold uppercase tracking-wide text-muted-400' : 'text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl'
-  const bigValueClass = bare ? 'text-[27px] font-black' : 'text-base font-black'
-  const bigValueSmClass = bare ? '' : ' sm:text-4xl'
-  const smallValueClass = bare ? 'text-[23px] font-black' : 'text-sm font-black'
-  const smallValueSmClass = bare ? '' : ' sm:text-3xl'
-  const windsockClass = bare ? 'h-28 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
+  // One shared value size for all four readouts (Crosswind/Headwind/
+  // Circuit/Trend) - round 3 explicitly asked for Circuit/Trend to match
+  // Crosswind/Headwind exactly, not just visually close, so this is the
+  // same class object reused, not two independently-tuned ones that
+  // could drift apart again later.
+  const valueClass = bare ? 'text-[27px] font-black' : 'text-base font-black'
+  const valueSmClass = bare ? '' : ' sm:text-4xl'
+  // Windsock enlarged (h-28 -> h-40, was noticeably smaller than the
+  // runway image next to it) - Windsock full.png/medium/drooped are all
+  // roughly square (~817x812 etc), so this renders about as wide as it
+  // is tall, comparable in visual weight to the runway image now that
+  // each sits alone atop its own column instead of sharing a column with
+  // three other stacked text blocks.
+  const windsockClass = bare ? 'h-40 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
   const subBlockClass = bare ? 'mt-3 flex flex-col items-center gap-1' : 'mt-2 flex flex-col items-center gap-1 sm:mt-4'
   const arrowClass = bare ? 'h-9 w-7' : 'h-6 w-5 sm:h-10 sm:w-8'
   const runwayWrapClass = bare ? 'relative w-56' : 'relative w-36 sm:w-64'
@@ -207,15 +217,15 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
 
   return (
     <div className={chromeClass}>
-      {/* Left column: Crosswind + windsock + Circuit + Trend. items-start
-          on the outer flex row (not items-center) is what lets this
-          shorter column sit top-aligned beside the taller runway column
-          instead of being vertically centred against it - matches the
-          approved mockup, where Trend sits roughly level with the runway
-          image's midpoint, not its own column's full height. */}
+      {/* Left column: Crosswind + windsock, Circuit below - each column
+          is now a fully self-contained top-to-bottom stack (label/value/
+          image, then its own second label/value underneath), matching
+          the approved reference layout, rather than the previous design
+          where this column carried both Circuit AND Trend while the
+          right column carried only Headwind/runway. */}
       <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
         <span className={titleClass}>Crosswind</span>
-        <span className={`${bigValueClass} ${ACCENT_CLASS}${bigValueSmClass}`}>
+        <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>
           {hasWind ? `${Math.abs(crosswind).toFixed(1)} kts ${crosswind >= 0 ? 'Right' : 'Left'}` : 'N/A'}
         </span>
         <img
@@ -226,29 +236,22 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
         />
         {/* Circuit - not a wind reading at all (see CIRCUIT_CLASS's own
             comment for why it gets its own colour rather than sharing
-            ACCENT_CLASS with Crosswind/Trend), but placed in this same
-            column/stack per the approved mockup, between the windsock
-            and Trend. */}
+            ACCENT_CLASS with Crosswind/Trend), sits under the windsock
+            in this same column per the approved layout. */}
         <div className={subBlockClass}>
           <span className={titleClass}>Circuit</span>
-          <span className={`${smallValueClass} ${CIRCUIT_CLASS}${smallValueSmClass}`}>{circuitLabelFor(circuitDirection)}</span>
-        </div>
-        <div className={subBlockClass}>
-          <span className={titleClass}>Trend</span>
-          <span className={`${smallValueClass} ${ACCENT_CLASS}${smallValueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
+          <span className={`${valueClass} ${CIRCUIT_CLASS}${valueSmClass}`}>{circuitLabelFor(circuitDirection)}</span>
         </div>
       </div>
 
-      {/* Right column: Headwind + arrow + runway. Deliberately a static
-          "Headwind" label regardless of sign (not a Headwind/Tailwind
-          swap) - the colour (green/red/amber, same ARROW_COLOUR_CLASS as
-          the arrow itself) already unambiguously carries which one it
-          actually is, per the approved mockup. Runway image sized ~2x
-          the windsock's own height at every breakpoint/mode -
-          "noticeably larger" per the spec, not a precise ratio. */}
+      {/* Right column: Headwind + arrow + runway, Trend below. Headwind
+          is deliberately a static label regardless of sign (not a
+          Headwind/Tailwind swap) - the colour (green/red/amber, same
+          ARROW_COLOUR_CLASS as the arrow itself) already unambiguously
+          carries which one it actually is. */}
       <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
         <span className={titleClass}>Headwind</span>
-        <span className={`${bigValueClass} ${ARROW_COLOUR_CLASS[arrowColour]}${bigValueSmClass}`}>
+        <span className={`${valueClass} ${ARROW_COLOUR_CLASS[arrowColour]}${valueSmClass}`}>
           {hasWind ? `${Math.abs(headwind).toFixed(1)} kts` : 'N/A'}
         </span>
         <ArrowIcon className={`${arrowClass} ${ARROW_COLOUR_CLASS[arrowColour]}`} />
@@ -259,6 +262,10 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, w
               lower-middle third of Runway.png) - "ahead of" them per the
               spec, never overlapping. */}
           <div className={identifierClass}>{activeIdentifier || '--'}</div>
+        </div>
+        <div className={subBlockClass}>
+          <span className={titleClass}>Trend</span>
+          <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
         </div>
       </div>
     </div>
