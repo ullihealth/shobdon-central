@@ -42,6 +42,10 @@ function formatTime(iso: string): string {
 // is just cheaper for the same visible result.
 const LABEL_TICK_MS = 60 * 1000
 const MS_PER_HOUR = 60 * 60 * 1000
+// "Now" through "+5h" - the strip's own fixed, always-6 shape (see
+// displayHours' own comment for why the backend fetches one more than
+// this).
+const MAX_DISPLAY_HOURS = 6
 
 // Round 2 of this same bug, traced live rather than just re-labelled:
 // the PREVIOUS version (`Math.round((forecast - now) / 1h)`, "Now" for
@@ -125,15 +129,27 @@ const FALLBACK_VIEW_WIDTH = 220
 // computed from the font-size change alone. Fixed, not width-relative -
 // it's sized to comfortably fit the "0000ft" label text at the font size
 // below, which doesn't itself change with the box's aspect ratio.
-const PLOT_LEFT_DEFAULT = 36
-// largeText's axis fontSize is 2x PLOT_LEFT_DEFAULT's own tuned font
-// size (8 -> 16) - without a matching left-margin increase the wider
-// glyphs simply clip off the SVG viewBox's own left edge (confirmed:
-// "6000ft" rendered as "00ft" at the old margin). Not an exact 2x
-// scale-up of PLOT_LEFT_DEFAULT itself (that overshot, per the comment
-// above this constant) - measured empirically against the actual
-// rendered "0000ft" text width at the larger font size.
-const PLOT_LEFT_LARGE = 70
+// Round 2 of this same tuning: reported as "still small" on BOTH
+// surfaces (the TV dashboard was never touched by the first largeText-
+// only pass - LeftInfoPanel.tsx/Clubhouse2Template.tsx pass nothing, so
+// they kept the original fontSize="8"/PLOT_LEFT_DEFAULT=36 the whole
+// time). AXIS_FONT_SIZE_DEFAULT/_LARGE and their matching PLOT_LEFT_*
+// margins below are both now meaningfully larger on EVERY caller, not
+// just /pilot - verified via real rendered bounding-box height on both
+// an iPhone viewport (/pilot) and a real desktop viewport (/), not
+// assumed from the SVG unit numbers alone (which don't map 1:1 to
+// screen px - see VIEW_HEIGHT's own comment on the "meet" scale
+// factor).
+const AXIS_FONT_SIZE_DEFAULT = '12'
+const AXIS_FONT_SIZE_LARGE = '22'
+const PLOT_LEFT_DEFAULT = 52
+// Matching left-margin increase for AXIS_FONT_SIZE_LARGE - without this
+// the wider glyphs simply clip off the SVG viewBox's own left edge
+// (confirmed last round: "6000ft" rendered as "00ft" at too narrow a
+// margin). Not a naive proportional scale-up of PLOT_LEFT_DEFAULT -
+// measured empirically against the actual rendered "0000ft" text width
+// at this font size.
+const PLOT_LEFT_LARGE = 96
 const PLOT_TOP = 20
 const HEIGHT_SCALE_BOTTOM = 280
 
@@ -229,8 +245,16 @@ export default function CloudVisibilityChart({
 
   // See anchorIndexFor's own comment - the 6-Hour Forecast strip below
   // renders this sliced/anchored array, not visibilityHours directly, so
-  // its labels are never computed per-entry independently again.
-  const displayHours = visibilityHours.slice(anchorIndexFor(visibilityHours, nowMs))
+  // its labels are never computed per-entry independently again. Capped
+  // at MAX_DISPLAY_HOURS (not just sliced from the anchor onward) so a
+  // freshly-fetched, not-yet-stale cache - which now holds
+  // FORECAST_HOUR_COUNT=7 entries, one deliberate buffer hour past what
+  // this strip ever shows, see that constant's own comment - never
+  // displays a 7th icon; the buffer exists purely so that when the
+  // anchor DOES drop one superseded entry, 6 real ones are still left,
+  // not 5.
+  const anchorIndex = anchorIndexFor(visibilityHours, nowMs)
+  const displayHours = visibilityHours.slice(anchorIndex, anchorIndex + MAX_DISPLAY_HOURS)
 
   const scaleMaxFt = scaleMaxFtFor(cloudBaseFt)
   const gridlines: number[] = []
@@ -275,19 +299,20 @@ export default function CloudVisibilityChart({
                 <line key={ft} x1={plotLeft} y1={ftToY(ft, scaleMaxFt)} x2={plotRight} y2={ftToY(ft, scaleMaxFt)} />
               ))}
             </g>
-            {/* fontSize deliberately well under the card title's real
-                rendered size (text-sm/14px in plain CSS) - the title
-                must stay the most prominent text on the card. Picked by
-                direct measurement, not just the number itself: the
+            {/* Deliberately no longer required to stay under the card
+                title's own size (that constraint was this comment's
+                original reasoning, before this round's explicit request
+                to make these numbers bigger, full stop, on both
+                surfaces) - picked by direct measurement of the real
+                rendered result, not the SVG unit number alone: the
                 "meet" scale factor that converts these SVG units to
-                real pixels varies a LOT by viewport (measured 0.5x at
-                1366x768 up to 1.83x at 1920x1080 for this card's real
-                proportions), so a value that looks right on one screen
-                can render nearly 4x bigger on another - this needed to
-                stay small enough to beat the title's real height even
-                at the largest observed scale factor, not just the
-                screen a single screenshot happened to be taken on. */}
-            <g fill="rgba(148, 163, 184, 0.85)" fontSize={largeText ? '16' : '8'} fontWeight="600">
+                real screen pixels varies a LOT by viewport (measured
+                0.5x at 1366x768 up to 1.83x at 1920x1080 for this
+                card's real proportions), so a value that looks right on
+                one screen can render very differently on another -
+                verified against both a real iPhone viewport and a real
+                1920x1080 desktop viewport, not just one screenshot. */}
+            <g fill="rgba(148, 163, 184, 0.85)" fontSize={largeText ? AXIS_FONT_SIZE_LARGE : AXIS_FONT_SIZE_DEFAULT} fontWeight="600">
               {gridlines.map((ft) => (
                 <text key={ft} x={plotLeft - 4} y={ftToY(ft, scaleMaxFt)} textAnchor="end" dominantBaseline="middle">
                   {ft}ft

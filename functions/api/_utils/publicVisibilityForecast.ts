@@ -74,7 +74,20 @@ type VisibilityForecastResponse = ({ available: true } & CachedForecast) | { ava
 // genuine trend strip, short enough to stay a tight glance. Not a hard
 // requirement: fetchFromMetOffice returns however many valid steps it
 // actually finds, up to this count.
-const FORECAST_HOUR_COUNT = 6;
+//
+// 7, not 6 - one deliberate buffer hour. The client (CloudVisibilityChart's
+// anchorIndexFor) re-anchors this array against the real clock on every
+// render, since this cache can legitimately still be serving an entry up
+// to 59 minutes after it stopped being "current" (this TTL, see
+// CACHE_TTL_SECONDS below) - when that happens, the client correctly
+// drops that one superseded entry rather than mislabelling it. Fetching
+// only 6 meant that drop left just 5 real steps to show ("Now" through
+// "+4h") for a real stretch of every hour, not 6 - confirmed live, not
+// guessed. Since entries are hourly-spaced and the cache's own 60-minute
+// TTL forces a refetch before a second entry could ever go stale in the
+// same way, the client can only ever drop at most one - one extra
+// fetched hour is sufficient headroom, not an arbitrary padding number.
+const FORECAST_HOUR_COUNT = 7;
 
 export function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
