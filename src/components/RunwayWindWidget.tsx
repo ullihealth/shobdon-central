@@ -245,6 +245,16 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // bottomItemClass is that per-column wrapper - same margin-top the old
   // shared row used for separation from the content above it.
   const bottomItemClass = bare ? 'mt-6 flex flex-col items-center gap-1' : 'mt-2 flex flex-col items-center gap-1 sm:mt-4'
+  // Round 6: bottomItemClass's shared mt-6 left Trend sitting one full
+  // row above Circuit - the right column has an extra arrow icon plus a
+  // taller runway image between its Headwind value and Circuit that the
+  // left column's windsock doesn't have, so the same margin-top doesn't
+  // land at the same vertical position on both sides. Bare-only,
+  // Trend-only extra offset (Circuit keeps the original bottomItemClass
+  // untouched, per the request - Trend moves down to meet it, not the
+  // other way round), measured against the two columns' actual rendered
+  // heights on a real /pilot page rather than guessed.
+  const trendItemClass = bare ? 'mt-[66px] flex flex-col items-center gap-1' : bottomItemClass
   const arrowClass = bare ? 'h-9 w-7' : 'h-6 w-5 sm:h-10 sm:w-8'
   const runwayWrapClass = bare ? 'relative w-56' : 'relative w-36 sm:w-64'
   const identifierClass = bare
@@ -279,7 +289,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
             className={`${windsockClass} ${windsockOffsetClass}`}
             style={{ transform: mirrored ? 'scaleX(-1)' : undefined }}
           />
-          <div className={bottomItemClass}>
+          <div className={trendItemClass}>
             <span className={titleClass}>Trend</span>
             <span className={`${valueClass} ${ACCENT_CLASS}${valueSmClass}`}>{hasWind ? trendLabelFor(weather?.pressureTrend) : 'N/A'}</span>
           </div>
