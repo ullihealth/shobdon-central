@@ -98,7 +98,7 @@ export default function GasPricesPanel({ gasPricesData, hideTitle = false, large
         {tiles.map((tile) => (
           <div key={tile.key} className="flex flex-1 flex-col items-center gap-1 rounded-xl border border-border bg-card px-2 py-2.5">
             <FuelDropletIcon className="h-4 w-4 text-accent-sky-400" />
-            <div className={`font-semibold uppercase tracking-wide text-muted-500 ${largeText ? 'text-xs' : 'text-[10px]'}`}>{tile.label}</div>
+            <div className={`font-semibold uppercase tracking-wide text-muted-500 ${largeText ? 'text-base' : 'text-[10px]'}`}>{tile.label}</div>
             <div className={`font-extrabold leading-none text-primary ${largeText ? 'text-2xl' : 'text-xl'}`}>
               {gasPrices.currency}
               {tile.price.toFixed(2)}
