@@ -124,29 +124,22 @@ export default function PilotViewPage(): JSX.Element {
 
         <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
           <WeatherStatGrid />
-          {/* Correction round: the compass instrument is restored here -
-              it should never have been replaced, only its own text
-              readout row was meant to be. hideReadout drops just that
-              list (Wind/Headwind/Crosswind/Trend); the rose/arrow/centre-
+          {/* Reorder round: widget group now sits ABOVE the compass (was
+              below) - purely a vertical-order swap, no change to either
+              component's own internals. PilotRunwayWindPanel still owns
+              its own top/bottom spacing internally (Wind reading's
+              padding above, mb-8 before the compass below it now instead
+              of before NOTAMs - same mb-8 still does that job one
+              position later in the DOM). */}
+          <PilotRunwayWindPanel refreshSignal={refreshTick} />
+          {/* Compass instrument - hideReadout drops its own text readout
+              list (Wind/Headwind/Crosswind/Trend), since the widget above
+              already shows Wind/Headwind/Crosswind; the rose/arrow/centre-
               label instrument itself renders exactly as it always has,
               same as every TV-dashboard caller. Desktop dashboard remains
               completely untouched either way - CompassPanel itself only
               gained an opt-in prop, defaulted off everywhere else. */}
           <CompassPanel spacious hideReadout />
-          {/* Runway/windsock widget now sits directly below the compass,
-              in the spot the old readout row used to occupy - replacing
-              that row, not the compass. bare (set inside
-              PilotRunwayWindPanel) renders it full-width with no card
-              chrome, sitting on the page background the same way the
-              compass above it does. The old standalone "Runway In Use"
-              card is gone entirely - redundant now that the active
-              runway/identifier is already shown inside this widget's own
-              runway image. No wrapping margin div here any more -
-              PilotRunwayWindPanel owns its own top/bottom spacing
-              internally now (the Wind reading's generous padding above,
-              and its own mb-8 before NOTAMs below), see that file's own
-              comment for why. */}
-          <PilotRunwayWindPanel refreshSignal={refreshTick} />
           {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
               title always visible, tap to expand. Each panel keeps
               fetching/refreshing on its own existing schedule regardless
