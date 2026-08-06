@@ -77,6 +77,8 @@ interface LatestConditionsRow {
   tempC: number | null;
   dewpointC: number | null;
   visibilityM: number | null;
+  runway: string | null;
+  runwayHand: string | null;
 }
 
 interface OperationalEventRow {
@@ -109,7 +111,9 @@ async function loadWeather(tenantId: number, db: D1Database) {
          wo.qnh_hpa AS qnhHpa,
          wo.temp_c AS tempC,
          wo.dewpoint_c AS dewpointC,
-         wo.visibility_m AS visibilityM
+         wo.visibility_m AS visibilityM,
+         wo.runway AS runway,
+         wo.runway_hand AS runwayHand
        FROM latest_conditions lc
        LEFT JOIN weather_observations wo ON wo.id = lc.observation_id
        WHERE lc.tenant_id = ?`
@@ -135,6 +139,8 @@ async function loadWeather(tenantId: number, db: D1Database) {
     tempC: row.tempC,
     dewpointC: row.dewpointC,
     visibilityM: row.visibilityM,
+    runway: row.runway,
+    runwayHand: row.runwayHand,
     lastUpdatedAt: row.lastUpdatedAt,
     isStale,
   };

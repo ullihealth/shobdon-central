@@ -46,6 +46,8 @@ interface LatestRow {
   dewpointC: number | null;
   sourceType: string;
   notamsJson: string;
+  runway: string | null;
+  runwayHand: string | null;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -61,7 +63,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT wo.observed_at AS observedAt, wo.wind_speed_kt AS windSpeedKt, wo.wind_dir_deg AS windDirDeg,
               wo.wind_gust_kt AS windGustKt, wo.qnh_hpa AS qnhHpa, wo.temp_c AS tempC, wo.dewpoint_c AS dewpointC,
-              wo.source_type AS sourceType, wo.notams_json AS notamsJson
+              wo.source_type AS sourceType, wo.notams_json AS notamsJson, wo.runway AS runway, wo.runway_hand AS runwayHand
        FROM latest_conditions lc
        JOIN weather_observations wo ON wo.id = lc.observation_id
        WHERE lc.tenant_id = ?`
@@ -101,5 +103,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // lookup for it.
     sourceTenantName: effective.isInherited ? effective.name : null,
     notams,
+    runway: row.runway,
+    runwayHand: row.runwayHand,
   });
 };

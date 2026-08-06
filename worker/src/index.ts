@@ -430,6 +430,8 @@ async function forwardToIngest(parsed: Record<string, unknown>, capturedAt: stri
       tempC,
       dewpointC: typeof parsed.dewpoint_c === 'number' ? parsed.dewpoint_c : null,
       notams,
+      runway: typeof parsed.runway === "string" ? parsed.runway : null,
+      runwayHand: typeof parsed.hand === "string" ? parsed.hand : null,
     }),
   })
   if (!response.ok) {

@@ -65,6 +65,12 @@ interface IngestBody {
   // vendor APIs) simply omits this, stored as '[]'. See migration 0045's
   // own comment for why this was missing entirely until now.
   notams?: unknown;
+  // Optional - runway in use + circuit hand, forwarded from
+  // shobdon-central-capture's own parsed station page (parsed.runway/
+  // parsed.hand). weather_observations.runway/runway_hand columns
+  // already exist (added directly, no migration).
+  runway?: unknown;
+  runwayHand?: unknown;
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -108,16 +114,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const visibilityM = numberOrNull(body.visibilityM);
   const rawSnapshotId = typeof body.rawSnapshotId === "string" ? body.rawSnapshotId : null;
   const notams = stringArrayOrEmpty(body.notams);
+  const runway = typeof body.runway === "string" ? body.runway : null;
+  const runwayHand = typeof body.runwayHand === "string" ? body.runwayHand : null;
 
   const { tenantId } = keyLookup;
 
   const insertResult = await env.DB
     .prepare(
       `INSERT INTO weather_observations
-         (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, qfe_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type, notams_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, qfe_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type, notams_json, runway, runway_hand)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(tenantId, observedAt, windSpeedKt, windDirDeg, windGustKt, qnhHpa, qfeHpa, tempC, dewpointC, visibilityM, rawSnapshotId, sourceType, JSON.stringify(notams))
+    .bind(tenantId, observedAt, windSpeedKt, windDirDeg, windGustKt, qnhHpa, qfeHpa, tempC, dewpointC, visibilityM, rawSnapshotId, sourceType, JSON.stringify(notams), runway, runwayHand)
     .run();
 
   if (!insertResult.success) return jsonResponse({ error: "Failed to store observation" }, 500);
