@@ -1,5 +1,4 @@
 import { useWeather } from '../../context/WeatherContext'
-import { degreesToCardinal } from '../../utils/windCalculations'
 import { estimateCloudBaseFt } from '../../utils/cloudBase'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 
@@ -23,15 +22,18 @@ function formatVisibilityRange(rangeLabel: string): string {
   return rangeLabel
 }
 
-// Pilot View extraction (Section 2 - Weather Summary) - the same six
-// stat cards LeftInfoPanel.tsx's compact state renders (Wind/QNH/QFE/
-// Temperature/Cloud Base/Visibility Outlook), pulled out into their own
-// always-visible component rather than reusing LeftInfoPanel directly.
-// LeftInfoPanel's `data` array is reused nowhere here - the two files
-// intentionally diverge on sizing (LeftInfoPanel's vh-based clamp()s are
-// tuned for a fixed TV/kiosk viewport height; this component uses plain
-// Tailwind text sizes for a naturally-scrolling phone page) even though
-// the underlying values/gating logic is identical. Self-contained (own
+// Pilot View extraction (Section 2 - Weather Summary) - four of the six
+// stat cards LeftInfoPanel.tsx's compact state renders (QNH/QFE/Cloud
+// Base/Visibility Outlook; Wind and Temperature dropped here - Wind is
+// redundant with the "WIND" readout PilotRunwayWindPanel already shows
+// prominently below, and Temperature was dropped alongside it per the
+// same request), pulled out into their own always-visible component
+// rather than reusing LeftInfoPanel directly. LeftInfoPanel's `data`
+// array is reused nowhere here - the two files intentionally diverge on
+// sizing (LeftInfoPanel's vh-based clamp()s are tuned for a fixed
+// TV/kiosk viewport height; this component uses plain Tailwind text
+// sizes for a naturally-scrolling phone page) even though the
+// underlying values/gating logic is identical. Self-contained (own
 // useWeather()/useVisibilityForecast() calls), matching every other
 // "drop in anywhere" panel in this codebase (CompassPanel, GasPricesPanel).
 export default function WeatherStatGrid(): JSX.Element {
@@ -53,10 +55,6 @@ export default function WeatherStatGrid(): JSX.Element {
   const visibilityOutlookText = visibilityHours[0] ? formatVisibilityRange(visibilityHours[0].rangeLabel) : 'Unavailable'
 
   const stats = [
-    {
-      label: 'Wind',
-      value: !weather || liveDataUnavailable ? 'N/A' : `${degreesToCardinal(weather.windDirection)} ${weather.windSpeed} kt`,
-    },
     { label: 'QNH', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.qnh} hPa` },
     {
       // Only ever populated by the 'atc' provider - see WeatherData's
@@ -64,7 +62,6 @@ export default function WeatherStatGrid(): JSX.Element {
       label: 'QFE',
       value: !weather || liveDataUnavailable || weather.qfe === undefined ? 'N/A' : `${weather.qfe} hPa`,
     },
-    { label: 'Temperature', value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },
     {
       label: 'Cloud Base',
       qualifier: 'Shobdon Calc',
