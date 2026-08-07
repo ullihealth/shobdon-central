@@ -8,6 +8,7 @@ import ConfigPage from './pages/ConfigPage'
 import CafeMediaPage from './pages/CafeMediaPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
+import BugReportsPage from './pages/BugReportsPage'
 import FeatureRequestsPage from './pages/FeatureRequestsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
 import VersionsPage from './pages/VersionsPage'
@@ -208,6 +209,19 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin']}>
                 <MembersPage />
+              </RequireAuth>
+            }
+          />
+          {/* Platform-wide shared bug report board - mirrors /features
+              exactly (see that route's own comment): owner/admin can view
+              + submit, but status editing is developer-only (enforced
+              server-side too, see functions/api/tenant/bug-reports/
+              [id].ts). */}
+          <Route
+            path="/bug-reports"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <BugReportsPage />
               </RequireAuth>
             }
           />

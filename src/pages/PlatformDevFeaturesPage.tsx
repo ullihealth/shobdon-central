@@ -32,6 +32,34 @@ interface Folder {
   createdAt: string
 }
 
+type BugStatus = 'reported' | 'working' | 'fixed' | 'parked'
+
+interface BugReportSummary {
+  id: string
+  title: string
+  status: BugStatus
+  submittedByTenantName: string | null
+  createdAt: string
+}
+
+// Same labels/colours as BugReportsPage.tsx's own STATUS_LABELS/
+// STATUS_STYLES, duplicated locally per this repo's established
+// convention of not sharing types/constants across page files (see e.g.
+// FeatureRequestsPage.tsx's own STATUS_STYLES, likewise not exported).
+const BUG_STATUS_LABELS: Record<BugStatus, string> = {
+  reported: 'Reported',
+  working: 'Working',
+  fixed: 'Fixed',
+  parked: 'Parked',
+}
+
+const BUG_STATUS_STYLES: Record<BugStatus, string> = {
+  reported: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+  working: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  fixed: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  parked: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
@@ -85,6 +113,15 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
   const [releasing, setReleasing] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
 
+  // Read-only bug report summary (title, status, submitting tenant,
+  // date) - deliberately its own separate fetch/loading state, not woven
+  // into loadAll()/the folder+release workflow above, since bug reports
+  // have no folder/eligibility/release concept here. A fetch failure or
+  // slowness here shouldn't block the main feature-request workflow from
+  // rendering.
+  const [bugReports, setBugReports] = useState<BugReportSummary[]>([])
+  const [bugReportsLoading, setBugReportsLoading] = useState(true)
+
   function loadAll() {
     return Promise.all([
       fetch(PLATFORM_DEV_FEATURES_URL).then((response) => {
@@ -103,6 +140,13 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
 
   useEffect(() => {
     loadAll().finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/tenant/bug-reports')
+      .then((response) => (response.ok ? response.json() : { reports: [] }))
+      .then((data) => setBugReports(data.reports ?? []))
+      .finally(() => setBugReportsLoading(false))
   }, [])
 
   function showNotice(message: string) {
@@ -263,6 +307,46 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
             See what's already shipped →
           </Link>
         </p>
+
+        {/* Read-only bug report summary - deliberately separate from the
+            feature-request folder/release workflow above/below, since
+            bugs have no folder/eligibility/release concept here. Just
+            enough to see what's outstanding without leaving this page;
+            editing status happens on /bug-reports itself. */}
+        <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Bug Reports</div>
+            <Link to="/bug-reports" className="text-xs font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+              See all →
+            </Link>
+          </div>
+          {bugReportsLoading ? (
+            <p className="text-sm text-muted-400">Loading…</p>
+          ) : bugReports.length === 0 ? (
+            <p className="text-sm text-muted-400">No bug reports yet.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {bugReports.map((report) => (
+                <div
+                  key={report.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2.5"
+                >
+                  <div className="min-w-[200px] flex-1">
+                    <div className="text-sm font-semibold text-white">{report.title}</div>
+                    <div className="mt-1 text-xs text-muted-500">
+                      {report.submittedByTenantName ?? 'Unknown tenant'} · {formatDate(report.createdAt)}
+                    </div>
+                  </div>
+                  <span
+                    className={`inline-block rounded border px-2 py-0.5 text-xs font-semibold capitalize ${BUG_STATUS_STYLES[report.status]}`}
+                  >
+                    {BUG_STATUS_LABELS[report.status]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         {loading ? (
           <p className="text-sm text-muted-400">Loading…</p>

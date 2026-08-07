@@ -91,17 +91,20 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
 ]
 
 // Rendered below a divider, outside any group - isDeveloper is orthogonal
-// to the role/group system, so it doesn't belong inside one. Help has
-// neither allowedRoles nor requireDeveloper - visible to every logged-in
-// role (isItemVisible's default), matching /help's own bare <RequireAuth>.
+// to the role/group system, so it doesn't belong inside one. Support
+// (renamed from Help) has neither allowedRoles nor requireDeveloper -
+// visible to every logged-in role (isItemVisible's default), matching
+// /help's own bare <RequireAuth>.
 //
-// Feature Requests is owner/admin-only (allowedRoles, same as /members),
-// not developer-only - it's a platform-wide SHARED board any tenant admin
-// can view and submit to, matching /features's own requireRole shape in
-// App.tsx. Only status-editing (inside the page itself) is developer-
+// Bug Reports and Feature Requests are both owner/admin-only
+// (allowedRoles, same as /members), not developer-only - each is a
+// platform-wide SHARED board any tenant admin can view and submit to,
+// matching /bug-reports's and /features's own requireRole shape in
+// App.tsx. Only status-editing (inside each page itself) is developer-
 // gated, enforced server-side too - see functions/api/tenant/
-// feature-requests/[id].ts.
+// bug-reports/[id].ts and feature-requests/[id].ts.
 export const STANDALONE_ITEMS: SidebarItem[] = [
-  { to: '/help', label: 'Help' },
+  { to: '/help', label: 'Support' },
+  { to: '/bug-reports', label: 'Bug Reports', allowedRoles: ['owner', 'admin'] },
   { to: '/features', label: 'Feature Requests', allowedRoles: ['owner', 'admin'] },
 ]
