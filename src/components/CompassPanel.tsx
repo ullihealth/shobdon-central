@@ -98,8 +98,12 @@ const CARDINAL_LETTER_RADIUS = RING_RADIUS - 12
 // one crowded cluster with the degree markers) to instead sit near the
 // rim, closer to (though still angularly clear of, since these fall at
 // 30/60/120/150/210/240/300/330 vs the cardinal letters' 0/90/180/270)
-// the cardinal letter ring at CARDINAL_LETTER_RADIUS (168).
-const INTERMEDIATE_LABEL_RADIUS = 177
+// the cardinal letter ring at CARDINAL_LETTER_RADIUS (168). An initial
+// pass at 177 put these labels' own bounding box slightly past the
+// ring's stroke at their widest points (two-digit text extending past
+// its own centre point); pulled in to 172, confirmed via bounding-box
+// measurement to sit fully inside the ring with no overlap.
+const INTERMEDIATE_LABEL_RADIUS = 172
 
 // The dashed separator band between the two label rings - clear gap on
 // both sides (148 -> 156 is 8px, 163 -> 168 is 5px), replacing the old
@@ -751,14 +755,15 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
           land flush with the instrument's true left/right edges - the
           closest either button can get to the circle's own edges
           without overflowing past the page's own content width. That's
-          also the tightest fit available: at this button size, on a
-          real phone-width viewport, the two buttons plus a "roughly one
-          button's width" gap simply doesn't fit inside the instrument's
-          own width without either overflowing the page or shrinking the
-          buttons - flush-with-edges was chosen over a wider horizontal
-          gap specifically so that gap could be as large as the
-          remaining space allows (confirmed ~58-77px across real phone
-          widths tested) while keeping both buttons fully on-screen.
+          also the tightest fit available: even after two size-reduction
+          passes (most recently another ~10% off padding/font-size, on
+          top of the original ~60%-larger build), flush-with-edges was
+          kept rather than reintroduced as an inset, so the horizontal
+          gap stays the largest the page's own width allows rather than
+          shrinking further for no reason (currently ~122px on a real
+          iPhone-width viewport, up from ~58-77px before this pass's
+          size reduction - the buttons got smaller, the instrument's own
+          width didn't, so the gap between them grew on its own).
           mb-[-33px]/mb-[-29px] cancels this row out of the parent's own
           gap-8/gap-7 (tuned for spacing BETWEEN page sections, not
           snugness against the circle immediately below this one) AND
@@ -768,19 +773,27 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
           margin before the circle's true top edge) - gap and margin are
           independently additive in flexbox, so this negative margin
           subtracts cleanly from just this one gap without affecting
-          spacing between any other siblings. Confirmed ~9-10px vertical
+          spacing between any other siblings. Confirmed ~9px vertical
           gap between button-bottom and the circle's true top edge via
-          direct bounding-box measurement, not just visually. All values
-          here tuned against real /pilot renders at multiple widths, not
-          derived from a single formula. */}
+          direct bounding-box measurement, not just visually - unchanged
+          by this pass's further size reduction, since a smaller button
+          simply leaves more of the existing negative margin's headroom
+          as visible gap rather than needing its own retuning. Active vs
+          inactive is shown by text colour alone (white vs slate-400),
+          not a background fill - both states share the same transparent
+          background and border, a deliberate revision from an earlier
+          solid-blue-fill active state that read as too heavy at this
+          smaller button size. All values here tuned against real
+          /pilot renders at multiple widths, not derived from a single
+          formula. */}
       {spacious && (
         <div className="flex w-full flex-shrink-0 flex-col items-center gap-2 mb-[-33px] sm:mb-[-29px] sm:w-auto">
           <div className="flex w-full items-center justify-between">
             <button
               type="button"
               onClick={() => handleCompassModeChange('north')}
-              className={`rounded-xl px-[22px] py-[8px] text-[19px] font-bold uppercase tracking-widest transition ${
-                effectiveCompassMode === 'north' ? 'bg-accent-sky-500 text-white' : 'border border-slate-700 text-slate-400 hover:text-white'
+              className={`rounded-xl border border-slate-700 px-[20px] py-[7px] text-[17px] font-bold uppercase tracking-widest transition ${
+                effectiveCompassMode === 'north' ? 'text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
               North
@@ -788,8 +801,8 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
             <button
               type="button"
               onClick={() => handleCompassModeChange('runway')}
-              className={`rounded-xl px-[22px] py-[8px] text-[19px] font-bold uppercase tracking-widest transition ${
-                effectiveCompassMode === 'runway' ? 'bg-accent-sky-500 text-white' : 'border border-slate-700 text-slate-400 hover:text-white'
+              className={`rounded-xl border border-slate-700 px-[20px] py-[7px] text-[17px] font-bold uppercase tracking-widest transition ${
+                effectiveCompassMode === 'runway' ? 'text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
               Runway
