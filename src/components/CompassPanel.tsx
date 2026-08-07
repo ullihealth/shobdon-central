@@ -115,15 +115,11 @@ const EAST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 90)
 const SOUTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 180)
 const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 
-// Shobdon's own seeded runway group keeps its exact hand-tuned literal pixel
-// cross-axis positions (centreline at 214 etc.) rather than the general
-// derived formula below - this is the one group where pixel-identical
-// colour/position rendering is a hard requirement. Strip WIDTH is a
-// per-strip field (RunwayStrip.widthPx) - each physical strip in a group
-// (e.g. a narrower grass strip beside a wider tarmac one) is independently
-// sized - see the width formulas inside RunwayGroupGraphic below. Along-
-// axis length is still shared per-group (see RUNWAY_STRIP_* below).
-const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
+// Strip WIDTH is a per-strip field (RunwayStrip.widthPx) - each physical
+// strip in a group (e.g. a narrower grass strip beside a wider tarmac
+// one) is independently sized - see the width formula inside
+// RunwayGroupGraphic below. Along-axis length is still shared per-group
+// (see RUNWAY_STRIP_* below).
 
 // Gap between the two strips of a twin group, in px - shared by Shobdon's
 // real gap (verified: 203 - 198 = 5, exactly matching the strip geometry
@@ -318,73 +314,22 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const centrelineBottom = stripBottom
   const fontSize = group.identifierFontSizePx
 
-  if (group.id === SHOBDON_SEEDED_GROUP_ID) {
-    const [grass, tarmac] = group.strips
-    const grassWidth = clampStripWidth(grass?.widthPx ?? 22)
-    const tarmacWidth = clampStripWidth(tarmac?.widthPx ?? 22)
-    // Centreline stays anchored to the tarmac strip's own centre (214) -
-    // matches the real-world detail that only the paved surface has a
-    // painted line - independent of width. At the seeded 22px widths this
-    // reproduces today's exact literal positions (176/203/214) exactly.
-    const tarmacX = 214 - tarmacWidth / 2
-    const grassX = tarmacX - RUNWAY_STRIP_GAP - grassWidth
-    const thresholdLeft = grassX
-    const thresholdRight = tarmacX + tarmacWidth
-    const grassInset = numberInsetFor(grass)
-    const tarmacInset = numberInsetFor(tarmac)
-    const grassNumberTopY = stripTop + grassInset
-    const grassNumberBottomY = stripBottom - grassInset
-    const tarmacNumberTopY = stripTop + tarmacInset
-    const tarmacNumberBottomY = stripBottom - tarmacInset
-    const grassCentreX = grassX + grassWidth / 2
-    return (
-      <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        {/* Grass Strip (Left) */}
-        <rect x={grassX} y={stripTop} width={grassWidth} height={stripHeight} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
-        {/* Tarmac Strip (Right) */}
-        <rect x={tarmacX} y={stripTop} width={tarmacWidth} height={stripHeight} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
-        {grass?.hasThresholdMarkings && (
-          <ThresholdMarkingBlocks stripX={grassX} stripWidth={grassWidth} stripTop={stripTop} stripBottom={stripBottom} />
-        )}
-        {tarmac?.hasThresholdMarkings && (
-          <ThresholdMarkingBlocks stripX={tarmacX} stripWidth={tarmacWidth} stripTop={stripTop} stripBottom={stripBottom} />
-        )}
-        {/* Centreline (dashed) - independently toggled per strip; tarmac's
-            own centre is always exactly 214 regardless of width, matching
-            the historic literal position. */}
-        {showsCenterline(grass) && (
-          <line x1={grassCentreX} y1={centrelineTop} x2={grassCentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
-        )}
-        {showsCenterline(tarmac) && (
-          <line x1="214" y1={centrelineTop} x2="214" y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
-        )}
-        {/* Threshold Markers */}
-        <line x1={thresholdLeft} y1={stripTop} x2={thresholdRight} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1={thresholdLeft} y1={stripBottom} x2={thresholdRight} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
-        {/* Runway Numbers - each strip shows its own pair independently,
-            positioned over its own centre, opacity 0.85 to match other
-            secondary compass labels (e.g. intermediate bearings). The
-            top/near-end numeral (labelTop) gets the extra local 180°
-            spin, NOT the bottom one - real-world signage convention,
-            each end reads upright to someone approaching FROM that end.
-            (First deploy had this backwards - labelBottom was flipped
-            instead of labelTop; visually confirmed and corrected.) */}
-        {grass?.showIdentifierLabel && (
-          <>
-            <RunwayIdentifierText x={grassCentreX} y={grassNumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-            <RunwayIdentifierText x={grassCentreX} y={grassNumberBottomY} text={labelBottom} fontSize={fontSize} />
-          </>
-        )}
-        {tarmac?.showIdentifierLabel && (
-          <>
-            <RunwayIdentifierText x={214} y={tarmacNumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-            <RunwayIdentifierText x={214} y={tarmacNumberBottomY} text={labelBottom} fontSize={fontSize} />
-          </>
-        )}
-      </g>
-    )
-  }
-
+  // Shobdon's own runway group used to be special-cased here (a
+  // hardcoded tarmac-centre-at-x=214 anchor, "pixel-identical to the
+  // original hand-tuned seeded values"), removed after confirming
+  // directly against production data that it was actively wrong: it was
+  // only ever centred correctly at the original seeded default widths
+  // (22px/22px); Shobdon's real strips have since been edited to 46px/
+  // 46px, and the fixed 214 anchor left the true pivot (200,200) sitting
+  // inside the tarmac strip's own span instead of the gap between the
+  // two strips. The general twin-group formula below anchors the GAP
+  // itself symmetrically around 200 instead of either individual strip,
+  // so it's correct for any width combination automatically - Shobdon's
+  // own group already has twin=true in D1, so it falls through to this
+  // branch with no data changes needed. (RunwayStripPreview.tsx's /runways
+  // live-preview component has its own separate copy of the same old
+  // bug, independent of this file - not touched here, flagged
+  // separately.)
   if (group.twin) {
     const [stripA, stripB] = group.strips
     const stripAWidth = clampStripWidth(stripA?.widthPx ?? 22)
@@ -785,20 +730,49 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
           dashboard callers). An interactive per-pilot preference toggle
           has no meaning on a shared public display nobody is standing at
           tapping buttons, so every non-spacious caller renders exactly
-          as it always has, completely unaffected. Rendered as its own
-          flex item ahead of the instrument - on /pilot's real mobile
-          (flex-col) layout this stacks it directly above the compass; the
-          sm:flex-row branch below is never actually reached by the real
-          /pilot caller (that route is single-column by design at every
-          width it's actually viewed at), so placement there wasn't
-          tuned further. */}
+          as it always has, completely unaffected.
+
+          Sized/positioned round: buttons sit at the compass circle's own
+          left/right "shoulders" instead of centred as a pair, each one's
+          bottom edge flush with the circle's own top edge. Deliberately
+          kept in normal flex flow (not position:absolute) - an
+          absolutely positioned overlay would stop reserving its own
+          vertical space, pulling the instrument up to visually collide
+          with whatever sits above it on /pilot (the Crosswind/Headwind
+          readout row) - staying in-flow avoids that entirely. w-full +
+          no horizontal inset matches the instrument's own w-full below
+          (both direct children of the same flex-col parent) exactly, so
+          justify-between's two ends land flush with the instrument's
+          true left/right edges - the closest either button can get to
+          the circle's own edges without overflowing past the page's own
+          content width. That's also the tightest fit available: at this
+          button size, on a real phone-width viewport, the two buttons
+          plus a "roughly one button's width" gap simply doesn't fit
+          inside the instrument's own width without either overflowing
+          the page or shrinking the buttons - flush-with-edges was
+          chosen over a wider gap specifically so the gap could be as
+          large as the remaining space allows (confirmed ~58-77px across
+          real phone widths tested) while keeping both buttons fully
+          on-screen. mb-[-43px]/mb-[-39px] cancels this row out of the
+          parent's own gap-8/gap-7 (tuned for spacing BETWEEN page
+          sections, not snugness against the circle immediately below
+          this one) AND the extra ~19px the circle itself sits inset
+          within its own square SVG viewBox (RING_RADIUS=180 inside a
+          400-tall viewBox, i.e. a fixed 5% margin before the circle's
+          true top edge) - gap and margin are independently additive in
+          flexbox, so this negative margin subtracts cleanly from just
+          this one gap without affecting spacing between any other
+          siblings. Confirmed 0px gap between button-bottom and the
+          circle's true top edge via direct bounding-box measurement,
+          not just visually. All values here tuned against real /pilot
+          renders at multiple widths, not derived from a single formula. */}
       {spacious && (
-        <div className="flex flex-shrink-0 flex-col items-center gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex w-full flex-shrink-0 flex-col items-center gap-2 mb-[-43px] sm:mb-[-39px] sm:w-auto">
+          <div className="flex w-full items-center justify-between">
             <button
               type="button"
               onClick={() => handleCompassModeChange('north')}
-              className={`rounded-lg px-4 py-1.5 text-sm font-bold uppercase tracking-widest transition ${
+              className={`rounded-xl px-[26px] py-[10px] text-[22px] font-bold uppercase tracking-widest transition ${
                 effectiveCompassMode === 'north' ? 'bg-accent-sky-500 text-white' : 'border border-slate-700 text-slate-400 hover:text-white'
               }`}
             >
@@ -807,7 +781,7 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
             <button
               type="button"
               onClick={() => handleCompassModeChange('runway')}
-              className={`rounded-lg px-4 py-1.5 text-sm font-bold uppercase tracking-widest transition ${
+              className={`rounded-xl px-[26px] py-[10px] text-[22px] font-bold uppercase tracking-widest transition ${
                 effectiveCompassMode === 'runway' ? 'bg-accent-sky-500 text-white' : 'border border-slate-700 text-slate-400 hover:text-white'
               }`}
             >

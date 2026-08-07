@@ -44,7 +44,6 @@ const EAST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 90)
 const SOUTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 180)
 const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 
-const SHOBDON_SEEDED_GROUP_ID = 'shobdon-08-26'
 const RUNWAY_STRIP_GAP = 5
 const MIN_STRIP_HALF_LENGTH = 30
 const MIN_STRIP_WIDTH_PX = 4
@@ -123,10 +122,16 @@ function RunwayIdentifierText({
   return rotate180 ? <g transform={`rotate(180 ${x} ${y})`}>{textEl}</g> : textEl
 }
 
-// Mirrors CompassPanel.tsx's RunwayGroupGraphic exactly (same geometry,
-// same Shobdon-seeded special case) so a staged edit previews pixel-
-// identically to how it will actually render once published - but this
-// function has no import path to or from that file.
+// Mirrors CompassPanel.tsx's RunwayGroupGraphic exactly (same geometry)
+// so a staged edit previews pixel-identically to how it will actually
+// render once published - but this function has no import path to or
+// from that file. Its old Shobdon-seeded special case (hardcoded
+// tarmac-centre-at-x=214 anchor) was removed alongside CompassPanel.tsx's
+// own copy of the same bug - see that file's comment above its own
+// group.twin branch for the full root-cause explanation. This file's
+// twin branch already used the correct width-independent "centre the
+// gap around the true pivot" formula, so it needed no changes beyond
+// deleting the special case that was shadowing it.
 function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const labelTop = group.endAIdentifier
   const labelBottom = group.endBIdentifier
@@ -137,49 +142,6 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const centrelineTop = stripTop
   const centrelineBottom = stripBottom
   const fontSize = group.identifierFontSizePx
-
-  if (group.id === SHOBDON_SEEDED_GROUP_ID) {
-    const [grass, tarmac] = group.strips
-    const grassWidth = clampStripWidth(grass?.widthPx ?? 22)
-    const tarmacWidth = clampStripWidth(tarmac?.widthPx ?? 22)
-    const tarmacX = 214 - tarmacWidth / 2
-    const grassX = tarmacX - RUNWAY_STRIP_GAP - grassWidth
-    const thresholdLeft = grassX
-    const thresholdRight = tarmacX + tarmacWidth
-    const grassInset = numberInsetFor(grass)
-    const tarmacInset = numberInsetFor(tarmac)
-    const grassNumberTopY = stripTop + grassInset
-    const grassNumberBottomY = stripBottom - grassInset
-    const tarmacNumberTopY = stripTop + tarmacInset
-    const tarmacNumberBottomY = stripBottom - tarmacInset
-    const grassCentreX = grassX + grassWidth / 2
-    return (
-      <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        <rect x={grassX} y={stripTop} width={grassWidth} height={stripHeight} fill={grass?.colour ?? '#4caf50'} opacity="0.65" />
-        <rect x={tarmacX} y={stripTop} width={tarmacWidth} height={stripHeight} fill={tarmac?.colour ?? '#a8b4c4'} opacity="0.5" />
-        {grass?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={grassX} stripWidth={grassWidth} stripTop={stripTop} stripBottom={stripBottom} />}
-        {tarmac?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={tarmacX} stripWidth={tarmacWidth} stripTop={stripTop} stripBottom={stripBottom} />}
-        {showsCenterline(grass) && (
-          <line x1={grassCentreX} y1={centrelineTop} x2={grassCentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
-        )}
-        {showsCenterline(tarmac) && <line x1="214" y1={centrelineTop} x2="214" y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />}
-        <line x1={thresholdLeft} y1={stripTop} x2={thresholdRight} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1={thresholdLeft} y1={stripBottom} x2={thresholdRight} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
-        {grass?.showIdentifierLabel && (
-          <>
-            <RunwayIdentifierText x={grassCentreX} y={grassNumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-            <RunwayIdentifierText x={grassCentreX} y={grassNumberBottomY} text={labelBottom} fontSize={fontSize} />
-          </>
-        )}
-        {tarmac?.showIdentifierLabel && (
-          <>
-            <RunwayIdentifierText x={214} y={tarmacNumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-            <RunwayIdentifierText x={214} y={tarmacNumberBottomY} text={labelBottom} fontSize={fontSize} />
-          </>
-        )}
-      </g>
-    )
-  }
 
   if (group.twin) {
     const [stripA, stripB] = group.strips
