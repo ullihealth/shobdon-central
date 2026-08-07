@@ -150,5 +150,74 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await env.DB.prepare("UPDATE tenant_api_keys SET last_used_at = ? WHERE id = ?").bind(now, keyLookup.id).run();
 
+  // SADDS automation round: mirrors this observation's runway/hand into
+  // ops_panel_state.activeRunwayEnd/circuitDirection - the fields that
+  // actually drive the ATC Control page's manual buttons, the TV
+  // dashboard carousel, and RunwayWindWidget (via publicConfig.ts).
+  // Without this, automated SADDS data and the "official" runway state
+  // shown on the dashboard were two disconnected values - a visiting
+  // pilot could see one runway on /pilot (fed straight from this same
+  // weather_observations row via weather-latest.ts) and a different,
+  // stale one on the clubhouse TV.
+  //
+  // ops_panel_state is keyed by organizationId (string), not this
+  // table's own numeric tenant_id - resolved via tenants here rather
+  // than threading organizationId through resolveApiKey/ApiKeyLookup,
+  // which every other caller of that helper doesn't need.
+  //
+  // Only ever writes when this specific observation actually carried
+  // runway data - a source/observation with no runway concept at all
+  // (runway === null) leaves ops_panel_state completely untouched, same
+  // "don't overwrite with nothing" posture as every other optional
+  // field on this endpoint.
+  if (runway !== null) {
+    const orgRow = await env.DB
+      .prepare("SELECT organization_id AS organizationId FROM tenants WHERE id = ?")
+      .bind(tenantId)
+      .first<{ organizationId: string | null }>();
+
+    if (orgRow?.organizationId) {
+      const opsPanelRow = await env.DB
+        .prepare("SELECT circuitDirection, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?")
+        .bind(orgRow.organizationId)
+        .first<{ circuitDirection: string; runwayAutomationEnabled: number }>();
+
+      // No row yet -> automation is ON (migration 0076's own DEFAULT 1,
+      // same "never a broken/blank read" posture the rest of this
+      // table's callers already use) - a tenant that's never opened ATC
+      // Control still gets auto-linked runway data from its very first
+      // SADDS-carrying observation, not silently ignored until someone
+      // visits that page once.
+      const automationEnabled = opsPanelRow ? !!opsPanelRow.runwayAutomationEnabled : true;
+
+      if (automationEnabled) {
+        // "LH"/"RH" per the capture Worker's own parseRunway() output
+        // (confirmed against real production data) - trimmed/upper-
+        // cased defensively rather than assuming that exact casing
+        // forever. An unrecognized/missing hand leaves circuitDirection
+        // exactly as it already was (existing row) or defaults to
+        // 'left' (brand-new row, matching ops-panel/index.ts's own
+        // "no row yet" default) - runway alone is still worth recording
+        // even when hand can't be determined, rather than discarding
+        // the whole update.
+        const normalizedHand = typeof runwayHand === "string" ? runwayHand.trim().toUpperCase() : null;
+        const mappedCircuitDirection = normalizedHand === "LH" ? "left" : normalizedHand === "RH" ? "right" : null;
+        const nextCircuitDirection = mappedCircuitDirection ?? opsPanelRow?.circuitDirection ?? "left";
+
+        await env.DB
+          .prepare(
+            `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, updatedAt)
+             VALUES (?, ?, ?, '', '[]', 1, 5, ?)
+             ON CONFLICT(organizationId) DO UPDATE SET
+               activeRunwayEnd = excluded.activeRunwayEnd,
+               circuitDirection = excluded.circuitDirection,
+               updatedAt = excluded.updatedAt`
+          )
+          .bind(orgRow.organizationId, runway, nextCircuitDirection, now)
+          .run();
+      }
+    }
+  }
+
   return jsonResponse({ ok: true, sourceType, observedAt });
 };

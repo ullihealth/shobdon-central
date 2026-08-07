@@ -45,6 +45,12 @@ interface OpsPanelRow {
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
   runwaysClosed: number;
+  // SADDS automation round (migration 0076) - when true,
+  // functions/api/ingest/weather.ts keeps activeRunwayEnd/
+  // circuitDirection in sync with SADDS captures on every ingest, and
+  // the PUT handler below rejects any manual change to those two
+  // fields unless this same request also turns it off.
+  runwayAutomationEnabled: number;
 }
 
 interface SafetyNoticeInput {
@@ -85,6 +91,11 @@ interface OpsPanelInput {
   // active, so re-opening restores the same values without ATC needing
   // to re-pick them.
   runwaysClosed: boolean;
+  // SADDS automation round (migration 0076) - see OpsPanelRow's own
+  // comment. Always sent explicitly by AtcControlPage.tsx (this is a
+  // full-replace endpoint, same as every other field here), never
+  // inferred from omission.
+  runwayAutomationEnabled: boolean;
 }
 
 const AIRFIELD_INFO_MAX_LENGTH = 60;
@@ -132,7 +143,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const { organizationId } = result.membership;
 
   const row = await env.DB
-    .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed FROM ops_panel_state WHERE organizationId = ?")
+    .prepare(
+      "SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?"
+    )
     .bind(organizationId)
     .first<OpsPanelRow>();
 
@@ -148,6 +161,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       weatherSummaryStateADurationSeconds: 8,
       weatherSummaryStateBDurationSeconds: 5,
       runwaysClosed: false,
+      // Matches migration 0076's own DEFAULT 1 - a tenant that's never
+      // opened ATC Control yet still reports automation as ON, same as
+      // the real column default a first-ever row would get.
+      runwayAutomationEnabled: true,
     });
   }
 
@@ -179,6 +196,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     weatherSummaryStateADurationSeconds: row.weatherSummaryStateADurationSeconds,
     weatherSummaryStateBDurationSeconds: row.weatherSummaryStateBDurationSeconds,
     runwaysClosed: !!row.runwaysClosed,
+    runwayAutomationEnabled: !!row.runwayAutomationEnabled,
   });
 };
 
@@ -227,6 +245,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   if (typeof body.runwaysClosed !== "boolean") {
     return jsonResponse({ error: "runwaysClosed must be a boolean" }, 400);
   }
+  if (typeof body.runwayAutomationEnabled !== "boolean") {
+    return jsonResponse({ error: "runwayAutomationEnabled must be a boolean" }, 400);
+  }
   if (
     !Number.isInteger(body.notamsCarouselIntervalSeconds) ||
     body.notamsCarouselIntervalSeconds < NOTAMS_INTERVAL_MIN_SECONDS ||
@@ -265,6 +286,31 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
+  // SADDS automation lock: while automation is CURRENTLY on (the stored
+  // value, not the incoming body's), the only way to change
+  // activeRunwayEnd/circuitDirection is to also turn automation off in
+  // this exact same request - matching the frontend's own confirm-and-
+  // disable-in-one-action flow (AtcControlPage.tsx), and preventing any
+  // other caller from silently overwriting SADDS-managed values.
+  // Everything else on this full-replace endpoint stays completely
+  // unaffected by this check either way.
+  const current = await env.DB
+    .prepare("SELECT activeRunwayEnd, circuitDirection, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?")
+    .bind(organizationId)
+    .first<{ activeRunwayEnd: string; circuitDirection: string; runwayAutomationEnabled: number }>();
+
+  const automationCurrentlyEnabled = current ? !!current.runwayAutomationEnabled : true;
+  if (automationCurrentlyEnabled && body.runwayAutomationEnabled !== false) {
+    const currentActiveRunwayEnd = current?.activeRunwayEnd ?? "";
+    const currentCircuitDirection = current?.circuitDirection ?? "left";
+    if (body.activeRunwayEnd !== currentActiveRunwayEnd || body.circuitDirection !== currentCircuitDirection) {
+      return jsonResponse(
+        { error: "Runway and circuit direction are controlled by SADDS automation. Disable automation to set them manually." },
+        409
+      );
+    }
+  }
+
   // Empty rows are dropped rather than stored as blanks - keeps the
   // public config's safetyNotices array free of placeholder empties that
   // would otherwise render as blank lines under the auto NOTAM text.
@@ -279,8 +325,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
-      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organizationId) DO UPDATE SET
          activeRunwayEnd = excluded.activeRunwayEnd,
          circuitDirection = excluded.circuitDirection,
@@ -292,6 +338,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
          weatherSummaryStateADurationSeconds = excluded.weatherSummaryStateADurationSeconds,
          weatherSummaryStateBDurationSeconds = excluded.weatherSummaryStateBDurationSeconds,
          runwaysClosed = excluded.runwaysClosed,
+         runwayAutomationEnabled = excluded.runwayAutomationEnabled,
          updatedAt = excluded.updatedAt`
     )
     .bind(
@@ -306,6 +353,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       body.weatherSummaryStateADurationSeconds,
       body.weatherSummaryStateBDurationSeconds,
       body.runwaysClosed ? 1 : 0,
+      body.runwayAutomationEnabled ? 1 : 0,
       now
     )
     .run();
