@@ -13,6 +13,29 @@ interface CompassState {
   headwind: number
   crosswind: number
   arrowColour: ArrowColour
+  // Compass-mode round - already computed below for the headwind/
+  // crosswind maths, now also exposed so RUNWAY mode can rotate the
+  // dial to bring this heading to the top.
+  activeRunwayHeading: number
+}
+
+// Compass-mode round (/pilot only, gated behind the spacious prop below)
+// - NORTH (default, today's only behaviour) keeps the dial at 0°; RUNWAY
+// brings the live active-runway heading to the top instead. Persisted
+// per pilot via localStorage - no manual tenant-id prefix needed since
+// each tenant already lives on its own subdomain and localStorage is
+// natively origin-scoped by the browser, so a single fixed key already
+// gets correct per-tenant isolation for free.
+type CompassMode = 'north' | 'runway'
+const COMPASS_MODE_STORAGE_KEY = 'pilotCompassMode'
+
+function loadStoredCompassMode(): CompassMode {
+  if (typeof window === 'undefined') return 'north'
+  try {
+    return window.localStorage.getItem(COMPASS_MODE_STORAGE_KEY) === 'runway' ? 'runway' : 'north'
+  } catch {
+    return 'north'
+  }
 }
 
 // Intermediate bearings for compass rose
@@ -572,6 +595,25 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
     activeRunwayEnd: '',
   })
 
+  // Raw stored/selected preference, not necessarily what's actually
+  // applied right now - see effectiveCompassMode below, which is the one
+  // that actually drives rendering. Keeping these separate means a
+  // pilot who taps RUNWAY before ATC has set an active runway yet still
+  // has that intent remembered - the moment activeRunwayEnd becomes
+  // non-empty (ATC sets it, or a fresh fetch resolves), the dial starts
+  // rotating automatically with no need to tap the button again.
+  const [compassMode, setCompassMode] = useState<CompassMode>(loadStoredCompassMode)
+
+  function handleCompassModeChange(next: CompassMode) {
+    setCompassMode(next)
+    try {
+      window.localStorage.setItem(COMPASS_MODE_STORAGE_KEY, next)
+    } catch {
+      // Private browsing / storage disabled - the toggle still works for
+      // this session, it just won't be remembered on the next visit.
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
@@ -637,6 +679,7 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
       headwind,
       crosswind,
       arrowColour,
+      activeRunwayHeading,
     }
   }, [weather, clubProfile])
 
@@ -714,8 +757,72 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
     )
   }
 
+  // '' matches this file's own existing fallback-to-endA convention
+  // elsewhere (the headwind/crosswind maths above never treats an unset
+  // activeRunwayEnd as an error) - but for THIS feature specifically, an
+  // explicitly-unset active runway should read as "no data" rather than
+  // silently pointing RUNWAY mode at whatever endA happens to be, since
+  // that would present an unconfirmed runway as if it were confirmed.
+  const hasActiveRunwayData = clubProfile.activeRunwayEnd !== ''
+  // What's actually applied right now, not necessarily the raw stored
+  // preference above - falls back to NORTH whenever RUNWAY is selected
+  // but there's no data to rotate toward, matching requirement 3 exactly
+  // ("keep the compass in NORTH mode - don't switch/rotate anything").
+  const effectiveCompassMode: CompassMode = compassMode === 'runway' && hasActiveRunwayData ? 'runway' : 'north'
+  const showNoRunwayNotice = compassMode === 'runway' && !hasActiveRunwayData
+  // Brings activeRunwayHeading to the TOP of the dial: SVG rotate() and
+  // compass bearings both increase clockwise in this file's existing
+  // convention (see RunwayGroupGraphic's own rotate(headingDegrees) a
+  // few hundred lines up), so undoing a bearing's clockwise offset from
+  // 0/top needs the NEGATIVE of that bearing.
+  const dialRotationDegrees = effectiveCompassMode === 'runway' ? -compassState.activeRunwayHeading : 0
+
   return (
     <div className={`flex h-full flex-col items-center justify-center ${spacious ? 'gap-8' : 'gap-4'} pt-6 sm:flex-row sm:gap-7`}>
+      {/* NORTH/RUNWAY mode toggle - spacious-gated (Pilot View only, per
+          the existing convention every other prop on this component
+          already uses to distinguish it from the unattended TV/kiosk
+          dashboard callers). An interactive per-pilot preference toggle
+          has no meaning on a shared public display nobody is standing at
+          tapping buttons, so every non-spacious caller renders exactly
+          as it always has, completely unaffected. Rendered as its own
+          flex item ahead of the instrument - on /pilot's real mobile
+          (flex-col) layout this stacks it directly above the compass; the
+          sm:flex-row branch below is never actually reached by the real
+          /pilot caller (that route is single-column by design at every
+          width it's actually viewed at), so placement there wasn't
+          tuned further. */}
+      {spacious && (
+        <div className="flex flex-shrink-0 flex-col items-center gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleCompassModeChange('north')}
+              className={`rounded-lg px-4 py-1.5 text-sm font-bold uppercase tracking-widest transition ${
+                effectiveCompassMode === 'north' ? 'bg-accent-sky-500 text-white' : 'border border-slate-700 text-slate-400 hover:text-white'
+              }`}
+            >
+              North
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCompassModeChange('runway')}
+              className={`rounded-lg px-4 py-1.5 text-sm font-bold uppercase tracking-widest transition ${
+                effectiveCompassMode === 'runway' ? 'bg-accent-sky-500 text-white' : 'border border-slate-700 text-slate-400 hover:text-white'
+              }`}
+            >
+              Runway
+            </button>
+          </div>
+          {/* Requirement 3's fallback - derived, not a one-off toast: stays
+              visible for as long as RUNWAY is the stored preference but
+              activeRunwayEnd is unset, and disappears on its own the
+              moment data becomes available (dial then starts rotating
+              automatically too - see effectiveCompassMode above). */}
+          {showNoRunwayNotice && <div className="text-xs font-semibold text-amber-400">No runway data available</div>}
+        </div>
+      )}
+
       {/* ── COMPASS INSTRUMENT ─────────────────────────────────────────
           Two overlapping SVGs sharing the same 400×400 viewBox.
           Layer 1 (bottom): static — compass rose and runway reference.
@@ -780,70 +887,116 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
               strokeWidth="1.5"
             />
 
-            {/* COMPASS ROSE - Cardinal Points */}
-            <g id="cardinal-points" className="pointer-events-none">
-              <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
-              <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
-              <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
-              <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+            {/* Rotating dial group (compass-mode round) - ONE transform
+                here rotates the whole rose + runway reference together.
+                RUNWAY mode brings the active runway heading to the top by
+                rotating -activeRunwayHeading; NORTH mode
+                (dialRotationDegrees === 0) renders byte-for-byte
+                identical to what this markup always produced before this
+                round - nothing changes visually until a pilot actually
+                switches modes. runway-graphics is included deliberately,
+                not just the rose - its own already-existing
+                rotate(group.headingDegrees) then nets out to 0 in RUNWAY
+                mode, so the strip points straight up on screen (a real
+                track-up display), rather than the rose spinning around a
+                strip left in its old fixed orientation. */}
+            <g id="compass-dial" transform={`rotate(${dialRotationDegrees} 200 200)`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+              {/* COMPASS ROSE - Cardinal Points. Each letter gets its own
+                  counter-rotation wrapper (rotate(-dialRotationDegrees)
+                  around that letter's own x/y) - same established
+                  per-element counter-rotation pattern
+                  RunwayIdentifierText's rotate180 already uses elsewhere
+                  in this file, just with a dynamic angle instead of a
+                  fixed 180. The letter's POSITION still moves with the
+                  dial (still a descendant of the rotating group above),
+                  but this cancels the dial's rotation for the glyph's
+                  OWN orientation, keeping it screen-upright. */}
+              <g id="cardinal-points" className="pointer-events-none">
+                <g transform={`rotate(${-dialRotationDegrees} ${NORTH_POINT.x} ${NORTH_POINT.y})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+                  <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
+                </g>
+                <g transform={`rotate(${-dialRotationDegrees} ${EAST_POINT.x} ${EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+                  <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
+                </g>
+                <g transform={`rotate(${-dialRotationDegrees} ${SOUTH_POINT.x} ${SOUTH_POINT.y})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+                  <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
+                </g>
+                <g transform={`rotate(${-dialRotationDegrees} ${WEST_POINT.x} ${WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+                  <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+                </g>
+              </g>
+
+              {/* Cardinal Direction Lines - no counter-rotation needed,
+                  plain line segments have no inherent "upright"
+                  orientation to preserve. */}
+              <g id="cardinal-lines" stroke="rgba(59, 130, 246, 0.2)" strokeWidth="1.5">
+                <line x1="200" y1="20" x2="200" y2="50" />
+                <line x1="350" y1="200" x2="380" y2="200" />
+                <line x1="200" y1="350" x2="200" y2="380" />
+                <line x1="20" y1="200" x2="50" y2="200" />
+              </g>
+
+              {/* Intermediate Bearings - same per-label counter-rotation
+                  as the cardinal letters above. */}
+              <g id="intermediate-bearings" className="pointer-events-none">
+                {INTERMEDIATE_BEARINGS.map((bearing) => {
+                  const point = circlePoint(200, 200, INTERMEDIATE_LABEL_RADIUS, bearing.degrees)
+                  return (
+                    <g
+                      key={`bearing-${bearing.degrees}`}
+                      transform={`rotate(${-dialRotationDegrees} ${point.x} ${point.y})`}
+                      style={{ transition: 'transform 0.8s ease-in-out' }}
+                    >
+                      <text
+                        x={point.x}
+                        y={point.y}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        className="select-none"
+                        fill="rgba(148, 163, 184, 0.85)"
+                        fontSize="18"
+                        fontWeight="600"
+                        letterSpacing="0.5"
+                      >
+                        {bearing.label}
+                      </text>
+                    </g>
+                  )
+                })}
+              </g>
+
+              {/* Degree Markers (every 30°) - no counter-rotation, same
+                  reasoning as the cardinal lines above. */}
+              <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+                {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
+                  const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
+                  const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)
+                  return (
+                    <line
+                      key={`marker-${degree}`}
+                      x1={point.x}
+                      y1={point.y}
+                      x2={innerPoint.x}
+                      y2={innerPoint.y}
+                    />
+                  )
+                })}
+              </g>
+
+              {/* RUNWAY GRAPHIC(S) - background reference axis; never to
+                  compete with the wind arrow. Included in this rotating
+                  group deliberately - see the compass-dial comment
+                  above. */}
+              <g id="runway-graphics">
+                {clubProfile.runwayGroups.map((group) => (
+                  <RunwayGroupGraphic key={group.id} group={group} />
+                ))}
+              </g>
             </g>
 
-            {/* Cardinal Direction Lines */}
-            <g id="cardinal-lines" stroke="rgba(59, 130, 246, 0.2)" strokeWidth="1.5">
-              <line x1="200" y1="20" x2="200" y2="50" />
-              <line x1="350" y1="200" x2="380" y2="200" />
-              <line x1="200" y1="350" x2="200" y2="380" />
-              <line x1="20" y1="200" x2="50" y2="200" />
-            </g>
-
-            {/* Intermediate Bearings */}
-            <g id="intermediate-bearings" className="pointer-events-none">
-              {INTERMEDIATE_BEARINGS.map((bearing) => {
-                const point = circlePoint(200, 200, INTERMEDIATE_LABEL_RADIUS, bearing.degrees)
-                return (
-                  <text
-                    key={`bearing-${bearing.degrees}`}
-                    x={point.x}
-                    y={point.y}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    className="select-none"
-                    fill="rgba(148, 163, 184, 0.85)"
-                    fontSize="18"
-                    fontWeight="600"
-                    letterSpacing="0.5"
-                  >
-                    {bearing.label}
-                  </text>
-                )
-              })}
-            </g>
-
-            {/* Degree Markers (every 30°) */}
-            <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
-              {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
-                const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
-                const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)
-                return (
-                  <line
-                    key={`marker-${degree}`}
-                    x1={point.x}
-                    y1={point.y}
-                    x2={innerPoint.x}
-                    y2={innerPoint.y}
-                  />
-                )
-              })}
-            </g>
-
-            {/* RUNWAY GRAPHIC(S) - background reference axis; never to compete with the wind arrow */}
-            <g id="runway-graphics">
-              {clubProfile.runwayGroups.map((group) => (
-                <RunwayGroupGraphic key={group.id} group={group} />
-              ))}
-            </g>
-
-            {/* Centre Point */}
+            {/* Centre Point - outside the rotating group deliberately;
+                it sits exactly on the rotation's own pivot, so rotating
+                it would be a visual no-op either way. */}
             <circle cx="200" cy="200" r="4" fill="white" opacity="0.5" />
           </svg>
 
@@ -857,11 +1010,20 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
             {/* Rotating wind arrow — long, thin needle; always on its own layer above the runway.
                 reverseCompassNeedle (developer-only, /developertools) adds/removes 180° here ONLY -
                 compassState.windDirection itself (used for the centre label, readout panel, and the
-                headwind/crosswind maths above) is never touched by this flag. */}
+                headwind/crosswind maths above) is never touched by this flag.
+                dialRotationDegrees (compass-mode round) is ALSO added here, not just on the dial's
+                own group - this needle deliberately stays on its own separate SVG layer (see this
+                component's own file-level comment on why: the arrow must never merge with the
+                runway graphic), so it can't literally share a DOM parent with the rotating dial
+                group above. Adding the same offset here achieves the identical visual result
+                without that: rotations about the same centre point (200,200) compose by plain
+                addition regardless of which element they're applied to, so this is mathematically
+                identical to nesting the needle inside the dial's own rotated group. In NORTH mode
+                dialRotationDegrees is always 0, so this is byte-for-byte the original formula. */}
             <g
               id="wind-arrow"
               className={`wind-arrow ${arrowColourClass}`}
-              transform={`rotate(${compassState.windDirection + (clubProfile.reverseCompassNeedle ? 180 : 0)} 200 200)`}
+              transform={`rotate(${compassState.windDirection + (clubProfile.reverseCompassNeedle ? 180 : 0) + dialRotationDegrees} 200 200)`}
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
               {/* Dark halo - keeps the needle legible over both runway strips */}
