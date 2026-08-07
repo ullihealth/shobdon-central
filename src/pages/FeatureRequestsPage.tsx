@@ -22,11 +22,16 @@ const STATUS_LABELS: Record<FeatureStatus, string> = {
   parked: 'Parked',
 }
 
+// Colour-coded by value so a status is recognisable at a glance, not
+// just by its label - idea/planned/built map to the three colours
+// explicitly requested (mid blue/amber/green); parked (not part of that
+// request) takes the slate/grey idea vacates, keeping all four visually
+// distinct rather than colliding with planned's new amber.
 const STATUS_STYLES: Record<FeatureStatus, string> = {
-  idea: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
-  planned: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+  idea: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+  planned: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
   built: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-  parked: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  parked: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
 }
 
 function formatDate(iso: string): string {
@@ -188,7 +193,7 @@ export default function FeatureRequestsPage(): JSX.Element {
                       value={request.status}
                       disabled={updatingId === request.id}
                       onChange={(event) => handleStatusChange(request, event.target.value as FeatureStatus)}
-                      className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs font-semibold text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+                      className={`rounded-lg border px-2 py-1 text-xs font-semibold focus:border-sky-500 focus:outline-none disabled:opacity-50 ${STATUS_STYLES[request.status]}`}
                     >
                       {STATUSES.map((status) => (
                         <option key={status} value={status}>
