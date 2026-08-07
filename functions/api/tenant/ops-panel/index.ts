@@ -41,6 +41,13 @@ interface OpsPanelRow {
   safetyNoticesJson: string;
   showAutoNotams: number;
   notamsCarouselIntervalSeconds: number;
+  // Independent per-state durations for RightInfoPanel.tsx's rotation
+  // (migration 0077), replacing notamsCarouselIntervalSeconds above -
+  // that field is left in place, unused, until this is confirmed
+  // working end-to-end.
+  notamsOpsDurationSeconds: number;
+  notamsFullDurationSeconds: number;
+  noticesDurationSeconds: number;
   weatherSummaryChartEnabled: number;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
@@ -80,6 +87,9 @@ interface OpsPanelInput {
   safetyNotices: SafetyNoticeInput[];
   showAutoNotams: boolean;
   notamsCarouselIntervalSeconds: number;
+  notamsOpsDurationSeconds: number;
+  notamsFullDurationSeconds: number;
+  noticesDurationSeconds: number;
   weatherSummaryChartEnabled: boolean;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
@@ -144,7 +154,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const row = await env.DB
     .prepare(
-      "SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?"
+      "SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?"
     )
     .bind(organizationId)
     .first<OpsPanelRow>();
@@ -157,6 +167,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       safetyNotices: [],
       showAutoNotams: true,
       notamsCarouselIntervalSeconds: 5,
+      notamsOpsDurationSeconds: 5,
+      notamsFullDurationSeconds: 5,
+      noticesDurationSeconds: 5,
       weatherSummaryChartEnabled: false,
       weatherSummaryStateADurationSeconds: 8,
       weatherSummaryStateBDurationSeconds: 5,
@@ -192,6 +205,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     safetyNotices,
     showAutoNotams: !!row.showAutoNotams,
     notamsCarouselIntervalSeconds: row.notamsCarouselIntervalSeconds,
+    notamsOpsDurationSeconds: row.notamsOpsDurationSeconds,
+    notamsFullDurationSeconds: row.notamsFullDurationSeconds,
+    noticesDurationSeconds: row.noticesDurationSeconds,
     weatherSummaryChartEnabled: !!row.weatherSummaryChartEnabled,
     weatherSummaryStateADurationSeconds: row.weatherSummaryStateADurationSeconds,
     weatherSummaryStateBDurationSeconds: row.weatherSummaryStateBDurationSeconds,
@@ -255,6 +271,40 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   ) {
     return jsonResponse(
       { error: `notamsCarouselIntervalSeconds must be an integer between ${NOTAMS_INTERVAL_MIN_SECONDS} and ${NOTAMS_INTERVAL_MAX_SECONDS}` },
+      400
+    );
+  }
+  // Independent per-state durations (migration 0077) - same bounds as
+  // notamsCarouselIntervalSeconds above, which these three directly
+  // split apart (one shared value -> one per rotation state), not a
+  // fresh design decision of their own.
+  if (
+    !Number.isInteger(body.notamsOpsDurationSeconds) ||
+    body.notamsOpsDurationSeconds < NOTAMS_INTERVAL_MIN_SECONDS ||
+    body.notamsOpsDurationSeconds > NOTAMS_INTERVAL_MAX_SECONDS
+  ) {
+    return jsonResponse(
+      { error: `notamsOpsDurationSeconds must be an integer between ${NOTAMS_INTERVAL_MIN_SECONDS} and ${NOTAMS_INTERVAL_MAX_SECONDS}` },
+      400
+    );
+  }
+  if (
+    !Number.isInteger(body.notamsFullDurationSeconds) ||
+    body.notamsFullDurationSeconds < NOTAMS_INTERVAL_MIN_SECONDS ||
+    body.notamsFullDurationSeconds > NOTAMS_INTERVAL_MAX_SECONDS
+  ) {
+    return jsonResponse(
+      { error: `notamsFullDurationSeconds must be an integer between ${NOTAMS_INTERVAL_MIN_SECONDS} and ${NOTAMS_INTERVAL_MAX_SECONDS}` },
+      400
+    );
+  }
+  if (
+    !Number.isInteger(body.noticesDurationSeconds) ||
+    body.noticesDurationSeconds < NOTAMS_INTERVAL_MIN_SECONDS ||
+    body.noticesDurationSeconds > NOTAMS_INTERVAL_MAX_SECONDS
+  ) {
+    return jsonResponse(
+      { error: `noticesDurationSeconds must be an integer between ${NOTAMS_INTERVAL_MIN_SECONDS} and ${NOTAMS_INTERVAL_MAX_SECONDS}` },
       400
     );
   }
@@ -325,8 +375,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
-      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organizationId) DO UPDATE SET
          activeRunwayEnd = excluded.activeRunwayEnd,
          circuitDirection = excluded.circuitDirection,
@@ -334,6 +384,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
          safetyNoticesJson = excluded.safetyNoticesJson,
          showAutoNotams = excluded.showAutoNotams,
          notamsCarouselIntervalSeconds = excluded.notamsCarouselIntervalSeconds,
+         notamsOpsDurationSeconds = excluded.notamsOpsDurationSeconds,
+         notamsFullDurationSeconds = excluded.notamsFullDurationSeconds,
+         noticesDurationSeconds = excluded.noticesDurationSeconds,
          weatherSummaryChartEnabled = excluded.weatherSummaryChartEnabled,
          weatherSummaryStateADurationSeconds = excluded.weatherSummaryStateADurationSeconds,
          weatherSummaryStateBDurationSeconds = excluded.weatherSummaryStateBDurationSeconds,
@@ -349,6 +402,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       JSON.stringify(safetyNotices),
       body.showAutoNotams ? 1 : 0,
       body.notamsCarouselIntervalSeconds,
+      body.notamsOpsDurationSeconds,
+      body.notamsFullDurationSeconds,
+      body.noticesDurationSeconds,
       body.weatherSummaryChartEnabled ? 1 : 0,
       body.weatherSummaryStateADurationSeconds,
       body.weatherSummaryStateBDurationSeconds,

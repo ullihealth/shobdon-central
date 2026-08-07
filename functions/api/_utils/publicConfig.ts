@@ -122,6 +122,13 @@ interface OpsPanelRow {
   safetyNoticesJson: string;
   showAutoNotams: number;
   notamsCarouselIntervalSeconds: number;
+  // Independent per-state durations (migration 0077), replacing the
+  // single shared value above for RightInfoPanel.tsx's rotation -
+  // notamsCarouselIntervalSeconds itself stays as-is/unused for now,
+  // see that component's own comment.
+  notamsOpsDurationSeconds: number;
+  notamsFullDurationSeconds: number;
+  noticesDurationSeconds: number;
   reverseCompassNeedle: number;
   weatherSummaryChartEnabled: number;
   weatherSummaryStateADurationSeconds: number;
@@ -430,7 +437,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         newCameraId: string | null;
       }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
       .bind(organizationId)
       .first<OpsPanelRow>(),
     // Which dashboard template renders at "/" for this tenant - the
@@ -787,6 +794,9 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         safetyNotices: JSON.parse(opsPanelRow.safetyNoticesJson) as SafetyNoticeResolved[],
         showAutoNotams: !!opsPanelRow.showAutoNotams,
         notamsCarouselIntervalSeconds: opsPanelRow.notamsCarouselIntervalSeconds,
+        notamsOpsDurationSeconds: opsPanelRow.notamsOpsDurationSeconds,
+        notamsFullDurationSeconds: opsPanelRow.notamsFullDurationSeconds,
+        noticesDurationSeconds: opsPanelRow.noticesDurationSeconds,
         reverseCompassNeedle: !!(parentOpsPanelRow?.reverseCompassNeedle ?? opsPanelRow.reverseCompassNeedle),
         weatherSummaryChartEnabled: !!opsPanelRow.weatherSummaryChartEnabled,
         weatherSummaryStateADurationSeconds: opsPanelRow.weatherSummaryStateADurationSeconds,

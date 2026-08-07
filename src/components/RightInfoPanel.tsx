@@ -17,6 +17,17 @@ export interface OpsPanelPublic {
   safetyNotices: SafetyNotice[]
   showAutoNotams: boolean
   notamsCarouselIntervalSeconds: number
+  // Independent per-state durations (migration 0077), replacing the
+  // single shared value above - ops = the Runway In Use/auto-NOTAMs/
+  // Airfield Info cards, notamsFull = the full-text auto-NOTAM overflow
+  // page, notices = the manual Safety Notices page. Optional (not
+  // `number` like the field above) since a tenant that's never saved
+  // through the new ops-panel PUT validation yet may still be on a
+  // cached/pre-migration response shape - read with `?? 5` in the
+  // rotation effect below either way.
+  notamsOpsDurationSeconds?: number
+  notamsFullDurationSeconds?: number
+  noticesDurationSeconds?: number
   // ATC-triggered override (migration 0054) - when true, every render
   // location that shows activeRunwayEnd/circuitDirection shows
   // "RUNWAYS CLOSED" instead (see the Runway In Use card below).
@@ -313,33 +324,69 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // 3) - 'notamsFull' (AutoNotamsFullPanel) is spliced in ONLY when
   // hasAutoNotamOverflow is true, so a tenant whose NOTAMs already fit
   // never wastes rotation time on a state with nothing new to show.
-  // Still exactly one shared setInterval driving the whole rotation
-  // (MediaPanel.tsx's own per-slot recursive setTimeout is a different
-  // pattern for independently-durationed slots, not needed here - every
-  // state shares the same notamsCarouselIntervalSeconds duration).
   const rotationStates: ('ops' | 'notamsFull' | 'notices')[] = [
     'ops',
     ...(hasAutoNotamOverflow ? (['notamsFull'] as const) : []),
     'notices',
   ]
+  // Ref mirroring the latest rotationStates array, read inside the
+  // recursive-timeout effect below instead of closing over the array
+  // directly - rotationStates is deliberately NOT one of that effect's
+  // dependencies (see the comment on rotationIndex below: a mid-cycle
+  // change in hasAutoNotamOverflow shouldn't reset the cycle), so
+  // without this ref scheduleNext() would keep resolving state names/
+  // durations against a stale array captured whenever the effect last
+  // ran, instead of whatever's actually being rendered right now.
+  const rotationStatesRef = useRef(rotationStates)
+  rotationStatesRef.current = rotationStates
+
   // Always starts on State A (today's default appearance) on load/on
-  // any config refetch, then advances every notamsCarouselIntervalSeconds.
+  // any config refetch, then advances via the recursive setTimeout
+  // below - each state now reads its own independent duration
+  // (notamsOpsDurationSeconds/notamsFullDurationSeconds/
+  // noticesDurationSeconds, migration 0077) rather than one shared
+  // interval, matching LeftInfoPanel.tsx's own Summary/Chart flip
+  // (see that file's equivalent effect). notamsCarouselIntervalSeconds
+  // is left in place, unused, until this is confirmed working
+  // end-to-end.
   // Read via `% rotationStates.length` at render time (not clamped
   // here) so a mid-cycle change in hasAutoNotamOverflow - e.g. new
   // NOTAM data arrives shrinking rotationStates from 3 states back to 2
   // - can never leave rotationIndex pointing past the end of the
   // (now shorter) array.
   const [rotationIndex, setRotationIndex] = useState(0)
+  const timerRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
+    window.clearTimeout(timerRef.current)
     setRotationIndex(0)
     if (notamsOnly) return
-    const intervalSeconds = opsPanel?.notamsCarouselIntervalSeconds ?? 5
-    const id = window.setInterval(() => {
-      setRotationIndex((value) => value + 1)
-    }, Math.max(1, intervalSeconds) * 1000)
-    return () => window.clearInterval(id)
-  }, [notamsOnly, opsPanel?.notamsCarouselIntervalSeconds])
+
+    let index = 0
+    const scheduleNext = () => {
+      const states = rotationStatesRef.current
+      const state = states[index % states.length]
+      const seconds =
+        state === 'ops'
+          ? (opsPanel?.notamsOpsDurationSeconds ?? 5)
+          : state === 'notamsFull'
+            ? (opsPanel?.notamsFullDurationSeconds ?? 5)
+            : (opsPanel?.noticesDurationSeconds ?? 5)
+      timerRef.current = window.setTimeout(() => {
+        index += 1
+        setRotationIndex(index)
+        scheduleNext()
+      }, Math.max(1, seconds) * 1000)
+    }
+    scheduleNext()
+
+    return () => window.clearTimeout(timerRef.current)
+  }, [
+    notamsOnly,
+    opsPanel?.notamsOpsDurationSeconds,
+    opsPanel?.notamsFullDurationSeconds,
+    opsPanel?.noticesDurationSeconds,
+  ])
 
   const currentRotationState = rotationStates[rotationIndex % rotationStates.length]
 

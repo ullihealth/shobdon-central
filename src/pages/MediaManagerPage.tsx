@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
-import { CAROUSEL_SLOTS_URL, GAS_PRICES_URL, MEDIA_LIBRARY_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { CAROUSEL_SLOTS_URL, GAS_PRICES_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
 import TickerSettingsCards from '../components/media/TickerSettingsCards'
 
@@ -22,6 +22,55 @@ interface GasPricesState {
 }
 
 const DEFAULT_GAS_PRICES_STATE: GasPricesState = { avgasPrice: '', ul91Price: '', jetA1Price: '', currency: '£' }
+
+// Panel Rotation Timing round - mirrors functions/api/tenant/ops-panel/
+// index.ts's OpsPanelInput shape, duplicated locally per this repo's
+// established convention of not sharing types across the functions/src
+// boundary (see e.g. publicConfig.ts's own OpsPanelRow comment). Held in
+// FULL here (not just the 5 duration fields this page actually edits)
+// because that PUT endpoint is a strict full-row overwrite - every field
+// is required and gets written verbatim from the request body, with
+// nothing preserved from the existing DB row for an omitted one. This
+// page fetches the current row once on load and always resends it
+// whole, with only the edited duration field(s) patched in - the same
+// "read current state, change one thing, save everything back" shape
+// AtcControlPage.tsx's own "Update Dashboard" already has to follow for
+// this same endpoint.
+interface OpsPanelFullState {
+  activeRunwayEnd: string
+  circuitDirection: 'left' | 'right'
+  airfieldInfoText: string
+  safetyNotices: { id?: string; name?: string; text: string; size: 'sm' | 'md' | 'lg' | 'xl'; enabled: boolean }[]
+  showAutoNotams: boolean
+  runwaysClosed: boolean
+  runwayAutomationEnabled: boolean
+  notamsCarouselIntervalSeconds: number
+  notamsOpsDurationSeconds: number
+  notamsFullDurationSeconds: number
+  noticesDurationSeconds: number
+  weatherSummaryChartEnabled: boolean
+  weatherSummaryStateADurationSeconds: number
+  weatherSummaryStateBDurationSeconds: number
+}
+
+// Same bounds functions/api/tenant/ops-panel/index.ts's PUT already
+// enforces for all 5 of these fields (NOTAMS_INTERVAL_MIN/MAX_SECONDS
+// and WEATHER_SUMMARY_DURATION_MIN/MAX_SECONDS there, both 2-30) - kept
+// in sync here rather than picking a different-looking range for the
+// input's own min/max.
+const PANEL_TIMING_MIN_SECONDS = 2
+const PANEL_TIMING_MAX_SECONDS = 30
+
+// Matches AtcControlPage.tsx's own handleNotamsIntervalChange precedent
+// exactly: empty field snaps to the minimum, a not-yet-valid number
+// (e.g. mid-typing) leaves the previous value alone rather than
+// clobbering it, anything else clamps into range.
+function clampDurationInput(raw: string, previous: number): number {
+  if (raw === '') return PANEL_TIMING_MIN_SECONDS
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return previous
+  return Math.min(PANEL_TIMING_MAX_SECONDS, Math.max(PANEL_TIMING_MIN_SECONDS, Math.round(parsed)))
+}
 
 function priceToInputValue(value: number | null): string {
   return value === null ? '' : String(value)
@@ -55,6 +104,8 @@ export default function MediaManagerPage(): JSX.Element {
   const saveTimerRef = useRef<number | undefined>(undefined)
   const [gasPrices, setGasPrices] = useState<GasPricesState>(DEFAULT_GAS_PRICES_STATE)
   const gasPricesSaveTimerRef = useRef<number | undefined>(undefined)
+  const [opsPanelState, setOpsPanelState] = useState<OpsPanelFullState | null>(null)
+  const opsPanelSaveTimerRef = useRef<number | undefined>(undefined)
   // Reserved Owner Slots & Time Budget round - budgetEnabled false (the
   // default response shape, and every tenant this feature hasn't
   // reached yet) means the running total/hard-stop below never
@@ -93,6 +144,14 @@ export default function MediaManagerPage(): JSX.Element {
       })
   }
 
+  function loadOpsPanel() {
+    return fetch(OPS_PANEL_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data) setOpsPanelState(data)
+      })
+  }
+
   function loadCameraOptions() {
     // Camera URLs are already fully public (embedded as iframes on the
     // unauthenticated dashboard), so reusing the public config endpoint
@@ -121,7 +180,9 @@ export default function MediaManagerPage(): JSX.Element {
   }
 
   useEffect(() => {
-    Promise.all([loadLibrary(), loadSlots(), loadCameraOptions(), loadGasPrices()]).finally(() => setLoading(false))
+    Promise.all([loadLibrary(), loadSlots(), loadCameraOptions(), loadGasPrices(), loadOpsPanel()]).finally(() =>
+      setLoading(false)
+    )
   }, [])
 
   // Reserved Owner Slots & Time Budget round - a reserved slot's own
@@ -220,6 +281,27 @@ export default function MediaManagerPage(): JSX.Element {
           jetA1Price: inputValueToPrice(next.jetA1Price),
           currency: next.currency,
         }),
+      })
+    }, 300)
+  }
+
+  // Same debounced-save shape as updateGasPrices above (local state
+  // updates synchronously, the network PUT is debounced so typing a
+  // duration doesn't fire a request per keystroke) - the one real
+  // difference is the PUT body itself: ops-panel's endpoint requires the
+  // ENTIRE row (see OpsPanelFullState's own comment), so `next` here is
+  // always the full last-known state with just the changed field(s)
+  // patched in, not a small object of only what changed.
+  function updateOpsPanelTiming(patch: Partial<OpsPanelFullState>) {
+    if (!opsPanelState) return
+    const next = { ...opsPanelState, ...patch }
+    setOpsPanelState(next)
+    window.clearTimeout(opsPanelSaveTimerRef.current)
+    opsPanelSaveTimerRef.current = window.setTimeout(() => {
+      fetch(OPS_PANEL_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
       })
     }, 300)
   }
@@ -339,6 +421,136 @@ export default function MediaManagerPage(): JSX.Element {
               />
             )}
           </div>
+        </section>
+      )}
+
+      {/* Panel Rotation Timing - the main TV dashboard's Left Info Panel
+          (Weather Summary) and Right Info Panel (NOTAMs/Notices) each
+          rotate through their own internal slides; every slide's dwell
+          time lives here, in one place, since both panels' underlying
+          fields are otherwise editable nowhere else (Left Panel's two
+          fields used to live on ATC Control's own Weather Summary Chart
+          section - moved here so timing for both panels has a single
+          home instead of being split across two admin pages). */}
+      {!loading && opsPanelState && (
+        <section className="mt-8 rounded-2xl border border-border bg-panel p-6">
+          <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+            Panel Rotation Timing
+          </div>
+          <p className="mb-5 max-w-2xl text-sm text-muted-400">
+            How long each internal slide stays on screen before the live dashboard's Left and Right info panels
+            rotate to the next one. {PANEL_TIMING_MIN_SECONDS}-{PANEL_TIMING_MAX_SECONDS} seconds each.
+          </p>
+
+          <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-500">
+            Left Panel (Weather Summary)
+          </div>
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
+                State A duration (sec)
+              </label>
+              <input
+                type="number"
+                min={PANEL_TIMING_MIN_SECONDS}
+                max={PANEL_TIMING_MAX_SECONDS}
+                value={opsPanelState.weatherSummaryStateADurationSeconds}
+                onChange={(event) =>
+                  updateOpsPanelTiming({
+                    weatherSummaryStateADurationSeconds: clampDurationInput(
+                      event.target.value,
+                      opsPanelState.weatherSummaryStateADurationSeconds
+                    ),
+                  })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
+                State B duration (sec)
+              </label>
+              <input
+                type="number"
+                min={PANEL_TIMING_MIN_SECONDS}
+                max={PANEL_TIMING_MAX_SECONDS}
+                value={opsPanelState.weatherSummaryStateBDurationSeconds}
+                onChange={(event) =>
+                  updateOpsPanelTiming({
+                    weatherSummaryStateBDurationSeconds: clampDurationInput(
+                      event.target.value,
+                      opsPanelState.weatherSummaryStateBDurationSeconds
+                    ),
+                  })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-500">
+            Right Panel (NOTAMs / Notices)
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
+                Ops card duration (sec)
+              </label>
+              <input
+                type="number"
+                min={PANEL_TIMING_MIN_SECONDS}
+                max={PANEL_TIMING_MAX_SECONDS}
+                value={opsPanelState.notamsOpsDurationSeconds}
+                onChange={(event) =>
+                  updateOpsPanelTiming({
+                    notamsOpsDurationSeconds: clampDurationInput(event.target.value, opsPanelState.notamsOpsDurationSeconds),
+                  })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
+                NOTAMs full page duration (sec)
+              </label>
+              <input
+                type="number"
+                min={PANEL_TIMING_MIN_SECONDS}
+                max={PANEL_TIMING_MAX_SECONDS}
+                value={opsPanelState.notamsFullDurationSeconds}
+                onChange={(event) =>
+                  updateOpsPanelTiming({
+                    notamsFullDurationSeconds: clampDurationInput(
+                      event.target.value,
+                      opsPanelState.notamsFullDurationSeconds
+                    ),
+                  })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
+                Notices duration (sec)
+              </label>
+              <input
+                type="number"
+                min={PANEL_TIMING_MIN_SECONDS}
+                max={PANEL_TIMING_MAX_SECONDS}
+                value={opsPanelState.noticesDurationSeconds}
+                onChange={(event) =>
+                  updateOpsPanelTiming({
+                    noticesDurationSeconds: clampDurationInput(event.target.value, opsPanelState.noticesDurationSeconds),
+                  })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-muted-500">
+            NOTAMs full page only joins the rotation when there are more automated NOTAMs than fit on the Ops card -
+            its own duration is set here regardless, ready whenever that happens.
+          </p>
         </section>
       )}
 
