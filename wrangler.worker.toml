@@ -45,6 +45,20 @@ binding = "ASSETS"
 # etc. - none of which are real files in dist/) would 404 instead of
 # loading the app.
 not_found_handling = "single-page-application"
+# Without this, Cloudflare's default asset-first routing detects real
+# browser navigations (requests carrying Sec-Fetch-Mode: navigate - a
+# plain <a href> click, not a fetch()/XHR call, and not sent by curl
+# either) to any path with no literal file in dist/, and serves the SPA
+# fallback above INSTEAD OF ever invoking this Worker's own Function
+# router (main, below) - confirmed as the exact cause of "View Capture
+# Logs" (a plain <a href="/api/tenant/capture-logs" target="_blank">)
+# rendering the dashboard instead of the real endpoint, even though the
+# address bar stayed correct and the same URL worked fine via fetch()/
+# curl (neither sends that header, so neither was ever affected).
+# Scoped to /api/* only - every other unmatched path (client-side routes
+# like /config, /d/main, /media-manager) still falls through to the SPA
+# fallback exactly as before.
+run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"

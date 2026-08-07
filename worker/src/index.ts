@@ -590,13 +590,67 @@ async function handleGet(env: Env): Promise<Response> {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Shobdon Central - Weather Captures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600&display=swap" rel="stylesheet">
+<style>
+  /* Scoped to the two action buttons only - the rest of this page keeps
+     its existing system-font styling untouched (Montserrat isn't this
+     app's actual chrome font anywhere else - see PC2CaptureSetup.tsx's
+     own buttons for the real brand precedent this mirrors: flat border,
+     no fill, cyan accent-sky (#0ea5e9/#38bdf8) only on hover, no glow/
+     shadow). */
+  .action-btn {
+    font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #03101a;
+    color: #e2e8f0;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 0.5rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .action-btn:hover {
+    border-color: #0ea5e9;
+    color: #38bdf8;
+  }
+  @media print {
+    .no-print { display: none !important; }
+  }
+</style>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#03101a; color:#e2e8f0; padding:2rem; max-width:900px; margin:0 auto;">
   <h1 style="font-size:1.25rem;">Shobdon Central — Weather Captures</h1>
+  <div class="no-print" style="display:flex; gap:0.75rem; margin:0.75rem 0 1.5rem;">
+    <button id="copy-btn" class="action-btn" onclick="copyLogs()">Copy</button>
+    <button class="action-btn" onclick="window.print()">Print</button>
+  </div>
   <h2 style="font-size:1rem;color:#94a3b8;">Latest</h2>
   ${latestHtml}
   ${olderHtml ? `<h2 style="font-size:1rem;color:#94a3b8;">History</h2>${olderHtml}` : ''}
   ${investigationsHtml ? `<h2 style="font-size:1rem;color:#94a3b8;margin-top:2rem;">Station Investigations</h2>${investigationsHtml}` : ''}
+  <script>
+    // Copies the raw log data (every <pre> block's own text - the
+    // actual capture JSON, not the section headings around it) as plain
+    // text. No dependency - navigator.clipboard.writeText is a standard
+    // browser API. Brief inline "Copied!" feedback rather than alert(),
+    // so it doesn't interrupt/steal focus.
+    async function copyLogs() {
+      const blocks = Array.from(document.querySelectorAll('pre')).map((el) => el.textContent || '')
+      const text = blocks.join('\\n\\n')
+      const btn = document.getElementById('copy-btn')
+      const original = btn.textContent
+      try {
+        await navigator.clipboard.writeText(text)
+        btn.textContent = 'Copied!'
+      } catch (err) {
+        btn.textContent = 'Copy failed'
+      }
+      setTimeout(() => { btn.textContent = original }, 1500)
+    }
+  </script>
 </body>
 </html>`
 
