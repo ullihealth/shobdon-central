@@ -77,37 +77,61 @@ function SizeSelector({
 // oversized ToggleButton (text-4xl, py-8 cards) for Runway/Circuit/NOTAM
 // on-off, so these three quick binary choices no longer each consume a
 // full-width section of their own.
+//
+// SADDS automation round, revised: `locked` is now a REAL click-guard,
+// not just a visual dimming - onChange simply never fires while locked
+// (see the onClick below), so there's nothing left for a caller to
+// intercept/redirect on click the way the previous round's confirm-on-
+// click handlers did. `lockedMessage`, shown only on hover (never on
+// click, per explicit instruction), is this toggle's own local state -
+// each SegmentedToggle usage gets its own independent instance
+// (Runway/Circuit/Automation/NOTAM/Chart Rotation), so hovering one
+// never affects another.
 function SegmentedToggle<T extends string>({
   options,
   value,
   onChange,
-  // SADDS automation round - visual-only lock (dimmed, not-allowed
-  // cursor), NOT a real `disabled` attribute: onChange must still fire
-  // when locked, since Runway In Use/Circuit Direction pass a
-  // confirm-and-unlock handler as onChange in that state rather than
-  // being truly unclickable - see AtcControlPage's own
-  // handleLockedRunwayEndChange/handleLockedCircuitDirectionChange.
   locked = false,
+  lockedMessage,
 }: {
   options: { value: T; label: string }[]
   value: T
   onChange: (value: T) => void
   locked?: boolean
+  lockedMessage?: string
 }): JSX.Element {
+  const [showLockedMessage, setShowLockedMessage] = useState(false)
+
   return (
-    <div className={`inline-flex rounded-lg border border-slate-700 bg-slate-900/60 p-1 ${locked ? 'opacity-50' : ''}`}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={`rounded-md px-5 py-1.5 text-sm font-bold uppercase tracking-wide transition ${
-            value === option.value ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-white'
-          } ${locked ? 'cursor-not-allowed' : ''}`}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div
+      className="relative inline-block"
+      onMouseEnter={() => {
+        if (locked) setShowLockedMessage(true)
+      }}
+      onMouseLeave={() => setShowLockedMessage(false)}
+    >
+      <div className={`inline-flex rounded-lg border border-slate-700 bg-slate-900/60 p-1 ${locked ? 'opacity-50' : ''}`}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => {
+              if (locked) return
+              onChange(option.value)
+            }}
+            className={`rounded-md px-5 py-1.5 text-sm font-bold uppercase tracking-wide transition ${
+              value === option.value ? 'bg-accent-sky-500 text-white' : 'text-muted-400 hover:text-white'
+            } ${locked ? 'cursor-not-allowed' : ''}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {locked && showLockedMessage && lockedMessage && (
+        <div className="absolute left-0 top-full z-30 mt-2 w-64 rounded-lg border border-status-bad bg-slate-950 px-3 py-2 text-xs font-semibold text-status-bad shadow-lg shadow-slate-950/40">
+          {lockedMessage}
+        </div>
+      )}
     </div>
   )
 }
@@ -134,8 +158,9 @@ export default function AtcControlPage(): JSX.Element {
   // SADDS automation round (migration 0076) - true (default) means
   // functions/api/ingest/weather.ts keeps activeRunwayEnd/
   // circuitDirection in sync with SADDS captures automatically, and the
-  // manual buttons below are locked (see handleLockedRunwayEndChange/
-  // handleLockedCircuitDirectionChange). A DIFFERENT concept from
+  // manual buttons below are locked (click does nothing, hover shows a
+  // warning - see SegmentedToggle's own comment; turning this off is
+  // confirmed via handleRunwayAutomationToggle). A DIFFERENT concept from
   // autoLinkRunwayCircuit below - that one just mirrors runway<->circuit
   // selection while editing manually, purely client-side, never sent to
   // the backend; this one is a real server-enforced flag gating whether
@@ -251,40 +276,29 @@ export default function AtcControlPage(): JSX.Element {
     setActiveRunwayEnd(direction === 'left' ? '26' : '08')
   }
 
-  // SADDS automation round - used as the Runway In Use toggle's onChange
-  // INSTEAD of handleRunwayEndChange whenever runwayAutomationEnabled is
-  // true (see the SegmentedToggle usage below). Confirm-then-disable-
-  // and-apply in one action, matching what the backend lock
-  // (ops-panel/index.ts's PUT) actually requires - turning automation
-  // off and setting a new value in two separate staged steps would
-  // otherwise get rejected as a 409 the moment "Update Dashboard" is
-  // clicked, since that single PUT wouldn't carry both changes together
-  // if either half were somehow lost. Still only STAGES the change,
-  // same as every other control on this page - nothing here reaches the
-  // live dashboard until Update Dashboard is clicked.
-  function handleLockedRunwayEndChange(end: string) {
+  // SADDS automation round, revised: the confirm now lives on the
+  // Automation toggle itself, not on the individual Runway/Circuit
+  // buttons (see SegmentedToggle's own comment on why those buttons no
+  // longer intercept onChange at all while locked). Only the ON->OFF
+  // direction needs confirming - flipping back on is never destructive,
+  // so it's a plain, immediate state change with no dialog. Still only
+  // STAGES runwayAutomationEnabled, same as every other control on this
+  // page - nothing reaches the live dashboard until Update Dashboard is
+  // clicked, so cancelling here has nothing to undo beyond the toggle's
+  // own local value.
+  function handleRunwayAutomationToggle(next: 'on' | 'off') {
+    if (next === 'on') {
+      setRunwayAutomationEnabled(true)
+      return
+    }
     if (
       !window.confirm(
-        `Runway In Use is currently controlled by SADDS automation. Disable automation and set it to ${end} manually?\n\nThis only stages the change - click "Update Dashboard" afterward to publish it.`
+        'Disable SADDS Automation and take manual control of Runway In Use and Circuit Direction?\n\nThis only stages the change - click "Update Dashboard" afterward to publish it.'
       )
     ) {
       return
     }
     setRunwayAutomationEnabled(false)
-    handleRunwayEndChange(end)
-  }
-
-  function handleLockedCircuitDirectionChange(direction: CircuitDirection) {
-    const label = direction === 'left' ? 'Left' : 'Right'
-    if (
-      !window.confirm(
-        `Circuit Direction is currently controlled by SADDS automation. Disable automation and set it to ${label} manually?\n\nThis only stages the change - click "Update Dashboard" afterward to publish it.`
-      )
-    ) {
-      return
-    }
-    setRunwayAutomationEnabled(false)
-    handleCircuitDirectionChange(direction)
   }
 
   function handleAirfieldInfoChange(event: ChangeEvent<HTMLInputElement>) {
@@ -451,11 +465,11 @@ export default function AtcControlPage(): JSX.Element {
                 { value: 'off', label: 'Off' },
               ]}
               value={runwayAutomationEnabled ? 'on' : 'off'}
-              onChange={(v) => setRunwayAutomationEnabled(v === 'on')}
+              onChange={handleRunwayAutomationToggle}
             />
             <p className="mt-2 text-xs text-muted-500">
               {runwayAutomationEnabled
-                ? 'Runway In Use and Circuit Direction below are set automatically from SADDS on every capture - the manual buttons are locked. Click one to disable automation and take over manually.'
+                ? 'Runway In Use and Circuit Direction below are set automatically from SADDS on every capture - the manual buttons are locked. Turn this off to take over manually.'
                 : 'Manual control - Runway In Use and Circuit Direction only change when you set them below and click Update Dashboard.'}
             </p>
           </div>
@@ -480,8 +494,9 @@ export default function AtcControlPage(): JSX.Element {
                   { value: runwayEnds[1], label: runwayEnds[1] },
                 ]}
                 value={activeRunwayEnd}
-                onChange={runwayAutomationEnabled ? handleLockedRunwayEndChange : handleRunwayEndChange}
+                onChange={handleRunwayEndChange}
                 locked={runwayAutomationEnabled}
+                lockedMessage="Locked by SADDS Automation - turn off SADDS Automation above to set Runway In Use manually."
               />
               {/* Override, not a replacement for the value above - which
                   end is active stays set underneath while closed, so
@@ -510,8 +525,9 @@ export default function AtcControlPage(): JSX.Element {
                   { value: 'right', label: 'Right' },
                 ]}
                 value={circuitDirection}
-                onChange={runwayAutomationEnabled ? handleLockedCircuitDirectionChange : handleCircuitDirectionChange}
+                onChange={handleCircuitDirectionChange}
                 locked={runwayAutomationEnabled}
+                lockedMessage="Locked by SADDS Automation - turn off SADDS Automation above to set Circuit Direction manually."
               />
             </div>
             <div className="rounded-xl border border-border bg-panel px-5 py-4">
