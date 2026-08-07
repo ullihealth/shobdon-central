@@ -7,7 +7,7 @@ import {
   platformDevFeatureUrl,
 } from '../config/publicApi'
 
-type Tab = 'all' | 'reviewed' | 'devlog'
+type Tab = 'all' | 'reviewed' | 'devlog' | 'bugs'
 type SortMode = 'newest' | 'oldest' | 'title-asc' | 'title-desc'
 
 interface DevFeatureEntry {
@@ -33,10 +33,12 @@ interface Folder {
 }
 
 type BugStatus = 'reported' | 'working' | 'fixed' | 'parked'
+const BUG_STATUSES: BugStatus[] = ['reported', 'working', 'fixed', 'parked']
 
 interface BugReportSummary {
   id: string
   title: string
+  description: string
   status: BugStatus
   submittedByTenantName: string | null
   createdAt: string
@@ -113,14 +115,24 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
   const [releasing, setReleasing] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
 
-  // Read-only bug report summary (title, status, submitting tenant,
-  // date) - deliberately its own separate fetch/loading state, not woven
-  // into loadAll()/the folder+release workflow above, since bug reports
-  // have no folder/eligibility/release concept here. A fetch failure or
-  // slowness here shouldn't block the main feature-request workflow from
-  // rendering.
+  // Bug report data - powers both the small read-only preview card up
+  // top (unchanged) and the new "Bugs" tab below, where status becomes
+  // editable. Deliberately its own separate fetch/loading state, not
+  // woven into loadAll()/the folder+release workflow above, since bug
+  // reports have no folder/eligibility/release concept here. A fetch
+  // failure or slowness here shouldn't block the main feature-request
+  // workflow from rendering.
   const [bugReports, setBugReports] = useState<BugReportSummary[]>([])
   const [bugReportsLoading, setBugReportsLoading] = useState(true)
+  const [updatingBugId, setUpdatingBugId] = useState<string | null>(null)
+  // Nice-to-have lightweight filter, scoped to the Bugs tab only - 'all'
+  // (the default) shows every status including fixed/parked, matching
+  // ALL's own "everything regardless of state" behaviour elsewhere on
+  // this page. Purely a client-side view filter, not reflected in the
+  // tab's own count badge (that always reflects the true total, same as
+  // how "All (N)" counts every entry regardless of any other tab's
+  // narrower criteria).
+  const [bugStatusFilter, setBugStatusFilter] = useState<'all' | BugStatus>('all')
 
   function loadAll() {
     return Promise.all([
@@ -148,6 +160,27 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
       .then((data) => setBugReports(data.reports ?? []))
       .finally(() => setBugReportsLoading(false))
   }, [])
+
+  // Same PATCH /api/tenant/bug-reports/:id endpoint BugReportsPage.tsx's
+  // own handleStatusChange calls (same requireDeveloper gate, nothing
+  // new needed server-side) - this page is entirely inside
+  // DeveloperLayout's own requireDeveloper route gate already, so unlike
+  // that page there's no separate isDeveloper check needed before
+  // showing the control itself. Same optimistic-update-then-revert-on-
+  // failure shape too.
+  async function handleBugStatusChange(report: BugReportSummary, status: BugStatus) {
+    setUpdatingBugId(report.id)
+    setBugReports((prev) => prev.map((r) => (r.id === report.id ? { ...r, status } : r)))
+    const response = await fetch(`/api/tenant/bug-reports/${report.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    if (!response.ok) {
+      setBugReports((prev) => prev.map((r) => (r.id === report.id ? { ...r, status: report.status } : r)))
+    }
+    setUpdatingBugId(null)
+  }
 
   function showNotice(message: string) {
     setNotice(message)
@@ -277,9 +310,26 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
       all: entries.length,
       reviewed: entries.filter((e) => matchesTab(e, 'reviewed')).length,
       devlog: entries.filter((e) => matchesTab(e, 'devlog')).length,
+      bugs: bugReports.length,
     }),
-    [entries]
+    [entries, bugReports]
   )
+
+  // Reuses the same sortMode state/dropdown the feature-entry list above
+  // already has ("matching the existing sort control pattern" - one
+  // control governs whichever tab is active, not a second one). No
+  // folder filtering (bugs have no folder concept); bugStatusFilter is
+  // the one bugs-only narrowing, defaulting to 'all' so fixed/parked
+  // stay visible unless a developer deliberately narrows the view.
+  const sortedBugReports = useMemo(() => {
+    let list = bugStatusFilter === 'all' ? bugReports : bugReports.filter((r) => r.status === bugStatusFilter)
+    const sorted = [...list]
+    if (sortMode === 'newest') sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    else if (sortMode === 'oldest') sorted.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    else if (sortMode === 'title-asc') sorted.sort((a, b) => a.title.localeCompare(b.title))
+    else sorted.sort((a, b) => b.title.localeCompare(a.title))
+    return sorted
+  }, [bugReports, bugStatusFilter, sortMode])
 
   if (forbidden) {
     return (
@@ -446,7 +496,7 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
                 <section className="rounded-2xl border border-border bg-panel p-6">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex gap-2">
-                      {(['all', 'reviewed', 'devlog'] as Tab[]).map((tab) => (
+                      {(['all', 'reviewed', 'devlog', 'bugs'] as Tab[]).map((tab) => (
                         <button
                           key={tab}
                           type="button"
@@ -455,8 +505,15 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
                             activeTab === tab ? 'bg-accent-sky-500 text-white' : 'border border-border text-muted-400 hover:text-white'
                           }`}
                         >
-                          {tab === 'all' ? 'All' : tab === 'reviewed' ? 'Reviewed' : 'Dev Log'} (
-                          {tab === 'all' ? tabCounts.all : tab === 'reviewed' ? tabCounts.reviewed : tabCounts.devlog})
+                          {tab === 'all' ? 'All' : tab === 'reviewed' ? 'Reviewed' : tab === 'devlog' ? 'Dev Log' : 'Bugs'} (
+                          {tab === 'all'
+                            ? tabCounts.all
+                            : tab === 'reviewed'
+                              ? tabCounts.reviewed
+                              : tab === 'devlog'
+                                ? tabCounts.devlog
+                                : tabCounts.bugs}
+                          )
                         </button>
                       ))}
                     </div>
@@ -497,6 +554,8 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
                     </div>
                   )}
 
+                  {activeTab !== 'bugs' && (
+                  <>
                   {visibleEntries.length === 0 && <p className="text-xs text-muted-500">Nothing here yet.</p>}
 
                   <div className="flex flex-col gap-3">
@@ -586,6 +645,59 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
                       </div>
                     ))}
                   </div>
+                  </>
+                  )}
+
+                  {activeTab === 'bugs' && (
+                  <>
+                  <div className="mb-4 flex flex-wrap gap-1.5">
+                    {(['all', ...BUG_STATUSES] as ('all' | BugStatus)[]).map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setBugStatusFilter(filter)}
+                        className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide transition ${
+                          bugStatusFilter === filter
+                            ? 'bg-accent-sky-500 text-white'
+                            : 'border border-border text-muted-500 hover:text-white'
+                        }`}
+                      >
+                        {filter === 'all' ? 'All' : BUG_STATUS_LABELS[filter]}
+                      </button>
+                    ))}
+                  </div>
+
+                  {sortedBugReports.length === 0 && <p className="text-xs text-muted-500">Nothing here yet.</p>}
+
+                  <div className="flex flex-col gap-3">
+                    {sortedBugReports.map((report) => (
+                      <div key={report.id} className="rounded-xl border border-border bg-card p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-[220px] flex-1">
+                            <div className="text-sm font-semibold text-white">{report.title}</div>
+                            <p className="mt-1 text-sm text-muted-400">{report.description}</p>
+                            <div className="mt-2 text-xs text-muted-500">
+                              {report.submittedByTenantName ?? 'Unknown tenant'} · {formatDate(report.createdAt)}
+                            </div>
+                          </div>
+                          <select
+                            value={report.status}
+                            disabled={updatingBugId === report.id}
+                            onChange={(event) => handleBugStatusChange(report, event.target.value as BugStatus)}
+                            className={`rounded-lg border px-2 py-1 text-xs font-semibold focus:border-sky-500 focus:outline-none disabled:opacity-50 ${BUG_STATUS_STYLES[report.status]}`}
+                          >
+                            {BUG_STATUSES.map((status) => (
+                              <option key={status} value={status}>
+                                {BUG_STATUS_LABELS[status]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  </>
+                  )}
                 </section>
               </div>
             </div>
