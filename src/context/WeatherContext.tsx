@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { fetchWeatherData } from '../services/weatherService'
 import { fetchAtcWeather } from '../services/weatherProviders/atcProvider'
-import { fetchMetOfficeFallbackWeather } from '../services/weatherProviders/metOfficeFallbackProvider'
+import { fetchInternetWeather } from '../services/weatherProviders/internetProvider'
 import { fetchMockWeather } from '../services/weatherProviders/mockProvider'
 import { DEFAULT_WEATHER_CONFIG, resolveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherData, WeatherSource } from '../types/weather'
@@ -22,7 +22,9 @@ interface WeatherContextValue {
   // as if they were real.
   liveDataUnavailable: boolean
   // True when activeProvider is 'atc' but the reading currently on screen
-  // actually came from the Met Office DataHub auto-fallback, not the ATC
+  // actually came from the internet-weather auto-fallback (Open-Meteo,
+  // the same fetchInternetWeather() a manually-selected 'internet'
+  // provider already uses - see useFallback() below), not the ATC
   // station - see the ATC-primary/internet-fallback state machine below.
   // Always false for every other activeProvider (this is specifically an
   // 'atc' behaviour, not a general "not live" flag - liveDataUnavailable
@@ -48,7 +50,7 @@ const DEFAULT_REFRESH_INTERVAL_SECONDS = 30
 // Requirement's own "every 5 minutes (configurable constant)" - used both
 // as the recheck cadence while auto-reconnect is on (retry ATC on this
 // schedule) and as the fallback data's own refresh cadence while pinned
-// with auto-reconnect off (Met Office's hourly forecast doesn't need
+// with auto-reconnect off (Open-Meteo's own forecast data doesn't need
 // tighter polling than this either way).
 const FALLBACK_RECHECK_INTERVAL_SECONDS = 5 * 60
 
@@ -149,7 +151,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     // mechanism, no separate signal needed for this branch.
   }, [config, manualReconnectSignal])
 
-  // ATC-primary / Met Office DataHub-fallback auto-switch. Self-
+  // ATC-primary / internet-weather-fallback auto-switch. Self-
   // rescheduling setTimeout chain rather than a fixed setInterval,
   // because the polling cadence itself changes with state: normal
   // operation polls at atc.refreshIntervalSeconds (~60s), but once
@@ -159,6 +161,20 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // it's known-down, or leaving the dashboard on stale fallback data for
   // up to a full normal cycle after it recovers.
   //
+  // useFallback() calls fetchInternetWeather(currentConfig) - the exact
+  // same Open-Meteo fetch a manually-selected 'internet' provider
+  // already uses (see the other data-fetching effect above) - not the
+  // separate, unregistered Met Office DataHub proxy this used to call.
+  // That proxy has its own real-world upstream rate limit (confirmed
+  // live: Met Office DataHub returning 429 during a real outage) and
+  // was never actually reachable through this app's own manually-
+  // selectable "Internet Weather" option, so a working manual fallback
+  // and a broken automatic one could disagree with each other - exactly
+  // what was observed. Reusing fetchInternetWeather here means the
+  // automatic cascade and the manual "Internet Weather" selection are
+  // now backed by the literal same function call, so they can't drift
+  // apart like this again.
+  //
   // State machine per tick:
   // - pinned + auto-reconnect OFF: skip ATC entirely (the whole point of
   //   the toggle - don't even attempt recovery), just refresh the
@@ -166,7 +182,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // - not pinned, OR pinned + auto-reconnect ON (this tick IS the
   //   recheck): try ATC first.
   //   - succeeds: use it, un-pin, resume the normal ~60s cadence.
-  //   - fails: pin (if not already), use the Met Office fallback,
+  //   - fails: pin (if not already), use the internet-weather fallback,
   //     recheck again in 5 minutes.
   // - if BOTH ATC and the fallback fail: same emergency floor
   //   weatherService.fetchWeatherData already uses everywhere else -
@@ -182,16 +198,16 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
       timeoutId = window.setTimeout(tick, seconds * 1000)
     }
 
-    async function useFallback() {
+    async function useFallback(currentConfig: WeatherConfig) {
       try {
-        const result = await fetchMetOfficeFallbackWeather()
+        const result = await fetchInternetWeather(currentConfig)
         if (!cancelled) {
-          setValue({ weather: result.data, source: 'live', loading: false })
+          setValue({ weather: result.data, source: result.live ? 'live' : 'mock', loading: false })
           setUsingFallback(true)
         }
       } catch (fallbackError) {
-        console.warn('Met Office DataHub fallback failed, falling back to mock:', fallbackError)
-        const mockResult = await fetchMockWeather(config as WeatherConfig)
+        console.warn('Internet-weather fallback failed, falling back to mock:', fallbackError)
+        const mockResult = await fetchMockWeather(currentConfig)
         if (!cancelled) {
           setValue({ weather: mockResult.data, source: 'mock', loading: false })
           setUsingFallback(true)
@@ -204,7 +220,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
       const currentConfig = config as WeatherConfig
 
       if (pinnedToFallbackRef.current && !currentConfig.atc.autoReconnectEnabled) {
-        await useFallback()
+        await useFallback(currentConfig)
         scheduleNext(FALLBACK_RECHECK_INTERVAL_SECONDS)
         return
       }
@@ -218,9 +234,9 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
         pinnedToFallbackRef.current = false
         scheduleNext(currentConfig.atc.refreshIntervalSeconds)
       } catch (atcError) {
-        console.warn('ATC weather provider failed/stale, switching to Met Office DataHub fallback:', atcError)
+        console.warn('ATC weather provider failed/stale, switching to internet-weather fallback:', atcError)
         pinnedToFallbackRef.current = true
-        await useFallback()
+        await useFallback(currentConfig)
         scheduleNext(FALLBACK_RECHECK_INTERVAL_SECONDS)
       }
     }
