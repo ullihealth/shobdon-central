@@ -6,6 +6,7 @@ import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 import { usePullToRefresh } from '../hooks/usePullToRefresh'
 import { usePilotHomeScreenMeta } from '../hooks/usePilotHomeScreenMeta'
 import { usePilotServiceWorker } from '../hooks/usePilotServiceWorker'
+import { usePilotDataFreshnessGuard } from '../hooks/usePilotDataFreshnessGuard'
 import TenantUnavailable from '../components/TenantUnavailable'
 import PilotLockedScreen from '../components/pilot/PilotLockedScreen'
 import PilotHeader from '../components/pilot/PilotHeader'
@@ -41,7 +42,8 @@ interface PilotViewContentProps {
 // gate whether WeatherProvider even renders at all, via the early
 // returns below) and are threaded down as plain props instead.
 function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, refreshTick, onManualRefresh }: PilotViewContentProps): JSX.Element {
-  const { refetchNow } = useWeather()
+  const { refetchNow, dataStale } = useWeather()
+  usePilotDataFreshnessGuard()
 
   // Pull-to-refresh's own guaranteed backstop: always calls both the
   // branding/refreshTick refresh (onManualRefresh, from the parent) AND
@@ -91,6 +93,45 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
       )}
 
       <PilotHeader airfieldName={airfieldName} logoUrl={logoUrl} afisoOpen={afisoOpen} afisoFrequency={afisoFrequency} />
+
+      {/* Data-freshness safety net (dataStale, WeatherContext.tsx) -
+          deliberately independent of the weather status badge's own
+          live/fallback/no-reading state, since this exists specifically
+          for the case where that badge is confidently showing a status
+          that's no longer true because the poll loop behind it silently
+          stopped ticking (backgrounded-tab timer throttling, a stuck
+          effect) - usePilotDataFreshnessGuard's pageshow/touch listeners
+          are the automatic recovery attempt; this banner is what's
+          visible for however long it takes one of those (or a manual
+          pull-to-refresh) to actually succeed. Normal in-flow element,
+          not position:fixed/absolute - same reasoning as the pull-to-
+          refresh banner above: a fixed overlay stops reserving its own
+          space and can collide with whatever sits below it. Styled with
+          the same border-2 + tinted-background + bold label shape as
+          the Club & Safety Notices section below (status-warn amber
+          instead of that section's accent-sky), not a new visual
+          pattern invented for this. Copy is deliberately just the
+          instruction itself ("Pull to Refresh"), not a question or an
+          alarm - matches the plain, direct label style already used
+          throughout this page. */}
+      {dataStale && (
+        // border-status-warn/bg-slate-900/60 rather than the
+        // border-status-warn/40 + bg-status-warn/5 tinted-opacity combo
+        // Club & Safety Notices below uses - confirmed via direct
+        // rendering that this Tailwind config's custom colours (all
+        // plain `var(--x)` references, not the rgb(var(...) / <alpha>)
+        // form opacity modifiers need) don't actually apply an opacity
+        // modifier at all; border-status-warn/40 silently fell back to
+        // Tailwind's own default border colour, not amber. Solid
+        // border-status-warn (no modifier) is confirmed to render
+        // correctly; bg-slate-900/60 is a bundled Tailwind colour,
+        // whose opacity modifier works normally, used here only for a
+        // bit of visual weight behind the text, not for the amber tint.
+        <div className="mx-auto mt-4 flex max-w-lg items-center justify-center gap-2 rounded-2xl border-2 border-status-warn bg-slate-900/60 px-4 py-3 text-status-warn">
+          <span className="text-xl" aria-hidden="true">↓</span>
+          <span className="text-sm font-bold uppercase tracking-widest">Pull to Refresh</span>
+        </div>
+      )}
 
       <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
         {/* Second reorder round: standalone WIND readout now leads the

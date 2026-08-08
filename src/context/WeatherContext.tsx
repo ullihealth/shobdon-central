@@ -40,7 +40,37 @@ interface WeatherContextValue {
   // refresh calling this same function, and the desktop TV/kiosk
   // dashboard has no pointer to click a button with in the first place).
   refetchNow: () => void
+  // True once STALE_WARNING_THRESHOLD_MS has passed since the last
+  // successful setValue() of ANY kind (live or mock-substituted) - a
+  // "is the poll loop actually still ticking at all" safety net,
+  // deliberately independent of liveDataUnavailable/usingFallback/
+  // activeProvider. Those flags describe whether the STATE MACHINE
+  // currently believes a source is working; this describes whether the
+  // state machine has updated ANYTHING recently, which is exactly the
+  // signal that's still meaningful if the state machine's own timers
+  // silently stopped firing (backgrounded-tab throttling, a stuck
+  // effect, etc.) - the class of bug this whole round exists to guard
+  // against. See Pilot View's own "Pull to Refresh" banner, the only
+  // current consumer.
+  dataStale: boolean
 }
+
+// Comfortably larger than either normal polling cadence (atc.refresh
+// IntervalSeconds, ~30s default, or FALLBACK_RECHECK_INTERVAL_SECONDS's
+// 5-minute pinned cadence below) - NOT the same as atcProvider.ts's own
+// STALE_THRESHOLD_MS (2 minutes), which is a narrower, different check
+// (is ONE ATC reading fresh enough to accept at all, tied to PC2's own
+// ~60s capture cadence). Reusing that 2-minute value here would
+// false-positive constantly during completely normal fallback-pinned
+// operation, which only rechecks every 5 minutes by design. 10 minutes
+// gives a full buffer cycle over that 5-minute cadence before this
+// starts treating anything as suspicious.
+const STALE_WARNING_THRESHOLD_MS = 10 * 60 * 1000
+// How often dataStale is re-evaluated even if nothing else happens -
+// without this, a genuinely stuck poll loop (lastUpdatedAt frozen)
+// would never trigger a re-render to actually reveal the staleness;
+// time passing alone doesn't cause React to re-render on its own.
+const STALE_CHECK_INTERVAL_MS = 30 * 1000
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 30
 
@@ -94,6 +124,31 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     loading: true,
   })
   const [usingFallback, setUsingFallback] = useState(false)
+  // Stamped on every successful setValue() below (all four call sites,
+  // live or mock alike - see setValueAndStamp) - see dataStale's own
+  // comment on WeatherContextValue for why mock substitutions count
+  // too. null until the very first fetch resolves; dataStale is always
+  // false while null (see below) - "no data yet" isn't "stale data".
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
+  // Forces a periodic re-render purely so dataStale (computed fresh on
+  // every render from Date.now() - lastUpdatedAt) actually gets
+  // re-evaluated on a schedule, not just whenever some unrelated state
+  // change happens to cause a render anyway.
+  const [, setStaleCheckTick] = useState(0)
+
+  // Every place below that would otherwise call setValue(...) directly
+  // calls this instead - single choke point so lastUpdatedAt can never
+  // drift out of sync with an actual successful update by a forgotten
+  // call site.
+  function setValueAndStamp(next: typeof value) {
+    setValue(next)
+    setLastUpdatedAt(Date.now())
+  }
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setStaleCheckTick((t) => t + 1), STALE_CHECK_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [])
   // Session-local, not persisted - a page reload naturally re-attempts
   // ATC first and re-detects staleness within one fetch (a few seconds)
   // if it's still down, so there's no real benefit to remembering
@@ -129,7 +184,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     async function load() {
       const { data, source } = await fetchWeatherData(config as WeatherConfig)
       if (!cancelled) {
-        setValue({ weather: data, source, loading: false })
+        setValueAndStamp({ weather: data, source, loading: false })
         setUsingFallback(false)
       }
     }
@@ -199,14 +254,14 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
       try {
         const result = await fetchInternetWeather(currentConfig)
         if (!cancelled) {
-          setValue({ weather: result.data, source: result.live ? 'live' : 'mock', loading: false })
+          setValueAndStamp({ weather: result.data, source: result.live ? 'live' : 'mock', loading: false })
           setUsingFallback(true)
         }
       } catch (fallbackError) {
         console.warn('Internet-weather fallback failed, falling back to mock:', fallbackError)
         const mockResult = await fetchMockWeather(currentConfig)
         if (!cancelled) {
-          setValue({ weather: mockResult.data, source: 'mock', loading: false })
+          setValueAndStamp({ weather: mockResult.data, source: 'mock', loading: false })
           setUsingFallback(true)
         }
       }
@@ -225,7 +280,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
       try {
         const result = await fetchAtcWeather(currentConfig)
         if (!cancelled) {
-          setValue({ weather: result.data, source: 'live', loading: false })
+          setValueAndStamp({ weather: result.data, source: 'live', loading: false })
           setUsingFallback(false)
         }
         pinnedToFallbackRef.current = false
@@ -293,6 +348,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   }, [])
 
   const liveDataUnavailable = !!config && config.activeProvider !== 'mock' && value.source === 'mock'
+  const dataStale = lastUpdatedAt !== null && Date.now() - lastUpdatedAt > STALE_WARNING_THRESHOLD_MS
 
   return (
     <WeatherContext.Provider
@@ -303,6 +359,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
         liveDataUnavailable,
         usingFallback,
         refetchNow,
+        dataStale,
       }}
     >
       {children}
