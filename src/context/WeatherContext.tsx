@@ -30,18 +30,15 @@ interface WeatherContextValue {
   // 'atc' behaviour, not a general "not live" flag - liveDataUnavailable
   // above already covers "neither source worked").
   usingFallback: boolean
-  // Manual override for WeatherStatusIndicator's "Reconnect now" action -
-  // clears the pinned-to-fallback state and immediately retries ATC,
-  // rather than waiting for the next scheduled recheck. A no-op unless
-  // activeProvider is 'atc' and a fallback is actually active. Same
-  // underlying function as refetchNow below (see WeatherProvider's own
-  // comment) - kept as its own named context key so this existing,
-  // ATC-specific call site's intent stays self-explanatory.
-  reconnectToAtc: () => void
-  // General "refetch weather right now" for any activeProvider, not just
-  // 'atc' - used by Pilot View's pull-to-refresh (a guaranteed manual
-  // backstop) and this context's own online/visibilitychange listeners
-  // (automatic recovery after connectivity loss or a backgrounded tab).
+  // "Refetch weather right now" for any activeProvider, not just 'atc' -
+  // used by Pilot View's pull-to-refresh (a guaranteed manual backstop)
+  // and this context's own online/visibilitychange listeners (automatic
+  // recovery after connectivity loss or a backgrounded tab). Used to
+  // also be exposed under a second name, reconnectToAtc, for
+  // WeatherStatusIndicator's own "Reconnect now" button - removed along
+  // with that button (redundant everywhere: /pilot already has pull-to-
+  // refresh calling this same function, and the desktop TV/kiosk
+  // dashboard has no pointer to click a button with in the first place).
   refetchNow: () => void
 }
 
@@ -87,10 +84,10 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // liveDataUnavailable excluded here (pre-existing gap, not introduced
   // by this change - confirmed present before this file's rewrite): it's
   // a value COMPUTED below from config + value.source, never itself part
-  // of a setValue(...) object literal, same category as usingFallback/
-  // reconnectToAtc which were already excluded.
+  // of a setValue(...) object literal, same category as usingFallback
+  // which is already excluded.
   const [value, setValue] = useState<
-    Omit<WeatherContextValue, 'activeProvider' | 'config' | 'usingFallback' | 'reconnectToAtc' | 'liveDataUnavailable'>
+    Omit<WeatherContextValue, 'activeProvider' | 'config' | 'usingFallback' | 'liveDataUnavailable'>
   >({
     weather: null,
     source: 'mock',
@@ -102,7 +99,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // if it's still down, so there's no real benefit to remembering
   // "we were pinned" across a reload, only extra state to keep in sync.
   const pinnedToFallbackRef = useRef(false)
-  // Bumped by reconnectToAtc() to restart the ATC-branch effect below
+  // Bumped by refetchNow() to restart the ATC-branch effect below
   // immediately (cancelling any pending 5-minute recheck timeout)
   // instead of waiting for its next scheduled tick.
   const [manualReconnectSignal, setManualReconnectSignal] = useState(0)
@@ -249,16 +246,14 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     }
   }, [config, manualReconnectSignal])
 
-  // Shared mechanism behind both reconnectToAtc (the existing manual
-  // "Reconnect now" button, WeatherStatusIndicator.tsx) and the new
-  // externally-triggerable refetchNow below - bumping manualReconnectSignal
-  // restarts BOTH data-fetching effects above immediately (each is
-  // gated on config.activeProvider, so only whichever one is actually
-  // active reacts), and resetting pinnedToFallbackRef is a harmless
-  // no-op for a non-'atc' provider. One function, exposed under two
-  // context keys so each call site's own name stays self-explanatory -
-  // reconnectToAtc's existing callers/behaviour are completely
-  // unchanged (same function reference).
+  // Bumping manualReconnectSignal restarts BOTH data-fetching effects
+  // above immediately (each is gated on config.activeProvider, so only
+  // whichever one is actually active reacts), and resetting
+  // pinnedToFallbackRef is a harmless no-op for a non-'atc' provider.
+  // Used by Pilot View's pull-to-refresh and the online/visibilitychange
+  // listeners just below - was also exposed as reconnectToAtc for
+  // WeatherStatusIndicator's own "Reconnect now" button, removed along
+  // with that button (see this context value's own comment).
   function refetchNow() {
     pinnedToFallbackRef.current = false
     setManualReconnectSignal((n) => n + 1)
@@ -307,7 +302,6 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
         config: config ?? DEFAULT_WEATHER_CONFIG,
         liveDataUnavailable,
         usingFallback,
-        reconnectToAtc: refetchNow,
         refetchNow,
       }}
     >

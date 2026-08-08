@@ -24,7 +24,7 @@ function firstWordUpper(name: string): string {
 }
 
 export default function WeatherStatusIndicator(): JSX.Element {
-  const { activeProvider, weather, config, liveDataUnavailable, usingFallback, reconnectToAtc } = useWeather()
+  const { activeProvider, weather, config, liveDataUnavailable, usingFallback } = useWeather()
 
   // liveDataUnavailable means the selected source's fetch failed and the
   // numbers on screen are the substituted mock fixture, not real data -
@@ -62,23 +62,6 @@ export default function WeatherStatusIndicator(): JSX.Element {
     <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">
       <span aria-hidden="true">{emoji}</span>
       <span>{label}</span>
-      {/* Manual override for the "Auto-reconnect to ATC" toggle being off
-          (config.atc.autoReconnectEnabled) - always shown while on
-          fallback regardless of that setting, since forcing an immediate
-          recheck is harmless either way, just more operationally useful
-          when auto-reconnect won't do it on its own. A no-op click on a
-          kiosk display with no pointer is inert, not broken - same
-          posture as every other public, unauthenticated display page in
-          this app having zero interactive admin controls otherwise. */}
-      {!liveDataUnavailable && activeProvider === 'atc' && usingFallback && (
-        <button
-          type="button"
-          onClick={reconnectToAtc}
-          className="rounded border border-slate-600 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-accent-sky-500 hover:text-accent-sky-400"
-        >
-          Reconnect now
-        </button>
-      )}
     </div>
   )
 }
