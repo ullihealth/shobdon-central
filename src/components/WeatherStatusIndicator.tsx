@@ -33,7 +33,7 @@ export default function WeatherStatusIndicator(): JSX.Element {
     ? { emoji: '🔴', label: 'NO LIVE READING' }
     : activeProvider === 'atc'
       ? usingFallback
-        ? { emoji: '🔵', label: 'FALLBACK — INTERNET WEATHER' }
+        ? { emoji: '🔵', label: 'Open-Meteo SAWS' }
         : { emoji: '🟢', label: 'LIVE ATC' }
       : activeProvider === 'internet'
         ? {
