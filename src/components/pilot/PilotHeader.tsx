@@ -41,15 +41,26 @@ export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFre
           the sticky header this sits in already establishes a
           positioning context (position:sticky counts as "positioned"
           for this purpose, same as relative/absolute), so no extra
-          wrapper is needed for that. top-1/2 + -translate-y-1/2 ALSO
-          centers it vertically - needed here in a way Header.tsx's own
-          version never had to handle, since removing this element from
-          the flex flow (absolute positioning) means it no longer
-          affects the header's own height, and without an explicit
-          vertical anchor it would default to sitting at its old
-          in-flow position instead of truly centered, overlapping
-          whatever the header's height ends up being. */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          wrapper is needed for that.
+
+          Vertical anchor is deliberately NOT the header's true
+          geometric centre (a plain top-1/2 would put it there) - the
+          right column is two stacked rows of very different height
+          (WeatherStatusIndicator's single badge line, then
+          AfisoIndicator's smaller line below it), so centering on the
+          header's own midpoint visually reads as level with the FIRST
+          row, not evenly between the two. Measured directly (real
+          rendered rects, iPhone 13 viewport): header centre sits at
+          26px, row 1 (WeatherStatusIndicator) centre at 18px, row 2
+          (AfisoIndicator) centre at 36px - a 10px anchor offset lands
+          the clock's own centre on row 2 instead. -translate-y-1/2
+          still does the actual centering (on this NEW, offset anchor
+          point) - unchanged from before, only the anchor moved. Moving
+          this div moves the clock's suffix (BST/GMT/Z, depending on
+          pilotClockMode) down with the time digits automatically - it's
+          one wrapped <span> per LiveClock.tsx, not a separate element
+          needing its own adjustment. */}
+      <div className="absolute left-1/2 top-[calc(50%+10px)] -translate-x-1/2 -translate-y-1/2">
         <LiveClock />
       </div>
       <div className="flex flex-col items-end gap-1">
