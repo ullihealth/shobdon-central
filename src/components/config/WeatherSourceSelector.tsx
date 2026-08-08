@@ -4,38 +4,56 @@ import { WEATHER_PROVIDERS } from '../../services/weatherProviders'
 interface WeatherSourceSelectorProps {
   value: WeatherProviderId
   onChange: (value: WeatherProviderId) => void
-  // Hides the "ATC Live Weather Station" option for a tenant with no
-  // physical PC2/ATC hardware capturing that data - there'd be nothing
-  // behind the selection. Still shown if the tenant's stored config is
-  // already 'atc' (e.g. the flag got flipped false after the fact), so
-  // an existing selection stays visible/switchable rather than
-  // disappearing out from under them.
+  // No longer hides "ATC Live Weather Station" for a tenant with no
+  // physical PC2/ATC hardware - see the round that changed this from a
+  // filter to a disabled-option treatment. Hiding it entirely made a
+  // temporary "hasPhysicalAtc read false" state (a slow/failed fetch on
+  // THIS page's own separate TENANT_CONFIG_URL call, or - unrelated to
+  // this page - a real ATC/fallback outage elsewhere on the dashboard
+  // being mistaken for this) look identical to "this tenant genuinely
+  // has no ATC option at all," with no way to tell the two apart or
+  // even see the option existed. Always rendered now; only its
+  // selectability/styling changes.
   hasPhysicalAtc: boolean
 }
 
 const PROVIDER_ORDER: WeatherProviderId[] = ['atc', 'internet', 'ingested', 'mock']
 
 export default function WeatherSourceSelector({ value, onChange, hasPhysicalAtc }: WeatherSourceSelectorProps): JSX.Element {
-  const visibleProviders = PROVIDER_ORDER.filter((id) => id !== 'atc' || hasPhysicalAtc || value === 'atc')
   return (
     <fieldset>
       <legend className="mb-4 text-sm font-semibold uppercase tracking-widest text-slate-400">
         Weather Source
       </legend>
       <div className="flex flex-col gap-4">
-        {visibleProviders.map((id) => (
-          <label key={id} className="flex cursor-pointer items-center gap-3 text-lg text-white">
-            <input
-              type="radio"
-              name="weather-source"
-              value={id}
-              checked={value === id}
-              onChange={() => onChange(id)}
-              className="h-4 w-4 accent-sky-500"
-            />
-            {WEATHER_PROVIDERS[id].label}
-          </label>
-        ))}
+        {PROVIDER_ORDER.map((id) => {
+          // Still selectable if it's already the stored choice (e.g. the
+          // flag read false transiently, or got flipped false after the
+          // fact) - same "don't strand an existing selection" posture
+          // the old filter-based version had, just expressed as
+          // disabled-not-hidden now.
+          const atcDisabled = id === 'atc' && !hasPhysicalAtc && value !== 'atc'
+          return (
+            <label
+              key={id}
+              className={`flex items-center gap-3 text-lg text-white ${
+                atcDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+              }`}
+            >
+              <input
+                type="radio"
+                name="weather-source"
+                value={id}
+                checked={value === id}
+                disabled={atcDisabled}
+                onChange={() => onChange(id)}
+                className="h-4 w-4 accent-sky-500"
+              />
+              {WEATHER_PROVIDERS[id].label}
+              {atcDisabled && <span className="text-xs text-muted-400">— Unavailable</span>}
+            </label>
+          )
+        })}
       </div>
     </fieldset>
   )
