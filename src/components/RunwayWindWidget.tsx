@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import type { RunwayGroup } from '../types/clubProfile'
 import type { WeatherData } from '../types/weather'
-import { calculateWindComponents } from '../utils/windCalculations'
+import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
+import type { ArrowColour } from '../utils/windCalculations'
 import runwayImg from './Windsock/Runway.png'
 import windsock1Img from './Windsock/windsock-1.png'
 import windsock2Img from './Windsock/windsock-2.png'
@@ -57,29 +58,12 @@ interface RunwayWindWidgetProps {
   bare?: boolean
 }
 
-type ArrowColour = 'green' | 'red' | 'amber'
-
-// How close the wind needs to be to exactly perpendicular (90°/270° off
-// the runway heading) before this widget calls it "crosswind-dominant"
-// (amber) rather than a green/red headwind-or-tailwind reading. Real
-// wind direction almost never lands on precisely 90°, so a hard equality
-// check would make amber nearly unreachable - +/-5° (an 85-95° / 265-
-// 275° band) is generous enough to catch a genuinely close-to-
-// perpendicular wind without also swallowing winds that are meaningfully
-// still a head/tailwind with a bit of drift.
-const CROSSWIND_TOLERANCE_DEGREES = 5
-
-function determineArrowColour(headwind: number, windDirection: number, runwayHeading: number): ArrowColour {
-  const relative = (((windDirection - runwayHeading) % 360) + 360) % 360
-  const distanceTo90 = Math.abs(relative - 90)
-  const distanceTo270 = Math.abs(relative - 270)
-  if (Math.min(distanceTo90, distanceTo270) <= CROSSWIND_TOLERANCE_DEGREES) return 'amber'
-  // "However small" per the spec - any non-negative headwind component
-  // is green, any negative (tailwind) is red, no dead zone around zero
-  // beyond the crosswind band already carved out above.
-  return headwind >= 0 ? 'green' : 'red'
-}
-
+// Was this widget's own locally-defined, angle-based (within 5° of
+// perpendicular) implementation, diverging from CompassPanel.tsx's
+// crosswind-kt + headwind-kt hybrid despite sharing a name - the two
+// could disagree on colour for the same wind. Consolidated onto the
+// shared windCalculations.ts version (imported above) so this widget's
+// arrow and the compass needle always agree.
 const ARROW_COLOUR_CLASS: Record<ArrowColour, string> = {
   green: 'text-status-good',
   red: 'text-status-bad',
@@ -208,7 +192,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
     return calculateWindComponents(weather.windSpeed, weather.windDirection, runwayHeading)
   }, [hasWind, weather, runwayHeading])
 
-  const arrowColour: ArrowColour = hasWind && weather ? determineArrowColour(headwind, weather.windDirection, runwayHeading) : 'green'
+  const arrowColour: ArrowColour = hasWind ? determineArrowColour(headwind, crosswind) : 'green'
   const windsockTier = hasWind ? determineWindsockTier(crosswind, windsock) : 1
   // crosswind > 0 = "from the right" (CompassPanel's own convention -
   // Right circuit / crosswind label uses the same sign). Every windsock
