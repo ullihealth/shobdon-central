@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { WeatherProvider } from '../context/WeatherContext'
+import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 import { usePullToRefresh } from '../hooks/usePullToRefresh'
@@ -21,6 +21,126 @@ import CompassPanel from '../components/CompassPanel'
 import GasPricesPanel from '../components/GasPricesPanel'
 
 const REFRESH_INTERVAL_MS = 60_000
+
+interface PilotViewContentProps {
+  airfieldName: string | null
+  logoUrl: string | null
+  afisoOpen: boolean
+  afisoFrequency: string
+  refreshTick: number
+  onManualRefresh: () => void
+}
+
+// Everything that used to render directly inside PilotViewPage's own
+// <WeatherProvider> below, pulled out into its own component so it can
+// call useWeather() - PilotViewPage itself renders WeatherProvider, so
+// it sits ABOVE that context in the tree and can never read from it
+// directly; a component that's genuinely a child of the provider is
+// required for pull-to-refresh to reach refetchNow. Branding state/
+// refreshTick/loadBranding stay owned by the parent (several of them
+// gate whether WeatherProvider even renders at all, via the early
+// returns below) and are threaded down as plain props instead.
+function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, refreshTick, onManualRefresh }: PilotViewContentProps): JSX.Element {
+  const { refetchNow } = useWeather()
+
+  // Pull-to-refresh's own guaranteed backstop: always calls both the
+  // branding/refreshTick refresh (onManualRefresh, from the parent) AND
+  // weather's own refetchNow, regardless of whether the online/
+  // visibilitychange listeners in WeatherContext.tsx already caught a
+  // reconnect - a manual gesture should never depend on having also
+  // guessed right about why the data looked stale.
+  function handlePullRefresh() {
+    onManualRefresh()
+    refetchNow()
+  }
+
+  const { pulling, pullDistance } = usePullToRefresh(handlePullRefresh)
+
+  return (
+    <div className="min-h-screen overscroll-y-contain bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100">
+      {pulling && (
+        // Sized to actually be legible at arm's length / outdoors, not
+        // fine print - was text-xs/text-muted-400 (12px, dim grey),
+        // easy to miss entirely against the page's own gradient
+        // background - worse than the nominal Tailwind px value suggests,
+        // since :root's own font-size is clamp(12px, 1.5vmin, 20px) (a
+        // TV-dashboard vmin scale this page inherits) and floors at 12px
+        // on a real phone viewport, confirmed via computed style (12px
+        // root -> text-xs really rendered ~9px). Sized up to text-2xl/
+        // text-4xl (not the more modest text-lg a 16px-root assumption
+        // would suggest) specifically to compensate and land at a size
+        // that's genuinely legible at arm's length against that 12px
+        // floor, confirmed via computed style after this change too.
+        // font-bold + text-white for contrast, plus a simple arrow glyph
+        // (no icon library) that flips upright past the release
+        // threshold - same rotating-indicator idiom
+        // PilotCollapsibleSection's own chevron already uses, not a new
+        // one invented for this.
+        <div
+          className="flex items-center justify-center gap-2 overflow-hidden text-2xl font-bold text-white transition-[height]"
+          style={{ height: Math.min(pullDistance, 60) }}
+        >
+          <span
+            className={`inline-block text-4xl transition-transform ${pullDistance > 80 ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            ↓
+          </span>
+          {pullDistance > 80 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
+
+      <PilotHeader airfieldName={airfieldName} logoUrl={logoUrl} afisoOpen={afisoOpen} afisoFrequency={afisoFrequency} />
+
+      <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
+        {/* Second reorder round: standalone WIND readout now leads the
+            page, in its own full-width card (PilotWindCard.tsx) -
+            pulled out of PilotRunwayWindPanel, which used to render it
+            inline above its own widget group. Order below is now:
+            Wind card -> Weather Summary -> runway/windsock group ->
+            compass -> NOTAMs -> Forecast & Visibility -> Notices ->
+            Fuel Prices. */}
+        <PilotWindCard />
+        <WeatherStatGrid />
+        <PilotRunwayWindPanel refreshSignal={refreshTick} />
+        {/* Compass instrument - hideReadout drops its own text readout
+            list (Wind/Headwind/Crosswind/Trend), since the widget above
+            already shows Wind/Headwind/Crosswind; the rose/arrow/centre-
+            label instrument itself renders exactly as it always has,
+            same as every TV-dashboard caller. Desktop dashboard remains
+            completely untouched either way - CompassPanel itself only
+            gained an opt-in prop, defaulted off everywhere else. */}
+        <CompassPanel spacious hideReadout />
+        {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
+            title always visible, tap to expand. Each panel keeps
+            fetching/refreshing on its own existing schedule regardless
+            of collapsed state - see PilotCollapsibleSection's own
+            comment for why. */}
+        <PilotCollapsibleSection title="NOTAMs">
+          <AutoNotamsScrollPanel refreshSignal={refreshTick} />
+        </PilotCollapsibleSection>
+        <PilotCollapsibleSection title="Forecast & Visibility">
+          <ForecastCloudbaseCluster />
+        </PilotCollapsibleSection>
+        <PilotCollapsibleSection
+          title="Club & Safety Notices"
+          sectionClassName="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4"
+          titleClassName="text-xl font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
+          chevronClassName="text-accent-sky-400"
+        >
+          <PilotNoticesPanel refreshSignal={refreshTick} />
+        </PilotCollapsibleSection>
+        <PilotCollapsibleSection title="Fuel Prices">
+          <GasPricesPanel hideTitle largeText />
+        </PilotCollapsibleSection>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 z-10">
+        <PilotFooterTicker />
+      </div>
+    </div>
+  )
+}
 
 // Mobile-first, single-column, read-only per-tenant pilot information
 // screen. Self-fetches PUBLIC_CONFIG_URL exactly like DashboardPage.tsx,
@@ -98,12 +218,15 @@ export default function PilotViewPage(): JSX.Element {
     return () => window.clearInterval(interval)
   }, [])
 
-  function handlePullRefresh() {
+  // Passed down to PilotViewContent as onManualRefresh - the non-weather
+  // half of pull-to-refresh (branding/NOTAMs/notices/runway panel).
+  // Weather's own half (refetchNow) is called separately by
+  // PilotViewContent itself, since only a component INSIDE
+  // WeatherProvider can reach it - see that component's own comment.
+  function handleManualRefresh() {
     setRefreshTick((tick) => tick + 1)
     loadBranding()
   }
-
-  const { pulling, pullDistance } = usePullToRefresh(handlePullRefresh)
 
   if (unavailable) return <TenantUnavailable />
   if (!loaded) return <div className="min-h-screen bg-page-from" />
@@ -111,65 +234,14 @@ export default function PilotViewPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      <div className="min-h-screen overscroll-y-contain bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100">
-        {pulling && (
-          <div
-            className="flex items-center justify-center overflow-hidden text-xs text-muted-400 transition-[height]"
-            style={{ height: Math.min(pullDistance, 60) }}
-          >
-            {pullDistance > 80 ? 'Release to refresh…' : 'Pull to refresh…'}
-          </div>
-        )}
-
-        <PilotHeader airfieldName={airfieldName} logoUrl={logoUrl} afisoOpen={afisoOpen} afisoFrequency={afisoFrequency} />
-
-        <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
-          {/* Second reorder round: standalone WIND readout now leads the
-              page, in its own full-width card (PilotWindCard.tsx) -
-              pulled out of PilotRunwayWindPanel, which used to render it
-              inline above its own widget group. Order below is now:
-              Wind card -> Weather Summary -> runway/windsock group ->
-              compass -> NOTAMs -> Forecast & Visibility -> Notices ->
-              Fuel Prices. */}
-          <PilotWindCard />
-          <WeatherStatGrid />
-          <PilotRunwayWindPanel refreshSignal={refreshTick} />
-          {/* Compass instrument - hideReadout drops its own text readout
-              list (Wind/Headwind/Crosswind/Trend), since the widget above
-              already shows Wind/Headwind/Crosswind; the rose/arrow/centre-
-              label instrument itself renders exactly as it always has,
-              same as every TV-dashboard caller. Desktop dashboard remains
-              completely untouched either way - CompassPanel itself only
-              gained an opt-in prop, defaulted off everywhere else. */}
-          <CompassPanel spacious hideReadout />
-          {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
-              title always visible, tap to expand. Each panel keeps
-              fetching/refreshing on its own existing schedule regardless
-              of collapsed state - see PilotCollapsibleSection's own
-              comment for why. */}
-          <PilotCollapsibleSection title="NOTAMs">
-            <AutoNotamsScrollPanel refreshSignal={refreshTick} />
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection title="Forecast & Visibility">
-            <ForecastCloudbaseCluster />
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection
-            title="Club & Safety Notices"
-            sectionClassName="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4"
-            titleClassName="text-xl font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
-            chevronClassName="text-accent-sky-400"
-          >
-            <PilotNoticesPanel refreshSignal={refreshTick} />
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection title="Fuel Prices">
-            <GasPricesPanel hideTitle largeText />
-          </PilotCollapsibleSection>
-        </div>
-
-        <div className="fixed bottom-0 left-0 right-0 z-10">
-          <PilotFooterTicker />
-        </div>
-      </div>
+      <PilotViewContent
+        airfieldName={airfieldName}
+        logoUrl={logoUrl}
+        afisoOpen={afisoOpen}
+        afisoFrequency={afisoFrequency}
+        refreshTick={refreshTick}
+        onManualRefresh={handleManualRefresh}
+      />
     </WeatherProvider>
   )
 }

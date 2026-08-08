@@ -31,8 +31,16 @@ interface WeatherContextValue {
   // Manual override for WeatherStatusIndicator's "Reconnect now" action -
   // clears the pinned-to-fallback state and immediately retries ATC,
   // rather than waiting for the next scheduled recheck. A no-op unless
-  // activeProvider is 'atc' and a fallback is actually active.
+  // activeProvider is 'atc' and a fallback is actually active. Same
+  // underlying function as refetchNow below (see WeatherProvider's own
+  // comment) - kept as its own named context key so this existing,
+  // ATC-specific call site's intent stays self-explanatory.
   reconnectToAtc: () => void
+  // General "refetch weather right now" for any activeProvider, not just
+  // 'atc' - used by Pilot View's pull-to-refresh (a guaranteed manual
+  // backstop) and this context's own online/visibilitychange listeners
+  // (automatic recovery after connectivity loss or a backgrounded tab).
+  refetchNow: () => void
 }
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 30
@@ -133,7 +141,13 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [config])
+    // manualReconnectSignal included so refetchNow() (external callers -
+    // Pilot View's pull-to-refresh, and the online/visibilitychange
+    // listeners below) forces an immediate reload+interval-reset here too,
+    // not just on the ATC branch below - bumping it re-runs this whole
+    // effect (cleanup + immediate load() + fresh interval), same
+    // mechanism, no separate signal needed for this branch.
+  }, [config, manualReconnectSignal])
 
   // ATC-primary / Met Office DataHub-fallback auto-switch. Self-
   // rescheduling setTimeout chain rather than a fixed setInterval,
@@ -219,10 +233,53 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
     }
   }, [config, manualReconnectSignal])
 
-  function reconnectToAtc() {
+  // Shared mechanism behind both reconnectToAtc (the existing manual
+  // "Reconnect now" button, WeatherStatusIndicator.tsx) and the new
+  // externally-triggerable refetchNow below - bumping manualReconnectSignal
+  // restarts BOTH data-fetching effects above immediately (each is
+  // gated on config.activeProvider, so only whichever one is actually
+  // active reacts), and resetting pinnedToFallbackRef is a harmless
+  // no-op for a non-'atc' provider. One function, exposed under two
+  // context keys so each call site's own name stays self-explanatory -
+  // reconnectToAtc's existing callers/behaviour are completely
+  // unchanged (same function reference).
+  function refetchNow() {
     pinnedToFallbackRef.current = false
     setManualReconnectSignal((n) => n + 1)
   }
+
+  // Reconnect-after-connectivity-loss / tab-refocus round: forces an
+  // immediate refetch (via refetchNow, bypassing whatever's left of
+  // either data-fetching effect's own timer) the moment the device
+  // regains network or this tab becomes visible again. Closes a real
+  // gap: a backgrounded tab's setTimeout/setInterval chain is prone to
+  // being throttled or fully frozen by the OS while inactive (most
+  // aggressively in standalone/home-screen mode, exactly Pilot View's
+  // own install path) - without this, recovering from something like an
+  // overnight airplane-mode toggle depended entirely on a timer that may
+  // not have been running at all while backgrounded. Always attempts to
+  // re-establish ATC-primary when pinned to fallback, even with
+  // autoReconnectEnabled off - see this round's own discussion: a
+  // genuine reconnect/refocus signal is meaningfully different from a
+  // routine ~60s timer tick (which that toggle exists to avoid
+  // hammering ATC with), so it's always worth one retry rather than
+  // silently deferring to the toggle. Mount-once (empty deps) -
+  // refetchNow's own body has no stale-closure risk (it only touches a
+  // stable setState setter and a ref), so it's safe to capture once.
+  useEffect(() => {
+    function handleOnline() {
+      refetchNow()
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') refetchNow()
+    }
+    window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   const liveDataUnavailable = !!config && config.activeProvider !== 'mock' && value.source === 'mock'
 
@@ -234,7 +291,8 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
         config: config ?? DEFAULT_WEATHER_CONFIG,
         liveDataUnavailable,
         usingFallback,
-        reconnectToAtc,
+        reconnectToAtc: refetchNow,
+        refetchNow,
       }}
     >
       {children}
