@@ -5,11 +5,15 @@ import ConfigField, { configInputClassName } from './ConfigField'
 interface InternetWeatherConfigSectionProps {
   config: InternetConfig
   onChange: (config: InternetConfig) => void
-  // Per-tenant override (migration 0083) for the 'open-meteo' option's
-  // displayed name specifically - null means no override, show the
-  // registry's own generic label exactly as before this existed. Only
-  // ever applies to the 'open-meteo' entry, not any other provider this
-  // registry might grow later (see the .map() below).
+  // Server-derived display name for the 'open-meteo' option specifically
+  // ("Met-Office SAWS" for Shobdon/tenants linked to it, bare "Met-Office"
+  // otherwise - see ConfigPage.tsx's own fetch and WeatherContext.tsx's
+  // matching copy for the full "why"). null only while ConfigPage.tsx's
+  // own fetch hasn't resolved yet - falls back to the generic "Met-Office"
+  // in that brief window, NEVER to the registry's own "Open-Meteo" label
+  // (see the .map() below) - "Open-Meteo" must never be shown to any
+  // tenant, not even transiently. Only ever applies to the 'open-meteo'
+  // entry, not any other provider this registry might grow later.
   openMeteoDisplayName: string | null
 }
 
@@ -32,7 +36,7 @@ export default function InternetWeatherConfigSection({
         >
           {Object.entries(INTERNET_WEATHER_PROVIDERS).map(([id, provider]) => (
             <option key={id} value={id}>
-              {id === 'open-meteo' && openMeteoDisplayName ? openMeteoDisplayName : provider.label}
+              {id === 'open-meteo' ? (openMeteoDisplayName ?? 'Met-Office') : provider.label}
             </option>
           ))}
         </select>

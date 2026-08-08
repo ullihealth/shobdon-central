@@ -175,7 +175,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // only ever hand-inserted directly into D1.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider, internet_provider_display_name AS internetProviderDisplayName FROM tenants WHERE organization_id = ?"
+        // slug/parentSlug added for internetProviderDisplayName below -
+        // same derivation as publicConfig.ts's own copy (see that
+        // file's comment for the full "why"); internet_provider_
+        // display_name (migration 0083) is no longer read, left inert.
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -191,7 +195,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         windsockBand4Kt: number;
         windsockBand5Kt: number;
         activeWeatherProvider: string | null;
-        internetProviderDisplayName: string | null;
+        slug: string;
+        parentSlug: string | null;
       }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
@@ -213,6 +218,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // buildPublicConfigData just to avoid it.
     buildPublicConfigData(organizationId, env),
   ]);
+
+  // Internet-weather (Open-Meteo) display name - same derivation as
+  // publicConfig.ts's own copy (see that file's comment for the full
+  // "why"). "Open-Meteo" is never shown to any tenant.
+  const isShobdonRelated = tenantRow?.slug === "shobdon" || tenantRow?.parentSlug === "shobdon";
+  const internetProviderDisplayName = isShobdonRelated ? "Met-Office SAWS" : "Met-Office";
 
   return jsonResponse({
     runwayGroups: runwayRows.results.map((row) => ({
@@ -249,12 +260,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // set" meaning ConfigPage.tsx/weatherConfigStore.ts already give a
     // null/missing value everywhere else on this endpoint.
     activeWeatherProvider: tenantRow?.activeWeatherProvider ?? null,
-    // Read-only here (migration 0083) - developer-set via direct D1
-    // update only, no PUT support below, same posture as the arrow
-    // threshold columns (see that migration's own comment for why: a
-    // tenant self-selecting "Met-Office" regardless of whether that's
-    // actually true for their own data would misrepresent the source).
-    internetProviderDisplayName: tenantRow?.internetProviderDisplayName ?? null,
+    internetProviderDisplayName,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
     cameras: publicConfigData.cameras,
     carouselSlots: publicConfigData.carouselSlots,

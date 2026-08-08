@@ -256,7 +256,18 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, internet_provider_display_name AS internetProviderDisplayName FROM tenants WHERE organization_id = ?"
+        // slug/parentSlug added for internetProviderDisplayName below -
+        // internet_provider_display_name (migration 0083) is no longer
+        // read here; that column is now inert (left in place, not
+        // dropped, same "don't bother with an ALTER TABLE DROP COLUMN
+        // for an inert column" convention as arrow_tailwind_kt's own
+        // history) - the label is now DERIVED from the existing
+        // parent_tenant_id relationship instead of a stored override,
+        // so a future tenant linked to Shobdon automatically gets the
+        // right label with no data change needed, the same way
+        // parent-tenant.ts's own "Currently using X's weather station"
+        // banner already works.
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -278,7 +289,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         arrowHeadwindKt: number;
         qnhQfeOffsetHpa: number | null;
         activeWeatherProvider: string | null;
-        internetProviderDisplayName: string | null;
+        slug: string;
+        parentSlug: string | null;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
     // Shobdon's own station (its QFE datum vs QNH sea-level datum), not a
@@ -600,11 +612,18 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // has ever been recorded here yet - callers fall back to their own
   // existing structural/local default in that case, unchanged.
   const activeWeatherProvider = tenantRow?.activeWeatherProvider ?? null;
-  // Per-tenant override for how the Open-Meteo internet-weather source
-  // is named (migration 0083) - null means no override, every consumer
-  // (WeatherStatusIndicator.tsx's two badges, InternetWeatherConfigSection.tsx's
-  // dropdown) falls back to the generic "Open-Meteo" name in that case.
-  const internetProviderDisplayName = tenantRow?.internetProviderDisplayName ?? null;
+  // Internet-weather (Open-Meteo) display name - "Open-Meteo" is never
+  // shown to any tenant; the underlying provider/fetch code is unchanged,
+  // this is a display-label-only decision. Derived from the same
+  // parent_tenant_id relationship parent-tenant.ts already reads for its
+  // "Currently using X's weather station" banner: Shobdon itself, or any
+  // tenant whose parent resolves to Shobdon, is factually Met-Office-
+  // sourced through Open-Meteo's own UK data and gets the "SAWS" suffix;
+  // every other tenant gets the bare name. A future tenant linked to
+  // Shobdon via that same existing (platform-admin-only) mechanism picks
+  // this up automatically, no code or data change needed here.
+  const isShobdonRelated = tenantRow?.slug === "shobdon" || tenantRow?.parentSlug === "shobdon";
+  const internetProviderDisplayName = isShobdonRelated ? "Met-Office SAWS" : "Met-Office";
   // Prefer the effective (parent, if linked) tenant's own value; fall
   // back to this tenant's own row only when the effective one is null -
   // same "prefer parent, fall back to own" shape as

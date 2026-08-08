@@ -54,23 +54,27 @@ interface WeatherContextValue {
   // against. See Pilot View's own "Pull to Refresh" banner, the only
   // current consumer.
   dataStale: boolean
-  // Per-tenant override (migration 0083, internet_provider_display_name)
-  // for how the Open-Meteo internet-weather source is named - "Open-Meteo"
-  // by default, "Met-Office" for tenants whose weather setup is tied to
-  // Shobdon's own ATC/PC2 station (Open-Meteo's UK data is itself
-  // Met-Office-sourced, so this is factual for those tenants, not just
-  // branding). WeatherStatusIndicator.tsx's own two badges both read
-  // this rather than the static INTERNET_WEATHER_PROVIDERS registry
-  // label directly - that registry only ever describes the underlying
-  // fetch mechanism (always Open-Meteo), never the tenant-facing name.
+  // How the Open-Meteo internet-weather source is named to the viewer -
+  // "Open-Meteo" is never shown, anywhere, to any tenant; this is a
+  // display-label-only decision, the underlying fetch is unchanged.
+  // "Met-Office SAWS" for Shobdon itself and any tenant linked to it via
+  // parent_tenant_id (Open-Meteo's UK data is itself Met-Office-sourced,
+  // so this is factual for those tenants, not branding); bare "Met-Office"
+  // for everyone else. Derived server-side (functions/api/_utils/
+  // publicConfig.ts) from that existing relationship, not a per-tenant
+  // override stored here. WeatherStatusIndicator.tsx's own two badges
+  // both read this directly (rendered verbatim, no further formatting)
+  // rather than the static INTERNET_WEATHER_PROVIDERS registry label -
+  // that registry only ever describes the underlying fetch mechanism
+  // (always Open-Meteo), never the tenant-facing name.
   internetProviderDisplayName: string
 }
 
-// Generic fallback when a tenant has no override recorded - matches
-// INTERNET_WEATHER_PROVIDERS['open-meteo'].label (internetProviders/
-// index.ts), not re-imported from there to avoid a dependency between
-// this context and that registry purely for a shared string literal.
-const DEFAULT_INTERNET_PROVIDER_DISPLAY_NAME = 'Open-Meteo'
+// Safe pre-fetch default (mount-time, before the effect below resolves)
+// - deliberately the generic, unrelated-tenant name, never "Open-Meteo",
+// so that name is never shown even transiently during the brief window
+// before this loads.
+const DEFAULT_INTERNET_PROVIDER_DISPLAY_NAME = 'Met-Office'
 
 // Comfortably larger than either normal polling cadence (atc.refresh
 // IntervalSeconds, ~30s default, or FALLBACK_RECHECK_INTERVAL_SECONDS's
@@ -206,11 +210,11 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   const [internetProviderDisplayName, setInternetProviderDisplayName] = useState(DEFAULT_INTERNET_PROVIDER_DISPLAY_NAME)
 
   // Mount-once, no retry/polling (unlike activeProvider above) - this is
-  // a developer-set, essentially-static per-tenant naming override
-  // (migration 0083), not an operational setting an admin changes at
+  // derived server-side from a tenant's own structural parent_tenant_id
+  // relationship, not an operational setting an admin changes at
   // runtime, so there's no real-time-sync requirement here the way
   // there is for activeProvider. A failed/slow fetch just leaves the
-  // generic "Open-Meteo" default in place rather than blocking on retry.
+  // generic "Met-Office" default in place rather than blocking on retry.
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)

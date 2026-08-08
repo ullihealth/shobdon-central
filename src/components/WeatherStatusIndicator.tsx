@@ -33,27 +33,32 @@ export default function WeatherStatusIndicator(): JSX.Element {
     ? { emoji: '🔴', label: 'NO LIVE READING' }
     : activeProvider === 'atc'
       ? usingFallback
-        // internetProviderDisplayName (WeatherContext.tsx, migration
-        // 0083) - "Open-Meteo" generically, "Met-Office" for tenants
-        // whose data is actually Met-Office-sourced through it. No
+        // internetProviderDisplayName (WeatherContext.tsx) is already
+        // the complete display string ("Met-Office SAWS" or bare
+        // "Met-Office", server-derived - see that context's own
+        // comment) - rendered verbatim, no further formatting here. No
         // provider check needed here (unlike the 'internet' branch
         // below) - the ATC fallback always calls fetchInternetWeather(),
         // which is always Open-Meteo, never a different registered
         // provider.
-        ? { emoji: '🔵', label: `${internetProviderDisplayName} SAWS` }
+        ? { emoji: '🔵', label: internetProviderDisplayName }
         : { emoji: '🟢', label: 'LIVE ATC' }
       : activeProvider === 'internet'
         ? {
             emoji: '🔵',
-            // Override only applies when Open-Meteo is the actually-
-            // selected internet provider - a guard against a future
-            // second INTERNET_WEATHER_PROVIDERS entry silently
-            // inheriting a naming override that's specifically about
-            // Open-Meteo's own Met-Office-sourced UK data.
-            label: `INTERNET: ${(config.internet.provider === 'open-meteo'
-              ? internetProviderDisplayName
-              : INTERNET_WEATHER_PROVIDERS[config.internet.provider].label
-            ).toUpperCase()}`,
+            // Deliberately identical to the ATC-fallback badge above -
+            // same label regardless of whether this source is showing
+            // because of automatic fallback or a manual /config
+            // selection, since it's the same underlying data either
+            // way. Override only applies when Open-Meteo is the
+            // actually-selected internet provider - a guard against a
+            // future second INTERNET_WEATHER_PROVIDERS entry silently
+            // inheriting a label that's specifically about Open-Meteo's
+            // own Met-Office-sourced UK data.
+            label:
+              config.internet.provider === 'open-meteo'
+                ? internetProviderDisplayName
+                : INTERNET_WEATHER_PROVIDERS[config.internet.provider].label,
           }
         : // Weather-share round: 'ingested' via an active cross-tenant share
           // (weather.sourceTenantName only ever set in that case - see

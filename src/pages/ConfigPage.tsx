@@ -31,13 +31,14 @@ export default function ConfigPage(): JSX.Element {
   // has via resolveWeatherConfig().
   const [hasPhysicalAtc, setHasPhysicalAtc] = useState(false)
 
-  // Per-tenant override (migration 0083, internet_provider_display_name)
-  // for how the Open-Meteo provider is named in this page's own dropdown
-  // (InternetWeatherConfigSection.tsx below) - read-only here (no PUT
-  // support, developer-set via direct D1 only, see that migration's own
-  // comment). null/not-yet-loaded is fine as the initial value - the
-  // dropdown falls back to the registry's own generic "Open-Meteo" label
-  // exactly like before this override existed.
+  // Server-derived display name for the Open-Meteo provider in this
+  // page's own dropdown (InternetWeatherConfigSection.tsx below) -
+  // "Met-Office SAWS" for Shobdon/tenants linked to it, bare "Met-Office"
+  // otherwise (functions/api/tenant/config.ts, same derivation as
+  // WeatherContext.tsx's copy - see that context's own comment for the
+  // full "why"). null only until this page's own fetch below resolves -
+  // InternetWeatherConfigSection.tsx falls back to the generic
+  // "Met-Office" in that window, never to "Open-Meteo".
   const [internetProviderDisplayName, setInternetProviderDisplayName] = useState<string | null>(null)
 
   // tenants.parent_tenant_id (migration 0059, renamed from
