@@ -153,6 +153,28 @@ async function resolveLocalBase(): Promise<WeatherConfig> {
 
 const VALID_PROVIDER_IDS = new Set<WeatherProviderId>(['atc', 'internet', 'ingested', 'mock'])
 
+// One retry (not zero, not several) - found the hard way: a single
+// dropped/slow request is exactly what a real device's network stack
+// produces in the first moment after a cold app relaunch (WKWebView's
+// networking layer still initialising), and with zero retries that one
+// hiccup was enough to make resolveWeatherConfig() below silently fall
+// through to whatever LOCAL/structural default exists instead - for a
+// has_physical_atc tenant, that default is 'atc', whose station URL
+// (DEFAULT_WEATHER_CONFIG.atc.stationUrl) is a private LAN address a
+// mobile device off that network can never reach, so the resulting ATC
+// attempt was guaranteed to fail immediately and visibly cascade into
+// the internet-weather fallback - even though the real, admin-set
+// provider (confirmed via direct API check) was 'mock' the entire time.
+// A short, bounded retry absorbs a single cold-start hiccup without
+// meaningfully delaying the common case (the retry path only ever runs
+// when the first attempt already failed).
+const SERVER_PROVIDER_FETCH_ATTEMPTS = 2
+const SERVER_PROVIDER_RETRY_DELAY_MS = 400
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 // The actual fix for the cross-device bug: the admin's deliberate
 // provider choice on /config now also gets written server-side
 // (functions/api/tenant/config.ts's PUT, tenants.active_weather_provider,
@@ -160,21 +182,49 @@ const VALID_PROVIDER_IDS = new Set<WeatherProviderId>(['atc', 'internet', 'inges
 // (functions/api/_utils/publicConfig.ts) that every tenant/device
 // already reaches by Host header - no per-device auth needed to read it,
 // same as every other branding/display field on that endpoint. null
-// means no admin choice has ever been recorded there yet (a brand-new
-// tenant, or one running on a build from before this migration) - callers
-// treat that exactly like "no server override," falling through to
-// whatever they'd otherwise have used.
+// means one of two DIFFERENT things, both treated identically by every
+// caller ("no server override, fall through to local/structural"): a
+// tenant that genuinely has no admin choice recorded yet, OR every
+// attempt below failing (offline, or a longer outage than the retry
+// covers) - see SERVER_PROVIDER_FETCH_ATTEMPTS above for why a single
+// failure no longer reaches this null-fallback path at all.
 export async function fetchServerActiveProvider(): Promise<WeatherProviderId | null> {
-  try {
-    const response = await fetch(PUBLIC_CONFIG_URL)
-    if (!response.ok) return null
-    const data = (await response.json()) as { activeWeatherProvider?: unknown } | null
-    const value = data?.activeWeatherProvider
-    return typeof value === 'string' && VALID_PROVIDER_IDS.has(value as WeatherProviderId) ? (value as WeatherProviderId) : null
-  } catch {
-    return null
+  for (let attempt = 1; attempt <= SERVER_PROVIDER_FETCH_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(PUBLIC_CONFIG_URL)
+      if (response.ok) {
+        const data = (await response.json()) as { activeWeatherProvider?: unknown } | null
+        const value = data?.activeWeatherProvider
+        // A well-formed response is authoritative either way (a real
+        // provider id, or genuinely unset) - not worth retrying either
+        // outcome, only a failed/errored attempt below is.
+        return typeof value === 'string' && VALID_PROVIDER_IDS.has(value as WeatherProviderId) ? (value as WeatherProviderId) : null
+      }
+    } catch {
+      // Network-level failure - fall through to the retry/give-up logic
+      // below rather than returning null on the very first hiccup.
+    }
+    if (attempt < SERVER_PROVIDER_FETCH_ATTEMPTS) await delay(SERVER_PROVIDER_RETRY_DELAY_MS)
   }
+  return null
 }
+
+// Coalesces concurrent callers into the SAME in-flight resolution rather
+// than letting each run its own independent fetch cycle - found the hard
+// way, alongside the retry above: WeatherContext.tsx has multiple
+// independent triggers that can call resolveWeatherConfig() close
+// together on a real device (the mount effect, plus refetchNow() from
+// the online/visibilitychange listeners, pull-to-refresh, and the
+// pageshow/touch data-freshness guard) - with no coordination between
+// them, two overlapping calls could each hit the network independently,
+// and whichever one HAPPENED to finish last would win and overwrite the
+// other's result in React state, regardless of which one was actually
+// correct. A slower call landing after a faster, correct one - not
+// implausible on real mobile network conditions - could silently
+// replace a correctly-resolved 'mock' with a stale/structural fallback.
+// Coalescing means there is only ever one resolution in flight at a
+// time; every simultaneous caller gets the exact same, single result.
+let inFlightResolution: Promise<WeatherConfig> | null = null
 
 // Server-aware default resolution, now checked on EVERY call (not just a
 // device's first-ever load) - the previous version returned
@@ -188,20 +238,31 @@ export async function fetchServerActiveProvider(): Promise<WeatherProviderId | n
 // cached locally; the merged result is written back to localStorage so
 // it still serves as a same-device fallback/cache for the next load,
 // never as the authority once a server value exists. A failed/offline
-// fetchServerActiveProvider() call returns null, so this quietly falls
-// back to exactly the old localStorage-or-derived behaviour when there's
-// no connectivity to check against.
+// fetchServerActiveProvider() call (after its own retries above are
+// exhausted) returns null, so this quietly falls back to exactly the
+// old localStorage-or-derived behaviour when there's genuinely no
+// connectivity to check against.
 export async function resolveWeatherConfig(): Promise<WeatherConfig> {
-  const localBase = await resolveLocalBase()
-  const serverProvider = await fetchServerActiveProvider()
-  const resolved = serverProvider ? { ...localBase, activeProvider: serverProvider } : localBase
+  if (inFlightResolution) return inFlightResolution
 
-  try {
-    saveWeatherConfig(resolved)
-  } catch {
-    // Non-critical cache write - resolved is still returned to the
-    // caller either way.
-  }
+  inFlightResolution = (async () => {
+    try {
+      const localBase = await resolveLocalBase()
+      const serverProvider = await fetchServerActiveProvider()
+      const resolved = serverProvider ? { ...localBase, activeProvider: serverProvider } : localBase
 
-  return resolved
+      try {
+        saveWeatherConfig(resolved)
+      } catch {
+        // Non-critical cache write - resolved is still returned to the
+        // caller either way.
+      }
+
+      return resolved
+    } finally {
+      inFlightResolution = null
+    }
+  })()
+
+  return inFlightResolution
 }
