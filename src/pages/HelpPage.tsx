@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { TENANT_ONBOARDING_CONTENT_URL } from '../config/publicApi'
 import { splitParagraphs } from '../utils/splitParagraphs'
 
@@ -65,6 +66,19 @@ export default function HelpPage(): JSX.Element {
               </div>
             </section>
           )}
+
+          {/* Links out to its own route (/help/faq) rather than an
+              inline section like Terms/Privacy below - a growing list of
+              Q&A entries doesn't fit this page's fixed max-h-64 scroll-
+              box pattern, and keeping it separate means the list can grow
+              indefinitely without this page itself getting longer. */}
+          <Link
+            to="/help/faq"
+            className="mb-8 flex items-center justify-between rounded-2xl border border-border bg-panel p-6 transition hover:border-accent-sky-500"
+          >
+            <span className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">FAQ</span>
+            <span className="text-sm text-muted-400">View frequently asked questions →</span>
+          </Link>
 
           <section className="mb-6 rounded-2xl border border-border bg-panel p-6">
             <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Terms &amp; Conditions</div>

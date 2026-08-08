@@ -13,6 +13,7 @@ import FeatureRequestsPage from './pages/FeatureRequestsPage'
 import GlobalDashboardPage from './pages/GlobalDashboardPage'
 import VersionsPage from './pages/VersionsPage'
 import HelpPage from './pages/HelpPage'
+import HelpFaqPage from './pages/HelpFaqPage'
 import LoginPage from './pages/LoginPage'
 import MediaLibraryPage from './pages/MediaLibraryPage'
 import MediaManagerPage from './pages/MediaManagerPage'
@@ -309,6 +310,17 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth>
                 <HelpPage />
+              </RequireAuth>
+            }
+          />
+          {/* Growing FAQ list, split out from /help itself rather than a
+              new inline section there - see HelpFaqPage.tsx's own
+              comment for why. Same bare <RequireAuth> as /help. */}
+          <Route
+            path="/help/faq"
+            element={
+              <RequireAuth>
+                <HelpFaqPage />
               </RequireAuth>
             }
           />
