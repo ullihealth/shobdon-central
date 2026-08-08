@@ -256,7 +256,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -277,6 +277,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         arrowCrosswindKt: number;
         arrowHeadwindKt: number;
         qnhQfeOffsetHpa: number | null;
+        activeWeatherProvider: string | null;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
     // Shobdon's own station (its QFE datum vs QNH sea-level datum), not a
@@ -590,6 +591,14 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   const airfieldName = tenantRow?.name ?? null;
   const logoUrl = tenantRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.logoR2Key}` : null;
   const hasPhysicalAtc = !!tenantRow?.hasPhysicalAtc;
+  // Shared weather-provider selection (migration 0082) - the server-side
+  // source of truth src/services/weatherConfigStore.ts's resolveWeatherConfig()
+  // now checks on every load/refresh, so a provider change made via
+  // /config on one device reaches every other device instead of being
+  // stuck in that one browser's localStorage. null when no admin choice
+  // has ever been recorded here yet - callers fall back to their own
+  // existing structural/local default in that case, unchanged.
+  const activeWeatherProvider = tenantRow?.activeWeatherProvider ?? null;
   // Prefer the effective (parent, if linked) tenant's own value; fall
   // back to this tenant's own row only when the effective one is null -
   // same "prefer parent, fall back to own" shape as
@@ -899,6 +908,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     airfieldName,
     logoUrl,
     hasPhysicalAtc,
+    activeWeatherProvider,
     qnhQfeOffsetHpa,
     brandDisplay,
     cameraSlots,

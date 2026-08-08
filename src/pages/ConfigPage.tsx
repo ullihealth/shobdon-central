@@ -85,8 +85,33 @@ export default function ConfigPage(): JSX.Element {
     saveWeatherConfig(next)
   }
 
+  // The one field on this page with a real server column (migration
+  // 0082, tenants.active_weather_provider) - every other updateConfig()
+  // caller below (atc/internet connection settings) stays exactly as it
+  // was, localStorage-only, since only the PROVIDER CHOICE ITSELF needs
+  // to be shared across devices, not each provider's own per-device
+  // connection details. saveWeatherConfig (inside updateConfig above)
+  // still runs first, so this device's own UI/behaviour updates
+  // immediately regardless of whether the network write below succeeds;
+  // the PUT is what makes every OTHER device see the same choice on its
+  // own next refresh. Fire-and-forget by design - WeatherSourceSelector
+  // is an immediate-effect control with no separate "Save" button/state,
+  // same posture updateConfig already has for every other field here; a
+  // failed write just means other devices won't see this change until
+  // it's retried or reselected, not a broken local experience.
   function handleSourceChange(activeProvider: WeatherProviderId) {
     updateConfig({ ...config, activeProvider })
+    fetch(TENANT_CONFIG_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activeWeatherProvider: activeProvider }),
+    })
+      .then((response) => {
+        if (!response.ok) console.warn('Failed to save weather provider selection server-side:', response.status)
+      })
+      .catch((error) => {
+        console.warn('Failed to save weather provider selection server-side:', error)
+      })
   }
 
   return (

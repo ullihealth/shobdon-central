@@ -1,6 +1,6 @@
 import { WEATHER_STATION_URL, WEATHER_POLL_INTERVAL_MS } from '../config/weatherStation'
-import { WEATHER_DEFAULT_URL } from '../config/publicApi'
-import type { WeatherConfig } from '../types/weatherConfig'
+import { WEATHER_DEFAULT_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
 const STORAGE_KEY = 'shobdon-central.weather-config.v1'
 
@@ -67,14 +67,13 @@ interface ServerWeatherDefault {
 // never resolve to a plausible-looking place.
 const UNAVAILABLE_COORDINATES = { latitude: NaN, longitude: NaN }
 
-// Server-aware default resolution for a device that has never been
-// configured (no localStorage entry yet) - e.g. a brand-new tenant's
-// first-ever page load, or any fresh browser/kiosk. An ALREADY-
-// configured device (existing localStorage entry - Shobdon's own
-// kiosks/PC2 flow, or any device where someone has deliberately picked
-// a source before) is completely untouched: this only ever changes what
-// a BLANK device sees before its first deliberate choice, never
-// overrides an existing one.
+// Server-aware STRUCTURAL default resolution for a device that has never
+// been configured (no localStorage entry yet) - e.g. a brand-new
+// tenant's first-ever page load, or any fresh browser/kiosk. Unrelated
+// to the admin's own deliberate /config choice (see
+// fetchServerActiveProvider below for that) - this only ever derives a
+// sensible starting point (has_physical_atc / weather-share / lat-lon)
+// for a device that's never been configured at all.
 //
 // Without this, a fresh device on any tenant OTHER than Shobdon
 // defaulted to DEFAULT_WEATHER_CONFIG above - 'mock' data, and if
@@ -83,7 +82,7 @@ const UNAVAILABLE_COORDINATES = { latitude: NaN, longitude: NaN }
 // is. functions/api/public/weather-default.ts resolves the real
 // per-tenant default server-side instead, from that tenant's own
 // tenants.lat/lon.
-export async function resolveWeatherConfig(): Promise<WeatherConfig> {
+async function resolveLocalBase(): Promise<WeatherConfig> {
   let hasStoredConfig = false
   try {
     hasStoredConfig = window.localStorage.getItem(STORAGE_KEY) !== null
@@ -150,4 +149,59 @@ export async function resolveWeatherConfig(): Promise<WeatherConfig> {
   }
 
   return DEFAULT_WEATHER_CONFIG
+}
+
+const VALID_PROVIDER_IDS = new Set<WeatherProviderId>(['atc', 'internet', 'ingested', 'mock'])
+
+// The actual fix for the cross-device bug: the admin's deliberate
+// provider choice on /config now also gets written server-side
+// (functions/api/tenant/config.ts's PUT, tenants.active_weather_provider,
+// migration 0082) and exposed on the public config response
+// (functions/api/_utils/publicConfig.ts) that every tenant/device
+// already reaches by Host header - no per-device auth needed to read it,
+// same as every other branding/display field on that endpoint. null
+// means no admin choice has ever been recorded there yet (a brand-new
+// tenant, or one running on a build from before this migration) - callers
+// treat that exactly like "no server override," falling through to
+// whatever they'd otherwise have used.
+export async function fetchServerActiveProvider(): Promise<WeatherProviderId | null> {
+  try {
+    const response = await fetch(PUBLIC_CONFIG_URL)
+    if (!response.ok) return null
+    const data = (await response.json()) as { activeWeatherProvider?: unknown } | null
+    const value = data?.activeWeatherProvider
+    return typeof value === 'string' && VALID_PROVIDER_IDS.has(value as WeatherProviderId) ? (value as WeatherProviderId) : null
+  } catch {
+    return null
+  }
+}
+
+// Server-aware default resolution, now checked on EVERY call (not just a
+// device's first-ever load) - the previous version returned
+// loadWeatherConfig() unconditionally for an already-configured device
+// with no network call at all, which was the actual root cause of the
+// cross-device bug: a provider change made on one device could never
+// reach another device that already had its own localStorage entry, no
+// matter how many times that device refreshed. The server's
+// activeWeatherProvider (when one has been recorded - see
+// fetchServerActiveProvider above) now always wins over whatever's
+// cached locally; the merged result is written back to localStorage so
+// it still serves as a same-device fallback/cache for the next load,
+// never as the authority once a server value exists. A failed/offline
+// fetchServerActiveProvider() call returns null, so this quietly falls
+// back to exactly the old localStorage-or-derived behaviour when there's
+// no connectivity to check against.
+export async function resolveWeatherConfig(): Promise<WeatherConfig> {
+  const localBase = await resolveLocalBase()
+  const serverProvider = await fetchServerActiveProvider()
+  const resolved = serverProvider ? { ...localBase, activeProvider: serverProvider } : localBase
+
+  try {
+    saveWeatherConfig(resolved)
+  } catch {
+    // Non-critical cache write - resolved is still returned to the
+    // caller either way.
+  }
+
+  return resolved
 }

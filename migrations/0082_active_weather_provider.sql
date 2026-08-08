@@ -1,0 +1,12 @@
+-- Weather provider selection (WeatherConfig.activeProvider) was
+-- previously localStorage-only (src/services/weatherConfigStore.ts's
+-- own saveWeatherConfig) - an admin's choice on /config never reached
+-- any OTHER device viewing the same tenant (confirmed: the save
+-- handler never wrote anywhere except that one browser's localStorage,
+-- and no server response even carried the current value for another
+-- device to read). NULL means "no admin choice recorded yet" - falls
+-- back to the existing structural derivation in
+-- functions/api/public/weather-default.ts (lat/lon, has_physical_atc,
+-- parent link), same as before this column existed, not forced to any
+-- particular value.
+ALTER TABLE tenants ADD COLUMN active_weather_provider TEXT;

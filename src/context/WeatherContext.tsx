@@ -309,8 +309,27 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // listeners just below - was also exposed as reconnectToAtc for
   // WeatherStatusIndicator's own "Reconnect now" button, removed along
   // with that button (see this context value's own comment).
-  function refetchNow() {
+  //
+  // Re-resolves config (async, awaited) BEFORE bumping the signal - this
+  // is what makes a manual refresh pick up a provider change made on a
+  // DIFFERENT device via /config (migration 0082's server-side
+  // activeWeatherProvider - see weatherConfigStore.ts's own comment on
+  // resolveWeatherConfig for the full fix). Deliberately not just
+  // fetchServerActiveProvider() inline here - reusing the exact same
+  // resolveWeatherConfig() the mount effect above already calls means
+  // there's only one place that knows how to merge a server override
+  // onto a local config. setConfig and setManualReconnectSignal below
+  // both land in the same React commit (both set from the same
+  // already-resolved promise, not two separate awaits), so the two
+  // data-fetching effects above only re-run ONCE per refetchNow() call,
+  // already against the up-to-date config - not once against the stale
+  // config and then again moments later against the fresh one.
+  async function refetchNow() {
     pinnedToFallbackRef.current = false
+    if (!forcedConfig) {
+      const resolved = await resolveWeatherConfig()
+      setConfig(resolved)
+    }
     setManualReconnectSignal((n) => n + 1)
   }
 

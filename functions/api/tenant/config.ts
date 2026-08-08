@@ -145,6 +145,12 @@ function isValidWindsockKt(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 100;
 }
 
+// Same union as WeatherProviderId (src/types/weatherConfig.ts) - not
+// imported directly (this repo's established functions/src boundary
+// convention, same as BrandDisplaySettings above), just kept in sync by
+// hand since the set of providers changes rarely.
+const VALID_WEATHER_PROVIDER_IDS = new Set(["atc", "internet", "ingested", "mock"]);
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requireOwner(request, env);
   if ("error" in result) return result.error;
@@ -169,7 +175,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // only ever hand-inserted directly into D1.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -184,6 +190,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         windsockBand3Kt: number;
         windsockBand4Kt: number;
         windsockBand5Kt: number;
+        activeWeatherProvider: string | null;
       }>(),
     env.DB
       .prepare("SELECT slotNumber, label, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
@@ -236,6 +243,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       band4Kt: tenantRow?.windsockBand4Kt ?? 11,
       band5Kt: tenantRow?.windsockBand5Kt ?? 15,
     },
+    // Shared weather-provider selection (migration 0082) - null means no
+    // admin choice has ever been recorded server-side yet, same "not
+    // set" meaning ConfigPage.tsx/weatherConfigStore.ts already give a
+    // null/missing value everywhere else on this endpoint.
+    activeWeatherProvider: tenantRow?.activeWeatherProvider ?? null,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
     cameras: publicConfigData.cameras,
     carouselSlots: publicConfigData.carouselSlots,
@@ -265,6 +277,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     lat?: unknown;
     lon?: unknown;
     windsock?: { band2Kt?: unknown; band3Kt?: unknown; band4Kt?: unknown; band5Kt?: unknown };
+    activeWeatherProvider?: unknown;
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -351,6 +364,28 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       .prepare("UPDATE tenants SET windsock_band2_kt = ?, windsock_band3_kt = ?, windsock_band4_kt = ?, windsock_band5_kt = ?, updated_at = ? WHERE organization_id = ?")
       .bind(band2Kt, band3Kt, band4Kt, band5Kt, now, organizationId)
       .run();
+  }
+
+  // Shared weather-provider selection (migration 0082) - the server-side
+  // fix for the localStorage-only selection that never left the device
+  // that made it. null explicitly clears back to "no admin choice
+  // recorded" (falls back to weather-default.ts's own structural
+  // derivation, same as before this column existed) - anything else must
+  // be one of the real provider ids.
+  if (body.activeWeatherProvider !== undefined) {
+    if (body.activeWeatherProvider === null) {
+      await env.DB
+        .prepare("UPDATE tenants SET active_weather_provider = NULL, updated_at = ? WHERE organization_id = ?")
+        .bind(now, organizationId)
+        .run();
+    } else if (typeof body.activeWeatherProvider === "string" && VALID_WEATHER_PROVIDER_IDS.has(body.activeWeatherProvider)) {
+      await env.DB
+        .prepare("UPDATE tenants SET active_weather_provider = ?, updated_at = ? WHERE organization_id = ?")
+        .bind(body.activeWeatherProvider, now, organizationId)
+        .run();
+    } else {
+      return jsonResponse({ error: "activeWeatherProvider must be one of atc, internet, ingested, mock, or null" }, 400);
+    }
   }
 
   // Both main and cafe must be present and valid - a partial/malformed
