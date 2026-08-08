@@ -60,37 +60,59 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100">
-      {pulling && (
-        // Sized to actually be legible at arm's length / outdoors, not
-        // fine print - was text-xs/text-muted-400 (12px, dim grey),
-        // easy to miss entirely against the page's own gradient
-        // background - worse than the nominal Tailwind px value suggests,
-        // since :root's own font-size is clamp(12px, 1.5vmin, 20px) (a
-        // TV-dashboard vmin scale this page inherits) and floors at 12px
-        // on a real phone viewport, confirmed via computed style (12px
-        // root -> text-xs really rendered ~9px). Sized up to text-2xl/
-        // text-4xl (not the more modest text-lg a 16px-root assumption
-        // would suggest) specifically to compensate and land at a size
-        // that's genuinely legible at arm's length against that 12px
-        // floor, confirmed via computed style after this change too.
-        // font-bold + text-white for contrast, plus a simple arrow glyph
-        // (no icon library) that flips upright past the release
-        // threshold - same rotating-indicator idiom
-        // PilotCollapsibleSection's own chevron already uses, not a new
-        // one invented for this.
-        <div
-          className="flex items-center justify-center gap-2 overflow-hidden text-2xl font-bold text-white transition-[height]"
-          style={{ height: Math.min(pullDistance, 60) }}
+      {/* Sized to actually be legible at arm's length / outdoors, not
+          fine print - was text-xs/text-muted-400 (12px, dim grey),
+          easy to miss entirely against the page's own gradient
+          background - worse than the nominal Tailwind px value suggests,
+          since :root's own font-size is clamp(12px, 1.5vmin, 20px) (a
+          TV-dashboard vmin scale this page inherits) and floors at 12px
+          on a real phone viewport, confirmed via computed style (12px
+          root -> text-xs really rendered ~9px). Sized up to text-2xl/
+          text-4xl (not the more modest text-lg a 16px-root assumption
+          would suggest) specifically to compensate and land at a size
+          that's genuinely legible at arm's length against that 12px
+          floor, confirmed via computed style after this change too.
+          font-bold + text-white for contrast, plus a simple arrow glyph
+          (no icon library) that flips upright past the release
+          threshold - same rotating-indicator idiom
+          PilotCollapsibleSection's own chevron already uses, not a new
+          one invented for this.
+
+          Always mounted now (no more {pulling && ...} conditional) -
+          height 0 and invisible when idle, same as before, but staying
+          in the DOM across release is what lets the snap-back transition
+          below actually play; the old mount/unmount pattern removed the
+          element in the same render that reset its height, so the
+          transition never got a chance to run at all. Transition classes
+          are conditional on `pulling` for the opposite reason: while
+          actively dragging, no transition - height/rotation update
+          instantly on every touchmove, 1:1 with the finger, which is
+          what "the indicator tracks your finger" actually requires (a
+          CSS transition here was continuously re-easing toward a
+          constantly-moving target on every touchmove, which is the
+          laggy "spring" feel this exists to remove). Only once `pulling`
+          goes false (finger lifted) does the transition apply, so the
+          indicator eases back to 0 rather than jump-cutting.
+
+          Height cap raised from a hardcoded 60 to REFRESH_THRESHOLD_PX
+          (150) - ties the indicator's visual completion directly to the
+          real arm threshold instead of an unrelated number, so it grows
+          continuously across the ENTIRE required gesture and finishes
+          growing exactly when it arms, rather than maxing out at 120px
+          of raw finger travel (40% of the way through the new, longer
+          pull) and sitting frozen for the rest. */}
+      <div
+        className={`flex items-center justify-center gap-2 overflow-hidden text-2xl font-bold text-white ${pulling ? '' : 'transition-[height] duration-200'}`}
+        style={{ height: pulling ? Math.min(pullDistance, REFRESH_THRESHOLD_PX) : 0 }}
+      >
+        <span
+          className={`inline-block text-4xl ${pulling ? '' : 'transition-transform duration-200'} ${pullDistance > REFRESH_THRESHOLD_PX ? 'rotate-180' : ''}`}
+          aria-hidden="true"
         >
-          <span
-            className={`inline-block text-4xl transition-transform ${pullDistance > REFRESH_THRESHOLD_PX ? 'rotate-180' : ''}`}
-            aria-hidden="true"
-          >
-            ↓
-          </span>
-          {pullDistance > REFRESH_THRESHOLD_PX ? 'Release to refresh' : 'Pull to refresh'}
-        </div>
-      )}
+          ↓
+        </span>
+        {pullDistance > REFRESH_THRESHOLD_PX ? 'Release to refresh' : 'Pull to refresh'}
+      </div>
 
       <PilotHeader airfieldName={airfieldName} logoUrl={logoUrl} afisoOpen={afisoOpen} afisoFrequency={afisoFrequency} />
 
