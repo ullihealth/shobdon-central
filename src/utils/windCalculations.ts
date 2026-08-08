@@ -5,6 +5,25 @@ export interface WindComponents {
 
 export type ArrowColour = 'green' | 'amber' | 'red'
 
+// Tenant-configurable (migration 0081, arrow_tailwind_kt/arrow_crosswind_kt/
+// arrow_headwind_kt on `tenants`) - developer-editable only via direct D1
+// update, no self-service UI. All three are positive kt magnitudes; the
+// sign/direction of each (e.g. tailwind being a NEGATIVE headwind
+// component) is handled below, not in the stored/passed value. Exported
+// (rather than duplicated per-caller the way this codebase's other
+// tenant-configurable defaults, e.g. RunwayWindWidget.tsx's own
+// DEFAULT_WINDSOCK, usually are) because this is also determineArrowColour's
+// own runtime default parameter below, not just a UI placeholder value -
+// hand-duplicating it risks a caller silently drifting out of sync with
+// the function's actual default behaviour if it's ever changed here.
+export interface ArrowColourThresholds {
+  tailwindKt: number
+  crosswindKt: number
+  headwindKt: number
+}
+
+export const DEFAULT_ARROW_THRESHOLDS: ArrowColourThresholds = { tailwindKt: 2, crosswindKt: 5, headwindKt: 3 }
+
 const CARDINAL_POINTS = [
   'N', 'NNE', 'NE', 'ENE',
   'E', 'ESE', 'SE', 'SSE',
@@ -26,18 +45,22 @@ export function calculateWindComponents(
   return { headwind, crosswind }
 }
 
-export function determineArrowColour(headwind: number, crosswind: number): ArrowColour {
+export function determineArrowColour(
+  headwind: number,
+  crosswind: number,
+  thresholds: ArrowColourThresholds = DEFAULT_ARROW_THRESHOLDS
+): ArrowColour {
   const absCrosswind = Math.abs(crosswind)
 
-  if (headwind < -2) {
+  if (headwind < -thresholds.tailwindKt) {
     return 'red'
   }
 
-  if (absCrosswind > 5) {
+  if (absCrosswind > thresholds.crosswindKt) {
     return 'amber'
   }
 
-  if (headwind < 3 && headwind >= -2) {
+  if (headwind < thresholds.headwindKt && headwind >= -thresholds.tailwindKt) {
     return 'amber'
   }
 

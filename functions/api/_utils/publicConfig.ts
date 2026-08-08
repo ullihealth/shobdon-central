@@ -256,7 +256,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -273,6 +273,9 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         windsockBand3Kt: number;
         windsockBand4Kt: number;
         windsockBand5Kt: number;
+        arrowTailwindKt: number;
+        arrowCrosswindKt: number;
+        arrowHeadwindKt: number;
         qnhQfeOffsetHpa: number | null;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
@@ -628,6 +631,19 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     band4Kt: tenantRow?.windsockBand4Kt ?? 11,
     band5Kt: tenantRow?.windsockBand5Kt ?? 15,
   };
+  // Compass needle / runway wind widget arrow colour thresholds
+  // (migration 0081) - developer-editable only via direct D1 update, no
+  // self-service UI (unlike windsock above). Defaults here match
+  // DEFAULT_ARROW_THRESHOLDS in src/utils/windCalculations.ts - kept as
+  // plain literals rather than importing that constant, since nothing in
+  // functions/ currently imports from src/ (a separate build) and this
+  // file's other tenantRow defaults (windsock included) already use the
+  // same inline-literal-fallback convention rather than a shared import.
+  const arrowThresholds = {
+    tailwindKt: tenantRow?.arrowTailwindKt ?? 2,
+    crosswindKt: tenantRow?.arrowCrosswindKt ?? 5,
+    headwindKt: tenantRow?.arrowHeadwindKt ?? 3,
+  };
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -898,6 +914,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     pilotTicker,
     mobileEnabled,
     windsock,
+    arrowThresholds,
   };
 }
 

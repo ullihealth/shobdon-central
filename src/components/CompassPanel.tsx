@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
-import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
-import type { ArrowColour } from '../utils/windCalculations'
+import { calculateWindComponents, determineArrowColour, DEFAULT_ARROW_THRESHOLDS } from '../utils/windCalculations'
+import type { ArrowColour, ArrowColourThresholds } from '../utils/windCalculations'
 import type { PressureTrend } from '../types/weather'
 
 interface CompassState {
@@ -541,10 +541,17 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
     runwayGroups: RunwayGroup[]
     reverseCompassNeedle: boolean
     activeRunwayEnd: string
+    // Tenant-configurable (migration 0081), developer-editable only via
+    // direct D1 update - see windCalculations.ts's own comment. Defaults
+    // to DEFAULT_ARROW_THRESHOLDS until the fetch below resolves, same
+    // "never a broken/undefined read" posture every other clubProfile
+    // field here already takes.
+    arrowThresholds: ArrowColourThresholds
   }>({
     runwayGroups: [],
     reverseCompassNeedle: false,
     activeRunwayEnd: '',
+    arrowThresholds: DEFAULT_ARROW_THRESHOLDS,
   })
 
   // Raw stored/selected preference, not necessarily what's actually
@@ -576,6 +583,11 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
             runwayGroups: data.runwayGroups,
             reverseCompassNeedle: !!data?.opsPanel?.reverseCompassNeedle,
             activeRunwayEnd: data?.opsPanel?.activeRunwayEnd ?? '',
+            arrowThresholds: {
+              tailwindKt: data?.arrowThresholds?.tailwindKt ?? DEFAULT_ARROW_THRESHOLDS.tailwindKt,
+              crosswindKt: data?.arrowThresholds?.crosswindKt ?? DEFAULT_ARROW_THRESHOLDS.crosswindKt,
+              headwindKt: data?.arrowThresholds?.headwindKt ?? DEFAULT_ARROW_THRESHOLDS.headwindKt,
+            },
           })
         }
       })
@@ -622,7 +634,7 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
       weather.windDirection,
       activeRunwayHeading
     )
-    const arrowColour = determineArrowColour(headwind, crosswind)
+    const arrowColour = determineArrowColour(headwind, crosswind, clubProfile.arrowThresholds)
 
     return {
       windSpeed: weather.windSpeed,

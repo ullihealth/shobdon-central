@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { RunwayGroup } from '../types/clubProfile'
 import type { WeatherData } from '../types/weather'
 import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
-import type { ArrowColour } from '../utils/windCalculations'
+import type { ArrowColour, ArrowColourThresholds } from '../utils/windCalculations'
 import runwayImg from './Windsock/Runway.png'
 import windsock1Img from './Windsock/windsock-1.png'
 import windsock2Img from './Windsock/windsock-2.png'
@@ -45,6 +45,13 @@ interface RunwayWindWidgetProps {
   weather: WeatherData | null
   liveDataUnavailable: boolean
   windsock: WindsockThresholds
+  // Tenant-configurable (migration 0081), developer-editable only via
+  // direct D1 update - see windCalculations.ts's own comment. Required,
+  // not defaulted here - same posture as windsock above; each caller
+  // resolves its own fallback (DEFAULT_ARROW_THRESHOLDS, imported from
+  // windCalculations.ts) before passing this down, same as windsock's
+  // own DEFAULT_WINDSOCK pattern in those same callers.
+  arrowThresholds: ArrowColourThresholds
   // Pilot View mobile round: this widget now sits directly on the page
   // background there (no card/border, full page width), below the
   // restored compass, in place of its old text readout row - a visually
@@ -155,7 +162,7 @@ function ArrowIcon({ className }: { className?: string }): JSX.Element {
 // this - same "mobile default, sm:-gated desktop size" technique
 // CompassPanel.tsx's own instrument sizing already established earlier
 // this session, reused here rather than a new one-off pattern.
-export default function RunwayWindWidget({ group, activeEnd, circuitDirection, reverseCompassNeedle, weather, liveDataUnavailable, windsock, bare = false }: RunwayWindWidgetProps): JSX.Element {
+export default function RunwayWindWidget({ group, activeEnd, circuitDirection, reverseCompassNeedle, weather, liveDataUnavailable, windsock, arrowThresholds, bare = false }: RunwayWindWidgetProps): JSX.Element {
   // opsPanel.activeRunwayEnd is a single airfield-wide field (see
   // RunwayInUseCard.tsx's own comment on ops_panel_state) - it was only
   // ever designed around one physical runway (CompassPanel.tsx only ever
@@ -192,7 +199,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
     return calculateWindComponents(weather.windSpeed, weather.windDirection, runwayHeading)
   }, [hasWind, weather, runwayHeading])
 
-  const arrowColour: ArrowColour = hasWind ? determineArrowColour(headwind, crosswind) : 'green'
+  const arrowColour: ArrowColour = hasWind ? determineArrowColour(headwind, crosswind, arrowThresholds) : 'green'
   const windsockTier = hasWind ? determineWindsockTier(crosswind, windsock) : 1
   // crosswind > 0 = "from the right" (CompassPanel's own convention -
   // Right circuit / crosswind label uses the same sign). Every windsock

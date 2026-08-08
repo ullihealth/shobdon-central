@@ -3,6 +3,8 @@ import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup } from '../types/clubProfile'
 import RunwayWindWidget, { type WindsockThresholds } from '../components/RunwayWindWidget'
+import { DEFAULT_ARROW_THRESHOLDS } from '../utils/windCalculations'
+import type { ArrowColourThresholds } from '../utils/windCalculations'
 
 interface ConfigState {
   runwayGroups: RunwayGroup[]
@@ -17,6 +19,7 @@ interface ConfigState {
   // own comment for the full story of why this was missing originally.
   reverseCompassNeedle: boolean
   windsock: WindsockThresholds
+  arrowThresholds: ArrowColourThresholds
 }
 
 const DEFAULT_WINDSOCK: WindsockThresholds = { band2Kt: 3, band3Kt: 7, band4Kt: 11, band5Kt: 15 }
@@ -70,6 +73,7 @@ function WidgetGrid({ config }: { config: ConfigState }): JSX.Element {
               weather={weather}
               liveDataUnavailable={liveDataUnavailable}
               windsock={config.windsock}
+              arrowThresholds={config.arrowThresholds}
             />
           ))}
         </div>
@@ -103,6 +107,11 @@ export default function RunwayWidgetTestPage(): JSX.Element {
             band3Kt: data.windsock?.band3Kt ?? DEFAULT_WINDSOCK.band3Kt,
             band4Kt: data.windsock?.band4Kt ?? DEFAULT_WINDSOCK.band4Kt,
             band5Kt: data.windsock?.band5Kt ?? DEFAULT_WINDSOCK.band5Kt,
+          },
+          arrowThresholds: {
+            tailwindKt: data.arrowThresholds?.tailwindKt ?? DEFAULT_ARROW_THRESHOLDS.tailwindKt,
+            crosswindKt: data.arrowThresholds?.crosswindKt ?? DEFAULT_ARROW_THRESHOLDS.crosswindKt,
+            headwindKt: data.arrowThresholds?.headwindKt ?? DEFAULT_ARROW_THRESHOLDS.headwindKt,
           },
         })
       })
