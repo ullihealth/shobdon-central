@@ -5,6 +5,7 @@ import { fetchAtcWeather } from '../services/weatherProviders/atcProvider'
 import { fetchInternetWeather } from '../services/weatherProviders/internetProvider'
 import { fetchMockWeather } from '../services/weatherProviders/mockProvider'
 import { DEFAULT_WEATHER_CONFIG, resolveWeatherConfig, fetchServerActiveProvider, saveWeatherConfig } from '../services/weatherConfigStore'
+import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import type { WeatherData, WeatherSource } from '../types/weather'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
@@ -53,7 +54,23 @@ interface WeatherContextValue {
   // against. See Pilot View's own "Pull to Refresh" banner, the only
   // current consumer.
   dataStale: boolean
+  // Per-tenant override (migration 0083, internet_provider_display_name)
+  // for how the Open-Meteo internet-weather source is named - "Open-Meteo"
+  // by default, "Met-Office" for tenants whose weather setup is tied to
+  // Shobdon's own ATC/PC2 station (Open-Meteo's UK data is itself
+  // Met-Office-sourced, so this is factual for those tenants, not just
+  // branding). WeatherStatusIndicator.tsx's own two badges both read
+  // this rather than the static INTERNET_WEATHER_PROVIDERS registry
+  // label directly - that registry only ever describes the underlying
+  // fetch mechanism (always Open-Meteo), never the tenant-facing name.
+  internetProviderDisplayName: string
 }
+
+// Generic fallback when a tenant has no override recorded - matches
+// INTERNET_WEATHER_PROVIDERS['open-meteo'].label (internetProviders/
+// index.ts), not re-imported from there to avoid a dependency between
+// this context and that registry purely for a shared string literal.
+const DEFAULT_INTERNET_PROVIDER_DISPLAY_NAME = 'Open-Meteo'
 
 // Comfortably larger than either normal polling cadence (atc.refresh
 // IntervalSeconds, ~30s default, or FALLBACK_RECHECK_INTERVAL_SECONDS's
@@ -184,6 +201,30 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
       })
     }, PERIODIC_CHECK_INTERVAL_MS)
     return () => window.clearInterval(interval)
+  }, [])
+
+  const [internetProviderDisplayName, setInternetProviderDisplayName] = useState(DEFAULT_INTERNET_PROVIDER_DISPLAY_NAME)
+
+  // Mount-once, no retry/polling (unlike activeProvider above) - this is
+  // a developer-set, essentially-static per-tenant naming override
+  // (migration 0083), not an operational setting an admin changes at
+  // runtime, so there's no real-time-sync requirement here the way
+  // there is for activeProvider. A failed/slow fetch just leaves the
+  // generic "Open-Meteo" default in place rather than blocking on retry.
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { internetProviderDisplayName?: unknown } | null) => {
+        const value = data?.internetProviderDisplayName
+        if (!cancelled && typeof value === 'string' && value.trim()) {
+          setInternetProviderDisplayName(value.trim())
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [])
   // Session-local, not persisted - a page reload naturally re-attempts
   // ATC first and re-detects staleness within one fetch (a few seconds)
@@ -415,6 +456,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
         usingFallback,
         refetchNow,
         dataStale,
+        internetProviderDisplayName,
       }}
     >
       {children}

@@ -24,7 +24,7 @@ function firstWordUpper(name: string): string {
 }
 
 export default function WeatherStatusIndicator(): JSX.Element {
-  const { activeProvider, weather, config, liveDataUnavailable, usingFallback } = useWeather()
+  const { activeProvider, weather, config, liveDataUnavailable, usingFallback, internetProviderDisplayName } = useWeather()
 
   // liveDataUnavailable means the selected source's fetch failed and the
   // numbers on screen are the substituted mock fixture, not real data -
@@ -33,12 +33,27 @@ export default function WeatherStatusIndicator(): JSX.Element {
     ? { emoji: '🔴', label: 'NO LIVE READING' }
     : activeProvider === 'atc'
       ? usingFallback
-        ? { emoji: '🔵', label: 'Open-Meteo SAWS' }
+        // internetProviderDisplayName (WeatherContext.tsx, migration
+        // 0083) - "Open-Meteo" generically, "Met-Office" for tenants
+        // whose data is actually Met-Office-sourced through it. No
+        // provider check needed here (unlike the 'internet' branch
+        // below) - the ATC fallback always calls fetchInternetWeather(),
+        // which is always Open-Meteo, never a different registered
+        // provider.
+        ? { emoji: '🔵', label: `${internetProviderDisplayName} SAWS` }
         : { emoji: '🟢', label: 'LIVE ATC' }
       : activeProvider === 'internet'
         ? {
             emoji: '🔵',
-            label: `INTERNET: ${INTERNET_WEATHER_PROVIDERS[config.internet.provider].label.toUpperCase()}`,
+            // Override only applies when Open-Meteo is the actually-
+            // selected internet provider - a guard against a future
+            // second INTERNET_WEATHER_PROVIDERS entry silently
+            // inheriting a naming override that's specifically about
+            // Open-Meteo's own Met-Office-sourced UK data.
+            label: `INTERNET: ${(config.internet.provider === 'open-meteo'
+              ? internetProviderDisplayName
+              : INTERNET_WEATHER_PROVIDERS[config.internet.provider].label
+            ).toUpperCase()}`,
           }
         : // Weather-share round: 'ingested' via an active cross-tenant share
           // (weather.sourceTenantName only ever set in that case - see

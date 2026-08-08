@@ -5,11 +5,18 @@ import ConfigField, { configInputClassName } from './ConfigField'
 interface InternetWeatherConfigSectionProps {
   config: InternetConfig
   onChange: (config: InternetConfig) => void
+  // Per-tenant override (migration 0083) for the 'open-meteo' option's
+  // displayed name specifically - null means no override, show the
+  // registry's own generic label exactly as before this existed. Only
+  // ever applies to the 'open-meteo' entry, not any other provider this
+  // registry might grow later (see the .map() below).
+  openMeteoDisplayName: string | null
 }
 
 export default function InternetWeatherConfigSection({
   config,
   onChange,
+  openMeteoDisplayName,
 }: InternetWeatherConfigSectionProps): JSX.Element {
   return (
     <div className="flex flex-col gap-6">
@@ -25,7 +32,7 @@ export default function InternetWeatherConfigSection({
         >
           {Object.entries(INTERNET_WEATHER_PROVIDERS).map(([id, provider]) => (
             <option key={id} value={id}>
-              {provider.label}
+              {id === 'open-meteo' && openMeteoDisplayName ? openMeteoDisplayName : provider.label}
             </option>
           ))}
         </select>

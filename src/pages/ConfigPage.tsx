@@ -31,6 +31,15 @@ export default function ConfigPage(): JSX.Element {
   // has via resolveWeatherConfig().
   const [hasPhysicalAtc, setHasPhysicalAtc] = useState(false)
 
+  // Per-tenant override (migration 0083, internet_provider_display_name)
+  // for how the Open-Meteo provider is named in this page's own dropdown
+  // (InternetWeatherConfigSection.tsx below) - read-only here (no PUT
+  // support, developer-set via direct D1 only, see that migration's own
+  // comment). null/not-yet-loaded is fine as the initial value - the
+  // dropdown falls back to the registry's own generic "Open-Meteo" label
+  // exactly like before this override existed.
+  const [internetProviderDisplayName, setInternetProviderDisplayName] = useState<string | null>(null)
+
   // tenants.parent_tenant_id (migration 0059, renamed from
   // tenant_weather_shares/migration 0029 - see functions/api/tenant/
   // parent-tenant.ts's own comment for the full "why") -
@@ -72,7 +81,12 @@ export default function ConfigPage(): JSX.Element {
     fetch(TENANT_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled && data) setHasPhysicalAtc(!!data.hasPhysicalAtc)
+        if (!cancelled && data) {
+          setHasPhysicalAtc(!!data.hasPhysicalAtc)
+          if (typeof data.internetProviderDisplayName === 'string' && data.internetProviderDisplayName.trim()) {
+            setInternetProviderDisplayName(data.internetProviderDisplayName.trim())
+          }
+        }
       })
       .catch(() => {})
     return () => {
@@ -171,6 +185,7 @@ export default function ConfigPage(): JSX.Element {
             <InternetWeatherConfigSection
               config={config.internet}
               onChange={(internet) => updateConfig({ ...config, internet })}
+              openMeteoDisplayName={internetProviderDisplayName}
             />
           )}
           {config.activeProvider === 'ingested' && <IngestedWeatherConfigSection />}
