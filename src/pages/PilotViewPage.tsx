@@ -57,7 +57,7 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
   const { pulling, pullDistance } = usePullToRefresh(handlePullRefresh)
 
   return (
-    <div className="min-h-screen overscroll-y-contain bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100">
+    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100">
       {pulling && (
         // Sized to actually be legible at arm's length / outdoors, not
         // fine print - was text-xs/text-muted-400 (12px, dim grey),
@@ -151,6 +151,24 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
 export default function PilotViewPage(): JSX.Element {
   useDisplayHeartbeat('pilot')
   usePilotServiceWorker()
+
+  // Scopes the touch-action/overscroll-behavior fix (index.css's own
+  // .pilot-view-scroll-root rule) to this route only - html/body are
+  // shared across every route in this single-page app, so toggling the
+  // class here on mount/unmount rather than declaring it unscoped is
+  // what keeps the desktop TV dashboard and every other page's own
+  // scroll/overscroll behaviour completely untouched. Applied
+  // regardless of which /pilot sub-state (locked screen, loading, full
+  // view) is currently rendering below - harmless either way, and
+  // avoids the fix flickering on/off as those states change.
+  useEffect(() => {
+    document.documentElement.classList.add('pilot-view-scroll-root')
+    document.body.classList.add('pilot-view-scroll-root')
+    return () => {
+      document.documentElement.classList.remove('pilot-view-scroll-root')
+      document.body.classList.remove('pilot-view-scroll-root')
+    }
+  }, [])
 
   const [airfieldName, setAirfieldName] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)

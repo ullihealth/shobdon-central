@@ -89,6 +89,33 @@ body {
   background: #0b1220;
 }
 
+/* Pilot View pull-to-refresh vs native iOS bounce - html/body are the
+   SAME shared elements across every route in this single-page app (one
+   index.html, client-side routing), so this can't just be a bare
+   `html, body { ... }` rule without also silently changing scroll/
+   overscroll behaviour on the desktop TV dashboard and every other
+   route - scoped to this class instead, toggled on document.documentElement
+   /document.body only while PilotViewPage.tsx is mounted (see that
+   file's own effect). touch-action: pan-y declares vertical panning as
+   the only native touch gesture here, read by the compositor BEFORE any
+   gesture begins - more reliable than usePullToRefresh.ts's existing
+   touchmove-time preventDefault() alone at this specific top-of-document
+   boundary, where WebKit's native rubber-band recognizer can otherwise
+   commit to handling the gesture natively. overscroll-behavior-y:
+   contain stops the native elastic-bounce affordance itself. Applied to
+   both html and body (not just documentElement) since which one is
+   "the" scrolling element varies by browser/standalone-mode. Moved here
+   from PilotViewContent's own outer <div>, where an identical
+   overscroll-y-contain (Tailwind's overscroll-behavior-y: contain) was
+   inert - that div has no overflow-y/height constraint of its own, so
+   it was never the actual scrolling element in the first place; this
+   page uses natural document-level scroll only. */
+html.pilot-view-scroll-root,
+body.pilot-view-scroll-root {
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+}
+
 /* Wind Arrow Colour Variants - subtle glow befitting a precision instrument pointer */
 .wind-arrow.arrow-green {
   color: var(--color-status-good-arrow);
