@@ -3,13 +3,21 @@ import type { RunwayGroup } from '../types/clubProfile'
 import type { WeatherData } from '../types/weather'
 import { calculateWindComponents } from '../utils/windCalculations'
 import runwayImg from './Windsock/Runway.png'
-import windsockFullImg from './Windsock/Windsock full.png'
-import windsockMediumImg from './Windsock/Windsock medium.png'
-import windsockDroopedImg from './Windsock/Windsock drooped.png'
+import windsock1Img from './Windsock/windsock-1.png'
+import windsock2Img from './Windsock/windsock-2.png'
+import windsock3Img from './Windsock/windsock-3.png'
+import windsock4Img from './Windsock/windsock-4.png'
+import windsock5Img from './Windsock/windsock-5.png'
 
+// 5-tier windsock (migration 0079), replacing the old 2-threshold/
+// 3-image system. bandNKt = crosswind speed (kt) at/above which
+// windsock-N.png shows instead of windsock-(N-1).png; windsock-1.png
+// itself has no threshold of its own (below band2Kt).
 export interface WindsockThresholds {
-  fullKt: number
-  mediumKt: number
+  band2Kt: number
+  band3Kt: number
+  band4Kt: number
+  band5Kt: number
 }
 
 interface RunwayWindWidgetProps {
@@ -106,19 +114,23 @@ function circuitLabelFor(direction: string): string {
   return direction === 'right' ? 'Right-hand' : 'Left-hand'
 }
 
-type WindsockStrength = 'full' | 'medium' | 'drooped'
+type WindsockTier = 1 | 2 | 3 | 4 | 5
 
-function determineWindsockStrength(crosswindKt: number, thresholds: WindsockThresholds): WindsockStrength {
+function determineWindsockTier(crosswindKt: number, thresholds: WindsockThresholds): WindsockTier {
   const magnitude = Math.abs(crosswindKt)
-  if (magnitude >= thresholds.fullKt) return 'full'
-  if (magnitude >= thresholds.mediumKt) return 'medium'
-  return 'drooped'
+  if (magnitude >= thresholds.band5Kt) return 5
+  if (magnitude >= thresholds.band4Kt) return 4
+  if (magnitude >= thresholds.band3Kt) return 3
+  if (magnitude >= thresholds.band2Kt) return 2
+  return 1
 }
 
-const WINDSOCK_IMAGE: Record<WindsockStrength, string> = {
-  full: windsockFullImg,
-  medium: windsockMediumImg,
-  drooped: windsockDroopedImg,
+const WINDSOCK_IMAGE: Record<WindsockTier, string> = {
+  1: windsock1Img,
+  2: windsock2Img,
+  3: windsock3Img,
+  4: windsock4Img,
+  5: windsock5Img,
 }
 
 function trendLabelFor(trend: WeatherData['pressureTrend'] | undefined): string {
@@ -197,7 +209,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   }, [hasWind, weather, runwayHeading])
 
   const arrowColour: ArrowColour = hasWind && weather ? determineArrowColour(headwind, weather.windDirection, runwayHeading) : 'green'
-  const windsockStrength = hasWind ? determineWindsockStrength(crosswind, windsock) : 'drooped'
+  const windsockTier = hasWind ? determineWindsockTier(crosswind, windsock) : 1
   // crosswind > 0 = "from the right" (CompassPanel's own convention -
   // Right circuit / crosswind label uses the same sign). Every windsock
   // image ships pole-on-the-right, sock pointing left by default - a
@@ -236,11 +248,12 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   const valueClass = bare ? 'text-[27px] font-black' : 'text-base font-black'
   const valueSmClass = bare ? '' : ' sm:text-4xl'
   // Windsock enlarged (h-28 -> h-40, was noticeably smaller than the
-  // runway image next to it) - Windsock full.png/medium/drooped are all
-  // roughly square (~817x812 etc), so this renders about as wide as it
-  // is tall, comparable in visual weight to the runway image now that
-  // each sits alone atop its own column instead of sharing a column with
-  // three other stacked text blocks.
+  // runway image next to it) - the windsock-N.png set ranges from
+  // ~520x812 (tier 1, least extended) up to ~817x812 (tier 4/5, roughly
+  // square), so object-contain below sizes each consistently regardless
+  // of which tier is showing, comparable in visual weight to the runway
+  // image now that each sits alone atop its own column instead of
+  // sharing a column with three other stacked text blocks.
   const windsockClass = bare ? 'h-40 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
   // Round 5: Circuit and Trend swapped AND moved off their shared row,
   // each now a literal child of its own top column (Trend under
@@ -290,8 +303,8 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
             {hasWind ? `${Math.abs(crosswind).toFixed(1)} kts ${crosswind >= 0 ? 'Right' : 'Left'}` : 'N/A'}
           </span>
           <img
-            src={WINDSOCK_IMAGE[windsockStrength]}
-            alt={`Windsock, ${windsockStrength}`}
+            src={WINDSOCK_IMAGE[windsockTier]}
+            alt={`Windsock, tier ${windsockTier}`}
             className={`${windsockClass} ${windsockOffsetClass}`}
             style={{ transform: mirrored ? 'scaleX(-1)' : undefined }}
           />

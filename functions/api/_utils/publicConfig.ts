@@ -256,7 +256,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // pattern as carouselSlots[].resolvedUrl.
     env.DB
       .prepare(
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_full_kt AS windsockFullKt, windsock_medium_kt AS windsockMediumKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -269,8 +269,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         afisoFrequency: string;
         pilotTickerSlotsJson: string;
         mobileEnabled: number;
-        windsockFullKt: number;
-        windsockMediumKt: number;
+        windsockBand2Kt: number;
+        windsockBand3Kt: number;
+        windsockBand4Kt: number;
+        windsockBand5Kt: number;
         qnhQfeOffsetHpa: number | null;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
@@ -615,14 +617,16 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // placeholder-only column, deliberately not read/exposed here - no
   // gating logic depends on it yet.
   const mobileEnabled = !!tenantRow?.mobileEnabled;
-  // Runway/Wind widget prototype (RunwayWindWidget.tsx) - falls back to
-  // the same real-world-convention defaults migration 0073 seeds
-  // (15kt/6kt) if this tenant's row predates the migration somehow, same
-  // defensive posture every other tenantRow field on this page already
-  // takes.
+  // Runway/Wind widget (RunwayWindWidget.tsx) - 5-tier windsock
+  // (migration 0079). Falls back to the same real-world-convention
+  // defaults that migration seeds (3/7/11/15kt) if this tenant's row
+  // predates it somehow, same defensive posture every other tenantRow
+  // field on this page already takes.
   const windsock = {
-    fullKt: tenantRow?.windsockFullKt ?? 15,
-    mediumKt: tenantRow?.windsockMediumKt ?? 6,
+    band2Kt: tenantRow?.windsockBand2Kt ?? 3,
+    band3Kt: tenantRow?.windsockBand3Kt ?? 7,
+    band4Kt: tenantRow?.windsockBand4Kt ?? 11,
+    band5Kt: tenantRow?.windsockBand5Kt ?? 15,
   };
 
   const cameraSlots = cameraRows.results.map((row) => ({

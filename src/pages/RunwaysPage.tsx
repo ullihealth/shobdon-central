@@ -15,15 +15,19 @@ const DEFAULT_IDENTIFIER_FONT_SIZE_PX = 14
 
 type ApplyStatus = 'idle' | 'working' | 'success' | 'error'
 
+// 5-tier windsock (migration 0079) - bandNKt is the crosswind speed (kt)
+// at/above which windsock-N.png shows instead of windsock-(N-1).png.
 interface WindsockThresholds {
-  fullKt: number
-  mediumKt: number
+  band2Kt: number
+  band3Kt: number
+  band4Kt: number
+  band5Kt: number
 }
 
 // Same real-world-convention defaults the backend seeds (migration
-// 0073/publicConfig.ts) - used here only as the initial staged value
+// 0079/publicConfig.ts) - used here only as the initial staged value
 // before the real fetch resolves, so the form never briefly shows 0/0.
-const DEFAULT_WINDSOCK: WindsockThresholds = { fullKt: 15, mediumKt: 6 }
+const DEFAULT_WINDSOCK: WindsockThresholds = { band2Kt: 3, band3Kt: 7, band4Kt: 11, band5Kt: 15 }
 
 // The end opposite endAIdentifier's heading - shown in that field's own
 // label so it's self-evidently "the other end", grounded in a number the
@@ -87,7 +91,13 @@ export default function RunwaysPage(): JSX.Element {
       .then(([data, parentTenant]) => {
         if (cancelled) return
         setGroups(Array.isArray(data?.runwayGroups) ? data.runwayGroups : [])
-        if (data?.windsock) setWindsock({ fullKt: data.windsock.fullKt ?? DEFAULT_WINDSOCK.fullKt, mediumKt: data.windsock.mediumKt ?? DEFAULT_WINDSOCK.mediumKt })
+        if (data?.windsock)
+          setWindsock({
+            band2Kt: data.windsock.band2Kt ?? DEFAULT_WINDSOCK.band2Kt,
+            band3Kt: data.windsock.band3Kt ?? DEFAULT_WINDSOCK.band3Kt,
+            band4Kt: data.windsock.band4Kt ?? DEFAULT_WINDSOCK.band4Kt,
+            band5Kt: data.windsock.band5Kt ?? DEFAULT_WINDSOCK.band5Kt,
+          })
         if (parentTenant?.parentTenantName) setParentAirfieldName(parentTenant.parentTenantName)
       })
       .catch(() => {})
@@ -493,33 +503,49 @@ export default function RunwaysPage(): JSX.Element {
             </div>
           </div>
 
-          {/* Windsock strength thresholds (RunwayWindWidget.tsx prototype) -
-              per-airfield, not per-runway, so this is its own card rather
-              than living inside the runway selector/form above; staged
-              into `windsock` state alongside `groups` and published by
-              the same "Update Dashboard" button. */}
+          {/* Windsock strength thresholds (RunwayWindWidget.tsx, 5-tier -
+              migration 0079) - per-airfield, not per-runway, so this is
+              its own card rather than living inside the runway selector/
+              form above; staged into `windsock` state alongside `groups`
+              and published by the same "Update Dashboard" button. */}
           <section className="mt-6 rounded-2xl border border-border bg-panel p-6">
             <h2 className="mb-2 text-sm font-bold uppercase tracking-widest text-muted-400">Windsock</h2>
             <p className="mb-4 max-w-2xl text-sm text-muted-400">
-              Crosswind speed (knots) at which the runway/wind widget's windsock graphic changes strength. Above
-              "Full", the sock shows fully extended; between the two, it droops to a medium angle; below "Medium",
-              it's shown fully drooped.
+              Crosswind speed (knots) at which the runway/wind widget's windsock graphic steps up to the next
+              tier - 5 images total (least to most extended). Below Band 2, tier 1 shows; above Band 5, tier 5
+              shows. Each band must be higher than the one before it.
             </p>
             <div className="grid max-w-sm grid-cols-[minmax(0,auto)_1fr] items-center gap-x-4 gap-y-3">
-              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Full at (kt)</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Band 2 at (kt)</span>
               <input
                 type="number"
                 min={1}
-                value={windsock.fullKt}
-                onChange={(event) => handleWindsockChange('fullKt', event.target.value)}
+                value={windsock.band2Kt}
+                onChange={(event) => handleWindsockChange('band2Kt', event.target.value)}
                 className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
               />
-              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Medium at (kt)</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Band 3 at (kt)</span>
               <input
                 type="number"
                 min={1}
-                value={windsock.mediumKt}
-                onChange={(event) => handleWindsockChange('mediumKt', event.target.value)}
+                value={windsock.band3Kt}
+                onChange={(event) => handleWindsockChange('band3Kt', event.target.value)}
+                className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Band 4 at (kt)</span>
+              <input
+                type="number"
+                min={1}
+                value={windsock.band4Kt}
+                onChange={(event) => handleWindsockChange('band4Kt', event.target.value)}
+                className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+              />
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Band 5 at (kt)</span>
+              <input
+                type="number"
+                min={1}
+                value={windsock.band5Kt}
+                onChange={(event) => handleWindsockChange('band5Kt', event.target.value)}
                 className="w-28 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
               />
             </div>

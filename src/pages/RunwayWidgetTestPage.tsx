@@ -19,7 +19,7 @@ interface ConfigState {
   windsock: WindsockThresholds
 }
 
-const DEFAULT_WINDSOCK: WindsockThresholds = { fullKt: 15, mediumKt: 6 }
+const DEFAULT_WINDSOCK: WindsockThresholds = { band2Kt: 3, band3Kt: 7, band4Kt: 11, band5Kt: 15 }
 
 // A runway "counts" for this test page once BOTH end identifiers are
 // filled in - matches RunwaysPage.tsx's own createBlankGroup() starting
@@ -98,7 +98,12 @@ export default function RunwayWidgetTestPage(): JSX.Element {
           activeRunwayEnd: data.opsPanel?.activeRunwayEnd ?? '',
           circuitDirection: data.opsPanel?.circuitDirection ?? 'left',
           reverseCompassNeedle: !!data.opsPanel?.reverseCompassNeedle,
-          windsock: { fullKt: data.windsock?.fullKt ?? DEFAULT_WINDSOCK.fullKt, mediumKt: data.windsock?.mediumKt ?? DEFAULT_WINDSOCK.mediumKt },
+          windsock: {
+            band2Kt: data.windsock?.band2Kt ?? DEFAULT_WINDSOCK.band2Kt,
+            band3Kt: data.windsock?.band3Kt ?? DEFAULT_WINDSOCK.band3Kt,
+            band4Kt: data.windsock?.band4Kt ?? DEFAULT_WINDSOCK.band4Kt,
+            band5Kt: data.windsock?.band5Kt ?? DEFAULT_WINDSOCK.band5Kt,
+          },
         })
       })
       .catch(() => {})
