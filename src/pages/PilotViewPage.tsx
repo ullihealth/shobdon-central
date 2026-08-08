@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
-import { usePullToRefresh } from '../hooks/usePullToRefresh'
+import { usePullToRefresh, REFRESH_THRESHOLD_PX } from '../hooks/usePullToRefresh'
 import { usePilotHomeScreenMeta } from '../hooks/usePilotHomeScreenMeta'
 import { usePilotServiceWorker } from '../hooks/usePilotServiceWorker'
 import { usePilotDataFreshnessGuard } from '../hooks/usePilotDataFreshnessGuard'
@@ -83,12 +83,12 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
           style={{ height: Math.min(pullDistance, 60) }}
         >
           <span
-            className={`inline-block text-4xl transition-transform ${pullDistance > 80 ? 'rotate-180' : ''}`}
+            className={`inline-block text-4xl transition-transform ${pullDistance > REFRESH_THRESHOLD_PX ? 'rotate-180' : ''}`}
             aria-hidden="true"
           >
             ↓
           </span>
-          {pullDistance > 80 ? 'Release to refresh' : 'Pull to refresh'}
+          {pullDistance > REFRESH_THRESHOLD_PX ? 'Release to refresh' : 'Pull to refresh'}
         </div>
       )}
 

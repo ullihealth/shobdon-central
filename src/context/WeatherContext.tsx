@@ -4,7 +4,7 @@ import { fetchWeatherData } from '../services/weatherService'
 import { fetchAtcWeather } from '../services/weatherProviders/atcProvider'
 import { fetchInternetWeather } from '../services/weatherProviders/internetProvider'
 import { fetchMockWeather } from '../services/weatherProviders/mockProvider'
-import { DEFAULT_WEATHER_CONFIG, resolveWeatherConfig } from '../services/weatherConfigStore'
+import { DEFAULT_WEATHER_CONFIG, resolveWeatherConfig, fetchServerActiveProvider, saveWeatherConfig } from '../services/weatherConfigStore'
 import type { WeatherData, WeatherSource } from '../types/weather'
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
@@ -66,11 +66,21 @@ interface WeatherContextValue {
 // gives a full buffer cycle over that 5-minute cadence before this
 // starts treating anything as suspicious.
 const STALE_WARNING_THRESHOLD_MS = 10 * 60 * 1000
-// How often dataStale is re-evaluated even if nothing else happens -
-// without this, a genuinely stuck poll loop (lastUpdatedAt frozen)
-// would never trigger a re-render to actually reveal the staleness;
-// time passing alone doesn't cause React to re-render on its own.
-const STALE_CHECK_INTERVAL_MS = 30 * 1000
+// Two jobs share this one interval, not two separate timers - see the
+// effect below. (1) How often dataStale is re-evaluated even if nothing
+// else happens - without this, a genuinely stuck poll loop
+// (lastUpdatedAt frozen) would never trigger a re-render to actually
+// reveal the staleness; time passing alone doesn't cause React to
+// re-render on its own. (2) How often activeProvider itself is
+// re-checked against the server (migration 0082's shared selection) -
+// previously that only happened on mount or an explicit refetchNow()
+// (pull-to-refresh, pageshow, touch, online/visibilitychange), so a
+// provider change made on another device sat unnoticed on an already-
+// open, otherwise-idle device until one of those fired. Comparable to
+// the normal weather-data polling cadence (~30-60s) by design, so a
+// provider change now propagates on roughly the same timeframe weather
+// data itself already does, with no new interval/infrastructure added.
+const PERIODIC_CHECK_INTERVAL_MS = 30 * 1000
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 30
 
@@ -134,7 +144,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // every render from Date.now() - lastUpdatedAt) actually gets
   // re-evaluated on a schedule, not just whenever some unrelated state
   // change happens to cause a render anyway.
-  const [, setStaleCheckTick] = useState(0)
+  const [, setPeriodicCheckTick] = useState(0)
 
   // Every place below that would otherwise call setValue(...) directly
   // calls this instead - single choke point so lastUpdatedAt can never
@@ -146,7 +156,33 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   }
 
   useEffect(() => {
-    const interval = window.setInterval(() => setStaleCheckTick((t) => t + 1), STALE_CHECK_INTERVAL_MS)
+    const interval = window.setInterval(() => {
+      setPeriodicCheckTick((t) => t + 1)
+
+      // Piggybacks on this same tick rather than a new interval (see
+      // PERIODIC_CHECK_INTERVAL_MS's own comment). fetchServerActiveProvider
+      // already has its own retry (weatherConfigStore.ts) so a single
+      // dropped request here doesn't matter - it just tries again on the
+      // next tick regardless. The functional setConfig form below reads
+      // the LATEST config at call time (no stale closure despite this
+      // effect's empty dependency array) and only actually replaces it
+      // (triggering the data-fetching effects that depend on config) when
+      // the provider genuinely changed - every other tick is a no-op past
+      // the fetch itself, not a spurious extra weather refetch.
+      fetchServerActiveProvider().then((serverProvider) => {
+        if (!serverProvider) return
+        setConfig((prev) => {
+          if (!prev || prev.activeProvider === serverProvider) return prev
+          const next = { ...prev, activeProvider: serverProvider }
+          try {
+            saveWeatherConfig(next)
+          } catch {
+            // Non-critical cache write - next is still applied either way.
+          }
+          return next
+        })
+      })
+    }, PERIODIC_CHECK_INTERVAL_MS)
     return () => window.clearInterval(interval)
   }, [])
   // Session-local, not persisted - a page reload naturally re-attempts

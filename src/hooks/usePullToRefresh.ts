@@ -8,7 +8,25 @@ import { useEffect, useRef, useState } from 'react'
 // pull-to-refresh implementation uses) - a mid-page swipe never
 // triggers it. No native browser API beyond TouchEvent, so this stays
 // safe inside a future WebView wrapper.
-const REFRESH_THRESHOLD_PX = 80
+//
+// Exported (not module-private) so PilotViewPage.tsx's own arrow-flip/
+// "Release to refresh" copy compares against this exact same value
+// instead of a second hardcoded copy of the number - the two drifting
+// out of sync was a real, if harmless, risk with the old unexported
+// constant.
+export const REFRESH_THRESHOLD_PX = 150
+// Applied to the raw finger-drag distance before it becomes the
+// pullDistance state below - was a flat 1:1 (no damping at all), which
+// is the actual reason the old 80px threshold felt twitchy: with zero
+// resistance curve, a short, fast flick crossed it instantly, and a
+// finger wobbling near that exact boundary could flip the armed state
+// back and forth with nothing smoothing it out. At 0.5, the visual
+// indicator moves at half the finger's speed, so reaching the 150px
+// threshold above now takes ~300px of actual physical travel - a
+// genuinely deliberate swipe - and the halved sensitivity itself damps
+// out small near-threshold jitter as a side effect, not just the higher
+// threshold alone.
+const PULL_DAMPING_FACTOR = 0.5
 
 export function usePullToRefresh(onRefresh: () => void): { pulling: boolean; pullDistance: number } {
   const [pulling, setPulling] = useState(false)
@@ -63,9 +81,10 @@ export function usePullToRefresh(onRefresh: () => void): { pulling: boolean; pul
       // (delta <= 0, or already scrolled past the top) is never touched,
       // so this can't block real scroll gestures anywhere on the page.
       event.preventDefault()
+      const dampedDistance = delta * PULL_DAMPING_FACTOR
       setPulling(true)
-      setPullDistance(delta)
-      armedRef.current = delta > REFRESH_THRESHOLD_PX
+      setPullDistance(dampedDistance)
+      armedRef.current = dampedDistance > REFRESH_THRESHOLD_PX
     }
 
     function handleTouchEnd() {
