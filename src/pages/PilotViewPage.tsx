@@ -196,12 +196,13 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
         <PilotCollapsibleSection title="Forecast & Visibility">
           <ForecastCloudbaseCluster />
         </PilotCollapsibleSection>
-        <PilotCollapsibleSection
-          title="Club & Safety Notices"
-          sectionClassName="rounded-2xl border-2 border-accent-sky-500/40 bg-accent-sky-500/5 p-4"
-          titleClassName="text-xl font-semibold uppercase tracking-[0.25em] text-accent-sky-400"
-          chevronClassName="text-accent-sky-400"
-        >
+        {/* Was a distinct accent-sky (blue) border/title/chevron treatment,
+            per request now matched to the same grey styling as the other
+            three cards (NOTAMs/Forecast & Visibility/Fuel Prices) instead
+            of standing out - no className overrides passed here at all
+            now, so it falls through to PilotCollapsibleSection's own
+            defaults, identically to those three. */}
+        <PilotCollapsibleSection title="Club & Safety Notices">
           <PilotNoticesPanel refreshSignal={refreshTick} />
         </PilotCollapsibleSection>
         <PilotCollapsibleSection title="Fuel Prices">
