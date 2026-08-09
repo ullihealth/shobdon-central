@@ -26,11 +26,42 @@ export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFre
           // spec ("no auth logic yet, just build the logo as a tappable
           // target").
         }}
-        className="flex items-center gap-2"
+        // absolute + top-[12px] + left-4 ONLY when there's a real logo image -
+        // takes this button fully out of the header's own flex flow, the
+        // same reason the clock below is absolutely positioned (see that
+        // div's own comment): a taller in-flow logo would grow the
+        // header's own auto-height to fit it (confirmed the hard way -
+        // an earlier self-start+margin attempt did exactly that, growing
+        // the header from 52px to 68.5px and silently pulling the clock/
+        // AFISO alignment fix a round ago out of sync, since that fix's
+        // own top-[calc(50%+10px)] offset was calibrated against the
+        // OLD 52px header height). top-[12px]/left-4 reproduce this
+        // button's own previous in-flow position - top is an explicit
+        // pixel value, not top-3 (0.75rem), because this page's root
+        // font-size is smaller than the usual 16px default, so top-3
+        // actually computed to 9px here, not 12px (confirmed by direct
+        // measurement, not assumption - an arbitrary pixel value sidesteps
+        // that rem-scale trap entirely). left-4 happens to already land on
+        // exactly 12px at this same root scale, confirmed the same way.
+        // Scoped to the logoUrl branch only -
+        // the plain-text fallback (no logo configured) stays in normal
+        // flow, centred exactly as it always has, completely unaffected.
+        className={logoUrl ? 'absolute left-4 top-[12px]' : 'flex items-center gap-2'}
         aria-label={airfieldName ? `${airfieldName} - tap to log in` : 'Tap to log in'}
       >
         {logoUrl ? (
-          <img src={logoUrl} alt={airfieldName ?? 'Airfield logo'} className="h-9 max-w-[120px] object-contain" />
+          // h-9 (27px rendered) -> h-[37.5px] - grows the logo so its
+          // OWN bottom edge lands level with the clock's bottom edge
+          // (measured live: logo top 12px/bottom 39px before, clock
+          // wrapper bottom 49.5px - new height 49.5-12=37.5px lands the
+          // new bottom exactly on the clock's own). object-contain
+          // already preserves aspect ratio on height change alone -
+          // width grows proportionally with no separate width value
+          // needed, and stays well under the existing max-w-[120px]
+          // cap (real logo's own aspect ratio puts the new width around
+          // ~82px, not 120px). Now safe to grow freely regardless of
+          // height, since the button wrapping it is out of flow above.
+          <img src={logoUrl} alt={airfieldName ?? 'Airfield logo'} className="h-[37.5px] max-w-[120px] object-contain" />
         ) : (
           <span className="text-sm font-bold uppercase tracking-wide text-primary">{airfieldName ?? 'Airfield Central'}</span>
         )}
@@ -63,7 +94,18 @@ export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFre
       <div className="absolute left-1/2 top-[calc(50%+10px)] -translate-x-1/2 -translate-y-1/2">
         <LiveClock />
       </div>
-      <div className="flex flex-col items-end gap-1">
+      {/* ml-auto (not just the header's own justify-between) - the logo
+          button is absolutely positioned when a real logo is set (see
+          its own comment above), so this column is often the ONLY
+          remaining flow child of the header; justify-between has
+          nothing left to distribute space between in that case and a
+          lone flex item under it sits at flex-start (left), not the
+          right edge. ml-auto forces this column to the far right
+          regardless of how many other flow siblings exist - harmless
+          and redundant (not a behaviour change) in the plain-text-
+          fallback case, where the logo button IS still a normal flow
+          sibling and justify-between alone was already sufficient. */}
+      <div className="ml-auto flex flex-col items-end gap-1">
         {/* Reused from the TV dashboard - same component, same live/
             fallback/no-reading state machine, not a hardcoded "LIVE ATC"
             label. A hardcoded label would show a false "live" status the
