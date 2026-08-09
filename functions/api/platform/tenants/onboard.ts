@@ -15,14 +15,18 @@
 // onboard/[token]/accept.ts now reads it from the invite row rather
 // than trusting whatever email the person opening the link types in.
 //
-// Required JSON body { name: string, email: string, slug?: string,
+// Required JSON body { name: string, email: string, slug: string,
 // lat: number, lon: number } - slug is a human-chosen subdomain
 // (wildcard DNS/Worker migration round: any valid subdomain now
 // resolves automatically the instant the tenant row exists, no
 // Cloudflare API call needed, so this is now a pure data-validation
-// feature, not an infra one). Omitted/empty body -> unchanged random-
-// slug behaviour (tenant-XXXXXXXX), same as before this round - this
-// keeps the existing one-click flow working exactly as it did.
+// feature, not an infra one). Required subdomain round: slug is now
+// mandatory - a missing/blank value is rejected with 400 rather than
+// falling back to a random tenant-XXXXXXXX placeholder (that old
+// behaviour made sense for quick throwaway test-tenant creation, but
+// this form also captures a real name/email for genuine prospects, who
+// should always get a deliberately-chosen address). Matches
+// trial-signup.ts's own public form, which already required this.
 //
 // Format/reserved-word validation lives in ../../_utils/tenantSlug.ts,
 // shared with check-slug.ts (this form's live-as-you-type check) and
@@ -48,8 +52,6 @@ interface Env {
 }
 
 const TEMPLATE_SLUG = "newcustomer";
-const SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
-const MAX_SLUG_ATTEMPTS = 20;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Required going forward on both onboarding paths (this file and
@@ -75,13 +77,6 @@ function isValidLon(value: unknown): value is number {
 const NAME_MAX_LENGTH = 100;
 const EMAIL_MAX_LENGTH = 200;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function randomSlug(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  let suffix = "";
-  for (const byte of bytes) suffix += SLUG_ALPHABET[byte % SLUG_ALPHABET.length];
-  return `tenant-${suffix}`;
-}
 
 function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -137,40 +132,32 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const lat = body!.lat as number;
   const lon = body!.lon as number;
 
-  let slug: string | null = null;
-  // Subdomain-picker round: distinguishes "a human deliberately chose
-  // this" from "onboard.ts's own random fallback" (migration
-  // 0046_tenant_subdomain_confirmed.sql) - the customer-facing
-  // /onboard/:token completion flow uses this to decide whether it
-  // still needs to ask, rather than pattern-matching randomSlug()'s own
-  // output format (fragile - breaks silently if that format ever
-  // changes).
-  const subdomainConfirmed = !!requestedSlug;
+  // Subdomain round: required, no more random tenant-XXXXXXXX fallback -
+  // that made sense for quick throwaway test-tenant creation, but this
+  // form now also captures a real name/email for genuine prospects
+  // (name/email round), and a real prospect should always get a real,
+  // deliberately-chosen address, same posture trial-signup.ts's own
+  // public self-serve form already takes (see that file's own identical
+  // "Please choose a subdomain" check). subdomainConfirmed is therefore
+  // always true now - every tenant created here has a human-chosen slug,
+  // so OnboardInvitePage.tsx's own subdomain-picker step (which only
+  // exists for the now-removed random-fallback case) is never reached
+  // via this path anymore either.
+  if (!requestedSlug) return jsonResponse({ error: "Please choose a subdomain" }, 400);
 
-  if (requestedSlug) {
-    const validation = validateSlugCandidate(requestedSlug);
-    if (!validation.valid) return jsonResponse({ error: validation.error }, 400);
+  const validation = validateSlugCandidate(requestedSlug);
+  if (!validation.valid) return jsonResponse({ error: validation.error }, 400);
 
-    // Pre-check so a taken/reserved subdomain surfaces as a clear error
-    // BEFORE anything is created, not as a confusing failure partway
-    // through - the try/catch around the actual INSERTs below is the
-    // real guarantee against a race, this is just the common-case fast
-    // path that avoids ever hitting that catch block in practice.
-    const existing = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(requestedSlug).first<{ id: number }>();
-    if (existing) return jsonResponse({ error: "That subdomain is already taken" }, 409);
+  // Pre-check so a taken/reserved subdomain surfaces as a clear error
+  // BEFORE anything is created, not as a confusing failure partway
+  // through - the try/catch inside createTenantOrganization below is the
+  // real guarantee against a race, this is just the common-case fast
+  // path that avoids ever hitting that catch block in practice.
+  const existing = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(requestedSlug).first<{ id: number }>();
+  if (existing) return jsonResponse({ error: "That subdomain is already taken" }, 409);
 
-    slug = requestedSlug;
-  } else {
-    for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
-      const candidate = randomSlug();
-      const existing = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(candidate).first<{ id: number }>();
-      if (!existing) {
-        slug = candidate;
-        break;
-      }
-    }
-    if (!slug) return jsonResponse({ error: "Could not generate a unique tenant address - please try again" }, 500);
-  }
+  const slug = requestedSlug;
+  const subdomainConfirmed = true;
 
   // Shared with trial-signup.ts (functions/api/_utils/tenantProvisioning.ts) -
   // only this row-creation step is shared; everything below (template

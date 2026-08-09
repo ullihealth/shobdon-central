@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { PLATFORM_CHECK_SLUG_URL, PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
@@ -15,6 +15,28 @@ const TENANTS_URL = '/api/platform/tenants'
 // this is just "does this look like a DNS label at all."
 const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/
 const SLUG_CHECK_DEBOUNCE_MS = 400
+
+// Required-subdomain round: derives a starting-point suggestion from the
+// airfield name field as Jeff types (e.g. "Herefordshire Gliding Club" ->
+// "herefordshire-gliding") - purely a convenience pre-fill, never the
+// value actually submitted unless left untouched. Drops one trailing
+// generic word (club/airfield/etc.) since that's the part real airfield
+// names most often share and least usefully identifies the subdomain -
+// only ever one such word, not all matches, so a genuine name like
+// "Airfield Flying Club" still yields something ("airfield-flying"),
+// not an empty string.
+const SLUG_STOP_WORDS = new Set(['club', 'airfield', 'aerodrome', 'flying', 'association', 'society', 'centre', 'center'])
+
+function slugifyTenantName(name: string): string {
+  const words = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .split(/[\s-]+/)
+    .filter(Boolean)
+  if (words.length > 1 && SLUG_STOP_WORDS.has(words[words.length - 1])) words.pop()
+  return words.join('-').slice(0, 63).replace(/-+$/, '')
+}
 
 // 'owner' deliberately excluded - not addable via this flow, same as
 // MembersPage.tsx's own ADDABLE_ROLES (owner is set once at tenant
@@ -1279,19 +1301,34 @@ export default function PlatformTenantsPage(): JSX.Element {
   const [tenantName, setTenantName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
 
-  // Wildcard DNS/Worker migration round: optional custom subdomain for
-  // the new tenant - blank still falls back to onboard.ts's existing
-  // random tenant-XXXXXXXX slug, unchanged. Lowercased as typed (server
+  // Wildcard DNS/Worker migration round: custom subdomain for the new
+  // tenant. Required-subdomain round: no more blank-falls-back-to-random
+  // behaviour - onboard.ts now rejects a blank slug outright, so this
+  // field must be filled before submitting. Lowercased as typed (server
   // requires lowercase, not silently normalized there - forcing it here
   // means what's typed is always exactly what gets validated, no
   // surprise mismatch).
   const [desiredSlug, setDesiredSlug] = useState('')
-  // idle: empty field (falls back to random slug) or format-invalid
-  // (shown via slugFormatError below, not this). checking/available/
-  // unavailable only apply once the debounced PLATFORM_CHECK_SLUG_URL
-  // call actually resolves - advisory only, onboard.ts's own UNIQUE-
-  // constraint try/catch is the real guarantee, this just keeps Jeff
-  // from ever submitting a slug it already knows is hopeless.
+  // Required-subdomain round: auto-fills desiredSlug from tenantName as
+  // Jeff types (slugifyTenantName), but only for as long as the field
+  // still holds exactly what was last auto-generated - the instant he
+  // types into the subdomain field directly, this ref stops matching and
+  // the auto-fill permanently steps aside, same "suggest until diverged"
+  // pattern as GitHub's own repo-name-from-title field.
+  const lastAutoSlugRef = useRef('')
+  useEffect(() => {
+    if (desiredSlug !== lastAutoSlugRef.current) return
+    const suggestion = slugifyTenantName(tenantName)
+    lastAutoSlugRef.current = suggestion
+    setDesiredSlug(suggestion)
+  }, [tenantName])
+  // idle: empty field (blocked at submit, see slugRequiredError below) or
+  // format-invalid (shown via slugFormatError below, not this).
+  // checking/available/unavailable only apply once the debounced
+  // PLATFORM_CHECK_SLUG_URL call actually resolves - advisory only,
+  // onboard.ts's own UNIQUE-constraint try/catch is the real guarantee,
+  // this just keeps Jeff from ever submitting a slug it already knows is
+  // hopeless.
   const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>(
     { status: 'idle' }
   )
@@ -1327,6 +1364,7 @@ export default function PlatformTenantsPage(): JSX.Element {
     trimmedSlug && !SLUG_FORMAT.test(trimmedSlug)
       ? '3-63 characters: lowercase letters, numbers, and hyphens only, not starting or ending with a hyphen'
       : null
+  const slugRequiredError = !trimmedSlug ? 'Subdomain is required' : null
 
   useEffect(() => {
     if (!trimmedSlug || slugFormatError) {
@@ -1353,7 +1391,7 @@ export default function PlatformTenantsPage(): JSX.Element {
   }, [trimmedSlug, slugFormatError])
 
   async function handleOnboardTenant() {
-    if (!latValid || !lonValid || !nameValid || !emailValid) return
+    if (!latValid || !lonValid || !nameValid || !emailValid || !trimmedSlug) return
     setOnboarding(true)
     setOnboardError(null)
     setInviteResult(null)
@@ -1361,7 +1399,7 @@ export default function PlatformTenantsPage(): JSX.Element {
       const response = await fetch(PLATFORM_ONBOARD_TENANT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmedName, email: trimmedEmail, slug: trimmedSlug || undefined, lat: parsedLat, lon: parsedLon }),
+        body: JSON.stringify({ name: trimmedName, email: trimmedEmail, slug: trimmedSlug, lat: parsedLat, lon: parsedLon }),
       })
       const data = await response.json().catch(() => null)
       if (!response.ok) {
@@ -1372,6 +1410,7 @@ export default function PlatformTenantsPage(): JSX.Element {
       setTenantName('')
       setContactEmail('')
       setDesiredSlug('')
+      lastAutoSlugRef.current = ''
       setSlugCheck({ status: 'idle' })
       setLat('')
       setLon('')
@@ -1436,18 +1475,21 @@ export default function PlatformTenantsPage(): JSX.Element {
             header row - the previous placement (Tom Galloway/Gyroplane
             Train round) was missable enough that a real onboard happened
             without it ever being noticed. Wildcard DNS/Worker migration
-            round: optional custom subdomain, live-checked as Jeff types
-            (debounced, PLATFORM_CHECK_SLUG_URL) rather than only finding
-            out it's taken/invalid after clicking the button - blank
-            still falls back to onboard.ts's own random tenant-XXXXXXXX
-            slug, unchanged from before that round. */}
+            round: subdomain live-checked as Jeff types (debounced,
+            PLATFORM_CHECK_SLUG_URL) rather than only finding out it's
+            taken/invalid after clicking the button. Required-subdomain
+            round: subdomain is now mandatory, no more blank-falls-back-
+            to-random-slug behaviour - this form captures a real name/
+            email for genuine prospects, who should always get a
+            deliberately-chosen address. Auto-suggested from the airfield
+            name field (slugifyTenantName) but stays fully editable. */}
         <div className="mb-6 rounded-2xl border border-border bg-panel p-6">
           <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Onboard New Tenant</div>
           <p className="mb-4 text-xs text-muted-500">
-            Creates a new tenant and a single-use invite link. Choose a subdomain, or leave it blank for a random one.
-            Latitude/longitude are required - without them there's no sane weather default for the tenant to start from.
-            Email is locked onto the invite and becomes the resulting owner account's permanent login - not editable
-            by whoever opens the link.
+            Creates a new tenant and a single-use invite link. Subdomain is required and pre-filled from the airfield
+            name, but can be overridden before submitting. Latitude/longitude are required - without them there's no
+            sane weather default for the tenant to start from. Email is locked onto the invite and becomes the
+            resulting owner account's permanent login - not editable by whoever opens the link.
           </p>
           <div className="mb-3 flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
@@ -1483,7 +1525,7 @@ export default function PlatformTenantsPage(): JSX.Element {
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="onboard-subdomain" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                Subdomain (optional)
+                Subdomain
               </label>
               <input
                 id="onboard-subdomain"
@@ -1494,7 +1536,8 @@ export default function PlatformTenantsPage(): JSX.Element {
                 className="w-64 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
               />
               <p className="text-[11px] text-muted-500">
-                {trimmedSlug || 'tenant-xxxxxxxx'}.airfieldcentral.com
+                {trimmedSlug ? `${trimmedSlug}.airfieldcentral.com` : 'Required'}
+                {!trimmedSlug && <span className="ml-2 text-status-bad">{slugRequiredError}</span>}
                 {slugFormatError && <span className="ml-2 text-status-bad">{slugFormatError}</span>}
                 {!slugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-muted-400">Checking…</span>}
                 {!slugFormatError && slugCheck.status === 'available' && <span className="ml-2 text-status-good">Available</span>}
@@ -1534,6 +1577,7 @@ export default function PlatformTenantsPage(): JSX.Element {
               onClick={handleOnboardTenant}
               disabled={
                 onboarding ||
+                !trimmedSlug ||
                 !!slugFormatError ||
                 slugCheck.status === 'checking' ||
                 slugCheck.status === 'unavailable' ||
