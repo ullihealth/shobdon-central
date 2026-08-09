@@ -4,7 +4,6 @@ import type { MemberRole } from '../../types/member'
 import { SIDEBAR_GROUPS, STANDALONE_ITEMS, type SidebarItem } from './sidebarConfig'
 import SidebarGroup from './SidebarGroup'
 import SidebarUserMenu from './SidebarUserMenu'
-import OrgSwitcher, { type MembershipSummary } from './OrgSwitcher'
 import { useHostReachable } from '../../hooks/useHostReachable'
 import { isPagesPlatformHost } from '../../utils/isPagesPlatformHost'
 
@@ -48,8 +47,6 @@ export default function AdminSidebar(): JSX.Element {
   // admin sidebar briefly flashed "Shobdon Airfield" on load before the
   // real fetch overwrote it.
   const [organizationName, setOrganizationName] = useState('')
-  const [organizationSlug, setOrganizationSlug] = useState('')
-  const [memberships, setMemberships] = useState<MembershipSummary[]>([])
   // Real root cause of the Tom Galloway/Gyroplane Train header-click bug
   // (confirmed live via Playwright, not the Header.tsx component two
   // prior rounds mistakenly fixed - that component is only ever rendered
@@ -74,8 +71,6 @@ export default function AdminSidebar(): JSX.Element {
         setIsDeveloper(!!data?.isDeveloper)
         setCafeEntitled(!!data?.cafeEntitled)
         if (data?.organizationName) setOrganizationName(data.organizationName)
-        setOrganizationSlug(data?.organizationSlug ?? '')
-        setMemberships(Array.isArray(data?.memberships) ? data.memberships : [])
         setTenantSubdomain(data?.subdomain ?? null)
       })
       .catch(() => {})
@@ -154,10 +149,22 @@ export default function AdminSidebar(): JSX.Element {
         )}
       </div>
 
+      {/* OrgSwitcher (account/org-switcher dropdown) removed from here -
+          tenant resolution on every admin page already uses Host-header
+          match as the deciding tier (requireTenant's tier 3,
+          functions/api/_utils/tenantAuth.ts), never this dropdown's own
+          aic-active-org cookie (tier 4, below tier 3) - so it served no
+          real function and only showed a misleading selection whenever
+          the current tenant wasn't among this account's real membership
+          rows (investigated separately - confirmed the Swift/GyroPlane
+          Train case). /platform/preview (DevPreviewBanner.tsx, shown on
+          every page reachable from there) is now the sole place tenant-
+          switching UI lives. OrgSwitcher.tsx itself is left in place,
+          unrendered, not deleted - /api/tenant/switch-org and the
+          aic-active-org cookie logic are also untouched, in case
+          anything else still depends on them. */}
       {!loading && (
         <>
-          <OrgSwitcher memberships={memberships} activeOrgSlug={organizationSlug} />
-
           <nav className="flex-1 overflow-y-auto px-3 pb-4">
             {visibleGroups.map((group) => {
               // The active item's group always renders open, even if the
