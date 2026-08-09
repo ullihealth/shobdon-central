@@ -123,7 +123,6 @@ export default function WeatherStatGrid(): JSX.Element {
 
   return (
     <section className="rounded-2xl border border-border bg-panel p-4">
-      <div className="mb-3 text-center text-base font-semibold uppercase tracking-[0.25em] text-muted-400">Summary</div>
       <div className="grid grid-cols-2 gap-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border bg-card p-2.5">
