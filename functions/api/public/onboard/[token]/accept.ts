@@ -1,5 +1,5 @@
 // Public, unauthenticated: POST /api/public/onboard/:token/accept
-// Body: { email, password, name? }
+// Body: { password, name? }
 //
 // Re-validates the token (same rules as [token].ts's GET), then creates
 // user/account/member rows using the EXACT same pattern functions/api/
@@ -11,6 +11,16 @@
 // can never be replayed. The frontend calls authClient.signIn.email()
 // itself afterward to establish a real BetterAuth session - this route
 // only ever touches account creation, never sessions.
+//
+// email round: no longer accepted from the request body at all - reads
+// tenant_invites.email instead (migration 0084_tenant_invite_email.sql,
+// set once at creation time by functions/api/platform/tenants/onboard.ts
+// and validated there). Previously this let whoever opened the link type
+// in ANY email; now the platform admin's choice at creation time is the
+// only source, matching OnboardInvitePage.tsx's own read-only display of
+// it. A missing email (only possible for an invite row created before
+// this column existed - all now expired/used, harmless) is a hard error
+// here rather than a silent fallback to trusting client input again.
 import { jsonResponse, type D1Database } from "../../../_utils/tenantAuth";
 import { hashPassword } from "../../../_utils/passwordHash";
 
@@ -30,9 +40,9 @@ interface InviteRow {
   organizationId: string;
   expiresAt: string;
   usedAt: string | null;
+  email: string | null;
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -41,7 +51,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   const invite = await env.DB
     .prepare(
-      "SELECT id, tenant_id AS tenantId, organization_id AS organizationId, expires_at AS expiresAt, used_at AS usedAt FROM tenant_invites WHERE token = ?"
+      "SELECT id, tenant_id AS tenantId, organization_id AS organizationId, expires_at AS expiresAt, used_at AS usedAt, email FROM tenant_invites WHERE token = ?"
     )
     .bind(token)
     .first<InviteRow>();
@@ -49,13 +59,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   if (!invite) return jsonResponse({ error: "This invite link is not valid" }, 404);
   if (invite.usedAt) return jsonResponse({ error: "This invite link has already been used" }, 409);
   if (new Date(invite.expiresAt).getTime() < Date.now()) return jsonResponse({ error: "This invite link has expired" }, 410);
+  if (!invite.email) return jsonResponse({ error: "This invite link is missing a required email - please request a new one" }, 400);
+  const email = invite.email;
 
-  const body = (await request.json().catch(() => null)) as { email?: unknown; password?: unknown; name?: unknown } | null;
-  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const body = (await request.json().catch(() => null)) as { password?: unknown; name?: unknown } | null;
   const password = typeof body?.password === "string" ? body.password : "";
   const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : null;
 
-  if (!email || !EMAIL_PATTERN.test(email)) return jsonResponse({ error: "A valid email is required" }, 400);
   if (password.length < MIN_PASSWORD_LENGTH) {
     return jsonResponse({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
   }

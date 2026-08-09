@@ -5,7 +5,18 @@
 // sending infrastructure exists yet (a documented, deliberate gap, not
 // an oversight).
 //
-// Optional JSON body { slug?: string } - a human-chosen subdomain
+// name/email round: name sets organization.name/tenants.name directly
+// (previously always the hardcoded "Your Airfield Name" placeholder,
+// never overwritten anywhere in this flow - confirmed by inspection).
+// email is validated here and stored on the invite itself (migration
+// 0084_tenant_invite_email.sql) - LOCKED, not a suggestion: this is the
+// platform admin manually onboarding a real prospect, and this becomes
+// that prospect's permanent login identity. functions/api/public/
+// onboard/[token]/accept.ts now reads it from the invite row rather
+// than trusting whatever email the person opening the link types in.
+//
+// Required JSON body { name: string, email: string, slug?: string,
+// lat: number, lon: number } - slug is a human-chosen subdomain
 // (wildcard DNS/Worker migration round: any valid subdomain now
 // resolves automatically the instant the tenant row exists, no
 // Cloudflare API call needed, so this is now a pure data-validation
@@ -25,6 +36,7 @@
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { cloneTenantTemplate } from "../../_utils/cloneTenant";
 import { validateSlugCandidate } from "../../_utils/tenantSlug";
+import { createTenantOrganization } from "../../_utils/tenantProvisioning";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -56,6 +68,14 @@ function isValidLon(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
 }
 
+// Same pair trial-signup.ts already validates clubName/contactEmail
+// against - duplicated rather than shared, this codebase's existing
+// functions/-file-local-helper convention (see isValidLat/isValidLon's
+// own comment just above for the same reasoning).
+const NAME_MAX_LENGTH = 100;
+const EMAIL_MAX_LENGTH = 200;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function randomSlug(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   let suffix = "";
@@ -82,13 +102,36 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ error: "Template tenant 'newcustomer' is missing or has no linked organization" }, 500);
   }
 
-  const body = (await request.json().catch(() => null)) as { slug?: unknown; lat?: unknown; lon?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as
+    | { name?: unknown; email?: unknown; slug?: unknown; lat?: unknown; lon?: unknown }
+    | null;
   const requestedSlug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
+
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
 
   // Fail before creating anything, same posture as the template-tenant
   // check above - a missing/invalid coordinate must never produce a
   // half-onboarded tenant that then needs a manual D1 backfill (exactly
   // how Gyroplane Train ended up with NULL lat/lon in the first place).
+  // Same posture now extended to name/email: a bad email here must
+  // never produce a real tenant whose invite link then can't be
+  // completed (or worse, silently locks in a typo as someone's
+  // permanent login) - checked before anything is created, not
+  // discovered later when the invite is opened.
+  if (!name || name.length > NAME_MAX_LENGTH) {
+    return jsonResponse({ error: `Airfield name is required (max ${NAME_MAX_LENGTH} characters)` }, 400);
+  }
+  if (!email || email.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(email)) {
+    return jsonResponse({ error: "A valid email is required" }, 400);
+  }
+  // Same check accept.ts itself already does at invite-completion time -
+  // duplicated here so a typo'd-but-already-registered email fails
+  // immediately at creation, not only once the customer tries to open
+  // the link and complete it.
+  const existingUser = await env.DB.prepare("SELECT id FROM user WHERE email = ?").bind(email).first<{ id: string }>();
+  if (existingUser) return jsonResponse({ error: "An account already exists with this email" }, 409);
+
   if (!isValidLat(body?.lat)) return jsonResponse({ error: "lat is required and must be a number between -90 and 90" }, 400);
   if (!isValidLon(body?.lon)) return jsonResponse({ error: "lon is required and must be a number between -180 and 180" }, 400);
   const lat = body!.lat as number;
@@ -129,61 +172,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!slug) return jsonResponse({ error: "Could not generate a unique tenant address - please try again" }, 500);
   }
 
-  const now = new Date().toISOString();
-  const organizationId = `org_${slug}`;
-  const subdomain = `${slug}.airfieldcentral.com`;
-  const placeholderName = "Your Airfield Name";
-
-  try {
-    await env.DB
-      .prepare("INSERT INTO organization (id, name, slug, createdAt) VALUES (?, ?, ?, ?)")
-      .bind(organizationId, placeholderName, slug, now)
-      .run();
-  } catch {
-    // organization.slug is UNIQUE (migration 0002_organization_plugin.sql) -
-    // only reachable via a genuine race with another request choosing
-    // the exact same slug between the pre-check above and this INSERT.
-    // The random-slug path effectively never hits this (8 random chars,
-    // astronomically unlikely to collide); a human-chosen slug is the
-    // realistic case this exists for.
+  // Shared with trial-signup.ts (functions/api/_utils/tenantProvisioning.ts) -
+  // only this row-creation step is shared; everything below (template
+  // clone, tenant_displays, the invite itself) stays specific to this
+  // flow. The pre-check + try/catch race handling that used to live
+  // inline here now lives inside that shared function - same behaviour,
+  // same "That subdomain was just taken" outcome on a genuine race,
+  // just one implementation instead of two.
+  const created = await createTenantOrganization(env.DB, { slug, name, lat, lon, subdomainConfirmed });
+  if (!created.ok) {
     return jsonResponse({ error: "That subdomain was just taken - please try a different one" }, 409);
   }
-
-  // brand_display_json explicit here, not left to the column's own
-  // DEFAULT (both showLogo/showName true) - same reasoning as
-  // trial-signup.ts's own tenant INSERT: a brand-new tenant hasn't
-  // uploaded a logo yet, so name-text-only is the sane starting point,
-  // and the two are now mutually exclusive in the Branding tab UI
-  // anyway (DesignPage.tsx) rather than independently checkable.
-  const defaultBrandDisplay = JSON.stringify({
-    main: { showLogo: false, showName: true, nameFontSize: "md" },
-    cafe: { showLogo: false, showName: true, nameFontSize: "md" },
-  });
-
-  try {
-    await env.DB
-      .prepare(
-        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, 1, 0, NULL, ?, ?)`
-      )
-      .bind(slug, placeholderName, subdomain, organizationId, lat, lon, defaultBrandDisplay, subdomainConfirmed ? 1 : 0)
-      .run();
-  } catch {
-    // tenants.slug/subdomain are both UNIQUE (migration
-    // 0022_tenant_schema.sql) - same race window as the organization
-    // INSERT above, now on the second of the two UNIQUE columns this
-    // flow touches. The organization row created just above is now
-    // orphaned - harmless and invisible to any tenant-facing surface,
-    // same accepted tradeoff trial-signup.ts's own identical race
-    // handling already documents, not worth a rollback mechanism for
-    // this rare a case.
-    return jsonResponse({ error: "That subdomain was just taken - please try a different one" }, 409);
-  }
+  const { organizationId, tenantId } = created;
 
   await cloneTenantTemplate(env.DB, template.organizationId, organizationId, slug);
-
-  const tenantRow = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(slug).first<{ id: number }>();
-  if (!tenantRow) return jsonResponse({ error: "Failed to provision the new tenant" }, 500);
 
   // tenant_displays (migration 0027) was never actually auto-created by
   // any onboarding path before this - confirmed by inspection, not
@@ -199,7 +201,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config)
        VALUES (?, 'main', 'Main Dashboard', 'classic', ?)`
     )
-    .bind(tenantRow.id, JSON.stringify({ weather: true, compass: true, media: true, ops: true }))
+    .bind(tenantId, JSON.stringify({ weather: true, compass: true, media: true, ops: true }))
     .run();
 
   // active=0 alongside entitled=0 (Tom Galloway/Gyroplane Train round) -
@@ -216,7 +218,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled, active)
        VALUES (?, 'cafe-tv', 'Clubhouse Cafe TV', 'cafe-1', 0, 0)`
     )
-    .bind(tenantRow.id)
+    .bind(tenantId)
     .run();
 
   const token = randomToken();
@@ -224,13 +226,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await env.DB
     .prepare(
-      "INSERT INTO tenant_invites (token, tenant_id, organization_id, created_by, expires_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO tenant_invites (token, tenant_id, organization_id, created_by, expires_at, email) VALUES (?, ?, ?, ?, ?, ?)"
     )
-    .bind(token, tenantRow.id, organizationId, result.userId, expiresAt)
+    .bind(token, tenantId, organizationId, result.userId, expiresAt, email)
     .run();
 
   const origin = new URL(request.url).origin;
   const inviteUrl = `${origin}/onboard/${token}`;
 
-  return jsonResponse({ tenantId: tenantRow.id, slug, inviteUrl, expiresAt });
+  return jsonResponse({ tenantId, slug, email, inviteUrl, expiresAt });
 };

@@ -37,6 +37,7 @@ interface InviteRow {
   tenantName: string;
   subdomain: string;
   subdomainConfirmed: number;
+  email: string | null;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
@@ -45,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
 
   const invite = await env.DB
     .prepare(
-      `SELECT ti.expires_at AS expiresAt, ti.used_at AS usedAt, t.name AS tenantName, t.subdomain AS subdomain, t.subdomain_confirmed AS subdomainConfirmed
+      `SELECT ti.expires_at AS expiresAt, ti.used_at AS usedAt, t.name AS tenantName, t.subdomain AS subdomain, t.subdomain_confirmed AS subdomainConfirmed, ti.email AS email
        FROM tenant_invites ti
        JOIN tenants t ON t.id = ti.tenant_id
        WHERE ti.token = ?`
@@ -62,5 +63,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
     tenantName: invite.tenantName,
     subdomain: invite.subdomain,
     subdomainConfirmed: !!invite.subdomainConfirmed,
+    // Migration 0084_tenant_invite_email.sql - locked at creation time
+    // (functions/api/platform/tenants/onboard.ts), never editable here.
+    // null only for invite rows created before this column existed (all
+    // now expired/used, harmless) - OnboardInvitePage.tsx's own handling
+    // of that case matches accept.ts's own hard-error posture rather
+    // than silently falling back to an editable field.
+    email: invite.email,
   });
 };

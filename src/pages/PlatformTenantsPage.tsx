@@ -1262,9 +1262,22 @@ export default function PlatformTenantsPage(): JSX.Element {
   }
 
   const [onboarding, setOnboarding] = useState(false)
-  const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; slug: string } | null>(null)
+  const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; slug: string; email: string } | null>(null)
   const [onboardError, setOnboardError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // name/email round: name sets organization.name/tenants.name directly
+  // (previously always onboard.ts's own hardcoded "Your Airfield Name"
+  // placeholder, never overwritten anywhere in the invite flow). email
+  // is validated server-side and LOCKED onto the invite itself
+  // (migration 0084_tenant_invite_email.sql) - not a suggestion, this
+  // becomes the resulting owner account's permanent login identity, and
+  // OnboardInvitePage.tsx's own email field is read-only precisely
+  // because of that. Same plain-text-input pattern as the existing
+  // subdomain/lat/lon fields below, not the landing page's mobile-first
+  // signup form styling - this page is desktop-only by design.
+  const [tenantName, setTenantName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
 
   // Wildcard DNS/Worker migration round: optional custom subdomain for
   // the new tenant - blank still falls back to onboard.ts's existing
@@ -1300,6 +1313,15 @@ export default function PlatformTenantsPage(): JSX.Element {
   const latValid = lat.trim() !== '' && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
   const lonValid = lon.trim() !== '' && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
 
+  // Client-side pre-check only, same posture as latValid/lonValid above -
+  // onboard.ts's own validation (name required/max length, EMAIL_PATTERN,
+  // not-already-registered) is still the real guarantee, this just avoids
+  // a round trip for the obvious cases.
+  const trimmedName = tenantName.trim()
+  const nameValid = trimmedName.length > 0 && trimmedName.length <= 100
+  const trimmedEmail = contactEmail.trim()
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)
+
   const trimmedSlug = desiredSlug.trim()
   const slugFormatError =
     trimmedSlug && !SLUG_FORMAT.test(trimmedSlug)
@@ -1331,7 +1353,7 @@ export default function PlatformTenantsPage(): JSX.Element {
   }, [trimmedSlug, slugFormatError])
 
   async function handleOnboardTenant() {
-    if (!latValid || !lonValid) return
+    if (!latValid || !lonValid || !nameValid || !emailValid) return
     setOnboarding(true)
     setOnboardError(null)
     setInviteResult(null)
@@ -1339,14 +1361,16 @@ export default function PlatformTenantsPage(): JSX.Element {
       const response = await fetch(PLATFORM_ONBOARD_TENANT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: trimmedSlug || undefined, lat: parsedLat, lon: parsedLon }),
+        body: JSON.stringify({ name: trimmedName, email: trimmedEmail, slug: trimmedSlug || undefined, lat: parsedLat, lon: parsedLon }),
       })
       const data = await response.json().catch(() => null)
       if (!response.ok) {
         setOnboardError(data?.error || 'Failed to onboard a new tenant')
         return
       }
-      setInviteResult({ inviteUrl: data.inviteUrl, slug: data.slug })
+      setInviteResult({ inviteUrl: data.inviteUrl, slug: data.slug, email: data.email })
+      setTenantName('')
+      setContactEmail('')
       setDesiredSlug('')
       setSlugCheck({ status: 'idle' })
       setLat('')
@@ -1422,7 +1446,40 @@ export default function PlatformTenantsPage(): JSX.Element {
           <p className="mb-4 text-xs text-muted-500">
             Creates a new tenant and a single-use invite link. Choose a subdomain, or leave it blank for a random one.
             Latitude/longitude are required - without them there's no sane weather default for the tenant to start from.
+            Email is locked onto the invite and becomes the resulting owner account's permanent login - not editable
+            by whoever opens the link.
           </p>
+          <div className="mb-3 flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="onboard-name" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Airfield name
+              </label>
+              <input
+                id="onboard-name"
+                type="text"
+                value={tenantName}
+                onChange={(event) => setTenantName(event.target.value)}
+                placeholder="e.g. Gyroplane Train"
+                className="w-64 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="onboard-email" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                Contact email (becomes login)
+              </label>
+              <input
+                id="onboard-email"
+                type="email"
+                value={contactEmail}
+                onChange={(event) => setContactEmail(event.target.value)}
+                placeholder="owner@example.com"
+                className="w-64 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+              />
+              {contactEmail.trim() !== '' && !emailValid && (
+                <p className="text-[11px] text-status-bad">Enter a valid email address.</p>
+              )}
+            </div>
+          </div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="onboard-subdomain" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
@@ -1481,7 +1538,9 @@ export default function PlatformTenantsPage(): JSX.Element {
                 slugCheck.status === 'checking' ||
                 slugCheck.status === 'unavailable' ||
                 !latValid ||
-                !lonValid
+                !lonValid ||
+                !nameValid ||
+                !emailValid
               }
               className="shrink-0 rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
             >
@@ -1507,7 +1566,9 @@ export default function PlatformTenantsPage(): JSX.Element {
               New tenant created: {inviteResult.slug}
             </div>
             <p className="mb-3 text-xs text-muted-500">
-              Copy this single-use link and send it to the customer manually — no email is sent automatically yet.
+              Copy this single-use link and send it to <span className="text-white">{inviteResult.email}</span> manually
+              — no email is sent automatically yet. That address is locked onto this invite; whoever opens the link
+              can't change it.
             </p>
             <div className="flex items-center gap-2">
               <input

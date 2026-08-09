@@ -1,0 +1,20 @@
+-- Locks the invite-accept flow's login email to whatever the platform
+-- admin specified at tenant-creation time (functions/api/platform/
+-- tenants/onboard.ts), instead of letting whoever opens the link type
+-- in any email they want (the previous behaviour - see
+-- functions/api/public/onboard/[token]/accept.ts, now changed to read
+-- this column instead of trusting the request body).
+--
+-- Nullable, no NOT NULL constraint: SQLite requires a DEFAULT for a
+-- NOT NULL column added via ALTER TABLE, and there's no sane default
+-- email for the invite rows that already exist before this column did.
+-- Every one of those pre-existing rows is already either used_at-marked
+-- or past its 7-day expiry (INVITE_TTL_MS, onboard.ts) by the time this
+-- migration runs, so a NULL value there is inert, historical data, not
+-- something any live flow will ever read. Every NEW invite going
+-- forward always has one - onboard.ts requires and validates it before
+-- the row is ever created, enforced at the application level, same
+-- posture as active_weather_provider/internet_provider_display_name
+-- (migrations 0082/0083) - nullable at the schema level, effectively
+-- always-populated in practice for rows created after this point.
+ALTER TABLE tenant_invites ADD COLUMN email TEXT;

@@ -13,7 +13,7 @@ import PasswordField from '../components/PasswordField'
 type ValidateState =
   | { status: 'loading' }
   | { status: 'invalid'; reason: string }
-  | { status: 'valid'; tenantName: string; subdomain: string; subdomainConfirmed: boolean }
+  | { status: 'valid'; tenantName: string; subdomain: string; subdomainConfirmed: boolean; email: string | null }
 
 const REASON_MESSAGES: Record<string, string> = {
   not_found: 'This invite link is not valid.',
@@ -70,7 +70,6 @@ export default function OnboardInvitePage(): JSX.Element {
   const navigate = useNavigate()
   const [validate, setValidate] = useState<ValidateState>({ status: 'loading' })
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -99,7 +98,13 @@ export default function OnboardInvitePage(): JSX.Element {
         if (cancelled) return
         setValidate(
           data.valid
-            ? { status: 'valid', tenantName: data.tenantName ?? '', subdomain: data.subdomain, subdomainConfirmed: !!data.subdomainConfirmed }
+            ? {
+                status: 'valid',
+                tenantName: data.tenantName ?? '',
+                subdomain: data.subdomain,
+                subdomainConfirmed: !!data.subdomainConfirmed,
+                email: typeof data.email === 'string' ? data.email : null,
+              }
             : { status: 'invalid', reason: data.reason }
         )
       })
@@ -113,6 +118,12 @@ export default function OnboardInvitePage(): JSX.Element {
 
   const tenantSubdomain = validate.status === 'valid' ? validate.subdomain : null
   const subdomainConfirmed = validate.status === 'valid' && validate.subdomainConfirmed
+  // Locked at creation time (functions/api/platform/tenants/onboard.ts,
+  // migration 0084_tenant_invite_email.sql) - no longer user-editable
+  // local state, just this server-provided value read directly wherever
+  // it's needed (the read-only field below, and the sign-in call after
+  // account creation succeeds).
+  const email = validate.status === 'valid' ? (validate.email ?? '') : ''
   const isOnOwnSubdomain = !tenantSubdomain || tenantSubdomain === window.location.hostname
   // Never probe/redirect toward an unconfirmed (still-random) subdomain -
   // only once a human has actually chosen one, whether that was already
@@ -197,7 +208,10 @@ export default function OnboardInvitePage(): JSX.Element {
     const response = await fetch(onboardInviteAcceptUrl(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name || undefined, email, password }),
+      // email deliberately NOT sent - accept.ts reads it server-side from
+      // the invite record itself now (migration 0084), never from the
+      // request body, so there's nothing for this client to submit.
+      body: JSON.stringify({ name: name || undefined, password }),
     })
     const data = await response.json().catch(() => null)
     if (!response.ok) {
@@ -322,15 +336,21 @@ export default function OnboardInvitePage(): JSX.Element {
           />
         </label>
 
+        {/* Read-only, not an editable input - this email was locked in by
+            the platform admin at invite-creation time (migration 0084)
+            and becomes this account's permanent login identity; nothing
+            typed here would be honoured anyway, since accept.ts no
+            longer reads an email from the request body at all. Styled
+            visually distinct from the still-editable fields above/below
+            (dimmer text, no focus ring) so it doesn't look like a normal
+            input someone might try to correct a typo in. */}
         <label className="mb-4 flex flex-col gap-1.5">
           <span className="text-sm font-semibold uppercase tracking-widest text-muted-400">Email</span>
           <input
             type="email"
-            required
-            autoComplete="email"
+            readOnly
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-base text-white focus:border-sky-500 focus:outline-none"
+            className="cursor-not-allowed rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2 text-base text-muted-400"
           />
         </label>
 
