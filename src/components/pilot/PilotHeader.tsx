@@ -64,13 +64,15 @@ export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFre
         <LiveClock />
       </div>
       <div className="flex flex-col items-end gap-1">
-        {/* Reused unmodified from the TV dashboard - same component,
-            same live/fallback/no-reading state machine, not a
-            hardcoded "LIVE ATC" label. A hardcoded label would show a
-            false "live" status the moment the real feed degrades to
-            the Met Office fallback or drops out entirely - exactly the
-            kind of misleading state this app avoids everywhere else. */}
-        <WeatherStatusIndicator />
+        {/* Reused from the TV dashboard - same component, same live/
+            fallback/no-reading state machine, not a hardcoded "LIVE ATC"
+            label. A hardcoded label would show a false "live" status the
+            moment the real feed degrades to the Met Office fallback or
+            drops out entirely - exactly the kind of misleading state
+            this app avoids everywhere else. hideIcon drops the leading
+            emoji/dot for this header specifically - text label only,
+            desktop dashboard unaffected (defaults false there). */}
+        <WeatherStatusIndicator hideIcon />
         <AfisoIndicator open={afisoOpen} frequency={afisoFrequency} />
       </div>
     </header>

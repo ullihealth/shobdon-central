@@ -23,7 +23,17 @@ function firstWordUpper(name: string): string {
   return (name.trim().split(/\s+/)[0] ?? name).toUpperCase()
 }
 
-export default function WeatherStatusIndicator(): JSX.Element {
+interface WeatherStatusIndicatorProps {
+  // /pilot-only opt-in (PilotHeader.tsx) - drops the leading emoji/dot,
+  // text label only. Defaults false so every other caller (every
+  // desktop TV-dashboard template) renders exactly as it always has,
+  // same convention CompassPanel's own spacious/hideReadout props
+  // already use for /pilot-specific presentation tweaks to a shared
+  // component.
+  hideIcon?: boolean
+}
+
+export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStatusIndicatorProps): JSX.Element {
   const { activeProvider, weather, config, liveDataUnavailable, usingFallback, internetProviderDisplayName } = useWeather()
 
   // liveDataUnavailable means the selected source's fetch failed and the
@@ -80,7 +90,7 @@ export default function WeatherStatusIndicator(): JSX.Element {
 
   return (
     <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">
-      <span aria-hidden="true">{emoji}</span>
+      {!hideIcon && <span aria-hidden="true">{emoji}</span>}
       <span>{label}</span>
     </div>
   )
