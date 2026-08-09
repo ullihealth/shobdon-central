@@ -156,24 +156,35 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
       )}
 
       <div className="mx-auto flex max-w-lg flex-col gap-4 px-4 py-4">
-        {/* Second reorder round: standalone WIND readout now leads the
-            page, in its own full-width card (PilotWindCard.tsx) -
-            pulled out of PilotRunwayWindPanel, which used to render it
-            inline above its own widget group. Order below is now:
-            Wind card -> Weather Summary -> runway/windsock group ->
-            compass -> NOTAMs -> Forecast & Visibility -> Notices ->
-            Fuel Prices. */}
+        {/* Third reorder round: compass moved up to sit directly under
+            the Wind card, ahead of the Weather Summary grid. Order below
+            is now: Wind card -> compass -> Weather Summary -> runway/
+            windsock group -> NOTAMs -> Forecast & Visibility -> Notices
+            -> Fuel Prices. Pure JSX reorder, nothing else - the North/
+            Runway toggle buttons' own "higher on each shoulder"
+            placement (CompassPanel.tsx's own mb-[-33px]/sm:mb-[-29px])
+            cancels THAT component's own internal gap-8/sm:gap-7 (the gap
+            between the button row and the compass instrument, both
+            direct children of CompassPanel's own self-contained root
+            div) - it has no dependency at all on this page's own gap-4
+            layout or on whichever component happens to sit next to it
+            here, so moving CompassPanel to a new page position carries
+            that internal relationship with it unchanged automatically.
+            Confirmed via direct measurement, not just this reasoning:
+            gap between button-bottom and the compass SVG's own top edge
+            was -9px before this move, still -9px after. */}
         <PilotWindCard />
+        {/* Compass instrument - hideReadout drops its own text readout
+            list (Wind/Headwind/Crosswind/Trend), since the runway/wind
+            panel below already shows Wind/Headwind/Crosswind; the rose/
+            arrow/centre-label instrument itself renders exactly as it
+            always has, same as every TV-dashboard caller. Desktop
+            dashboard remains completely untouched either way -
+            CompassPanel itself only gained an opt-in prop, defaulted
+            off everywhere else. */}
+        <CompassPanel spacious hideReadout />
         <WeatherStatGrid />
         <PilotRunwayWindPanel refreshSignal={refreshTick} />
-        {/* Compass instrument - hideReadout drops its own text readout
-            list (Wind/Headwind/Crosswind/Trend), since the widget above
-            already shows Wind/Headwind/Crosswind; the rose/arrow/centre-
-            label instrument itself renders exactly as it always has,
-            same as every TV-dashboard caller. Desktop dashboard remains
-            completely untouched either way - CompassPanel itself only
-            gained an opt-in prop, defaulted off everywhere else. */}
-        <CompassPanel spacious hideReadout />
         {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
             title always visible, tap to expand. Each panel keeps
             fetching/refreshing on its own existing schedule regardless
