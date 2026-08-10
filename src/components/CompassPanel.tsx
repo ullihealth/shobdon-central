@@ -267,21 +267,49 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
 // it stays in exactly the same screen position, just flipped in place.
 // Callers decide which of the pair (labelTop/labelBottom) carries the
 // extra spin - see the per-block usage below.
+// active (main dashboard round): highlights whichever identifier
+// matches opsPanel.activeRunwayEnd - a plain string match against the
+// SAME raw value the headwind/crosswind maths already key off (see
+// RunwayGroupGraphic's own isTopActive/isBottomActive below), not
+// derived from headingDegrees/activeRunwayHeading/reverseCompassNeedle
+// at all. Before this, the strip graphic gave both ends an identical
+// look, so the only way a viewer could infer "which end is active" was
+// the wind arrow's rotational position relative to the fixed strip -
+// which, for a tenant with reverseCompassNeedle set, can visually align
+// near the INACTIVE end's identifier for an ordinary tailwind reading
+// (confirmed against Shobdon's own real production data: 270°/4kt with
+// activeRunwayEnd="08" put the arrow right beside the "26" label even
+// though the headwind/crosswind readout - correctly - showed a 08
+// tailwind). Matching directly on the same string the numbers use makes
+// the two impossible to disagree, regardless of any heading/rotation
+// quirk on either side.
 function RunwayIdentifierText({
   x,
   y,
   text,
   fontSize,
   rotate180,
+  active,
 }: {
   x: number
   y: number
   text: string
   fontSize: number
   rotate180?: boolean
+  active?: boolean
 }): JSX.Element {
   const textEl = (
-    <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize={fontSize} fontWeight="900" opacity="0.85">
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      className="select-none"
+      fill={active ? '#38bdf8' : 'white'}
+      fontSize={fontSize}
+      fontWeight="900"
+      opacity={active ? 1 : 0.85}
+    >
       {text}
     </text>
   )
@@ -296,7 +324,7 @@ function showsCenterline(strip: RunwayStrip | undefined): boolean {
   return strip?.showCenterline !== false
 }
 
-function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
+function RunwayGroupGraphic({ group, activeEnd }: { group: RunwayGroup; activeEnd: string }): JSX.Element {
   // endAIdentifier is always the end at compass bearing = headingDegrees
   // (previously "labelTop" - the physical position, not the string, is
   // what determines which end this is); endBIdentifier is the reciprocal
@@ -307,6 +335,14 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   // not more.
   const labelTop = group.endAIdentifier
   const labelBottom = group.endBIdentifier
+  // '' (not yet loaded) matches neither, so nothing is highlighted until
+  // real data arrives - same "no data yet" posture as compassState's own
+  // hasActiveRunwayData, rather than guessing labelTop is active by
+  // default the way the headwind/crosswind fallback below does (that
+  // fallback exists to keep the maths defined even with no data; a
+  // highlight has no equivalent need to ever show something).
+  const isTopActive = activeEnd !== '' && activeEnd === labelTop
+  const isBottomActive = activeEnd !== '' && activeEnd === labelBottom
   const halfLength = clampStripHalfLength(group.stripLengthPx / 2)
   const stripTop = 200 - halfLength
   const stripBottom = 200 + halfLength
@@ -377,14 +413,14 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
         <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
         {stripA?.showIdentifierLabel && (
           <>
-            <RunwayIdentifierText x={stripACentreX} y={stripANumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-            <RunwayIdentifierText x={stripACentreX} y={stripANumberBottomY} text={labelBottom} fontSize={fontSize} />
+            <RunwayIdentifierText x={stripACentreX} y={stripANumberTopY} text={labelTop} fontSize={fontSize} rotate180 active={isTopActive} />
+            <RunwayIdentifierText x={stripACentreX} y={stripANumberBottomY} text={labelBottom} fontSize={fontSize} active={isBottomActive} />
           </>
         )}
         {stripB?.showIdentifierLabel && (
           <>
-            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberBottomY} text={labelBottom} fontSize={fontSize} />
+            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberTopY} text={labelTop} fontSize={fontSize} rotate180 active={isTopActive} />
+            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberBottomY} text={labelBottom} fontSize={fontSize} active={isBottomActive} />
           </>
         )}
       </g>
@@ -413,8 +449,8 @@ function RunwayGroupGraphic({ group }: { group: RunwayGroup }): JSX.Element {
       <line x1={stripX} y1={stripBottom} x2={edge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
       {strip?.showIdentifierLabel && (
         <>
-          <RunwayIdentifierText x={200} y={numberTopY} text={labelTop} fontSize={fontSize} rotate180 />
-          <RunwayIdentifierText x={200} y={numberBottomY} text={labelBottom} fontSize={fontSize} />
+          <RunwayIdentifierText x={200} y={numberTopY} text={labelTop} fontSize={fontSize} rotate180 active={isTopActive} />
+          <RunwayIdentifierText x={200} y={numberBottomY} text={labelBottom} fontSize={fontSize} active={isBottomActive} />
         </>
       )}
     </g>
@@ -533,10 +569,18 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
   // same as every device viewing it today (PC2, clubhouse display,
   // anyone with the link).
   // reverseCompassNeedle: developer-only safety-net override (see
-  // /developertools), applied ONLY to the arrow's visual rotation below
-  // - never to compassState.windDirection, headwind, or crosswind, which
-  // stay driven purely by calculateWindComponents() on the raw reported
-  // wind direction, completely independent of this flag.
+  // /developertools) meaning this tenant's own stored heading data is
+  // known to be backwards for its physical station - genuinely required
+  // for a correct headwind/tailwind/crosswind result, not cosmetic-only.
+  // Applied in TWO places, both required: directly to the arrow's own
+  // rotation below (compassState.windDirection is never itself modified),
+  // AND separately, before this, to activeRunwayHeading below (which
+  // headwind/crosswind ARE computed from) - see that value's own comment.
+  // An earlier version of this comment claimed it only affected the
+  // arrow's rotation; RunwayWindWidget.tsx's own comment documents the
+  // real incident that disproved that (Shobdon production data produced
+  // an inverted Headwind/Tailwind result there before both corrections
+  // were applied consistently).
   const [clubProfile, setClubProfile] = useState<{
     runwayGroups: RunwayGroup[]
     reverseCompassNeedle: boolean
@@ -995,7 +1039,7 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
                   above. */}
               <g id="runway-graphics">
                 {clubProfile.runwayGroups.map((group) => (
-                  <RunwayGroupGraphic key={group.id} group={group} />
+                  <RunwayGroupGraphic key={group.id} group={group} activeEnd={clubProfile.activeRunwayEnd} />
                 ))}
               </g>
             </g>
