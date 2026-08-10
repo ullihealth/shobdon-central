@@ -213,32 +213,61 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   )
 }
 
+// Compass-mode round (/runways): dialRotationDegrees mirrors
+// CompassPanel.tsx's own "rotate the rose+runway group, counter-rotate
+// each cardinal letter to stay upright" treatment exactly (same rotate()
+// formula, same per-letter counter-rotation wrapper) - duplicated here
+// rather than imported, same "no shared code with CompassPanel.tsx"
+// boundary this file's own header comment already established for the
+// static geometry. The caller (RunwaysPage.tsx) computes the actual
+// angle via windCalculations.ts's shared resolveActiveRunwayHeading, so
+// at least THAT formula - the one that's already caused a real bug once
+// from being hand-duplicated - isn't a third copy. Defaults to 0
+// (North-up, today's unchanged behaviour) so this prop is optional and
+// every pre-existing caller is unaffected.
+//
 // Admin-side, edit-time preview of ONE staged (possibly unsaved) runway
 // group - the /runways page's dropdown scopes editing to a single group
 // at a time, so the preview mirrors that scope rather than showing every
 // configured runway at once the way the live dashboard's compass does.
-export default function RunwayStripPreview({ group }: { group: RunwayGroup }): JSX.Element {
+export default function RunwayStripPreview({
+  group,
+  dialRotationDegrees = 0,
+}: {
+  group: RunwayGroup
+  dialRotationDegrees?: number
+}): JSX.Element {
   return (
     <svg viewBox="0 0 400 400" className="h-full w-full" preserveAspectRatio="xMidYMid meet">
       <circle cx="200" cy="200" r={RING_RADIUS} fill="var(--color-compass-disc-bg)" stroke="rgba(59, 130, 246, 0.25)" strokeWidth="1.5" />
 
-      <g id="cardinal-points" className="pointer-events-none">
-        <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
-        <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
-        <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
-        <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
-      </g>
+      <g transform={`rotate(${dialRotationDegrees} 200 200)`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+        <g id="cardinal-points" className="pointer-events-none">
+          <g transform={`rotate(${-dialRotationDegrees} ${NORTH_POINT.x} ${NORTH_POINT.y})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+            <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
+          </g>
+          <g transform={`rotate(${-dialRotationDegrees} ${EAST_POINT.x} ${EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+            <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
+          </g>
+          <g transform={`rotate(${-dialRotationDegrees} ${SOUTH_POINT.x} ${SOUTH_POINT.y})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+            <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
+          </g>
+          <g transform={`rotate(${-dialRotationDegrees} ${WEST_POINT.x} ${WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+            <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+          </g>
+        </g>
 
-      <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
-        {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
-          const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
-          const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)
-          return <line key={`marker-${degree}`} x1={point.x} y1={point.y} x2={innerPoint.x} y2={innerPoint.y} />
-        })}
-      </g>
+        <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+          {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
+            const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
+            const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)
+            return <line key={`marker-${degree}`} x1={point.x} y1={point.y} x2={innerPoint.x} y2={innerPoint.y} />
+          })}
+        </g>
 
-      <g id="runway-graphic">
-        <RunwayStripGraphic group={group} />
+        <g id="runway-graphic">
+          <RunwayStripGraphic group={group} />
+        </g>
       </g>
 
       <circle cx="200" cy="200" r="4" fill="white" opacity="0.5" />

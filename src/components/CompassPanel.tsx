@@ -5,6 +5,8 @@ import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
 import { calculateWindComponents, determineArrowColour, DEFAULT_ARROW_THRESHOLDS } from '../utils/windCalculations'
 import type { ArrowColour, ArrowColourThresholds } from '../utils/windCalculations'
 import type { PressureTrend } from '../types/weather'
+import { useCompassMode, CompassModeButtons, CompassModeNotice } from './CompassModeToggle'
+import type { CompassMode } from './CompassModeToggle'
 
 interface CompassState {
   windSpeed: number
@@ -21,22 +23,13 @@ interface CompassState {
 
 // Compass-mode round (/pilot only, gated behind the spacious prop below)
 // - NORTH (default, today's only behaviour) keeps the dial at 0°; RUNWAY
-// brings the live active-runway heading to the top instead. Persisted
-// per pilot via localStorage - no manual tenant-id prefix needed since
-// each tenant already lives on its own subdomain and localStorage is
-// natively origin-scoped by the browser, so a single fixed key already
-// gets correct per-tenant isolation for free.
-type CompassMode = 'north' | 'runway'
-const COMPASS_MODE_STORAGE_KEY = 'pilotCompassMode'
-
-function loadStoredCompassMode(): CompassMode {
-  if (typeof window === 'undefined') return 'north'
-  try {
-    return window.localStorage.getItem(COMPASS_MODE_STORAGE_KEY) === 'runway' ? 'runway' : 'north'
-  } catch {
-    return 'north'
-  }
-}
+// brings the live active-runway heading to the top instead. State/
+// buttons/notice extracted into CompassModeToggle.tsx (/runways round) so
+// that file's own admin preview can share the exact same toggle rather
+// than a hand-copied duplicate - see that file's own header comment.
+// CompassMode itself is still used as a type annotation a few places
+// below, hence the re-export-style import above rather than removing it
+// entirely from this file.
 
 // Intermediate bearings for compass rose
 const INTERMEDIATE_BEARINGS = [
@@ -695,24 +688,18 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
     arrowThresholds: DEFAULT_ARROW_THRESHOLDS,
   })
 
-  // Raw stored/selected preference, not necessarily what's actually
-  // applied right now - see effectiveCompassMode below, which is the one
-  // that actually drives rendering. Keeping these separate means a
-  // pilot who taps RUNWAY before ATC has set an active runway yet still
-  // has that intent remembered - the moment activeRunwayEnd becomes
-  // non-empty (ATC sets it, or a fresh fetch resolves), the dial starts
-  // rotating automatically with no need to tap the button again.
-  const [compassMode, setCompassMode] = useState<CompassMode>(loadStoredCompassMode)
-
-  function handleCompassModeChange(next: CompassMode) {
-    setCompassMode(next)
-    try {
-      window.localStorage.setItem(COMPASS_MODE_STORAGE_KEY, next)
-    } catch {
-      // Private browsing / storage disabled - the toggle still works for
-      // this session, it just won't be remembered on the next visit.
-    }
-  }
+  // '' matches this file's own existing fallback-to-endA convention
+  // elsewhere (the headwind/crosswind maths below never treats an unset
+  // activeRunwayEnd as an error) - but for the compass-mode toggle
+  // specifically, an explicitly-unset active runway should read as "no
+  // data" rather than silently pointing RUNWAY mode at whatever endA
+  // happens to be, since that would present an unconfirmed runway as if
+  // it were confirmed. Computed here (ahead of the early "Loading
+  // weather…" return below) purely so useCompassMode - a hook - can be
+  // called unconditionally on every render, same Rules-of-Hooks
+  // constraint that already required the old inline useState here.
+  const hasActiveRunwayData = clubProfile.activeRunwayEnd !== ''
+  const { compassMode, effectiveCompassMode, showNoRunwayNotice, handleCompassModeChange } = useCompassMode(hasActiveRunwayData)
 
   useEffect(() => {
     let cancelled = false
@@ -862,19 +849,9 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
     )
   }
 
-  // '' matches this file's own existing fallback-to-endA convention
-  // elsewhere (the headwind/crosswind maths above never treats an unset
-  // activeRunwayEnd as an error) - but for THIS feature specifically, an
-  // explicitly-unset active runway should read as "no data" rather than
-  // silently pointing RUNWAY mode at whatever endA happens to be, since
-  // that would present an unconfirmed runway as if it were confirmed.
-  const hasActiveRunwayData = clubProfile.activeRunwayEnd !== ''
-  // What's actually applied right now, not necessarily the raw stored
-  // preference above - falls back to NORTH whenever RUNWAY is selected
-  // but there's no data to rotate toward, matching requirement 3 exactly
-  // ("keep the compass in NORTH mode - don't switch/rotate anything").
-  const effectiveCompassMode: CompassMode = compassMode === 'runway' && hasActiveRunwayData ? 'runway' : 'north'
-  const showNoRunwayNotice = compassMode === 'runway' && !hasActiveRunwayData
+  // hasActiveRunwayData/effectiveCompassMode/showNoRunwayNotice now come
+  // from useCompassMode above (computed ahead of the early return, see
+  // that call's own comment) - nothing new here.
   // Brings activeRunwayHeading to the TOP of the dial: SVG rotate() and
   // compass bearings both increase clockwise in this file's existing
   // convention (see RunwayGroupGraphic's own rotate(headingDegrees) a
@@ -942,31 +919,14 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
       {spacious && (
         <div className="flex w-full flex-shrink-0 flex-col items-center gap-2 mb-[-33px] sm:mb-[-29px] sm:w-auto">
           <div className="flex w-full items-center justify-between">
-            <button
-              type="button"
-              onClick={() => handleCompassModeChange('north')}
-              className={`rounded-xl border border-slate-700 px-[20px] py-[7px] text-[17px] font-bold uppercase tracking-widest transition ${
-                effectiveCompassMode === 'north' ? 'text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              North
-            </button>
-            <button
-              type="button"
-              onClick={() => handleCompassModeChange('runway')}
-              className={`rounded-xl border border-slate-700 px-[20px] py-[7px] text-[17px] font-bold uppercase tracking-widest transition ${
-                effectiveCompassMode === 'runway' ? 'text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Runway
-            </button>
+            <CompassModeButtons effectiveCompassMode={effectiveCompassMode} onChange={handleCompassModeChange} />
           </div>
           {/* Requirement 3's fallback - derived, not a one-off toast: stays
               visible for as long as RUNWAY is the stored preference but
               activeRunwayEnd is unset, and disappears on its own the
               moment data becomes available (dial then starts rotating
               automatically too - see effectiveCompassMode above). */}
-          {showNoRunwayNotice && <div className="text-xs font-semibold text-amber-400">No runway data available</div>}
+          <CompassModeNotice show={showNoRunwayNotice} />
         </div>
       )}
 

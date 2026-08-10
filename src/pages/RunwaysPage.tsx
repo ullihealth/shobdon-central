@@ -3,6 +3,8 @@ import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 import { TENANT_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup } from '../types/clubProfile'
 import RunwayStripPreview from '../components/RunwayStripPreview'
+import { useCompassMode, CompassModeButtons, CompassModeNotice } from '../components/CompassModeToggle'
+import { resolveActiveRunwayHeading } from '../utils/windCalculations'
 
 const MAX_GROUPS = 3
 
@@ -76,6 +78,14 @@ export default function RunwaysPage(): JSX.Element {
   // this is its own staged field alongside `groups` rather than a
   // property duplicated onto every RunwayGroup.
   const [windsock, setWindsock] = useState<WindsockThresholds>(DEFAULT_WINDSOCK)
+  // North/Runway toggle round - opsPanel.activeRunwayEnd/reverseCompassNeedle,
+  // read-only here (this page only ever writes runwayGroups/windsock via
+  // "Update Dashboard" - see that handler below, untouched). Already part
+  // of TENANT_CONFIG_URL's own response (functions/api/tenant/config.ts
+  // reuses publicConfig.ts's opsPanel splice), just never previously kept
+  // in state since nothing on this page needed it before this round.
+  const [activeRunwayEnd, setActiveRunwayEnd] = useState('')
+  const [reverseCompassNeedle, setReverseCompassNeedle] = useState(false)
 
   // Real D1-backed read (functions/api/tenant/config.ts, the same route
   // /design already uses) - was a synchronous loadClubProfile()
@@ -91,6 +101,8 @@ export default function RunwaysPage(): JSX.Element {
       .then(([data, parentTenant]) => {
         if (cancelled) return
         setGroups(Array.isArray(data?.runwayGroups) ? data.runwayGroups : [])
+        setActiveRunwayEnd(data?.opsPanel?.activeRunwayEnd ?? '')
+        setReverseCompassNeedle(!!data?.opsPanel?.reverseCompassNeedle)
         if (data?.windsock)
           setWindsock({
             band2Kt: data.windsock.band2Kt ?? DEFAULT_WINDSOCK.band2Kt,
@@ -258,6 +270,32 @@ export default function RunwaysPage(): JSX.Element {
 
   const selectedGroup = groups[selectedIndex] ?? groups[0]
 
+  // Same "no data = no false RUNWAY mode" gate CompassPanel.tsx's own
+  // hasActiveRunwayData uses, extended for this page's own multi-group
+  // editing context: the live activeRunwayEnd must actually name one of
+  // THIS staged group's two ends, not just be non-empty - editing a
+  // second/new runway while a different one is live shouldn't silently
+  // rotate toward a heading that doesn't belong to what's on screen.
+  const hasActiveRunwayData =
+    !!selectedGroup && activeRunwayEnd !== '' && (activeRunwayEnd === selectedGroup.endAIdentifier || activeRunwayEnd === selectedGroup.endBIdentifier)
+  const { effectiveCompassMode, showNoRunwayNotice, handleCompassModeChange } = useCompassMode(hasActiveRunwayData)
+  // Same rotate()-the-negative-heading formula CompassPanel.tsx's own
+  // dialRotationDegrees uses - resolveActiveRunwayHeading (shared,
+  // windCalculations.ts) is fed the SELECTED group's own current staged
+  // values, so this updates live as the admin edits heading/identifiers,
+  // matching the preview's own existing "reflects staged values as you
+  // type" behaviour.
+  const dialRotationDegrees =
+    effectiveCompassMode === 'runway' && selectedGroup
+      ? -resolveActiveRunwayHeading(
+          selectedGroup.endAIdentifier,
+          selectedGroup.endBIdentifier,
+          selectedGroup.headingDegrees,
+          activeRunwayEnd,
+          reverseCompassNeedle
+        )
+      : 0
+
   return (
     <div className="mx-auto max-w-6xl px-5 pb-16 pt-10">
       {/* ── Heading + sticky Update Dashboard, side by side - same
@@ -343,6 +381,20 @@ export default function RunwaysPage(): JSX.Element {
                 + Add another runway
               </button>
             )}
+            {/* North/Runway toggle round - same shared component/state
+                CompassPanel.tsx's own /pilot toggle uses (CompassModeToggle.tsx),
+                so behaviour (including the shared localStorage preference)
+                stays identical between the two rather than a second,
+                hand-copied implementation. Just the two buttons inline in
+                this row (no justify-between "shoulders" layout - that's
+                specific to CompassPanel's own compass-circle positioning,
+                see that file's own comment), rotating THIS page's preview
+                toward the live active runway's heading, resolved against
+                whichever group is currently selected/staged above. */}
+            <div className="flex items-center gap-2">
+              <CompassModeButtons effectiveCompassMode={effectiveCompassMode} onChange={handleCompassModeChange} />
+            </div>
+            <CompassModeNotice show={showNoRunwayNotice} />
           </div>
 
           {/* ── Form (left) + live preview (right) ──────────────────── */}
@@ -495,7 +547,7 @@ export default function RunwaysPage(): JSX.Element {
             <div className="rounded-2xl border border-border bg-panel p-6">
               <div className="mb-3 text-xs font-bold uppercase tracking-widest text-muted-400">Live Preview</div>
               <div className="aspect-square w-full">
-                <RunwayStripPreview group={selectedGroup} />
+                <RunwayStripPreview group={selectedGroup} dialRotationDegrees={dialRotationDegrees} />
               </div>
               <p className="mt-3 text-xs text-muted-500">
                 Reflects the staged values on the left as you edit - nothing here has been published yet.

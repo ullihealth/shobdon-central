@@ -72,3 +72,28 @@ export function degreesToCardinal(degrees: number): string {
   const index = Math.round(normalised / 22.5) % 16
   return CARDINAL_POINTS[index]
 }
+
+// Shared /runways round: the "which way does the active runway end
+// actually point" formula CompassPanel.tsx and RunwayWindWidget.tsx each
+// already implement independently (endAIdentifier's own heading is the
+// only one ever stored - the reciprocal end is that heading +180 - then
+// reverseCompassNeedle applies another 180 on top when this tenant's own
+// station data is known to be backwards). That duplication has already
+// caused one real bug (see PilotRunwayWindPanel.tsx's own comment - a
+// production tenant's inverted Headwind/Tailwind result before both
+// copies were corrected to apply reverseCompassNeedle consistently).
+// This is for RunwaysPage.tsx's own new Runway-mode toggle to use
+// instead of writing a third hand-copied version - the two existing
+// copies are left as-is (already correct, already tested) rather than
+// retrofitted onto this, which would be a larger, separately-scoped
+// change.
+export function resolveActiveRunwayHeading(
+  endAIdentifier: string,
+  endBIdentifier: string,
+  headingDegrees: number,
+  activeEnd: string,
+  reverseCompassNeedle: boolean
+): number {
+  const resolved = activeEnd === endBIdentifier ? (headingDegrees + 180) % 360 : headingDegrees
+  return reverseCompassNeedle ? (resolved + 180) % 360 : resolved
+}
