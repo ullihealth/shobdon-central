@@ -71,26 +71,33 @@ function circlePoint(
 // placed at a fraction of this, not a bare literal, so the two stay linked.
 const RING_RADIUS = 180
 
-// Sleap-style layout: N/E/S/W sit at the true outer rim (straddling the
-// ring boundary itself, same as a real compass bezel), the degree/heading
-// numbers occupy a smaller radius well inside that, and a band of short
-// dashed tick marks separates the two label rings. Previously the
-// cardinal letters sat at RING_RADIUS * 0.83 (≈149px) - actually CLOSER
-// to centre than the degree-number ring (153px) and the tick-mark band
-// (163-175px), not "near the rim" at all despite the old comment's claim.
-// Since a runway strip's rendered length has no upper clamp (admin-
-// configurable, deliberately unbounded - see MIN_STRIP_HALF_LENGTH's own
-// comment), a sufficiently long strip only had to reach ~149px from
-// centre to visually collide with the giant (fontSize 41) cardinal
-// letters - just 34px past Shobdon's own real strip (stripLengthPx 230,
-// half-length 115px). Moving the letters out to 168px adds ~19px of
-// clearance and puts them outside the tick-mark band entirely, so a
-// strip has to be substantially longer before it can reach them. (172px
-// was tried first but clipped the top of "N" against the SVG's own
-// viewport edge by under a pixel - pulled in 4px for headroom, verified
-// via getBoundingClientRect that all four letters render fully on-screen
-// with margin to spare at 168px.)
-const CARDINAL_LETTER_RADIUS = RING_RADIUS - 12
+// Sleap-style layout: N/E/S/W sit at the true outer rim, centred ON the
+// ring's own edge line (straddling it evenly, same as a real compass
+// bezel), the degree/heading numbers occupy a smaller radius well inside
+// that, and a band of short dashed tick marks separates the two label
+// rings. On-the-line round: this file's own PRIOR comment here already
+// described this exact intent ("straddling the ring boundary itself"),
+// but the radius actually used (RING_RADIUS - 12 = 168) put the letters
+// entirely inside the ring, not straddling it - a real gap between the
+// stated intent and the implemented value. Now literally RING_RADIUS
+// (180), the ring circle's own radius, so each letter's anchor point
+// sits exactly on the stroke.
+//
+// A prior round rejected 172px here for clipping "N" against the SVG's
+// own 400x400 viewBox edge (there's no margin beyond the ring itself in
+// that box) and pulled back to 168 instead - confirmed via
+// getBoundingClientRect that the full 180 clips even more (measured
+// ~4.7px of "N"'s own top cut off, not a sub-pixel rounding artefact).
+// Fixed properly this time via overflow: visible on the SVG element
+// itself (see that element's own comment) rather than shrinking the
+// radius again - the ring/strip/every other coordinate in this file
+// stays pixel-identical, only the letters (the one thing that now
+// legitimately needs to paint past the box's nominal edge) are no
+// longer clipped to it. Verified in both real callers (dashboard
+// ClassicTemplate and /pilot), which wrap this component in their own
+// ancestor overflow-hidden containers - confirmed those don't re-clip
+// what the SVG's own overflow:visible already lets through.
+const CARDINAL_LETTER_RADIUS = RING_RADIUS
 
 // Sits just inside the outer ring's own stroke (RING_RADIUS=180, stroke
 // centred on that radius), not inside the tick-mark band below - moved
@@ -339,53 +346,33 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
 // it stays in exactly the same screen position, just flipped in place.
 // Callers decide which of the pair (labelTop/labelBottom) carries the
 // extra spin - see the per-block usage below.
-// active (main dashboard round): highlights whichever identifier
-// matches opsPanel.activeRunwayEnd - a plain string match against the
-// SAME raw value the headwind/crosswind maths already key off (see
-// RunwayGroupGraphic's own isTopActive/isBottomActive below), not
-// derived from headingDegrees/activeRunwayHeading/reverseCompassNeedle
-// at all. Before this, the strip graphic gave both ends an identical
-// look, so the only way a viewer could infer "which end is active" was
-// the wind arrow's rotational position relative to the fixed strip -
-// which, for a tenant with reverseCompassNeedle set, can visually align
-// near the INACTIVE end's identifier for an ordinary tailwind reading
-// (confirmed against Shobdon's own real production data: 270°/4kt with
-// activeRunwayEnd="08" put the arrow right beside the "26" label even
-// though the headwind/crosswind readout - correctly - showed a 08
-// tailwind). Matching directly on the same string the numbers use makes
-// the two impossible to disagree, regardless of any heading/rotation
-// quirk on either side. Colour round: --color-status-good-text (this
-// file's own themeable-fill convention, matching the background circle's
-// fill="var(--color-compass-disc-bg)" a few lines below) - the same
-// token WeatherStatusIndicator.tsx now uses for its own "LIVE ATC" text
-// and RunwayWindWidget.tsx/this file's own arrow already use for their
-// "good" wind state, not a second hardcoded copy of a colour picked
-// independently.
-// Outline round, corrected: a genuinely stroke-only (fill: none) glyph
-// looked garbled/doubled on real hardware - a 1px hairline tracing BOTH
-// the inner and outer edge of a bold (fontWeight 900) digit's own thick
-// strokes sits close enough to itself, especially on "26"'s tighter
-// curves, that anti-aliasing read as a doubled/overlapping line, worse
-// still on whichever identifier carries the extra rotate180 wrapper (see
-// that prop's own comment) since it's rendering at a compound angle
-// (that wrapper's 180 PLUS the group's own rotate(headingDegrees) a few
-// hundred lines up), not axis-aligned. Investigated whether
-// reverseCompassNeedle was somehow causing an actual duplicate render -
-// it isn't: grep confirms it's never read anywhere in this function or
-// RunwayGroupGraphic's own identifier calls, only in the wind-arrow's
-// rotation and the headwind/crosswind maths, both unrelated call paths.
-// Back to solid fill (active green / inactive white, same split as
-// before the outline round) as the glyph's actual shape, with a thin
-// stroke layered on top for contrast - SVG's own default paint order
-// (fill, then stroke) means the stroke only ever traces the OUTER
-// contour of an already-solid shape, not two close-together hairlines
-// tracing a hollow one. Charcoal reuses this file's own existing
-// rgba(3, 7, 18, 0.85) "dark halo" literal (the wind needle's own halo a
-// few hundred lines below, there for the exact same "legible over the
-// runway strip" reason) rather than a new hardcoded dark value. Still a
-// flat +2px display-only bump over the admin-configured
-// identifierFontSizePx - RunwaysPage.tsx's own stored value stays
-// untouched, only what's actually rendered here is larger.
+// Uniform-colour round: both identifiers now render identically (solid
+// white fill, thin charcoal outline) - the active/inactive distinction
+// used to live here too (green fill, full opacity, vs white/0.85), but
+// that's redundant now that ThresholdLightBars (see that component's own
+// comment, a few hundred lines up) already carries the exact same
+// signal unambiguously via green/red bars keyed off the identical
+// isTopActive/isBottomActive booleans RunwayGroupGraphic computes below.
+// No `active` prop any more - there's nothing left for it to drive here.
+// Outline round: a genuinely stroke-only (fill: none) glyph looked
+// garbled/doubled on real hardware - a 1px hairline tracing BOTH the
+// inner and outer edge of a bold (fontWeight 900) digit's own thick
+// strokes sits close enough to itself that anti-aliasing read as a
+// doubled/overlapping line, worse on whichever identifier carries the
+// extra rotate180 wrapper (see that prop's own comment) since it's
+// rendering at a compound angle (that wrapper's 180 PLUS the group's own
+// rotate(headingDegrees) a few hundred lines up), not axis-aligned. Back
+// to solid fill as the glyph's actual shape, with a thin stroke layered
+// on top for contrast - SVG's own default paint order (fill, then
+// stroke) means the stroke only ever traces the OUTER contour of an
+// already-solid shape, not two close-together hairlines tracing a
+// hollow one. Charcoal reuses this file's own existing rgba(3, 7, 18,
+// 0.85) "dark halo" literal (the wind needle's own halo a few hundred
+// lines below, there for the exact same "legible over the runway strip"
+// reason) rather than a new hardcoded dark value. Still a flat +2px
+// display-only bump over the admin-configured identifierFontSizePx -
+// RunwaysPage.tsx's own stored value stays untouched, only what's
+// actually rendered here is larger.
 const IDENTIFIER_FONT_SIZE_BOOST_PX = 2
 const IDENTIFIER_OUTLINE_STROKE_WIDTH = 1
 const IDENTIFIER_OUTLINE_STROKE_COLOUR = 'rgba(3, 7, 18, 0.85)'
@@ -396,14 +383,12 @@ function RunwayIdentifierText({
   text,
   fontSize,
   rotate180,
-  active,
 }: {
   x: number
   y: number
   text: string
   fontSize: number
   rotate180?: boolean
-  active?: boolean
 }): JSX.Element {
   const renderedFontSize = fontSize + IDENTIFIER_FONT_SIZE_BOOST_PX
   const content = (
@@ -413,12 +398,11 @@ function RunwayIdentifierText({
       textAnchor="middle"
       dominantBaseline="middle"
       className="select-none"
-      fill={active ? 'var(--color-status-good-text)' : 'white'}
+      fill="white"
       stroke={IDENTIFIER_OUTLINE_STROKE_COLOUR}
       strokeWidth={IDENTIFIER_OUTLINE_STROKE_WIDTH}
       fontSize={renderedFontSize}
       fontWeight="900"
-      opacity={active ? 1 : 0.85}
     >
       {text}
     </text>
@@ -525,14 +509,14 @@ function RunwayGroupGraphic({ group, activeEnd }: { group: RunwayGroup; activeEn
         <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
         {stripA?.showIdentifierLabel && (
           <>
-            <RunwayIdentifierText x={stripACentreX} y={stripANumberTopY} text={labelTop} fontSize={fontSize} rotate180 active={isTopActive} />
-            <RunwayIdentifierText x={stripACentreX} y={stripANumberBottomY} text={labelBottom} fontSize={fontSize} active={isBottomActive} />
+            <RunwayIdentifierText x={stripACentreX} y={stripANumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
+            <RunwayIdentifierText x={stripACentreX} y={stripANumberBottomY} text={labelBottom} fontSize={fontSize} />
           </>
         )}
         {stripB?.showIdentifierLabel && (
           <>
-            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberTopY} text={labelTop} fontSize={fontSize} rotate180 active={isTopActive} />
-            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberBottomY} text={labelBottom} fontSize={fontSize} active={isBottomActive} />
+            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
+            <RunwayIdentifierText x={stripBCentreX} y={stripBNumberBottomY} text={labelBottom} fontSize={fontSize} />
           </>
         )}
       </g>
@@ -562,8 +546,8 @@ function RunwayGroupGraphic({ group, activeEnd }: { group: RunwayGroup; activeEn
       <line x1={stripX} y1={stripBottom} x2={edge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
       {strip?.showIdentifierLabel && (
         <>
-          <RunwayIdentifierText x={200} y={numberTopY} text={labelTop} fontSize={fontSize} rotate180 active={isTopActive} />
-          <RunwayIdentifierText x={200} y={numberBottomY} text={labelBottom} fontSize={fontSize} active={isBottomActive} />
+          <RunwayIdentifierText x={200} y={numberTopY} text={labelTop} fontSize={fontSize} rotate180 />
+          <RunwayIdentifierText x={200} y={numberBottomY} text={labelBottom} fontSize={fontSize} />
         </>
       )}
     </g>
@@ -1033,10 +1017,24 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
           fixed height required. */}
       <div className="relative aspect-square max-w-full w-full flex-shrink-0 sm:left-[-18px] sm:h-full sm:w-auto">
 
-          {/* LAYER 1 — Static reference: compass rose + runway */}
+          {/* LAYER 1 — Static reference: compass rose + runway.
+              overflow: visible (on-the-line round) - the cardinal letters
+              now sit at CARDINAL_LETTER_RADIUS === RING_RADIUS, straddling
+              the ring's own stroke exactly per request, which means each
+              glyph's own rendered height extends past the nominal 400x400
+              viewBox square (there's no margin beyond the ring itself in
+              this box - see RING_RADIUS's own comment). SVG's own default
+              is to clip content to the viewBox, same as overflow:hidden -
+              this opts out for exactly this element, letting the letters
+              render into that spillover space, with NO change to the
+              viewBox itself or any coordinate in this file: the ring,
+              strip, tick marks, everything else stays pixel-identical,
+              only content that already draws past the box's edge (now
+              just these four letters) becomes visible instead of clipped. */}
           <svg
             viewBox="0 0 400 400"
             className="w-full h-full"
+            style={{ overflow: 'visible' }}
             preserveAspectRatio="xMidYMid meet"
           >
             {/* Background Circle - the one themeable fill in this file; everything
