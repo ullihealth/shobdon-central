@@ -251,6 +251,61 @@ function ThresholdMarkingBlocks({
   )
 }
 
+// Threshold light bars round: a slim always-on bar at each end of every
+// strip, one per strip (not per group - matching ThresholdMarkingBlocks'
+// own per-strip convention just above, so a twin group's tarmac+grass
+// strips each get their own pair, not one shared pair). Positioned just
+// inside (toward the strip's own centre from) THRESHOLD_MARKING_BLOCK_LENGTH -
+// the same fixed offset the checkerboard/stripe block occupies - but
+// rendered unconditionally, independent of that strip's own
+// hasThresholdMarkings toggle, since this is a distinct feature ("every
+// runway strip"), not an extension of the optional marking. Colour is
+// plain green/red on whichever end matches activeRunwayEnd, same
+// isTopActive/isBottomActive boolean the identifier highlight above
+// already computes from the same raw string - no separate lookup, so
+// this can never disagree with that highlight.
+const THRESHOLD_LIGHT_HEIGHT = 5
+// Same two tokens the identifier highlight (RunwayIdentifierText) and
+// this file's own arrow-green/arrow-red wind-arrow classes already use -
+// not a new hardcoded green/red pair.
+const THRESHOLD_LIGHT_ACTIVE_FILL = 'var(--color-status-good-text)'
+const THRESHOLD_LIGHT_INACTIVE_FILL = 'var(--color-status-bad-text)'
+
+function ThresholdLightBars({
+  stripX,
+  stripWidth,
+  stripTop,
+  stripBottom,
+  topActive,
+  bottomActive,
+}: {
+  stripX: number
+  stripWidth: number
+  stripTop: number
+  stripBottom: number
+  topActive: boolean
+  bottomActive: boolean
+}): JSX.Element {
+  return (
+    <>
+      <rect
+        x={stripX}
+        y={stripTop + THRESHOLD_MARKING_BLOCK_LENGTH}
+        width={stripWidth}
+        height={THRESHOLD_LIGHT_HEIGHT}
+        fill={topActive ? THRESHOLD_LIGHT_ACTIVE_FILL : THRESHOLD_LIGHT_INACTIVE_FILL}
+      />
+      <rect
+        x={stripX}
+        y={stripBottom - THRESHOLD_MARKING_BLOCK_LENGTH - THRESHOLD_LIGHT_HEIGHT}
+        width={stripWidth}
+        height={THRESHOLD_LIGHT_HEIGHT}
+        fill={bottomActive ? THRESHOLD_LIGHT_ACTIVE_FILL : THRESHOLD_LIGHT_INACTIVE_FILL}
+      />
+    </>
+  )
+}
+
 // Per-strip numeral inset: when that strip's own markings are on, its
 // numerals move clear of the fixed-length checkerboard block instead of
 // sitting at the block's inner edge; markings off keeps the "previous"
@@ -289,6 +344,29 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
 // and RunwayWindWidget.tsx/this file's own arrow already use for their
 // "good" wind state, not a second hardcoded copy of a colour picked
 // independently.
+// Contrast badge + size round: a dark pill behind BOTH ends (active and
+// inactive alike - the badge itself never carries the active/inactive
+// signal, only the text fill inside it still does), plus a flat +2px
+// display-only bump over the admin-configured identifierFontSizePx -
+// RunwaysPage.tsx's own stored value is untouched, only what's actually
+// rendered here is larger. var(--color-compass-disc-bg) rather than a
+// third hardcoded dark-navy literal - this file already has two
+// (rgba(15, 23, 42, 0.94) on the centre wind-label pill, rgba(15, 23,
+// 42, 0.95) as this exact token on the background disc a few hundred
+// lines below) that are visually indistinguishable from each other;
+// reusing the actual token rather than adding a third near-duplicate
+// literal.
+const IDENTIFIER_FONT_SIZE_BOOST_PX = 2
+// Approximate bold/900-weight digit width as a fraction of font size -
+// identifiers are always <=2 characters (RunwaysPage.tsx's own
+// maxLength={2} on both end-identifier inputs), so this only ever needs
+// to size 1-2 glyphs, not arbitrary text.
+const IDENTIFIER_BADGE_CHAR_WIDTH_RATIO = 0.62
+const IDENTIFIER_BADGE_PAD_X = 5
+const IDENTIFIER_BADGE_HEIGHT_RATIO = 1.15
+const IDENTIFIER_BADGE_PAD_Y = 4
+const IDENTIFIER_BADGE_CORNER_RADIUS = 4
+
 function RunwayIdentifierText({
   x,
   y,
@@ -304,22 +382,35 @@ function RunwayIdentifierText({
   rotate180?: boolean
   active?: boolean
 }): JSX.Element {
-  const textEl = (
-    <text
-      x={x}
-      y={y}
-      textAnchor="middle"
-      dominantBaseline="middle"
-      className="select-none"
-      fill={active ? 'var(--color-status-good-text)' : 'white'}
-      fontSize={fontSize}
-      fontWeight="900"
-      opacity={active ? 1 : 0.85}
-    >
-      {text}
-    </text>
+  const renderedFontSize = fontSize + IDENTIFIER_FONT_SIZE_BOOST_PX
+  const badgeWidth = text.length * renderedFontSize * IDENTIFIER_BADGE_CHAR_WIDTH_RATIO + IDENTIFIER_BADGE_PAD_X * 2
+  const badgeHeight = renderedFontSize * IDENTIFIER_BADGE_HEIGHT_RATIO + IDENTIFIER_BADGE_PAD_Y * 2
+  const content = (
+    <>
+      <rect
+        x={x - badgeWidth / 2}
+        y={y - badgeHeight / 2}
+        width={badgeWidth}
+        height={badgeHeight}
+        rx={IDENTIFIER_BADGE_CORNER_RADIUS}
+        fill="var(--color-compass-disc-bg)"
+      />
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        className="select-none"
+        fill={active ? 'var(--color-status-good-text)' : 'white'}
+        fontSize={renderedFontSize}
+        fontWeight="900"
+        opacity={active ? 1 : 0.85}
+      >
+        {text}
+      </text>
+    </>
   )
-  return rotate180 ? <g transform={`rotate(180 ${x} ${y})`}>{textEl}</g> : textEl
+  return rotate180 ? <g transform={`rotate(180 ${x} ${y})`}>{content}</g> : content
 }
 
 // enabled/showCenterline !== false rather than === true so a missing/
@@ -409,6 +500,8 @@ function RunwayGroupGraphic({ group, activeEnd }: { group: RunwayGroup; activeEn
         {stripB?.hasThresholdMarkings && (
           <ThresholdMarkingBlocks stripX={stripBX} stripWidth={stripBWidth} stripTop={stripTop} stripBottom={stripBottom} />
         )}
+        <ThresholdLightBars stripX={stripAX} stripWidth={stripAWidth} stripTop={stripTop} stripBottom={stripBottom} topActive={isTopActive} bottomActive={isBottomActive} />
+        <ThresholdLightBars stripX={stripBX} stripWidth={stripBWidth} stripTop={stripTop} stripBottom={stripBottom} topActive={isTopActive} bottomActive={isBottomActive} />
         {showsCenterline(stripA) && (
           <line x1={stripACentreX} y1={centrelineTop} x2={stripACentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
@@ -448,6 +541,7 @@ function RunwayGroupGraphic({ group, activeEnd }: { group: RunwayGroup; activeEn
       {strip?.hasThresholdMarkings && (
         <ThresholdMarkingBlocks stripX={stripX} stripWidth={width} stripTop={stripTop} stripBottom={stripBottom} />
       )}
+      <ThresholdLightBars stripX={stripX} stripWidth={width} stripTop={stripTop} stripBottom={stripBottom} topActive={isTopActive} bottomActive={isBottomActive} />
       {showsCenterline(strip) && (
         <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
       )}
