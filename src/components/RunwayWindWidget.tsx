@@ -250,8 +250,16 @@ export default function RunwayWindWidget({
   // page background, same as the compass instrument beside it - no card
   // border/bg/padding, same chromeless treatment bare already has, just
   // with compact's own smaller (non-bare) sizing everywhere else below.
-  const outerClass =
-    bare || compact ? 'flex w-full flex-col items-center' : 'flex flex-col items-center rounded-2xl border border-border bg-panel p-4 sm:p-6'
+  // Deliberately NOT bare's own w-full here (layout-fix round) - bare's
+  // only caller is a full-width mobile page section with nothing beside
+  // it, but compact's caller is a flex sibling of the compass instrument
+  // in the same row; w-full there made this div claim the ENTIRE row's
+  // width instead of just its own content's width, squeezing/shifting
+  // the compass beside it. Content-sized (no explicit width), same as
+  // the card variant this replaced.
+  const outerClass = bare
+    ? 'flex w-full flex-col items-center'
+    : `flex flex-col items-center${compact ? '' : ' rounded-2xl border border-border bg-panel p-4 sm:p-6'}`
   const topRowClass = bare ? 'flex w-full items-start justify-center gap-3' : `flex items-start justify-center gap-4${compact ? '' : ' sm:gap-8'}`
   const titleClass = bare
     ? 'text-lg font-bold uppercase tracking-wide text-muted-400'
@@ -276,7 +284,16 @@ export default function RunwayWindWidget({
   // of which tier is showing, comparable in visual weight to the runway
   // image now that each sits alone atop its own column instead of
   // sharing a column with three other stacked text blocks.
-  const windsockClass = bare ? 'h-40 w-auto object-contain' : `h-16 w-auto object-contain${compact ? '' : ' sm:h-28'}`
+  // compact: h-36 rather than h-16 - matches runwayWrapClass's own w-36
+  // below (same Tailwind spacing-scale value, so the two track together
+  // at any root font-size this app's own vmin-clamped scale produces,
+  // not just at one specific viewport a fixed px value would only
+  // happen to match). Runway.png itself renders very close to square at
+  // that width (confirmed by direct measurement: 121.5 x 121.7px), so a
+  // same-value height on the windsock lands it at essentially the same
+  // rendered height as the runway graphic beside it - previously h-16
+  // (a plain, unrelated smaller value) left it noticeably shorter.
+  const windsockClass = bare ? 'h-40 w-auto object-contain' : `${compact ? 'h-36' : 'h-16'} w-auto object-contain${compact ? '' : ' sm:h-28'}`
   // Round 5: Circuit and Trend swapped AND moved off their shared row,
   // each now a literal child of its own top column (Trend under
   // Crosswind/windsock, Circuit under Headwind/runway) - this guarantees
@@ -310,7 +327,13 @@ export default function RunwayWindWidget({
   // that the windsock column doesn't, so the windsock image would
   // otherwise start noticeably higher. Value empirically measured
   // against the actual rendered arrow height/gap, not guessed.
-  const windsockOffsetClass = bare ? 'mt-11' : ''
+  // compact gets the same treatment (layout-fix round) - same root cause
+  // (the arrow icon's own height + column gap, ~27px measured directly
+  // against a real render at this size, not the bare tier's own 44px
+  // mt-11 which was tuned for the arrow's larger bare-only size), needed
+  // once windsock/runway heights were brought to parity so Trend/Circuit
+  // (each just mt-2 below its own column's image) land on the same row.
+  const windsockOffsetClass = bare ? 'mt-11' : compact ? 'mt-[27px]' : ''
 
   return (
     <div className={outerClass}>
