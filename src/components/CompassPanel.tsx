@@ -282,7 +282,13 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
 // though the headwind/crosswind readout - correctly - showed a 08
 // tailwind). Matching directly on the same string the numbers use makes
 // the two impossible to disagree, regardless of any heading/rotation
-// quirk on either side.
+// quirk on either side. Colour round: --color-status-good-text (this
+// file's own themeable-fill convention, matching the background circle's
+// fill="var(--color-compass-disc-bg)" a few lines below) - the same
+// token WeatherStatusIndicator.tsx now uses for its own "LIVE ATC" text
+// and RunwayWindWidget.tsx/this file's own arrow already use for their
+// "good" wind state, not a second hardcoded copy of a colour picked
+// independently.
 function RunwayIdentifierText({
   x,
   y,
@@ -305,7 +311,7 @@ function RunwayIdentifierText({
       textAnchor="middle"
       dominantBaseline="middle"
       className="select-none"
-      fill={active ? '#38bdf8' : 'white'}
+      fill={active ? 'var(--color-status-good-text)' : 'white'}
       fontSize={fontSize}
       fontWeight="900"
       opacity={active ? 1 : 0.85}

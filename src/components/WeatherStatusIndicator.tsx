@@ -88,10 +88,25 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
             : { emoji: '🟣', label: `SHARED: ${firstWordUpper(weather.sourceTenantName)}` }
           : STATUS_BY_PROVIDER[activeProvider]
 
+  // Colour round: text now carries the same "this is a genuine live ATC
+  // reading" signal the 🟢 emoji already encoded on its own - previously
+  // the label was always the same slate-200 grey regardless of state,
+  // so /pilot's own header (hideIcon, text-only - see PilotHeader.tsx)
+  // had no colour cue at all once the emoji was dropped. Keyed off the
+  // emoji itself, not a separate `label === 'LIVE ATC'` check, so this
+  // also covers the ingested-cross-tenant-ATC branch above (which
+  // already deliberately reuses 🟢 for "genuinely live ATC data, just
+  // captured at another tenant's site") without a second condition that
+  // could drift out of sync with that one. text-status-good is the same
+  // shared token CompassPanel.tsx's own active-runway highlight and
+  // RunwayWindWidget.tsx's "good" wind state already use - not a new
+  // colour picked independently.
+  const isLive = emoji === '🟢'
+
   return (
     <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">
       {!hideIcon && <span aria-hidden="true">{emoji}</span>}
-      <span>{label}</span>
+      <span className={isLive ? 'text-status-good' : undefined}>{label}</span>
     </div>
   )
 }
