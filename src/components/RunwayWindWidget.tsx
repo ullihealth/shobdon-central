@@ -421,19 +421,22 @@ export default function RunwayWindWidget({
   // AND this column moves right), which is exactly the "everything else
   // shifts too" outcome that was NOT wanted. transform leaves the
   // reserved box (and therefore the compass's own position, and the
-  // centring maths for the row as a whole) completely untouched -
-  // visually the runway image's own right edge is what needs to land at
-  // the compass card's own right inner edge, so the constant below is
-  // that edge's real measured position (centerColumnBox.right) minus the
-  // runway image's own un-shifted right edge, both measured directly
-  // against a real Shobdon render at 1920px - like the horizontal
-  // spacing constants elsewhere in this file/CompassPanel.tsx (e.g. that
-  // file's own sm:gap-[4.75rem]), this bridges to a SIBLING component's
-  // own page-grid layout (ClassicTemplate's fr-based grid columns), which
-  // has no rem/component-internal relationship to derive this from
-  // algebraically - a magic constant tuned against the real render, not
-  // a formula, same posture as those other constants.
-  const RUNWAY_GROUP_COMPACT_SHIFT_PX = 150.375
+  // centring maths for the row as a whole) completely untouched.
+  // Correction round: the prior value (150.375) pushed the runway
+  // image's own right edge flush against the compass card's own right
+  // inner edge - but that card (ClassicTemplate's own rounded-xl
+  // wrapper) has overflow: hidden, and "Circuit"/"Right-hand" (this same
+  // shifted column's OWN children) can render wider than the runway
+  // image itself, clipping past that edge instead of just touching it.
+  // Pulled back by exactly the runway image's own rendered width
+  // (145.796875px at a real Shobdon render, w-36/9rem at this file's own
+  // measured 16.2px root font-size - see windsockOffsetClass's own
+  // comment on why root font-size isn't safely assumed to be 16px) - so
+  // the runway image's NEW right edge lands exactly where its own
+  // PREVIOUS left edge was, one full image-width back toward the
+  // windsock column, leaving genuine clearance for Circuit/Right-hand's
+  // own text before the card's clipping edge.
+  const RUNWAY_GROUP_COMPACT_SHIFT_PX = 150.375 - 145.796875
 
   return (
     <div className={outerClass}>
