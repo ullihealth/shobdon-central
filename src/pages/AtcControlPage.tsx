@@ -31,6 +31,34 @@ interface SafetyNotice {
   enabled: boolean
 }
 
+// Full shape of GET/PUT /api/tenant/ops-panel's response/body (mirrors
+// MediaManagerPage.tsx's own OpsPanelFullState) - this endpoint is a
+// full-replace, so any save must include every field, not just the ones
+// this page's own UI exposes (notamsOpsDurationSeconds/
+// notamsFullDurationSeconds/noticesDurationSeconds are edited only on
+// MediaManagerPage.tsx). Retaining the raw GET response here and
+// spreading it under this page's own current field values in
+// handleUpdateDashboard fixes exactly that gap - a hand-built partial
+// payload silently 400'd on every save once the backend started
+// requiring those three fields, regardless of what was actually being
+// changed.
+interface OpsPanelFullState {
+  activeRunwayEnd: string
+  circuitDirection: CircuitDirection
+  airfieldInfoText: string
+  safetyNotices: SafetyNotice[]
+  showAutoNotams: boolean
+  runwaysClosed: boolean
+  runwayAutomationEnabled: boolean
+  notamsCarouselIntervalSeconds: number
+  notamsOpsDurationSeconds: number
+  notamsFullDurationSeconds: number
+  noticesDurationSeconds: number
+  weatherSummaryChartEnabled: boolean
+  weatherSummaryStateADurationSeconds: number
+  weatherSummaryStateBDurationSeconds: number
+}
+
 const NOTICE_SIZE_OPTIONS: { value: NoticeSize; label: string }[] = [
   { value: 'sm', label: 'Sm' },
   { value: 'md', label: 'Med' },
@@ -190,6 +218,12 @@ export default function AtcControlPage(): JSX.Element {
   // publicConfig.ts) - ATC staff on a linked sub-tenant should know that
   // before wondering why their change didn't show up live.
   const [parentAirfieldName, setParentAirfieldName] = useState<string | null>(null)
+  // Raw last-fetched GET response, retained purely so
+  // handleUpdateDashboard can spread it under this page's own edited
+  // fields on save - see OpsPanelFullState's own comment. Never read
+  // from directly for rendering (the individual useState fields above
+  // are what the UI actually binds to); this is save-time plumbing only.
+  const [opsPanelState, setOpsPanelState] = useState<OpsPanelFullState | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -206,6 +240,7 @@ export default function AtcControlPage(): JSX.Element {
       if (endA && endB) setRunwayEnds([endA, endB])
 
       if (opsPanel) {
+        setOpsPanelState(opsPanel)
         setActiveRunwayEnd(opsPanel.activeRunwayEnd || (endA ?? '08'))
         setCircuitDirection(opsPanel.circuitDirection === 'right' ? 'right' : 'left')
         setAirfieldInfoText(opsPanel.airfieldInfoText ?? '')
@@ -350,10 +385,21 @@ export default function AtcControlPage(): JSX.Element {
 
     setApplyStatus('working')
     try {
+      // Full-replace endpoint - spread the last-loaded full row first
+      // (opsPanelState) so fields this page has no UI for
+      // (notamsOpsDurationSeconds/notamsFullDurationSeconds/
+      // noticesDurationSeconds, owned by MediaManagerPage.tsx) round-trip
+      // unchanged, then override with this page's own current values.
+      // Same {...current, ...patch} pattern as MediaManagerPage.tsx's own
+      // updateOpsPanelTiming - fixes a save that previously 400'd on
+      // every submit regardless of what was actually changed, and
+      // prevents any future required field from silently breaking this
+      // page's save again.
       const response = await fetch(OPS_PANEL_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...opsPanelState,
           activeRunwayEnd,
           circuitDirection,
           airfieldInfoText,
