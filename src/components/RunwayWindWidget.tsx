@@ -246,9 +246,12 @@ export default function RunwayWindWidget({
   // the two columns, they'd otherwise render outside/below the card
   // entirely, on the bare page background, in non-bare mode specifically.
   // topRowClass is now just the two-column row's own layout, no chrome.
-  const outerClass = bare
-    ? 'flex w-full flex-col items-center'
-    : `flex flex-col items-center rounded-2xl border border-border bg-panel p-4${compact ? '' : ' sm:p-6'}`
+  // compact round: desktop-dashboard's own caller floats directly on the
+  // page background, same as the compass instrument beside it - no card
+  // border/bg/padding, same chromeless treatment bare already has, just
+  // with compact's own smaller (non-bare) sizing everywhere else below.
+  const outerClass =
+    bare || compact ? 'flex w-full flex-col items-center' : 'flex flex-col items-center rounded-2xl border border-border bg-panel p-4 sm:p-6'
   const topRowClass = bare ? 'flex w-full items-start justify-center gap-3' : `flex items-start justify-center gap-4${compact ? '' : ' sm:gap-8'}`
   const titleClass = bare
     ? 'text-lg font-bold uppercase tracking-wide text-muted-400'
