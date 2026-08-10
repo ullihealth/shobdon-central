@@ -352,17 +352,34 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
 // and RunwayWindWidget.tsx/this file's own arrow already use for their
 // "good" wind state, not a second hardcoded copy of a colour picked
 // independently.
-// Outline round: replaces the earlier dark-pill badge behind each
-// identifier (removed - collided visually with the badge's own
-// admin-unbounded strip/font sizing more than it helped legibility) with
-// a plain stroke-only outline on the text itself - fill="none", a 1px
-// stroke, same active(green)/inactive(white) colour split as before,
-// just carried by strokeWidth/stroke rather than a filled glyph. Still a
+// Outline round, corrected: a genuinely stroke-only (fill: none) glyph
+// looked garbled/doubled on real hardware - a 1px hairline tracing BOTH
+// the inner and outer edge of a bold (fontWeight 900) digit's own thick
+// strokes sits close enough to itself, especially on "26"'s tighter
+// curves, that anti-aliasing read as a doubled/overlapping line, worse
+// still on whichever identifier carries the extra rotate180 wrapper (see
+// that prop's own comment) since it's rendering at a compound angle
+// (that wrapper's 180 PLUS the group's own rotate(headingDegrees) a few
+// hundred lines up), not axis-aligned. Investigated whether
+// reverseCompassNeedle was somehow causing an actual duplicate render -
+// it isn't: grep confirms it's never read anywhere in this function or
+// RunwayGroupGraphic's own identifier calls, only in the wind-arrow's
+// rotation and the headwind/crosswind maths, both unrelated call paths.
+// Back to solid fill (active green / inactive white, same split as
+// before the outline round) as the glyph's actual shape, with a thin
+// stroke layered on top for contrast - SVG's own default paint order
+// (fill, then stroke) means the stroke only ever traces the OUTER
+// contour of an already-solid shape, not two close-together hairlines
+// tracing a hollow one. Charcoal reuses this file's own existing
+// rgba(3, 7, 18, 0.85) "dark halo" literal (the wind needle's own halo a
+// few hundred lines below, there for the exact same "legible over the
+// runway strip" reason) rather than a new hardcoded dark value. Still a
 // flat +2px display-only bump over the admin-configured
 // identifierFontSizePx - RunwaysPage.tsx's own stored value stays
 // untouched, only what's actually rendered here is larger.
 const IDENTIFIER_FONT_SIZE_BOOST_PX = 2
 const IDENTIFIER_OUTLINE_STROKE_WIDTH = 1
+const IDENTIFIER_OUTLINE_STROKE_COLOUR = 'rgba(3, 7, 18, 0.85)'
 
 function RunwayIdentifierText({
   x,
@@ -387,8 +404,8 @@ function RunwayIdentifierText({
       textAnchor="middle"
       dominantBaseline="middle"
       className="select-none"
-      fill="none"
-      stroke={active ? 'var(--color-status-good-text)' : 'white'}
+      fill={active ? 'var(--color-status-good-text)' : 'white'}
+      stroke={IDENTIFIER_OUTLINE_STROKE_COLOUR}
       strokeWidth={IDENTIFIER_OUTLINE_STROKE_WIDTH}
       fontSize={renderedFontSize}
       fontWeight="900"
