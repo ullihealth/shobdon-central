@@ -436,7 +436,16 @@ export default function RunwayWindWidget({
   // PREVIOUS left edge was, one full image-width back toward the
   // windsock column, leaving genuine clearance for Circuit/Right-hand's
   // own text before the card's clipping edge.
-  const RUNWAY_GROUP_COMPACT_SHIFT_PX = 150.375 - 145.796875
+  // Clearance round: nudged a further quarter of that same runway-image
+  // width back to the right - the windsock's own bounding box grows
+  // considerably wider in strong crosswind (tier 4's own 817px-natural-
+  // width image, this file's own widest tier, vs tier 1's narrow
+  // 520px), and at the previous position that growth started visually
+  // crowding the runway graphic beside it. A quarter-width gap gives the
+  // fully-extended sock real breathing room without undoing the
+  // clipping fix above (still well short of the card's own right edge).
+  const RUNWAY_IMAGE_WIDTH_PX = 145.796875
+  const RUNWAY_GROUP_COMPACT_SHIFT_PX = 150.375 - RUNWAY_IMAGE_WIDTH_PX + RUNWAY_IMAGE_WIDTH_PX / 4
 
   return (
     <div className={outerClass}>
