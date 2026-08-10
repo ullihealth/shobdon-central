@@ -385,13 +385,55 @@ export default function RunwayWindWidget({
   // that the windsock column doesn't, so the windsock image would
   // otherwise start noticeably higher. Value empirically measured
   // against the actual rendered arrow height/gap, not guessed.
-  // compact gets the same treatment (layout-fix round) - same root cause
-  // (the arrow icon's own height + column gap, ~27px measured directly
-  // against a real render at this size, not the bare tier's own 44px
-  // mt-11 which was tuned for the arrow's larger bare-only size), needed
-  // once windsock/runway heights were brought to parity so Trend/Circuit
-  // (each just mt-2 below its own column's image) land on the same row.
-  const windsockOffsetClass = bare ? 'mt-11' : compact ? 'mt-[27px]' : ''
+  // compact: mt-8 (2rem), not a magic pixel value - derived, not tuned.
+  // Both columns share one gap before their image (gap-1 sm:gap-2, i.e.
+  // 0.5rem at desktop width); the right column then has ONE more element
+  // (the arrow icon, h-6 = 1.5rem) plus a SECOND copy of that same gap
+  // before its own image. For the two images to start at the same
+  // height, the left column's own margin has to make up exactly that
+  // difference: (gap + arrowHeight) - nothing = 0.5rem + 1.5rem = 2rem
+  // (mt-8 on Tailwind's spacing scale). Unlike a hardcoded px value, this
+  // stays correct regardless of the page's actual root font-size (a
+  // fixed px offset silently drifts if that ever changes - confirmed the
+  // hard way: real Shobdon data measured a live root font-size of
+  // 16.2px, not the assumed 16px, which alone accounted for a real ~5px
+  // gap between the previous mt-[27px] and where the arrow+gap math
+  // actually landed). Direct measurement against real Shobdon data after
+  // this fix: windsock/runway top and bottom now agree to within
+  // 0.02px - correspondingly, since Trend/Circuit are each just mt-2
+  // below their own column's image with no other offset, this single
+  // fix also brings those two rows into the same sub-0.03px agreement,
+  // not a coincidence - same shared root cause as this constant's own
+  // fix.
+  const windsockOffsetClass = bare ? 'mt-11' : compact ? 'mt-8' : ''
+
+  // Right column (Headwind/arrow/runway/Circuit) sits, by design, in a
+  // row that's centred as a whole (CompassPanel's own outer flex row is
+  // justify-center, so the compass instrument + this whole widget are
+  // centred together) - there's real spare width inside the compass
+  // card's own column that's never claimed, left as symmetric empty
+  // margin on both sides rather than given to either side's content.
+  // Desktop-dashboard round: shift ONLY this column visually rightward,
+  // via transform (not a margin/gap change), so it doesn't touch the
+  // row's own reserved layout width - a margin/gap-based push here would
+  // widen the widget's own flex item, and since the outer row is
+  // justify-center, that growth is split three ways (compass moves left,
+  // AND this column moves right), which is exactly the "everything else
+  // shifts too" outcome that was NOT wanted. transform leaves the
+  // reserved box (and therefore the compass's own position, and the
+  // centring maths for the row as a whole) completely untouched -
+  // visually the runway image's own right edge is what needs to land at
+  // the compass card's own right inner edge, so the constant below is
+  // that edge's real measured position (centerColumnBox.right) minus the
+  // runway image's own un-shifted right edge, both measured directly
+  // against a real Shobdon render at 1920px - like the horizontal
+  // spacing constants elsewhere in this file/CompassPanel.tsx (e.g. that
+  // file's own sm:gap-[4.75rem]), this bridges to a SIBLING component's
+  // own page-grid layout (ClassicTemplate's fr-based grid columns), which
+  // has no rem/component-internal relationship to derive this from
+  // algebraically - a magic constant tuned against the real render, not
+  // a formula, same posture as those other constants.
+  const RUNWAY_GROUP_COMPACT_SHIFT_PX = 150.375
 
   return (
     <div className={outerClass}>
@@ -443,7 +485,10 @@ export default function RunwayWindWidget({
             Headwind + arrow + runway + Circuit (swapped in from the left
             column, round 5 - same embedded-child approach as Trend
             above, for the same exact-centering reason). */}
-        <div className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}>
+        <div
+          className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}
+          style={{ transform: compact ? `translateX(${RUNWAY_GROUP_COMPACT_SHIFT_PX}px)` : undefined }}
+        >
           <span className={titleClass}>Headwind</span>
           <span className={`${valueClass} ${ARROW_COLOUR_CLASS[arrowColour]}${valueSmClass}`}>
             {hasWind ? `${Math.abs(headwind).toFixed(1)} kts` : 'N/A'}
