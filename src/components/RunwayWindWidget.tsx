@@ -137,6 +137,54 @@ const WINDSOCK_IMAGE: Record<WindsockTier, string> = {
   5: windsock5Img,
 }
 
+// Pole-centring round (compact only): every windsock-N.png ships "pole
+// on the right, fabric extends left" (see mirrored's own comment below)
+// at a fixed real-world pole position, only the fabric's own extent -
+// and thus the image's own bounding-box WIDTH - grows with wind
+// strength. Confirmed by direct pixel analysis of all five PNGs
+// (opaque region in each image's own bottom 10%, where only the pole
+// itself is visible, no fabric reaching that low): the pole's centre
+// sits 74-75px from the image's own right edge in every tier, to within
+// half a pixel - NOT a fixed fraction of width, which is why centring
+// the image's own bounding box (what plain flex item-centering does)
+// visibly shifts the pole left/right as the tier changes with crosswind
+// strength. Height is 812px in every tier (only width varies), so this
+// offset scales identically for every tier at any given rendered
+// height - no per-tier lookup needed for it, unlike width.
+const WINDSOCK_NATURAL_HEIGHT_PX = 812
+const WINDSOCK_NATURAL_WIDTH_PX: Record<WindsockTier, number> = { 1: 520, 2: 661, 3: 786, 4: 817, 5: 810 }
+const WINDSOCK_POLE_OFFSET_FROM_RIGHT_PX = 74.5
+// Matches windsockClass's own compact-tier height below - the two must
+// stay in sync (this is the rendered height the pole correction scales
+// against), kept as its own named constant rather than parsed back out
+// of that class string. Deliberately NOT a plain 9 (h-36) - Runway.png
+// is not quite square (2348 x 2352px), so at the runway wrap's own
+// w-36 (9rem) its TRUE rendered height is 9 * 2352/2348 = 9.01533rem,
+// not exactly 9rem. A flat h-36 on the windsock left it ~0.2px shorter
+// than the runway image beside it, which then propagated 1:1 into a
+// small but real gap between Trend and Circuit (each just mt-2 below
+// its own column's image) - this constant, used for BOTH windsockClass
+// and the pole-correction maths below, is Runway.png's own true aspect
+// ratio applied to the same 9rem base, so the two images render at
+// EXACTLY the same height, not just visually close.
+const WINDSOCK_COMPACT_HEIGHT_REM = (9 * 2352) / 2348
+
+// Plain flex item-centering puts the IMAGE's own geometric centre (not
+// the pole) on the column's centreline - offset between the two, in
+// rem, for a given tier at the compact render height. Always applied as
+// an ADDITIONAL translateX after any mirroring scaleX (see the actual
+// style prop below) - translate composes as a final, unscaled shift
+// regardless of a preceding negative scale, so the same signed value
+// pushes the pole exactly back onto the centreline whether the tier is
+// mirrored or not (mirroring itself reflects the pole to the opposite
+// side of the image's own centre, flipping the CORRECTION's own
+// required sign, not just the artwork).
+function windsockPoleCorrectionRem(tier: WindsockTier): number {
+  const renderedWidthRem = (WINDSOCK_COMPACT_HEIGHT_REM * WINDSOCK_NATURAL_WIDTH_PX[tier]) / WINDSOCK_NATURAL_HEIGHT_PX
+  const poleOffsetFromRightRem = (WINDSOCK_COMPACT_HEIGHT_REM * WINDSOCK_POLE_OFFSET_FROM_RIGHT_PX) / WINDSOCK_NATURAL_HEIGHT_PX
+  return renderedWidthRem / 2 - poleOffsetFromRightRem
+}
+
 function trendLabelFor(trend: WeatherData['pressureTrend'] | undefined): string {
   if (trend === 'rising') return 'Rising'
   if (trend === 'falling') return 'Falling'
@@ -293,16 +341,17 @@ export default function RunwayWindWidget({
   // of which tier is showing, comparable in visual weight to the runway
   // image now that each sits alone atop its own column instead of
   // sharing a column with three other stacked text blocks.
-  // compact: h-36 rather than h-16 - matches runwayWrapClass's own w-36
-  // below (same Tailwind spacing-scale value, so the two track together
-  // at any root font-size this app's own vmin-clamped scale produces,
-  // not just at one specific viewport a fixed px value would only
-  // happen to match). Runway.png itself renders very close to square at
-  // that width (confirmed by direct measurement: 121.5 x 121.7px), so a
-  // same-value height on the windsock lands it at essentially the same
-  // rendered height as the runway graphic beside it - previously h-16
-  // (a plain, unrelated smaller value) left it noticeably shorter.
-  const windsockClass = bare ? 'h-40 w-auto object-contain' : `${compact ? 'h-36' : 'h-16'} w-auto object-contain${compact ? '' : ' sm:h-28'}`
+  // compact: height comes from an inline style (see the <img> below),
+  // not a Tailwind class - WINDSOCK_COMPACT_HEIGHT_REM is a computed,
+  // non-literal value (Runway.png's true aspect ratio applied to 9rem,
+  // see that constant's own comment), and Tailwind's JIT can only
+  // generate CSS for arbitrary-value classes it can find as a literal
+  // string at build time, not one assembled at runtime via template
+  // interpolation - `h-[${x}rem]` would silently produce a class name
+  // with no matching CSS rule. object-contain (no explicit height
+  // class) is kept here for compact so the rest of this string still
+  // applies its width/fit behaviour; the actual height is set via style.
+  const windsockClass = bare ? 'h-40 w-auto object-contain' : compact ? 'w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
   // Round 5: Circuit and Trend swapped AND moved off their shared row,
   // each now a literal child of its own top column (Trend under
   // Crosswind/windsock, Circuit under Headwind/runway) - this guarantees
@@ -360,7 +409,26 @@ export default function RunwayWindWidget({
             src={WINDSOCK_IMAGE[windsockTier]}
             alt={`Windsock, tier ${windsockTier}`}
             className={`${windsockClass} ${windsockOffsetClass}`}
-            style={{ transform: mirrored ? 'scaleX(-1)' : undefined }}
+            style={{
+              // compact only - see WINDSOCK_COMPACT_HEIGHT_REM's own
+              // comment for why this can't be a Tailwind class.
+              height: compact ? `${WINDSOCK_COMPACT_HEIGHT_REM}rem` : undefined,
+              transform:
+                [
+                  // compact-only pole-centring correction (see that
+                  // function's own comment) - applied as a translateX
+                  // AFTER any mirroring scaleX below, so it's always an
+                  // unscaled, absolute shift regardless of mirror state;
+                  // mirroring itself flips which SIGN the correction
+                  // needs (the pole moves to the image's opposite side),
+                  // handled by the ternary here, not by the transform
+                  // order.
+                  compact ? `translateX(${(mirrored ? 1 : -1) * windsockPoleCorrectionRem(windsockTier)}rem)` : null,
+                  mirrored ? 'scaleX(-1)' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ') || undefined,
+            }}
           />
           <div className={trendItemClass}>
             <span className={bottomTitleClass}>Trend</span>
