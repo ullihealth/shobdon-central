@@ -194,13 +194,22 @@ const NUMBER_INSET_WITH_MARKINGS = THRESHOLD_MARKING_BLOCK_LENGTH + THRESHOLD_MA
 
 // One end's set of longitudinal stripes - each spans the FULL block
 // length in one rect (no more stacking rows within the block, since a
-// stripe's long axis is now the strip's length, not its width), sized
-// N stripes + N equal gaps across the strip's own width so each stripe
-// is exactly as thick as the gap beside it (a clean 1:1 bar/space
-// rhythm), proportional to stripWidth by construction. blockY is the
-// block's own top edge - stripTop for the near end, stripBottom minus
-// the block length for the far end. shapeRendering="crispEdges" keeps
-// bar edges sharp.
+// stripe's long axis is now the strip's length, not its width).
+// Mirror-symmetric round: N stripes separated by N-1 gaps (not N gaps) -
+// the previous N+N formula treated stripe and gap counts as equal,
+// which covers only 2*N segments' worth up to the START of a would-be
+// Nth gap, leaving the strip's own last 1/(2N) of its width as bare
+// background past the final stripe - white at the left edge, but
+// whatever the strip's own fill colour is at the right edge, not
+// mirror-symmetric. N stripes + (N-1) gaps in the same 1:1 stripe:gap
+// ratio instead spans exactly stripWidth with a stripe flush against
+// BOTH edges by construction (verified: for N=5 this is 9 equal
+// segments - 5 stripe, 4 gap - not 10), same as real-world threshold
+// marking photos, which always end in a full white bar on both sides,
+// never a half-width sliver of runway colour. blockY is the block's own
+// top edge - stripTop for the near end, stripBottom minus the block
+// length for the far end. shapeRendering="crispEdges" keeps bar edges
+// sharp.
 function ThresholdStripeSet({
   stripX,
   stripWidth,
@@ -210,7 +219,7 @@ function ThresholdStripeSet({
   stripWidth: number
   blockY: number
 }): JSX.Element {
-  const thickness = stripWidth / (THRESHOLD_STRIPE_COUNT * 2)
+  const thickness = stripWidth / (THRESHOLD_STRIPE_COUNT * 2 - 1)
   const step = thickness * 2
   return (
     <>
