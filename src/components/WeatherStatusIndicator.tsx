@@ -52,7 +52,7 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
         // which is always Open-Meteo, never a different registered
         // provider.
         ? { emoji: '🔵', label: internetProviderDisplayName }
-        : { emoji: '🟢', label: 'LIVE ATC' }
+        : { emoji: '🟢', label: 'Shobdon LIVE' }
       : activeProvider === 'internet'
         ? {
             emoji: '🔵',
@@ -93,8 +93,8 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
   // the label was always the same slate-200 grey regardless of state,
   // so /pilot's own header (hideIcon, text-only - see PilotHeader.tsx)
   // had no colour cue at all once the emoji was dropped. Keyed off the
-  // emoji itself, not a separate `label === 'LIVE ATC'` check, so this
-  // also covers the ingested-cross-tenant-ATC branch above (which
+  // emoji itself, not a separate `label === 'Shobdon LIVE'` check, so
+  // this also covers the ingested-cross-tenant-ATC branch above (which
   // already deliberately reuses 🟢 for "genuinely live ATC data, just
   // captured at another tenant's site") without a second condition that
   // could drift out of sync with that one. text-status-good is the same
