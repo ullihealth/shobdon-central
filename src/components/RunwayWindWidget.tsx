@@ -368,7 +368,22 @@ export default function RunwayWindWidget({
   // separate shared row (the previous approach) could only approximate.
   // bottomItemClass is that per-column wrapper - same margin-top the old
   // shared row used for separation from the content above it.
-  const bottomItemClass = bare ? 'mt-6 flex flex-col items-center gap-1' : `mt-2 flex flex-col items-center gap-1${compact ? '' : ' sm:mt-4'}`
+  // Clipping-fix round (compact only): the title font-size bump above
+  // (titleClass, text-xs -> text-sm) grows BOTH the Crosswind/Headwind
+  // title (top of each column) AND this same Trend/Circuit title,
+  // compounding by the time this column reaches its own value text -
+  // the desktop dashboard's own compass card (ClassicTemplate's rounded-
+  // xl wrapper) is a fixed-height, overflow: hidden slot that doesn't
+  // grow to match, so "Steady"/"Right-hand" started clipping their own
+  // descenders against that ancestor's bottom edge. Trimmed compact's
+  // own margin-top here (was mt-2/8.1px, same as bare/non-compact) to
+  // reclaim the extra height, verified via direct measurement against
+  // real Shobdon data until the value text's own bottom edge cleared the
+  // card's bottom edge again. bare/non-compact untouched - neither sits
+  // inside that same fixed-height ancestor, so neither needed this.
+  const bottomItemClass = bare
+    ? 'mt-6 flex flex-col items-center gap-1'
+    : `${compact ? 'mt-[-5.5px]' : 'mt-2'} flex flex-col items-center gap-1${compact ? '' : ' sm:mt-4'}`
   // Round 6: bottomItemClass's shared mt-6 left Trend sitting one full
   // row above Circuit - the right column has an extra arrow icon plus a
   // taller runway image between its Headwind value and Circuit that the
