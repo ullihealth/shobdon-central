@@ -260,7 +260,16 @@ export default function RunwayWindWidget({
   const outerClass = bare
     ? 'flex w-full flex-col items-center'
     : `flex flex-col items-center${compact ? '' : ' rounded-2xl border border-border bg-panel p-4 sm:p-6'}`
-  const topRowClass = bare ? 'flex w-full items-start justify-center gap-3' : `flex items-start justify-center gap-4${compact ? '' : ' sm:gap-8'}`
+  // compact: gap-16 (was gap-4/1rem, +3rem) - the gap between this row's
+  // two columns (Crosswind/windsock/Trend, Runway/Headwind/Circuit).
+  // Deliberately the SAME +3rem delta as CompassPanel.tsx's own outer
+  // row gap (see that file's own comment on the maths) - increasing both
+  // by an equal amount is what keeps the left column anchored at its
+  // previous position while the compass (that other gap's other side)
+  // and this row's right column both move outward by the full delta.
+  const topRowClass = bare
+    ? 'flex w-full items-start justify-center gap-3'
+    : `flex items-start justify-center ${compact ? 'gap-16' : 'gap-4 sm:gap-8'}`
   const titleClass = bare
     ? 'text-lg font-bold uppercase tracking-wide text-muted-400'
     : `text-xs font-bold uppercase tracking-wide text-muted-400${compact ? '' : ' sm:text-2xl'}`

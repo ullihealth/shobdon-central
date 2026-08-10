@@ -781,8 +781,22 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
   // 0/top needs the NEGATIVE of that bearing.
   const dialRotationDegrees = effectiveCompassMode === 'runway' ? -compassState.activeRunwayHeading : 0
 
+  // sm:gap-[4.75rem] (spacing round, was sm:gap-7/1.75rem) - the compass
+  // instrument and the compact RunwayWindWidget below are this row's only
+  // two flex children when hideReadout is false, so this gap is purely
+  // "space between compass and that widget" now. +3rem over the old
+  // value, deliberately the SAME rem delta as topRowClass's own gap
+  // inside RunwayWindWidget.tsx's compact branch (see that file's own
+  // comment) - justify-center means adding an equal amount to both gaps
+  // keeps the widget's own LEFT column (Crosswind/windsock/Trend) at
+  // exactly its previous absolute position while the compass moves left
+  // and the widget's right column moves right by that same amount, not a
+  // coincidence, the maths behind why these two values must move
+  // together. Inert for /pilot (hideReadout=true there, so this row only
+  // ever has the one compass child - no second element to create a gap
+  // with, regardless of this value).
   return (
-    <div className={`flex h-full flex-col items-center justify-center ${spacious ? 'gap-8' : 'gap-4'} pt-6 sm:flex-row sm:gap-7`}>
+    <div className={`flex h-full flex-col items-center justify-center ${spacious ? 'gap-8' : 'gap-4'} pt-6 sm:flex-row sm:gap-[4.75rem]`}>
       {/* NORTH/RUNWAY mode toggle - spacious-gated (Pilot View only, per
           the existing convention every other prop on this component
           already uses to distinguish it from the unattended TV/kiosk
