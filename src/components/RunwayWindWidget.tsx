@@ -63,6 +63,19 @@ interface RunwayWindWidgetProps {
   // than the room a full-width, no-padding layout actually has to work
   // with now.
   bare?: boolean
+  // Desktop-dashboard round (CompassPanel.tsx, squeezed beside the
+  // compass instrument in a fixed-height flex slot) - non-bare's own
+  // existing sizing scales UP again at sm: and above (tuned for
+  // /runway-widget-test's own generous, unconstrained page), which is
+  // exactly the viewport width this new caller renders at, so the
+  // "smaller" non-bare tier ended up just as tall as bare there and
+  // genuinely overflowed its slot (confirmed by direct measurement: the
+  // widget rendered ~30px taller than the space available, clipping
+  // Crosswind/Headwind off the top). compact stays at non-bare's own
+  // BASE (pre-sm:) sizing regardless of viewport width - every existing
+  // caller (bare or non-bare) omits this and is completely unaffected;
+  // it only ever modifies the non-bare branch's own class strings below.
+  compact?: boolean
 }
 
 // Was this widget's own locally-defined, angle-based (within 5° of
@@ -162,7 +175,18 @@ function ArrowIcon({ className }: { className?: string }): JSX.Element {
 // this - same "mobile default, sm:-gated desktop size" technique
 // CompassPanel.tsx's own instrument sizing already established earlier
 // this session, reused here rather than a new one-off pattern.
-export default function RunwayWindWidget({ group, activeEnd, circuitDirection, reverseCompassNeedle, weather, liveDataUnavailable, windsock, arrowThresholds, bare = false }: RunwayWindWidgetProps): JSX.Element {
+export default function RunwayWindWidget({
+  group,
+  activeEnd,
+  circuitDirection,
+  reverseCompassNeedle,
+  weather,
+  liveDataUnavailable,
+  windsock,
+  arrowThresholds,
+  bare = false,
+  compact = false,
+}: RunwayWindWidgetProps): JSX.Element {
   // opsPanel.activeRunwayEnd is a single airfield-wide field (see
   // RunwayInUseCard.tsx's own comment on ops_panel_state) - it was only
   // ever designed around one physical runway (CompassPanel.tsx only ever
@@ -222,9 +246,13 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // the two columns, they'd otherwise render outside/below the card
   // entirely, on the bare page background, in non-bare mode specifically.
   // topRowClass is now just the two-column row's own layout, no chrome.
-  const outerClass = bare ? 'flex w-full flex-col items-center' : 'flex flex-col items-center rounded-2xl border border-border bg-panel p-4 sm:p-6'
-  const topRowClass = bare ? 'flex w-full items-start justify-center gap-3' : 'flex items-start justify-center gap-4 sm:gap-8'
-  const titleClass = bare ? 'text-lg font-bold uppercase tracking-wide text-muted-400' : 'text-xs font-bold uppercase tracking-wide text-muted-400 sm:text-2xl'
+  const outerClass = bare
+    ? 'flex w-full flex-col items-center'
+    : `flex flex-col items-center rounded-2xl border border-border bg-panel p-4${compact ? '' : ' sm:p-6'}`
+  const topRowClass = bare ? 'flex w-full items-start justify-center gap-3' : `flex items-start justify-center gap-4${compact ? '' : ' sm:gap-8'}`
+  const titleClass = bare
+    ? 'text-lg font-bold uppercase tracking-wide text-muted-400'
+    : `text-xs font-bold uppercase tracking-wide text-muted-400${compact ? '' : ' sm:text-2xl'}`
   // Trend/Circuit only, bare mode only - titleClass above stays exactly
   // as-is for Crosswind/Headwind (not part of the requested label list
   // this round). Non-bare (the /runway-widget-test prototype, the only
@@ -237,7 +265,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // same class object reused, not two independently-tuned ones that
   // could drift apart again later.
   const valueClass = bare ? 'text-[27px] font-black' : 'text-base font-black'
-  const valueSmClass = bare ? '' : ' sm:text-4xl'
+  const valueSmClass = bare || compact ? '' : ' sm:text-4xl'
   // Windsock enlarged (h-28 -> h-40, was noticeably smaller than the
   // runway image next to it) - the windsock-N.png set ranges from
   // ~520x812 (tier 1, least extended) up to ~817x812 (tier 4/5, roughly
@@ -245,7 +273,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // of which tier is showing, comparable in visual weight to the runway
   // image now that each sits alone atop its own column instead of
   // sharing a column with three other stacked text blocks.
-  const windsockClass = bare ? 'h-40 w-auto object-contain' : 'h-16 w-auto object-contain sm:h-28'
+  const windsockClass = bare ? 'h-40 w-auto object-contain' : `h-16 w-auto object-contain${compact ? '' : ' sm:h-28'}`
   // Round 5: Circuit and Trend swapped AND moved off their shared row,
   // each now a literal child of its own top column (Trend under
   // Crosswind/windsock, Circuit under Headwind/runway) - this guarantees
@@ -254,7 +282,7 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // separate shared row (the previous approach) could only approximate.
   // bottomItemClass is that per-column wrapper - same margin-top the old
   // shared row used for separation from the content above it.
-  const bottomItemClass = bare ? 'mt-6 flex flex-col items-center gap-1' : 'mt-2 flex flex-col items-center gap-1 sm:mt-4'
+  const bottomItemClass = bare ? 'mt-6 flex flex-col items-center gap-1' : `mt-2 flex flex-col items-center gap-1${compact ? '' : ' sm:mt-4'}`
   // Round 6: bottomItemClass's shared mt-6 left Trend sitting one full
   // row above Circuit - the right column has an extra arrow icon plus a
   // taller runway image between its Headwind value and Circuit that the
@@ -265,11 +293,11 @@ export default function RunwayWindWidget({ group, activeEnd, circuitDirection, r
   // other way round), measured against the two columns' actual rendered
   // heights on a real /pilot page rather than guessed.
   const trendItemClass = bare ? 'mt-[66px] flex flex-col items-center gap-1' : bottomItemClass
-  const arrowClass = bare ? 'h-9 w-7' : 'h-6 w-5 sm:h-10 sm:w-8'
-  const runwayWrapClass = bare ? 'relative w-56' : 'relative w-36 sm:w-64'
+  const arrowClass = bare ? 'h-9 w-7' : `h-6 w-5${compact ? '' : ' sm:h-10 sm:w-8'}`
+  const runwayWrapClass = bare ? 'relative w-56' : `relative w-36${compact ? '' : ' sm:w-64'}`
   const identifierClass = bare
     ? 'absolute inset-x-0 top-[14%] text-center text-[34px] font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]'
-    : 'absolute inset-x-0 top-[14%] text-center text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] sm:text-4xl'
+    : `absolute inset-x-0 top-[14%] text-center text-xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]${compact ? '' : ' sm:text-4xl'}`
 
   // Round 4: windsock nudged down (margin-top only - its own size and
   // the Crosswind title/value above it are untouched) so its top edge

@@ -7,6 +7,21 @@ import type { ArrowColour, ArrowColourThresholds } from '../utils/windCalculatio
 import type { PressureTrend } from '../types/weather'
 import { useCompassMode, CompassModeButtons, CompassModeNotice } from './CompassModeToggle'
 import type { CompassMode } from './CompassModeToggle'
+import RunwayWindWidget, { type WindsockThresholds } from './RunwayWindWidget'
+
+// Same literal PilotRunwayWindPanel.tsx/RunwayWidgetTestPage.tsx/
+// RunwaysPage.tsx each already have their own copy of - this codebase's
+// established per-file-default convention (same as isValidLat/isValidLon
+// elsewhere), not a new pattern.
+const DEFAULT_WINDSOCK: WindsockThresholds = { band2Kt: 3, band3Kt: 7, band4Kt: 11, band5Kt: 15 }
+
+// Same gate PilotRunwayWindPanel.tsx already uses before rendering
+// RunwayWindWidget - a freshly-added-but-not-yet-configured runway group
+// (both identifiers still blank) would otherwise show an empty "--/--"
+// widget instead of nothing.
+function isConfiguredGroup(group: RunwayGroup | undefined): group is RunwayGroup {
+  return !!group && group.endAIdentifier.trim() !== '' && group.endBIdentifier.trim() !== ''
+}
 
 interface CompassState {
   windSpeed: number
@@ -570,62 +585,6 @@ function tailFeatherPoints(vertexY: number): string {
   return `${200 - TAIL_FEATHER_ARM_DX},${armY} 200,${vertexY} ${200 + TAIL_FEATHER_ARM_DX},${armY}`
 }
 
-interface ReadoutRowProps {
-  label: string
-  value: string
-  valueClassName?: string
-  labelFontSizeOverride?: string
-}
-
-// Sized off vh directly, not rem (which would inherit the global root
-// clamp() in index.css) - that global scale is driven by vmin, which
-// tracks viewport WIDTH on a narrow/tall screen just as much as height,
-// but this list's actual available room comes purely from how tall its
-// flex row is, itself ultimately a fraction of viewport HEIGHT. On most
-// 16:9-ish screens the two track closely enough that it never showed up,
-// but on a short-height screen the global floor (12px, tuned for
-// LeftInfoPanel's stat cards, a separate list with different row count/
-// spacing) can stay above what 7 rows actually fit into here - confirmed
-// by direct measurement: at a short enough viewport, the compass row's
-// real height budget shrinks faster than the vmin-floored global font
-// does, so the last readout row ran off the bottom. vh ties this list's
-// size directly to the axis it actually competes for, independent of the
-// media-panel/compass flex ratio (that ratio only sets the compass
-// INSTRUMENT's own h-full box - the readout is a separate flex sibling).
-// Ceiling matches this list's original tuned size exactly (28px/16px at
-// 1080p, where this was designed and is unchanged today), so nothing
-// shifts at the reference resolution - only the floor is materially
-// different, giving this dense 7-row list more room to shrink than the
-// shared global floor allows before it would start clipping.
-const READOUT_VALUE_FONT = 'clamp(9px, 2.6vh, 28px)'
-const READOUT_LABEL_FONT = 'clamp(7px, 1.5vh, 16px)'
-
-// Pilot View's own opt-in ("spacious" prop below) - a fixed size, not a
-// vh-clamp(), matching every other Pilot View file's own plain-Tailwind-
-// size convention (see WeatherStatGrid.tsx's own comment on why: this
-// page's actual height budget is the whole scrolling document, not a
-// fixed kiosk viewport, so vh doesn't track "how much room is there" the
-// way it deliberately does for the TV dashboard's fixed-height row above).
-// Every existing TV-dashboard caller omits `spacious` and keeps the
-// original vh-based READOUT_LABEL_FONT untouched.
-const PILOT_READOUT_LABEL_FONT = '14px'
-
-function ReadoutRow({ label, value, valueClassName = 'text-white', labelFontSizeOverride }: ReadoutRowProps): JSX.Element {
-  return (
-    <>
-      <div
-        className="text-right font-semibold uppercase leading-none tracking-widest text-slate-400"
-        style={{ fontSize: labelFontSizeOverride ?? READOUT_LABEL_FONT }}
-      >
-        {label}
-      </div>
-      <div className={`font-extrabold leading-none ${valueClassName}`} style={{ fontSize: READOUT_VALUE_FONT }}>
-        {value}
-      </div>
-    </>
-  )
-}
-
 interface CompassPanelProps {
   // Pilot View passes this true - its readout list sits directly below
   // the compass with nothing beside it (see the sm:-gated left offset
@@ -681,11 +640,20 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
     // "never a broken/undefined read" posture every other clubProfile
     // field here already takes.
     arrowThresholds: ArrowColourThresholds
+    // RunwayWindWidget round: opsPanel.circuitDirection and windsock were
+    // already present in this same PUBLIC_CONFIG_URL response - this file
+    // just never kept them in state before, since nothing here needed
+    // them until the desktop readout was replaced with RunwayWindWidget
+    // below (the same widget /pilot's own PilotRunwayWindPanel.tsx uses).
+    circuitDirection: string
+    windsock: WindsockThresholds
   }>({
     runwayGroups: [],
     reverseCompassNeedle: false,
     activeRunwayEnd: '',
     arrowThresholds: DEFAULT_ARROW_THRESHOLDS,
+    circuitDirection: 'left',
+    windsock: DEFAULT_WINDSOCK,
   })
 
   // '' matches this file's own existing fallback-to-endA convention
@@ -715,6 +683,13 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
               tailwindKt: data?.arrowThresholds?.tailwindKt ?? DEFAULT_ARROW_THRESHOLDS.tailwindKt,
               crosswindKt: data?.arrowThresholds?.crosswindKt ?? DEFAULT_ARROW_THRESHOLDS.crosswindKt,
               headwindKt: data?.arrowThresholds?.headwindKt ?? DEFAULT_ARROW_THRESHOLDS.headwindKt,
+            },
+            circuitDirection: data?.opsPanel?.circuitDirection ?? 'left',
+            windsock: {
+              band2Kt: data?.windsock?.band2Kt ?? DEFAULT_WINDSOCK.band2Kt,
+              band3Kt: data?.windsock?.band3Kt ?? DEFAULT_WINDSOCK.band3Kt,
+              band4Kt: data?.windsock?.band4Kt ?? DEFAULT_WINDSOCK.band4Kt,
+              band5Kt: data?.windsock?.band5Kt ?? DEFAULT_WINDSOCK.band5Kt,
             },
           })
         }
@@ -774,59 +749,6 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
       activeRunwayHeading,
     }
   }, [weather, clubProfile])
-
-  const trendSymbol = useMemo(() => {
-    switch (compassState?.pressureTrend) {
-      case 'rising':
-        return '↗'
-      case 'falling':
-        return '↘'
-      default:
-        return '→'
-    }
-  }, [compassState])
-
-  const trendLabel = useMemo(() => {
-    switch (compassState?.pressureTrend) {
-      case 'rising':
-        return 'Rising'
-      case 'falling':
-        return 'Falling'
-      default:
-        return 'Steady'
-    }
-  }, [compassState])
-
-  const trendColour = useMemo(() => {
-    switch (compassState?.pressureTrend) {
-      case 'rising':
-        return 'text-green-500'
-      case 'falling':
-        return 'text-red-500'
-      default:
-        return 'text-slate-500'
-    }
-  }, [compassState])
-
-  const crosswindColour = useMemo(() => {
-    return Math.abs(compassState?.crosswind ?? 0) > 5 ? 'text-amber-500' : 'text-slate-300'
-  }, [compassState])
-
-  const headwindColour = useMemo(() => {
-    return (compassState?.headwind ?? 0) > 0 ? 'text-green-500' : 'text-red-500'
-  }, [compassState])
-
-  // Aviation terminology never says "negative headwind" - a negative
-  // component IS a tailwind, so the label itself flips rather than the
-  // readout showing a signed number under a fixed "Headwind" label.
-  // Rounded to the same 1-decimal precision as the displayed value
-  // before comparing against zero, so a near-perpendicular wind
-  // (headwind component genuinely ~0) can't flicker between the two
-  // labels from floating-point noise alone (e.g. -0.04 rounding to
-  // display "0.0" while still separately testing as negative).
-  const headwindRounded = useMemo(() => Math.round((compassState?.headwind ?? 0) * 10) / 10, [compassState])
-  const headwindLabel = headwindRounded < 0 ? 'Tailwind' : 'Headwind'
-  const headwindMagnitude = Math.abs(headwindRounded)
 
   const arrowColourClass = useMemo(() => {
     switch (compassState?.arrowColour) {
@@ -1208,52 +1130,28 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
           </svg>
         </div>
 
-      {/* INSTRUMENT READOUT PANEL — fixed-width right-aligned labels, left-aligned values, no cards/borders/dividers.
-          liveDataUnavailable: the selected source's fetch failed and compassState is actually
-          derived from the substituted mock fixture - show N/A rather than presenting that fake
-          data as if it were a real reading.
-          No Gust row any more - confirmed directly against the Davis
-          Vantage Pro2's own station page (every id-tagged element across
-          20 stored historic captures) that it has never exposed a
-          distinct gust value, only current wind and a separate 10-minute
-          average - this was never a fixable UI gap, so the row (which
-          only ever read 'N/A'/'—' off real hardware) is gone rather than
-          left showing a permanently-empty reading. Auto-flow grid rows
-          (no fixed row template), so removing it closes the gap on its
-          own - every row below shifts up automatically.
-          Temp/QNH also gone now, same auto-flow closing - both are
-          already shown in the Weather Summary panel next to this one on
-          the desktop dashboard (and in the equivalent grid above the
-          compass on Pilot View mobile), so duplicating them a second
-          time in this readout was redundant, not a second useful view of
-          the same numbers. Wind/Headwind/Crosswind/Trend are the only
-          things genuinely specific to this instrument. */}
-      {!hideReadout && (
-        <div className={`grid grid-cols-[120px_1fr] items-baseline gap-x-4 ${spacious ? 'gap-y-4' : 'gap-y-2.5'}`}>
-          <ReadoutRow
-            label="Wind"
-            value={liveDataUnavailable ? 'N/A' : `${compassState.windDirection}° / ${compassState.windSpeed} kt`}
-            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-          />
-          <ReadoutRow
-            label={liveDataUnavailable ? 'Headwind' : headwindLabel}
-            value={liveDataUnavailable ? 'N/A' : `${headwindMagnitude.toFixed(1)} kt`}
-            valueClassName={liveDataUnavailable ? 'text-slate-500' : headwindColour}
-            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-          />
-          <ReadoutRow
-            label="Crosswind"
-            value={liveDataUnavailable ? 'N/A' : `${Math.abs(compassState.crosswind).toFixed(1)} kt ${compassState.crosswind > 0 ? 'Right' : 'Left'}`}
-            valueClassName={liveDataUnavailable ? 'text-slate-500' : crosswindColour}
-            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-          />
-          <ReadoutRow
-            label="Trend"
-            value={liveDataUnavailable ? 'N/A' : `${trendSymbol} ${trendLabel}`}
-            valueClassName={liveDataUnavailable ? 'text-slate-500' : trendColour}
-            labelFontSizeOverride={spacious ? PILOT_READOUT_LABEL_FONT : undefined}
-          />
-        </div>
+      {/* INSTRUMENT READOUT PANEL — replaces the old plain Wind/Headwind/
+          Crosswind/Trend text rows with the exact same RunwayWindWidget
+          /pilot's own dashboard already uses (via PilotRunwayWindPanel.tsx),
+          so the two never show different numbers for the same live data -
+          bare=false (the default) is that component's own existing "card"
+          desktop-sized variant, already built for a constrained context
+          like this one (previously used only by the /runway-widget-test
+          prototype page). isConfiguredGroup mirrors PilotRunwayWindPanel's
+          own gate - a runway group with no identifiers yet shows nothing
+          here rather than an empty "--/--" widget. */}
+      {!hideReadout && isConfiguredGroup(clubProfile.runwayGroups[0]) && (
+        <RunwayWindWidget
+          group={clubProfile.runwayGroups[0]}
+          activeEnd={clubProfile.activeRunwayEnd}
+          circuitDirection={clubProfile.circuitDirection}
+          reverseCompassNeedle={clubProfile.reverseCompassNeedle}
+          weather={weather}
+          liveDataUnavailable={liveDataUnavailable}
+          windsock={clubProfile.windsock}
+          arrowThresholds={clubProfile.arrowThresholds}
+          compact
+        />
       )}
     </div>
   )
