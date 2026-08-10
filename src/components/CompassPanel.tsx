@@ -254,17 +254,25 @@ function ThresholdMarkingBlocks({
 // Threshold light bars round: a slim always-on bar at each end of every
 // strip, one per strip (not per group - matching ThresholdMarkingBlocks'
 // own per-strip convention just above, so a twin group's tarmac+grass
-// strips each get their own pair, not one shared pair). Positioned just
-// inside (toward the strip's own centre from) THRESHOLD_MARKING_BLOCK_LENGTH -
-// the same fixed offset the checkerboard/stripe block occupies - but
-// rendered unconditionally, independent of that strip's own
-// hasThresholdMarkings toggle, since this is a distinct feature ("every
-// runway strip"), not an extension of the optional marking. Colour is
-// plain green/red on whichever end matches activeRunwayEnd, same
-// isTopActive/isBottomActive boolean the identifier highlight above
-// already computes from the same raw string - no separate lookup, so
-// this can never disagree with that highlight.
+// strips each get their own pair, not one shared pair). Repositioned
+// (outer-edge round) from "just inside the checkerboard block" to just
+// OUTSIDE the strip's own rect entirely - THRESHOLD_LIGHT_GAP_PX beyond
+// stripTop/stripBottom, the strip's own true physical ends - rather than
+// overlapping the checkerboard/stripe block's own [stripTop,
+// stripTop+THRESHOLD_MARKING_BLOCK_LENGTH] span (which starts exactly AT
+// the strip's edge, leaving no free room inside it). The gap keeps a
+// clean, non-touching margin from the strip's own top/bottom edge lines
+// (stroke width 2, centred on stripTop/stripBottom) too - real threshold
+// lights sit beyond the painted markings, not on top of them. Rendered
+// unconditionally, independent of that strip's own hasThresholdMarkings
+// toggle, since this is a distinct feature ("every runway strip"), not
+// an extension of the optional marking. Colour is plain green/red on
+// whichever end matches activeRunwayEnd, same isTopActive/isBottomActive
+// boolean the identifier highlight above already computes from the same
+// raw string - no separate lookup, so this can never disagree with that
+// highlight.
 const THRESHOLD_LIGHT_HEIGHT = 5
+const THRESHOLD_LIGHT_GAP_PX = 2
 // Same two tokens the identifier highlight (RunwayIdentifierText) and
 // this file's own arrow-green/arrow-red wind-arrow classes already use -
 // not a new hardcoded green/red pair.
@@ -290,14 +298,14 @@ function ThresholdLightBars({
     <>
       <rect
         x={stripX}
-        y={stripTop + THRESHOLD_MARKING_BLOCK_LENGTH}
+        y={stripTop - THRESHOLD_LIGHT_GAP_PX - THRESHOLD_LIGHT_HEIGHT}
         width={stripWidth}
         height={THRESHOLD_LIGHT_HEIGHT}
         fill={topActive ? THRESHOLD_LIGHT_ACTIVE_FILL : THRESHOLD_LIGHT_INACTIVE_FILL}
       />
       <rect
         x={stripX}
-        y={stripBottom - THRESHOLD_MARKING_BLOCK_LENGTH - THRESHOLD_LIGHT_HEIGHT}
+        y={stripBottom + THRESHOLD_LIGHT_GAP_PX}
         width={stripWidth}
         height={THRESHOLD_LIGHT_HEIGHT}
         fill={bottomActive ? THRESHOLD_LIGHT_ACTIVE_FILL : THRESHOLD_LIGHT_INACTIVE_FILL}
@@ -344,28 +352,17 @@ function numberInsetFor(strip: RunwayStrip | undefined): number {
 // and RunwayWindWidget.tsx/this file's own arrow already use for their
 // "good" wind state, not a second hardcoded copy of a colour picked
 // independently.
-// Contrast badge + size round: a dark pill behind BOTH ends (active and
-// inactive alike - the badge itself never carries the active/inactive
-// signal, only the text fill inside it still does), plus a flat +2px
-// display-only bump over the admin-configured identifierFontSizePx -
-// RunwaysPage.tsx's own stored value is untouched, only what's actually
-// rendered here is larger. var(--color-compass-disc-bg) rather than a
-// third hardcoded dark-navy literal - this file already has two
-// (rgba(15, 23, 42, 0.94) on the centre wind-label pill, rgba(15, 23,
-// 42, 0.95) as this exact token on the background disc a few hundred
-// lines below) that are visually indistinguishable from each other;
-// reusing the actual token rather than adding a third near-duplicate
-// literal.
+// Outline round: replaces the earlier dark-pill badge behind each
+// identifier (removed - collided visually with the badge's own
+// admin-unbounded strip/font sizing more than it helped legibility) with
+// a plain stroke-only outline on the text itself - fill="none", a 1px
+// stroke, same active(green)/inactive(white) colour split as before,
+// just carried by strokeWidth/stroke rather than a filled glyph. Still a
+// flat +2px display-only bump over the admin-configured
+// identifierFontSizePx - RunwaysPage.tsx's own stored value stays
+// untouched, only what's actually rendered here is larger.
 const IDENTIFIER_FONT_SIZE_BOOST_PX = 2
-// Approximate bold/900-weight digit width as a fraction of font size -
-// identifiers are always <=2 characters (RunwaysPage.tsx's own
-// maxLength={2} on both end-identifier inputs), so this only ever needs
-// to size 1-2 glyphs, not arbitrary text.
-const IDENTIFIER_BADGE_CHAR_WIDTH_RATIO = 0.62
-const IDENTIFIER_BADGE_PAD_X = 5
-const IDENTIFIER_BADGE_HEIGHT_RATIO = 1.15
-const IDENTIFIER_BADGE_PAD_Y = 4
-const IDENTIFIER_BADGE_CORNER_RADIUS = 4
+const IDENTIFIER_OUTLINE_STROKE_WIDTH = 1
 
 function RunwayIdentifierText({
   x,
@@ -383,32 +380,22 @@ function RunwayIdentifierText({
   active?: boolean
 }): JSX.Element {
   const renderedFontSize = fontSize + IDENTIFIER_FONT_SIZE_BOOST_PX
-  const badgeWidth = text.length * renderedFontSize * IDENTIFIER_BADGE_CHAR_WIDTH_RATIO + IDENTIFIER_BADGE_PAD_X * 2
-  const badgeHeight = renderedFontSize * IDENTIFIER_BADGE_HEIGHT_RATIO + IDENTIFIER_BADGE_PAD_Y * 2
   const content = (
-    <>
-      <rect
-        x={x - badgeWidth / 2}
-        y={y - badgeHeight / 2}
-        width={badgeWidth}
-        height={badgeHeight}
-        rx={IDENTIFIER_BADGE_CORNER_RADIUS}
-        fill="var(--color-compass-disc-bg)"
-      />
-      <text
-        x={x}
-        y={y}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className="select-none"
-        fill={active ? 'var(--color-status-good-text)' : 'white'}
-        fontSize={renderedFontSize}
-        fontWeight="900"
-        opacity={active ? 1 : 0.85}
-      >
-        {text}
-      </text>
-    </>
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      dominantBaseline="middle"
+      className="select-none"
+      fill="none"
+      stroke={active ? 'var(--color-status-good-text)' : 'white'}
+      strokeWidth={IDENTIFIER_OUTLINE_STROKE_WIDTH}
+      fontSize={renderedFontSize}
+      fontWeight="900"
+      opacity={active ? 1 : 0.85}
+    >
+      {text}
+    </text>
   )
   return rotate180 ? <g transform={`rotate(180 ${x} ${y})`}>{content}</g> : content
 }
