@@ -318,9 +318,17 @@ export default function RunwayWindWidget({
   const topRowClass = bare
     ? 'flex w-full items-start justify-center gap-3'
     : `flex items-start justify-center ${compact ? 'gap-16' : 'gap-4 sm:gap-8'}`
+  // compact: text-sm (14px) instead of the base text-xs (12px) - a +2px
+  // bump for readability at TV/kiosk viewing distance, Crosswind/
+  // Headwind/Trend/Circuit only (their value text below, e.g. "2.3 kts
+  // Left"/"Steady", is untouched - valueClass isn't part of this
+  // change). Non-compact (/runway-widget-test, bare) untouched - both
+  // already have their own larger title sizing (sm:text-2xl / text-lg
+  // respectively) tuned for a different context, not part of this
+  // request.
   const titleClass = bare
     ? 'text-lg font-bold uppercase tracking-wide text-muted-400'
-    : `text-xs font-bold uppercase tracking-wide text-muted-400${compact ? '' : ' sm:text-2xl'}`
+    : `${compact ? 'text-sm' : 'text-xs'} font-bold uppercase tracking-wide text-muted-400${compact ? '' : ' sm:text-2xl'}`
   // Trend/Circuit only, bare mode only - titleClass above stays exactly
   // as-is for Crosswind/Headwind (not part of the requested label list
   // this round). Non-bare (the /runway-widget-test prototype, the only
