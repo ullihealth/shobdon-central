@@ -109,8 +109,13 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
           reading really live ATC data" while status-good answers "is
           this wind reading in the safe range", a different question that
           must be free to diverge independently. Recolouring this badge
-          must never repaint RunwayWindWidget.tsx's own good-wind text. */}
-      <span className={isLive ? 'text-station-live' : undefined}>{label}</span>
+          must never repaint RunwayWindWidget.tsx's own good-wind text.
+          uppercase here (not on the div, which would also affect a
+          future non-uppercase label) - scoped to isLive precisely
+          because that's the exact same "Shobdon LIVE"/"{STATION} LIVE"
+          pair this token exists for, verified to be the ONLY two
+          branches that ever set emoji to 🟢. */}
+      <span className={isLive ? 'text-station-live uppercase' : undefined}>{label}</span>
     </div>
   )
 }
