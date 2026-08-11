@@ -31,42 +31,80 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
-  // Cloudflare Pages Deploy Hook URL for the shobdon-central Pages
-  // project (Pages > Settings > Deploy Hooks in the dashboard - not an
-  // API token, deliberately: this Function can only ever fetch(), it
-  // can't shell out to wrangler CLI the way scripts/generate-pilot-
-  // version.mjs does at build time, and a Deploy Hook is Cloudflare's
-  // own purpose-built, low-blast-radius mechanism for exactly this
-  // "trigger a rebuild from an external event, no new git commit"
-  // case - a single POST with no auth header needed, versus a full
-  // account-scoped API token this endpoint would otherwise need to
-  // hold. Set via `wrangler pages secret put PILOT_DEPLOY_HOOK_URL`.
+  // Fine-grained GitHub personal access token, scoped to THIS repo only
+  // (ullihealth/shobdon-central) with "Actions: Read and write"
+  // permission and nothing else - narrowest credential that can
+  // actually trigger a workflow_dispatch run, per GitHub's own REST API
+  // requirements for that endpoint. Set via `wrangler secret put
+  // GITHUB_DEPLOY_TOKEN --config wrangler.worker.toml` - deliberately
+  // the WORKER's own secret store, not Pages': real requests to this
+  // route go through the airfield-central Worker in production
+  // (confirmed directly - shobdon.airfieldcentral.com's DNS/response
+  // headers don't match the shobdon-central Pages project at all, only
+  // the Worker; see TECH_DEBT.md's own retirement-tracking note), so a
+  // secret set on the Pages project would never actually be read by the
+  // code path that's live for a real platform admin's release action.
   // Optional - see triggerPilotRedeploy's own comment for why an unset
   // value degrades gracefully rather than failing the release.
-  PILOT_DEPLOY_HOOK_URL?: string;
+  GITHUB_DEPLOY_TOKEN?: string;
 }
+
+const GITHUB_OWNER = "ullihealth";
+const GITHUB_REPO = "shobdon-central";
+const GITHUB_WORKFLOW_FILE = "deploy-worker.yml";
+const GITHUB_DISPATCH_REF = "main";
 
 // The whole point of this round: the /pilot version stamp is now baked
 // into the shipped bundle at build time (see scripts/generate-pilot-
 // version.mjs), not live API data - so the ONLY way a new release's
-// version ever actually reaches a pilot's phone is a fresh Cloudflare
-// Pages build. This function is what makes that automatic instead of
+// version ever actually reaches a pilot's phone is a fresh deploy of
+// the airfield-central Worker (the actual production target for
+// shobdon.airfieldcentral.com/pilot - NOT the shobdon-central Pages
+// project, confirmed the hard way after an earlier version of this
+// function targeted that wrong project's own Deploy Hook mechanism,
+// which would have silently rebuilt a project real traffic never
+// touches). This function is what makes that automatic instead of
 // relying on someone remembering to push an unrelated commit after
-// every release. The redeploy itself carries no feature changes - its
-// only job is to re-run the generation script against the version this
-// same request just wrote, then ship that.
+// every release. deploy-worker.yml (.github/workflows/) is the
+// existing, already-working pipeline for that Worker - already/
+// deliberately kept trigger-able via workflow_dispatch (see that
+// file's own comment) alongside its push-to-main trigger, specifically
+// so a redeploy can be fired by hand or programmatically without an
+// empty commit. This function calls that exact same dispatch, just
+// from GitHub's REST API instead of the Actions UI. The redeploy itself
+// carries no feature changes - its only job is to re-run
+// generate-pilot-version.mjs against the version this same request
+// just wrote, then ship that.
 //
 // Deliberately never allowed to fail the release itself: the D1 writes
 // above are the actual source of truth (what /versions and /platform/
 // dev-features show), already committed by the time this runs - a
-// down Deploy Hook or missing secret should surface as a softer signal
-// to the admin (the `deployTriggered` field on the response), not an
-// error that makes it look like the release itself failed when it
-// didn't.
+// down GitHub API, an expired token, or a missing secret should
+// surface as a softer signal to the admin (the `deployTriggered` field
+// on the response), not an error that makes it look like the release
+// itself failed when it didn't.
 async function triggerPilotRedeploy(env: Env): Promise<boolean> {
-  if (!env.PILOT_DEPLOY_HOOK_URL) return false;
+  if (!env.GITHUB_DEPLOY_TOKEN) return false;
   try {
-    const response = await fetch(env.PILOT_DEPLOY_HOOK_URL, { method: "POST" });
+    // 204 No Content on success - GitHub's own documented response for
+    // this endpoint, nothing to parse. GitHub's REST API rejects
+    // requests with no User-Agent at all (not just a Cloudflare-
+    // default one) - set explicitly rather than relying on whatever
+    // fetch() supplies by default in this runtime.
+    const response = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_DEPLOY_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "shobdon-central-release-endpoint",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref: GITHUB_DISPATCH_REF }),
+      }
+    );
     return response.ok;
   } catch {
     return false;

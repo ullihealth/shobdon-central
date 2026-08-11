@@ -433,18 +433,19 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
       setSelectedForRelease(new Set())
       setReleaseVersion('')
       // deployTriggered (release.ts's own triggerPilotRedeploy) - a
-      // released version now only reaches /pilot via a fresh Cloudflare
-      // Pages build (see PilotVersionStamp.tsx's own comment on why
-      // that's baked in at build time, not live data any more), so the
-      // admin needs to know if that half silently didn't happen -
-      // PILOT_DEPLOY_HOOK_URL unset, or the Deploy Hook itself down -
-      // rather than assuming the version reached pilots just because
-      // the D1 write succeeded.
+      // released version now only reaches /pilot via a fresh deploy of
+      // the airfield-central Worker (see PilotVersionStamp.tsx's own
+      // comment on why that's baked in at build time, not live data any
+      // more, and release.ts's own comment on why that Worker, not the
+      // shobdon-central Pages project), so the admin needs to know if
+      // that half silently didn't happen - GITHUB_DEPLOY_TOKEN unset,
+      // expired, or GitHub's own API down - rather than assuming the
+      // version reached pilots just because the D1 write succeeded.
       const body = await response.json().catch(() => null)
       showNotice(
         body?.deployTriggered
           ? `Released v${version.replace(/^v/i, '')}. Pilot app redeploy triggered.`
-          : `Released v${version.replace(/^v/i, '')}. Redeploy NOT triggered - check PILOT_DEPLOY_HOOK_URL and redeploy manually if needed.`
+          : `Released v${version.replace(/^v/i, '')}. Redeploy NOT triggered - check GITHUB_DEPLOY_TOKEN and redeploy manually if needed.`
       )
       await loadAll()
     } else {
