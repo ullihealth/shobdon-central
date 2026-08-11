@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import type { RunwayGroup } from '../types/clubProfile'
 import type { WeatherData } from '../types/weather'
-import { calculateWindComponents, determineArrowColour } from '../utils/windCalculations'
+import { calculateWindComponents, determineArrowColour, isDownwind } from '../utils/windCalculations'
 import type { ArrowColour, ArrowColourThresholds } from '../utils/windCalculations'
 import runwayImg from './Windsock/Runway.png'
 import windsock1Img from './Windsock/windsock-1.png'
@@ -192,10 +192,12 @@ function trendLabelFor(trend: WeatherData['pressureTrend'] | undefined): string 
 }
 
 // Down-pointing chevron/arrowhead - sits between the Headwind value and
-// the runway image per the approved layout. Deliberately never rotates
-// (the windsock already carries left/right crosswind direction via its
-// own mirroring below; this arrow's only job is headwind/tailwind/
-// crosswind STATE via colour, not a compass-accurate bearing).
+// the runway image per the approved layout. Rotates 180° (via the
+// caller's own className, see the downwind ternary below) only for the
+// genuine downwind case - it still doesn't track a compass-accurate
+// bearing otherwise (left/right crosswind direction stays the windsock's
+// own job via its mirroring below); this is purely the headwind-vs-
+// downwind STATE flip, same "state not bearing" posture as before.
 function ArrowIcon({ className }: { className?: string }): JSX.Element {
   return (
     <svg viewBox="0 0 48 64" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -272,6 +274,13 @@ export default function RunwayWindWidget({
   }, [hasWind, weather, runwayHeading])
 
   const arrowColour: ArrowColour = hasWind ? determineArrowColour(headwind, crosswind, arrowThresholds) : 'green'
+  // >90° off the runway heading - the wind is pushing from behind, not
+  // ahead. Deliberately the pure angle test (isDownwind), not a re-use of
+  // arrowColour's own tailwindKt buffer above - that threshold is
+  // tenant-configurable and answers a different question (when should the
+  // colour flip), while the arrow direction/label below need to track the
+  // actual physical downwind condition regardless of tenant config.
+  const downwind = hasWind && !!weather && isDownwind(weather.windDirection, runwayHeading)
   const windsockTier = hasWind ? determineWindsockTier(crosswind, windsock) : 1
   // crosswind > 0 = "from the right" (CompassPanel's own convention -
   // Right circuit / crosswind label uses the same sign). Every windsock
@@ -513,22 +522,24 @@ export default function RunwayWindWidget({
           </div>
         </div>
 
-        {/* Headwind is deliberately a static label regardless of sign
-            (not a Headwind/Tailwind swap) - the colour (green/red/amber,
-            same ARROW_COLOUR_CLASS as the arrow itself) already
-            unambiguously carries which one it actually is. Right column:
-            Headwind + arrow + runway + Circuit (swapped in from the left
-            column, round 5 - same embedded-child approach as Trend
-            above, for the same exact-centering reason). */}
+        {/* Headwind label swaps to Downwind (see isDownwind above) once the
+            wind is genuinely coming from more than 90° off the runway
+            heading - anything within that 90° stays "Headwind" regardless
+            of sign, same static-label posture as before for that range.
+            The colour (green/red/amber, same ARROW_COLOUR_CLASS as the
+            arrow itself) still separately carries severity either way.
+            Right column: Headwind + arrow + runway + Circuit (swapped in
+            from the left column, round 5 - same embedded-child approach as
+            Trend above, for the same exact-centering reason). */}
         <div
           className={`flex flex-col items-center ${bare ? 'gap-2' : 'gap-1 sm:gap-2'}`}
           style={{ transform: compact ? `translateX(${RUNWAY_GROUP_COMPACT_SHIFT_PX}px)` : undefined }}
         >
-          <span className={titleClass}>Headwind</span>
+          <span className={titleClass}>{downwind ? 'Downwind' : 'Headwind'}</span>
           <span className={`${valueClass} ${ARROW_COLOUR_CLASS[arrowColour]}${valueSmClass}`}>
             {hasWind ? `${Math.abs(headwind).toFixed(1)} kts` : 'N/A'}
           </span>
-          <ArrowIcon className={`${arrowClass} ${ARROW_COLOUR_CLASS[arrowColour]}`} />
+          <ArrowIcon className={`${arrowClass} ${ARROW_COLOUR_CLASS[arrowColour]}${downwind ? ' rotate-180' : ''}`} />
           <div className={runwayWrapClass}>
             <img src={runwayImg} alt={`Runway ${activeIdentifier}`} className="w-full" />
             {/* Positioned in the clear tarmac area between the top of the

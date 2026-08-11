@@ -67,6 +67,20 @@ export function determineArrowColour(
   return 'green'
 }
 
+// Pure angular check, deliberately decoupled from determineArrowColour's
+// own tailwindKt buffer above (that threshold is tenant-configurable and
+// centred a couple of kt either side of zero, tuned for when the colour
+// itself should flip - not the same question as "which way is the wind
+// actually coming from relative to the runway", which is exactly 90°
+// regardless of tenant config). Wind speed is always >= 0, so this is
+// equivalent to headwind < 0 in calculateWindComponents' own terms, but
+// expressed directly in the angle terms the arrow/label spec calls for.
+export function isDownwind(windDirection: number, runwayHeading: number): boolean {
+  const rawDiff = Math.abs(windDirection - runwayHeading) % 360
+  const angularDifference = rawDiff > 180 ? 360 - rawDiff : rawDiff
+  return angularDifference > 90
+}
+
 export function degreesToCardinal(degrees: number): string {
   const normalised = ((degrees % 360) + 360) % 360
   const index = Math.round(normalised / 22.5) % 16
