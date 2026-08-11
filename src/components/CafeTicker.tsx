@@ -158,7 +158,7 @@ const HOUR_GROUP_GAP = '     '
 
 function forecastSegmentText(visibilityHours: VisibilityHour[]): string {
   if (visibilityHours.length === 0) return '6-HOUR MET OFFICE FORECAST: Unavailable'
-  const groups = visibilityHours.slice(0, 6).map((hour, index) => `+${index + 1} ${weatherIconFor(hour.weatherCode)}`)
+  const groups = visibilityHours.slice(0, 6).map((hour, index) => `+${index + 1} ${weatherIconFor(hour.weatherCode, hour.isDaytime)}`)
   return `6-HOUR MET OFFICE FORECAST: ${groups.join(HOUR_GROUP_GAP)}`
 }
 

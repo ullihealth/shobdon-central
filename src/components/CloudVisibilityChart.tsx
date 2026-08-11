@@ -374,7 +374,7 @@ export default function CloudVisibilityChart({
           <div className="flex items-start justify-around">
             {displayHours.map((hour, i) => (
               <div key={i} className="flex flex-col items-center">
-                <span className={`leading-none ${largeText ? 'text-4xl' : 'text-xl'}`}>{weatherIconFor(hour.weatherCode)}</span>
+                <span className={`leading-none ${largeText ? 'text-4xl' : 'text-xl'}`}>{weatherIconFor(hour.weatherCode, hour.isDaytime)}</span>
                 <span className={`mt-1.5 font-semibold ${largeText ? 'text-base text-muted-300' : 'text-xs text-muted-500'}`}>{hourLabelForIndex(i)}</span>
               </div>
             ))}

@@ -15,6 +15,7 @@
 // a failure here can do is leave this one card showing "unavailable".
 
 import { resolveEffectiveTenantByOrganizationId } from "./resolveParentTenant";
+import { isDaytimeAt } from "./solarPosition";
 
 export type KVNamespace = {
   get: <T = unknown>(key: string, type: "json") => Promise<T | null>;
@@ -57,6 +58,15 @@ interface VisibilityHour {
   // an otherwise-valid hour shouldn't drop that hour's visibility data -
   // the client just has nothing to show for that hour's weather-type icon.
   weatherCode?: number;
+  // Computed here (solarPosition.ts), not read from Met Office - several
+  // significant weather codes (7 Cloudy, 8 Overcast) have no night variant
+  // in Met Office's own scheme at all, so the client can't get day/night
+  // for those from weatherCode no matter what. Always present whenever
+  // weatherCode is (never optional) - unlike weatherCode, this never
+  // depends on what Met Office chose to return; it only needs this step's
+  // own timestamp and the tenant's already-resolved coordinates, both
+  // guaranteed available by the time fetchFromMetOffice runs.
+  isDaytime: boolean;
 }
 
 interface CachedForecast {
@@ -160,7 +170,8 @@ async function fetchFromMetOffice(apiKey: string, latitude: number, longitude: n
     // filter inside pickUpcomingHours.
     const { category, rangeLabel } = categorise(step.visibility as number);
     const weatherCode = typeof step.significantWeatherCode === "number" ? step.significantWeatherCode : undefined;
-    return { forecastForUtc: step.time, visibilityM: step.visibility as number, category, rangeLabel, weatherCode };
+    const isDaytime = isDaytimeAt(Date.parse(step.time), latitude, longitude);
+    return { forecastForUtc: step.time, visibilityM: step.visibility as number, category, rangeLabel, weatherCode, isDaytime };
   });
 
   return { hours, fetchedAt: new Date().toISOString() };

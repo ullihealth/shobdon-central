@@ -11,6 +11,11 @@ export interface VisibilityHour {
   // Visibility Chart's weather-type icon strip should treat a missing
   // code as "nothing to show for this hour", not fall back to a fake one.
   weatherCode?: number
+  // Computed server-side (publicVisibilityForecast.ts's own solarPosition.ts)
+  // from this hour's own timestamp and the tenant's coordinates - not from
+  // weatherCode, which has no night variant at all for several codes (7
+  // Cloudy, 8 Overcast). Always present, unlike weatherCode.
+  isDaytime: boolean
 }
 
 interface VisibilityForecastData {
