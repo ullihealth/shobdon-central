@@ -48,7 +48,7 @@
      ATC data", status-good-text answers "is this wind reading in the
      safe range" - two different questions that happen to share a colour
      today but must be free to diverge independently later. */
-  --color-station-live-text: #c8f336;
+  --color-station-live-text: #89f336;
 
   /* Compass (CompassPanel.tsx inline SVG only) */
   --color-compass-fill: rgba(15, 23, 42, 0.95);
