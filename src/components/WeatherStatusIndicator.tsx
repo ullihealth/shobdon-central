@@ -102,7 +102,23 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
 
   return (
     <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">
-      {!hideIcon && <span aria-hidden="true">{emoji}</span>}
+      {/* isLive gets a plain CSS-drawn dot (bg-station-live), not the 🟢
+          glyph - confirmed empirically (rendered color: #c8f336 on the
+          emoji and sampled the actual output pixels) that CSS `color`
+          has NO effect on an emoji-presentation character; it's drawn by
+          the platform's own colour-emoji font regardless. bg-station-
+          live reuses the exact same --color-station-live-text variable
+          the label span already uses (index.css), just via
+          background-color instead of color - not a second token. Every
+          OTHER state (🔴🔵🟣🟠) is untouched, still the literal emoji -
+          this only replaces the one glyph that needed an exact,
+          CSS-controllable colour match to the label beside it. */}
+      {!hideIcon &&
+        (isLive ? (
+          <span aria-hidden="true" className="inline-block h-3 w-3 rounded-full bg-station-live" />
+        ) : (
+          <span aria-hidden="true">{emoji}</span>
+        ))}
       {/* text-station-live (index.css --color-station-live-text), NOT
           text-status-good - the two used to share a token by coincidence
           (both happened to start green), but this badge answers "is this
