@@ -105,7 +105,25 @@ try {
   // of replacing it with an obviously broken placeholder like "0.0.0".
   // Only a fresh clone with no prior generated file at all can fall back
   // to a placeholder, which must still be obvious in build logs.
-  console.error(`[generate-pilot-version] Failed to read latest version from D1: ${err.stack ?? err.message}`)
+  //
+  // Diagnosability round: err.message/err.stack alone were a dead end
+  // in practice - a real CI failure only ever showed "Command failed:
+  // <command>" with no indication of WHY, since execSync's own thrown
+  // Error does not reliably fold the child process's actual stdout/
+  // stderr into .message/.stack (confirmed the hard way after an
+  // actual failed build's log gave no usable information). err.stdout/
+  // err.stderr are the real source of truth here - execSync always
+  // populates them (as Buffers, since this call didn't set encoding on
+  // the exec options themselves, only expected it on success) whenever
+  // the child process was spawned with piped stdio and exited non-
+  // zero, regardless of what ends up in .message. Logged individually
+  // and explicitly labelled so a future failure is actually
+  // diagnosable from CI output alone, not another guessing round.
+  console.error('[generate-pilot-version] Failed to read latest version from D1.')
+  console.error(`[generate-pilot-version] exit code: ${err.status ?? '(none - not a process exit failure)'}`)
+  console.error(`[generate-pilot-version] stdout: ${err.stdout ? err.stdout.toString().trim() || '(empty)' : '(none captured)'}`)
+  console.error(`[generate-pilot-version] stderr: ${err.stderr ? err.stderr.toString().trim() || '(empty)' : '(none captured)'}`)
+  console.error(`[generate-pilot-version] error message: ${err.message}`)
   if (existsSync(OUTPUT_PATH)) {
     console.error('[generate-pilot-version] Keeping existing generated file as the last-known-good version.')
   } else {
