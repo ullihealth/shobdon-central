@@ -131,29 +131,54 @@ const SIZE_CLASSES: Record<NoticeSize, string> = {
 // fetch) that lives in RightInfoPanel, not passed in from outside.
 function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  const indicatorMeasureRef = useRef<HTMLDivElement>(null)
   const [visibleCount, setVisibleCount] = useState(notices.length)
 
   useLayoutEffect(() => {
     setVisibleCount(notices.length)
   }, [notices])
 
-  // Measures real rendered scrollHeight vs clientHeight - size-agnostic
-  // by construction, so per-entry font sizes (sm/md/lg) need no changes
-  // here: a 'lg' entry naturally contributes more to scrollHeight than
-  // a 'sm' one, and the loop responds to whatever the real number is,
-  // same as it already does for a long string wrapping to two lines.
+  // Single-pass measurement, replacing an earlier "drop one entry,
+  // re-render, remeasure scrollHeight, repeat" loop - that could force up
+  // to notices.length synchronous layout passes per render, on this
+  // panel's own 5-second rotation cadence (RightInfoPanel's ops/
+  // notamsFull/notices state cycle) - confirmed as the cause of a
+  // periodic desktop-only footer-ticker stutter (mobile's equivalent,
+  // AutoNotamsScrollPanel.tsx, has no such loop and shows no stutter).
+  // This only runs once per `notices` change, against the full-length
+  // render it just reset to above: walks each already-rendered item's own
+  // offsetTop/offsetHeight (already reflects wrapping/margins exactly
+  // like the old scrollHeight check did) and finds, in one forward pass,
+  // the largest prefix that fits - then sets visibleCount directly, a
+  // single corrective re-render instead of up to N of them.
+  //
+  // The "+N more" indicator is a flex-shrink-0 SIBLING of containerRef
+  // (below), not a child of it - showing it shrinks containerRef's own
+  // available height via their shared flex-col parent. Measured here via
+  // an always-present, invisible, absolutely-positioned copy of the same
+  // text (rendered only while hiddenCount is 0, i.e. exactly the window
+  // this effect cares about) and subtracted from containerRef's current
+  // clientHeight up front, rather than needing a second remeasurement
+  // pass after truncation is actually applied.
   useLayoutEffect(() => {
     const el = containerRef.current
-    if (!el || visibleCount <= 0) return
-    if (el.scrollHeight > el.clientHeight) {
-      setVisibleCount((count) => count - 1)
+    if (!el || notices.length === 0 || visibleCount !== notices.length) return
+    if (el.scrollHeight <= el.clientHeight) return
+
+    const indicatorHeight = indicatorMeasureRef.current?.offsetHeight ?? 0
+    const available = el.clientHeight - indicatorHeight
+    let fitCount = 0
+    for (const child of Array.from(el.children) as HTMLElement[]) {
+      if (child.offsetTop + child.offsetHeight > available) break
+      fitCount += 1
     }
+    setVisibleCount(fitCount)
   }, [visibleCount, notices])
 
   const hiddenCount = notices.length - visibleCount
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
       {/* text-base, not the previous text-xs - this panel's title reads
           "NOTAMS" but actually renders manual Safety Notices content
           (see the file-level explanation above this component), so this
@@ -161,18 +186,26 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
           Safety Notices" title for sizing purposes, not the automated
           NOTAM feed title below. */}
       <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMS</div>
-      <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
+      {/* relative - so the mapped items' own offsetTop below is measured
+          from THIS element's top edge (matching el.clientHeight's own
+          origin), not from some further-up positioned ancestor. */}
+      <div ref={containerRef} className="relative mt-3 min-h-0 flex-1 overflow-hidden">
         {notices.slice(0, visibleCount).map((notice, index) => (
           <div key={index} className={`mb-4 font-semibold text-primary last:mb-0 ${SIZE_CLASSES[notice.size]}`}>
             {notice.text}
           </div>
         ))}
-        {hiddenCount > 0 && (
-          <div className="text-lg font-bold text-status-bad">
-            +{hiddenCount} more — see /atc-control
-          </div>
-        )}
       </div>
+      {hiddenCount > 0 && (
+        <div className="flex-shrink-0 text-lg font-bold text-status-bad">
+          +{hiddenCount} more — see /atc-control
+        </div>
+      )}
+      {hiddenCount === 0 && notices.length > 0 && (
+        <div ref={indicatorMeasureRef} className="invisible absolute left-0 top-0 text-lg font-bold" aria-hidden="true">
+          +{notices.length} more — see /atc-control
+        </div>
+      )}
     </div>
   )
 }
@@ -193,26 +226,38 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
 // made scrollable, zero viewer interaction required anywhere.
 function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  const indicatorMeasureRef = useRef<HTMLDivElement>(null)
   const [visibleCount, setVisibleCount] = useState(notams.length)
 
   useLayoutEffect(() => {
     setVisibleCount(notams.length)
   }, [notams])
 
+  // Single-pass measurement - same fix, same reasoning as NotamsPanel's
+  // identical comment above (kept as a separate copy per this file's own
+  // existing "not abstracted, differs in exactly the bits that matter"
+  // convention for these two panels).
   useLayoutEffect(() => {
     const el = containerRef.current
-    if (!el || visibleCount <= 0) return
-    if (el.scrollHeight > el.clientHeight) {
-      setVisibleCount((count) => count - 1)
+    if (!el || notams.length === 0 || visibleCount !== notams.length) return
+    if (el.scrollHeight <= el.clientHeight) return
+
+    const indicatorHeight = indicatorMeasureRef.current?.offsetHeight ?? 0
+    const available = el.clientHeight - indicatorHeight
+    let fitCount = 0
+    for (const child of Array.from(el.children) as HTMLElement[]) {
+      if (child.offsetTop + child.offsetHeight > available) break
+      fitCount += 1
     }
+    setVisibleCount(fitCount)
   }, [visibleCount, notams])
 
   const hiddenCount = notams.length - visibleCount
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
+    <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
       <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
-      <div ref={containerRef} className="mt-3 min-h-0 flex-1 overflow-hidden">
+      <div ref={containerRef} className="relative mt-3 min-h-0 flex-1 overflow-hidden">
         {notams.slice(0, visibleCount).map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
             <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
@@ -221,6 +266,11 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
         ))}
       </div>
       {hiddenCount > 0 && <div className="flex-shrink-0 text-xs font-bold text-status-bad">+{hiddenCount} more</div>}
+      {hiddenCount === 0 && notams.length > 0 && (
+        <div ref={indicatorMeasureRef} className="invisible absolute left-0 top-0 text-xs font-bold" aria-hidden="true">
+          +{notams.length} more
+        </div>
+      )}
     </div>
   )
 }
