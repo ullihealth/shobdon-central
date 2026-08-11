@@ -214,15 +214,15 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
         {/* Small, unobtrusive version stamp (PilotVersionStamp.tsx) -
-            reads the same released-version data /versions and
-            /platform/dev-features already show (platform_updates.
-            version, see that component's own comment), not a
-            hand-maintained local constant. Sits above PilotFooterTicker
-            (which can render null with no ticker content configured -
-            see that component's own hasRealContent gate), so the
-            version stamp stays visible either way rather than depending
-            on the ticker actually rendering. */}
-        <PilotVersionStamp refreshSignal={refreshTick} />
+            baked in at build time from platform_updates (see that
+            component's own comment), not a live fetch any more - no
+            refreshSignal prop, pull-to-refresh has nothing to do with
+            it. Sits above PilotFooterTicker (which can render null with
+            no ticker content configured - see that component's own
+            hasRealContent gate), so the version stamp stays visible
+            either way rather than depending on the ticker actually
+            rendering. */}
+        <PilotVersionStamp />
         <PilotFooterTicker />
       </div>
     </div>
