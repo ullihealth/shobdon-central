@@ -31,6 +31,46 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+  // Cloudflare Pages Deploy Hook URL for the shobdon-central Pages
+  // project (Pages > Settings > Deploy Hooks in the dashboard - not an
+  // API token, deliberately: this Function can only ever fetch(), it
+  // can't shell out to wrangler CLI the way scripts/generate-pilot-
+  // version.mjs does at build time, and a Deploy Hook is Cloudflare's
+  // own purpose-built, low-blast-radius mechanism for exactly this
+  // "trigger a rebuild from an external event, no new git commit"
+  // case - a single POST with no auth header needed, versus a full
+  // account-scoped API token this endpoint would otherwise need to
+  // hold. Set via `wrangler pages secret put PILOT_DEPLOY_HOOK_URL`.
+  // Optional - see triggerPilotRedeploy's own comment for why an unset
+  // value degrades gracefully rather than failing the release.
+  PILOT_DEPLOY_HOOK_URL?: string;
+}
+
+// The whole point of this round: the /pilot version stamp is now baked
+// into the shipped bundle at build time (see scripts/generate-pilot-
+// version.mjs), not live API data - so the ONLY way a new release's
+// version ever actually reaches a pilot's phone is a fresh Cloudflare
+// Pages build. This function is what makes that automatic instead of
+// relying on someone remembering to push an unrelated commit after
+// every release. The redeploy itself carries no feature changes - its
+// only job is to re-run the generation script against the version this
+// same request just wrote, then ship that.
+//
+// Deliberately never allowed to fail the release itself: the D1 writes
+// above are the actual source of truth (what /versions and /platform/
+// dev-features show), already committed by the time this runs - a
+// down Deploy Hook or missing secret should surface as a softer signal
+// to the admin (the `deployTriggered` field on the response), not an
+// error that makes it look like the release itself failed when it
+// didn't.
+async function triggerPilotRedeploy(env: Env): Promise<boolean> {
+  if (!env.PILOT_DEPLOY_HOOK_URL) return false;
+  try {
+    const response = await fetch(env.PILOT_DEPLOY_HOOK_URL, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 interface DevFeatureRow {
@@ -134,5 +174,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       .run();
   }
 
-  return jsonResponse({ ok: true, version, releasedAt: now, count: ids.length });
+  const deployTriggered = await triggerPilotRedeploy(env);
+  return jsonResponse({ ok: true, version, releasedAt: now, count: ids.length, deployTriggered });
 };

@@ -432,7 +432,20 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
     if (response.ok) {
       setSelectedForRelease(new Set())
       setReleaseVersion('')
-      showNotice(`Released v${version.replace(/^v/i, '')}.`)
+      // deployTriggered (release.ts's own triggerPilotRedeploy) - a
+      // released version now only reaches /pilot via a fresh Cloudflare
+      // Pages build (see PilotVersionStamp.tsx's own comment on why
+      // that's baked in at build time, not live data any more), so the
+      // admin needs to know if that half silently didn't happen -
+      // PILOT_DEPLOY_HOOK_URL unset, or the Deploy Hook itself down -
+      // rather than assuming the version reached pilots just because
+      // the D1 write succeeded.
+      const body = await response.json().catch(() => null)
+      showNotice(
+        body?.deployTriggered
+          ? `Released v${version.replace(/^v/i, '')}. Pilot app redeploy triggered.`
+          : `Released v${version.replace(/^v/i, '')}. Redeploy NOT triggered - check PILOT_DEPLOY_HOOK_URL and redeploy manually if needed.`
+      )
       await loadAll()
     } else {
       const body = await response.json().catch(() => null)
