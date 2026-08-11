@@ -211,6 +211,22 @@ function gasPricesSegmentText(gasPrices: TickerGasPrices): string {
 interface TickerSegment {
   text: string
   color?: string
+  // True only for a genuine clock segment (type === 'clock' AND not
+  // textMode - see the either/or comment below). Drives tabular-nums in
+  // renderSegments: the clock's digits change every second with each
+  // digit's own natural (proportional) width, which otherwise makes the
+  // whole segment's rendered width flicker by a few px tick-to-tick -
+  // confirmed via direct offsetWidth sampling to force a real flex
+  // reflow of every later sibling (worst when the clock leads, since a
+  // leading slot's width change repositions the most siblings, doubled
+  // by the ticker's own two-copy seamless-loop duplication). tabular-nums
+  // fixes this at the source by giving every digit glyph identical
+  // width, confirmed to hold the segment's own rendered width perfectly
+  // constant. Scoped to just this one segment - other slot types don't
+  // have a per-second-changing numeric readout, so there's no equivalent
+  // problem to fix there, and tabular-nums has no visible effect on
+  // non-numeric text anyway.
+  isClock?: boolean
 }
 
 // Resolves each configured, ENABLED slot to its display segment - built-in
@@ -250,7 +266,7 @@ function useResolvedSegments(props: CafeTickerProps): TickerSegment[] {
                 return ''
             }
           })()
-      return { text, color: slot.textColor }
+      return { text, color: slot.textColor, isClock: !slot.textMode && slot.type === 'clock' }
     })
     .filter((segment) => segment.text.trim().length > 0)
 }
@@ -358,7 +374,7 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
         {content.map((segment, index) => (
           <span
             key={index}
-            className="whitespace-nowrap font-semibold uppercase tracking-wide"
+            className={`whitespace-nowrap font-semibold uppercase tracking-wide ${segment.isClock ? 'tabular-nums' : ''}`}
             style={{ ...baseTextStyle, color: segment.color || style.fontColor }}
           >
             {segment.text}
