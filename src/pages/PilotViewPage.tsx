@@ -17,7 +17,7 @@ import AutoNotamsScrollPanel from '../components/pilot/AutoNotamsScrollPanel'
 import PilotNoticesPanel from '../components/pilot/PilotNoticesPanel'
 import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 import PilotFooterTicker from '../components/pilot/PilotFooterTicker'
-import { APP_VERSION_LABEL } from '../config/appVersion'
+import PilotVersionStamp from '../components/pilot/PilotVersionStamp'
 import PilotRunwayWindPanel from '../components/pilot/PilotRunwayWindPanel'
 import PilotWindCard from '../components/pilot/PilotWindCard'
 import CompassPanel from '../components/CompassPanel'
@@ -213,20 +213,16 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
-        {/* Small, unobtrusive version stamp - APP_VERSION_LABEL
-            (src/config/appVersion.ts) is the single source of truth,
-            built from package.json's own "version" field, so bumping a
-            release only ever means editing that one field. Sits above
-            PilotFooterTicker (which can render null with no ticker
-            content configured - see that component's own hasRealContent
-            gate), so the version stamp stays visible either way rather
-            than depending on the ticker actually rendering. bg-panel/80
-            + backdrop-blur matches PilotHeader's own translucent-over-
-            scrolling-content treatment - text scrolling underneath this
-            fixed footer stays legible without a heavy/solid bar. */}
-        <div className="w-full bg-panel/80 px-2 py-0.5 text-center text-[10px] font-medium tracking-wide text-muted-400 backdrop-blur">
-          {APP_VERSION_LABEL}
-        </div>
+        {/* Small, unobtrusive version stamp (PilotVersionStamp.tsx) -
+            reads the same released-version data /versions and
+            /platform/dev-features already show (platform_updates.
+            version, see that component's own comment), not a
+            hand-maintained local constant. Sits above PilotFooterTicker
+            (which can render null with no ticker content configured -
+            see that component's own hasRealContent gate), so the
+            version stamp stays visible either way rather than depending
+            on the ticker actually rendering. */}
+        <PilotVersionStamp />
         <PilotFooterTicker />
       </div>
     </div>
