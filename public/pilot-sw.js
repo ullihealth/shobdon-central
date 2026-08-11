@@ -35,12 +35,20 @@ function isLiveDataRequest(url) {
   return new URL(url).pathname.startsWith('/api/')
 }
 
-self.addEventListener('install', (event) => {
-  // Take over immediately on next load rather than waiting for every
-  // open tab to close first - safe here since every response strategy
-  // below is network-first, so an old service worker instance briefly
-  // still active during activation can't serve stale data either.
-  self.skipWaiting()
+// Update-banner round: install used to call self.skipWaiting()
+// unconditionally, activating a new version the moment it finished
+// installing - safe from a caching standpoint (every response strategy
+// here is network-first) but it defeated the whole point of a tap-to-
+// reload banner, since by the time a pilot could see one, the new
+// worker had usually already taken over. skipWaiting() now only runs
+// when explicitly asked (see the message listener below, fired by
+// usePilotServiceWorkerUpdate.ts once the pilot taps the banner) - a
+// newly-installed version sits in registration.waiting instead, exactly
+// the state that hook needs to detect an update is available at all.
+self.addEventListener('install', () => {})
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
