@@ -4,11 +4,83 @@ import {
   PLATFORM_DEV_FEATURES_URL,
   PLATFORM_DEV_FEATURE_FOLDERS_URL,
   PLATFORM_UPDATES_RELEASE_URL,
+  PUBLIC_VERSIONS_URL,
   platformDevFeatureUrl,
 } from '../config/publicApi'
 
 type Tab = 'all' | 'reviewed' | 'devlog' | 'bugs'
 type SortMode = 'newest' | 'oldest' | 'title-asc' | 'title-desc'
+type VersionMode = 'auto' | 'manual'
+
+interface VersionParts {
+  major: number
+  minor: number
+  patch: number
+}
+
+// version is free-text typed into this same release form historically
+// (see functions/api/_utils/versionSort.ts's own comment) - stripped of
+// any leading v/V before parsing, same as that file's own
+// parseVersionSegments, so a value like "v1.12.0" reads the same as
+// "1.12.0". Not importing that backend util directly - functions/ and
+// src/ are separate Vite/Pages-Functions build targets in this repo,
+// so a tiny duplicated version of the same handful of lines here stays
+// consistent with this codebase's own established per-context-default
+// convention (e.g. isValidLat/isValidLon) rather than crossing that
+// build boundary for three lines of parsing.
+function parseVersionParts(version: string): VersionParts {
+  const segments = version
+    .replace(/^v/i, '')
+    .split('.')
+    .map((segment) => {
+      const n = parseInt(segment, 10)
+      return Number.isFinite(n) ? n : 0
+    })
+  return { major: segments[0] ?? 0, minor: segments[1] ?? 0, patch: segments[2] ?? 0 }
+}
+
+// Odometer-style rollover, confirmed with the platform admin: patch
+// past 99 rolls to 00 and bumps minor; minor past 99 (from that same
+// overflow) rolls to 00 and bumps major too - Auto mode should never
+// get stuck or need a human to intervene just because a release train
+// has been running a while, regardless of how many digits deep the
+// rollover goes.
+function nextVersionParts({ major, minor, patch }: VersionParts): VersionParts {
+  let nextPatch = patch + 1
+  let nextMinor = minor
+  let nextMajor = major
+  if (nextPatch > 99) {
+    nextPatch = 0
+    nextMinor += 1
+  }
+  if (nextMinor > 99) {
+    nextMinor = 0
+    nextMajor += 1
+  }
+  return { major: nextMajor, minor: nextMinor, patch: nextPatch }
+}
+
+// Digits only, no length cap - major/minor are "plain integers, no
+// padding" per spec, and a release train realistically stays well
+// within a few digits without this needing an artificial ceiling.
+function sanitiseIntegerInput(raw: string): string {
+  return raw.replace(/\D/g, '')
+}
+
+// Patch specifically is capped to 0-99 (spec: "always 2 digits,
+// zero-padded (00-99)") - digits only AND a hard 2-character length
+// cap while typing, separate from the zero-pad-on-blur/display step
+// (formatPatchForDisplay below), so the field can never even accept a
+// third digit in the first place rather than silently truncating one
+// that was already typed.
+function sanitisePatchInput(raw: string): string {
+  return raw.replace(/\D/g, '').slice(0, 2)
+}
+
+function formatPatchForDisplay(raw: string): string {
+  const n = Math.min(99, Math.max(0, parseInt(raw, 10) || 0))
+  return String(n).padStart(2, '0')
+}
 
 interface DevFeatureEntry {
   id: string
@@ -111,9 +183,39 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
 
   const [selectedForRelease, setSelectedForRelease] = useState<Set<string>>(new Set())
+  // releaseVersion itself is unchanged - still the one plain string
+  // handleRelease/the Release button's disabled check already read.
+  // Structured-version-picker round: it's now kept in sync (see the
+  // effect below) from either the auto-computed next version or the
+  // three manual digit fields, instead of being typed directly - the
+  // release request itself, and everything past this state, is
+  // completely untouched.
   const [releaseVersion, setReleaseVersion] = useState('')
   const [releasing, setReleasing] = useState(false)
   const [releaseError, setReleaseError] = useState<string | null>(null)
+
+  const [versionMode, setVersionMode] = useState<VersionMode>('auto')
+  // The auto-computed NEXT version (latest released + 1 patch, with
+  // odometer rollover - see nextVersionParts's own comment) - always
+  // kept current regardless of which mode is active, so switching from
+  // Manual back to Auto never shows a stale value from whenever this
+  // page happened to load.
+  const [autoNextVersion, setAutoNextVersion] = useState<VersionParts>({ major: 1, minor: 0, patch: 0 })
+  const [latestVersionLoading, setLatestVersionLoading] = useState(true)
+  // Only for a genuine fetch failure - zero existing released versions
+  // (a brand new deployment with nothing released yet) isn't an error,
+  // it falls through to autoNextVersion's own initial state (1.0.00) as
+  // the very first version instead.
+  const [latestVersionError, setLatestVersionError] = useState<string | null>(null)
+  // Manual mode's own three editable fields - digit strings (not
+  // numbers) so an input can hold "" while the admin is mid-edit rather
+  // than snapping to "0". Seeded from autoNextVersion once the latest-
+  // version fetch below resolves, so switching to Manual starts from
+  // the natural next version (a useful jumping-off point for a
+  // deliberate version bump) rather than blank/0.0.00.
+  const [manualMajor, setManualMajor] = useState('1')
+  const [manualMinor, setManualMinor] = useState('0')
+  const [manualPatch, setManualPatch] = useState('00')
 
   // Bug report data - powers both the small read-only preview card up
   // top (unchanged) and the new "Bugs" tab below, where status becomes
@@ -153,6 +255,54 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
   useEffect(() => {
     loadAll().finally(() => setLoading(false))
   }, [])
+
+  // Same public, unauthenticated endpoint /versions itself uses
+  // (functions/api/public/versions.ts) - already returns every released
+  // update sorted DESCENDING by version with a proper numeric
+  // comparator, so the latest one is simply the first entry. Fetched
+  // once on mount (not tied to the Reviewed tab's own visibility) so
+  // Auto mode's pre-fill is already resolved by the time an admin opens
+  // it.
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_VERSIONS_URL)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('bad response'))))
+      .then((data: { updates?: { version: string }[] }) => {
+        if (cancelled) return
+        const latest = data.updates?.[0]?.version
+        const next = latest ? nextVersionParts(parseVersionParts(latest)) : { major: 1, minor: 0, patch: 0 }
+        setAutoNextVersion(next)
+        setManualMajor(String(next.major))
+        setManualMinor(String(next.minor))
+        setManualPatch(String(next.patch).padStart(2, '0'))
+      })
+      .catch(() => {
+        if (!cancelled) setLatestVersionError("Couldn't determine the latest version - switch to Manual or retry.")
+      })
+      .finally(() => {
+        if (!cancelled) setLatestVersionLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Keeps releaseVersion (the one plain string handleRelease/the
+  // Release button's disabled check already read, untouched below) in
+  // sync with whichever of the two sources is currently active - the
+  // rest of the release flow never needs to know a structured picker is
+  // what's actually producing this string.
+  useEffect(() => {
+    const parts: VersionParts =
+      versionMode === 'auto'
+        ? autoNextVersion
+        : {
+            major: parseInt(manualMajor, 10) || 0,
+            minor: parseInt(manualMinor, 10) || 0,
+            patch: Math.min(99, Math.max(0, parseInt(manualPatch, 10) || 0)),
+          }
+    setReleaseVersion(`${parts.major}.${parts.minor}.${String(parts.patch).padStart(2, '0')}`)
+  }, [versionMode, autoNextVersion, manualMajor, manualMinor, manualPatch])
 
   useEffect(() => {
     fetch('/api/tenant/bug-reports')
@@ -535,16 +685,85 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
                         Release {selectedForRelease.size} selected {selectedForRelease.size === 1 ? 'entry' : 'entries'}
                       </div>
                       <div className="flex flex-wrap items-center gap-3">
-                        <input
-                          value={releaseVersion}
-                          onChange={(event) => setReleaseVersion(event.target.value)}
-                          placeholder="Version, e.g. 1.0.14"
-                          className="w-48 rounded border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-sm text-white"
-                        />
+                        {/* Auto/Manual toggle - same active/inactive
+                            visual language as the All/Reviewed/Dev Log/
+                            Bugs tab buttons above, just smaller, so it
+                            reads as a segmented control rather than a
+                            second unrelated tab row. */}
+                        <div className="flex overflow-hidden rounded-lg border border-slate-700">
+                          {(['auto', 'manual'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setVersionMode(mode)}
+                              className={`px-2.5 py-1.5 text-xs font-bold uppercase tracking-widest ${
+                                versionMode === mode ? 'bg-accent-sky-500 text-white' : 'bg-slate-900/80 text-muted-400 hover:text-white'
+                              }`}
+                            >
+                              {mode === 'auto' ? 'Auto' : 'Manual'}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Structured version picker - fixed "V" prefix
+                            and "." separators the admin can't edit or
+                            delete, so the result is always exactly
+                            V<major>.<minor>.<patch>, never malformed.
+                            Auto: all three boxes disabled, showing
+                            autoNextVersion (latest released + 1 patch,
+                            with odometer rollover into minor/major - see
+                            nextVersionParts's own comment). Manual: same
+                            three boxes, unlocked, format-enforced via
+                            sanitiseIntegerInput/sanitisePatchInput on
+                            every keystroke rather than validated after
+                            the fact. */}
+                        <div className="flex items-center gap-1 rounded border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-sm text-white">
+                          <span className="font-bold text-muted-400">V</span>
+                          <input
+                            aria-label="Major version"
+                            value={versionMode === 'auto' ? String(autoNextVersion.major) : manualMajor}
+                            onChange={(event) => setManualMajor(sanitiseIntegerInput(event.target.value))}
+                            disabled={versionMode === 'auto'}
+                            inputMode="numeric"
+                            className="w-10 bg-transparent text-center outline-none disabled:text-muted-400"
+                          />
+                          <span className="text-muted-400">.</span>
+                          <input
+                            aria-label="Minor version"
+                            value={versionMode === 'auto' ? String(autoNextVersion.minor) : manualMinor}
+                            onChange={(event) => setManualMinor(sanitiseIntegerInput(event.target.value))}
+                            disabled={versionMode === 'auto'}
+                            inputMode="numeric"
+                            className="w-10 bg-transparent text-center outline-none disabled:text-muted-400"
+                          />
+                          <span className="text-muted-400">.</span>
+                          <input
+                            aria-label="Patch version"
+                            value={versionMode === 'auto' ? String(autoNextVersion.patch).padStart(2, '0') : manualPatch}
+                            onChange={(event) => setManualPatch(sanitisePatchInput(event.target.value))}
+                            onBlur={(event) => setManualPatch(formatPatchForDisplay(event.target.value))}
+                            disabled={versionMode === 'auto'}
+                            inputMode="numeric"
+                            className="w-10 bg-transparent text-center outline-none disabled:text-muted-400"
+                          />
+                        </div>
+
+                        {versionMode === 'auto' && latestVersionLoading && (
+                          <span className="text-xs text-muted-400">Loading latest version…</span>
+                        )}
+                        {versionMode === 'auto' && latestVersionError && (
+                          <span className="text-xs text-status-bad">{latestVersionError}</span>
+                        )}
+
                         <button
                           type="button"
                           onClick={handleRelease}
-                          disabled={releasing || selectedForRelease.size === 0 || !releaseVersion.trim()}
+                          disabled={
+                            releasing ||
+                            selectedForRelease.size === 0 ||
+                            !releaseVersion.trim() ||
+                            (versionMode === 'auto' && (latestVersionLoading || !!latestVersionError))
+                          }
                           className="rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {releasing ? 'Releasing…' : 'Release'}
