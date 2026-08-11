@@ -2,8 +2,11 @@
 // notes/folder/eligibleForRelease on any entry, title/description on a
 // developer-private one only (linked entries read those two fields
 // through from feature_requests - see index.ts's own comment - so
-// editing them here is rejected, not silently ignored), or fire the
-// one-way "Complete" action.
+// editing them here is rejected, not silently ignored), or flip the
+// "Complete" state (completed: true/false) - reversible as long as the
+// entry hasn't actually been released yet (see releasedUpdateId's own
+// check below, which blocks this whole endpoint regardless of which
+// field is being patched).
 //
 // Dev-features/Updates consolidation round: the old status field
 // ('idea'/'planned'/'built'/'parked') and the completion side effect
@@ -73,8 +76,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.eligibleForRelease !== undefined && typeof body.eligibleForRelease !== "boolean") {
     return jsonResponse({ error: "eligibleForRelease must be a boolean" }, 400);
   }
-  if (body.completed !== undefined && body.completed !== true) {
-    return jsonResponse({ error: "completed, if provided, must be true - there's no way to un-complete an entry" }, 400);
+  if (body.completed !== undefined && typeof body.completed !== "boolean") {
+    return jsonResponse({ error: "completed, if provided, must be a boolean" }, 400);
   }
 
   const current = await env.DB
@@ -107,11 +110,18 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     notes: body.notes !== undefined ? (body.notes as string | null) : current.notes,
     folderId: body.folderId !== undefined ? (body.folderId as string | null) : current.folderId,
     eligibleForRelease: body.eligibleForRelease !== undefined ? (body.eligibleForRelease as boolean) : !!current.eligibleForRelease,
-    // Idempotent - completed: true on an already-completed entry just
-    // keeps the original timestamp rather than bumping it, since
-    // "Complete" is meant to be a one-time transition, not a repeatable
-    // touch.
-    completedAt: body.completed === true ? current.completedAt ?? now : current.completedAt,
+    // completed: true is idempotent - keeps the original timestamp
+    // rather than bumping it on an already-completed entry, since
+    // marking complete is a one-time transition, not a repeatable
+    // touch. completed: false reverts it back to null (editable/open
+    // again) - added after a real incident: marking an entry complete
+    // before ticking eligibleForRelease routes it to Dev Log instead of
+    // Reviewed, and with no way back there was no way to fix that
+    // short of a direct DB edit. releasedUpdateId already blocks this
+    // whole endpoint above (a released entry can't be edited at all,
+    // full stop) - completed: false on a still-unreleased entry is a
+    // genuine editable-state revert, not a way to un-release anything.
+    completedAt: body.completed === undefined ? current.completedAt : body.completed ? current.completedAt ?? now : null,
   };
 
   await env.DB

@@ -394,6 +394,23 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
     }
   }
 
+  // Added after a real incident: 9 of 11 entries got marked Complete
+  // before "Eligible for release" was ticked, routing them to Dev Log
+  // instead of Reviewed with no way back short of a direct DB edit -
+  // completed: false (functions/api/platform/dev-features/[id].ts's own
+  // PATCH handler) reverts completedAt to null, making the entry
+  // editable/open again so eligibleForRelease can be corrected and it
+  // can be re-completed into Reviewed. Only ever reachable from an
+  // entry that ISN'T released yet (releasedUpdateId set) - that's a
+  // separate, permanent, genuinely one-way state the backend blocks
+  // regardless of this action existing.
+  async function handleRevertComplete(entry: DevFeatureEntry) {
+    const data = await patchEntry(entry, { completed: false })
+    if (data) {
+      showNotice(`"${entry.title}" reverted to incomplete - editable again.`)
+    }
+  }
+
   function handleFolderChange(entry: DevFeatureEntry, folderId: string) {
     patchEntry(entry, { folderId: folderId || null })
   }
@@ -863,7 +880,16 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
                               </button>
                             )}
                             {entry.completedAt && !entry.releasedUpdateId && (
-                              <span className="text-[11px] text-muted-500">Completed {formatDate(entry.completedAt)}</span>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="text-[11px] text-muted-500">Completed {formatDate(entry.completedAt)}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevertComplete(entry)}
+                                  className="text-[11px] font-semibold text-muted-400 underline decoration-dotted hover:text-white"
+                                >
+                                  Revert to incomplete
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
