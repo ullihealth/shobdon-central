@@ -14,7 +14,14 @@ export interface VisibilityHour {
   // Computed server-side (publicVisibilityForecast.ts's own solarPosition.ts)
   // from this hour's own timestamp and the tenant's coordinates - not from
   // weatherCode, which has no night variant at all for several codes (7
-  // Cloudy, 8 Overcast). Always present, unlike weatherCode.
+  // Cloudy, 8 Overcast). Always present, unlike weatherCode. Whichever
+  // entry this array's own index 0 lands on gets a LIVE-computed value
+  // (server's withLiveNowIsDaytime, keyed to the real request instant,
+  // not this hour's own nominal start) - the entry that ends up labelled
+  // "Now" (CloudVisibilityChart.tsx's anchorIndexFor) can be up to ~30
+  // minutes in the future by that function's own design, which matters
+  // specifically for isDaytime on the rare evening/morning where real
+  // sunset/sunrise falls inside that window.
   isDaytime: boolean
 }
 

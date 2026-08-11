@@ -76,6 +76,14 @@ interface CachedForecast {
   // Cloud/Visibility Chart's trend strip uses the rest.
   hours: VisibilityHour[];
   fetchedAt: string;
+  // Cached alongside hours (not re-queried from D1 on every request) so
+  // withLiveNowIsDaytime below can run on a cache HIT with zero added DB
+  // cost - a tenant's physical airfield location doesn't change within
+  // this cache's own 60-minute TTL, so caching it here for that long is
+  // harmless. See withLiveNowIsDaytime's own comment for why this is
+  // needed at all.
+  latitude: number;
+  longitude: number;
 }
 
 type VisibilityForecastResponse = ({ available: true } & CachedForecast) | { available: false };
@@ -174,7 +182,35 @@ async function fetchFromMetOffice(apiKey: string, latitude: number, longitude: n
     return { forecastForUtc: step.time, visibilityM: step.visibility as number, category, rangeLabel, weatherCode, isDaytime };
   });
 
-  return { hours, fetchedAt: new Date().toISOString() };
+  return { hours, fetchedAt: new Date().toISOString(), latitude, longitude };
+}
+
+// Each hour's own isDaytime (above) is computed at THAT HOUR's own
+// nominal start-timestamp - correct for what that hour represents, but
+// the entry the CLIENT actually labels "Now" (CloudVisibilityChart.tsx's
+// own anchorIndexFor) can be up to ~30 minutes in the future relative to
+// the real current instant, by design (documented at length in that
+// function's own comment, and deliberately not being touched here - it's
+// shared with weatherCode/visibility/temperature-equivalent labelling
+// that's already been fixed twice for unrelated stability reasons).
+// Every day this is harmless slop. On the specific evening/morning where
+// real sunset/sunrise falls inside that same lookahead window, it isn't:
+// the anchored entry's OWN hour can already be past sunset even though
+// the real current moment isn't yet - confirmed live on 2026-08-11 (true
+// sunset ~20:41 BST, "Now" anchored to the 21:00 BST entry, correctly
+// night for ITS hour, but showing before the real 20:41 sunset had
+// happened). Rather than touch anchorIndexFor's shared selection logic,
+// this only overwrites index 0's isDaytime with one computed fresh
+// against Date.now() on every request (cache hit or miss) - the one slot
+// actually presented to the user as "right now", where using the literal
+// current instant is unambiguously correct. Every other hour (+1h
+// onward) is a genuine future prediction, where "at that hour's own
+// start" remains the right anchor - intentionally untouched.
+function withLiveNowIsDaytime(forecast: CachedForecast): CachedForecast {
+  if (forecast.hours.length === 0) return forecast;
+  const liveHours = [...forecast.hours];
+  liveHours[0] = { ...liveHours[0], isDaytime: isDaytimeAt(Date.now(), forecast.latitude, forecast.longitude) };
+  return { ...forecast, hours: liveHours };
 }
 
 export async function buildVisibilityForecastResponse(
@@ -202,9 +238,15 @@ export async function buildVisibilityForecastResponse(
   // and crash it. Anything not matching the current shape is treated as
   // a miss, same as no cache entry existing yet - the TTL will naturally
   // replace it with a well-formed entry on the next successful fetch.
+  // Same posture extended to latitude/longitude (added alongside
+  // withLiveNowIsDaytime) - an entry cached by the previous version of
+  // this file has hours but no coordinates; treating that as a hit would
+  // make withLiveNowIsDaytime compute isDaytime at (0, 0). Falls through
+  // to a fresh fetch instead, which self-heals the cache with the
+  // complete shape going forward.
   const cached = await env.WEATHER_CACHE.get<CachedForecast>(cacheKey, "json");
-  if (cached && Array.isArray(cached.hours)) {
-    const response: VisibilityForecastResponse = { available: true, ...cached };
+  if (cached && Array.isArray(cached.hours) && typeof cached.latitude === "number" && typeof cached.longitude === "number") {
+    const response: VisibilityForecastResponse = { available: true, ...withLiveNowIsDaytime(cached) };
     return jsonResponse(response);
   }
 
@@ -236,8 +278,11 @@ export async function buildVisibilityForecastResponse(
     return jsonResponse({ available: false } satisfies VisibilityForecastResponse);
   }
 
+  // Cached WITHOUT the live "Now" correction - what's stored must reflect
+  // each hour's own real forecast, not a snapshot of "now" at write time
+  // that would otherwise sit frozen in KV for up to an hour.
   await env.WEATHER_CACHE.put(cacheKey, JSON.stringify(fresh), { expirationTtl: CACHE_TTL_SECONDS });
 
-  const response: VisibilityForecastResponse = { available: true, ...fresh };
+  const response: VisibilityForecastResponse = { available: true, ...withLiveNowIsDaytime(fresh) };
   return jsonResponse(response);
 }
