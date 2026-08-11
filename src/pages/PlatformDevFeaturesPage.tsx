@@ -411,6 +411,47 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
     }
   }
 
+  // Testing convenience only, for THIS browser/device - calls
+  // registration.update() on the /pilot service worker registered here
+  // (if any), forcing an immediate byte-diff check against pilot-sw.js
+  // instead of waiting for usePilotServiceWorker.ts's own periodic
+  // 6-hour poll or a fresh /pilot navigation. Genuinely has NO effect
+  // on any other pilot's device - service worker registrations are
+  // per-browser, entirely local state; there is no mechanism (here or
+  // anywhere in the Web platform) for one browser to trigger another
+  // browser's update check, let alone force one open. Deliberately
+  // placed on this already-authenticated platform-admin page rather
+  // than behind a client-side flag on /pilot itself, so "never shown to
+  // a real pilot" is a genuine auth guarantee, not obscurity someone
+  // could stumble onto via a shared link.
+  //
+  // getRegistration('/pilot') works from any same-origin page, not just
+  // /pilot itself - it's querying this browser's own existing
+  // registration bookkeeping, not registering a new one - but it only
+  // finds one if you've actually opened /pilot in this same browser at
+  // least once already. If update() finds a new version, it lands in
+  // registration.waiting same as always; the banner itself only renders
+  // while a /pilot page is actually mounted (usePilotServiceWorker's own
+  // effect), so open /pilot afterward to see it - already-waiting is
+  // checked on that hook's own mount, so it'll show immediately.
+  async function handleCheckPilotUpdate() {
+    if (!('serviceWorker' in navigator)) {
+      showNotice("This browser doesn't support service workers - nothing to check.")
+      return
+    }
+    try {
+      const registration = await navigator.serviceWorker.getRegistration('/pilot')
+      if (!registration) {
+        showNotice('No /pilot service worker registered in this browser yet - open /pilot at least once first, then try again.')
+        return
+      }
+      await registration.update()
+      showNotice('Update check triggered on this device only. Open /pilot in this same browser to see the banner if a new version was found.')
+    } catch {
+      showNotice('Update check failed - see the browser console for details.')
+    }
+  }
+
   function handleFolderChange(entry: DevFeatureEntry, folderId: string) {
     patchEntry(entry, { folderId: folderId || null })
   }
@@ -538,6 +579,25 @@ export default function PlatformDevFeaturesPage(): JSX.Element {
             See what's already shipped →
           </Link>
         </p>
+
+        {/* Testing convenience only - see handleCheckPilotUpdate's own
+            comment for the full reasoning. Affects THIS browser/device
+            only; there's no way for this button (or anything else) to
+            push an update to another pilot's device. */}
+        <div className="mb-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-panel p-4">
+          <div className="flex-1 text-xs text-muted-400">
+            <span className="font-bold uppercase tracking-widest text-accent-sky-400">Pilot PWA testing</span> — checks
+            this browser only for a new /pilot service worker version, right now, instead of waiting for the 6-hour
+            poll. Doesn't affect any other pilot's device.
+          </div>
+          <button
+            type="button"
+            onClick={handleCheckPilotUpdate}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-white transition hover:border-sky-500"
+          >
+            Check for updates now
+          </button>
+        </div>
 
         {/* Read-only bug report summary - deliberately separate from the
             feature-request folder/release workflow above/below, since
