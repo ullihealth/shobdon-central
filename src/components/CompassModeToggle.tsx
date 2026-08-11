@@ -26,12 +26,23 @@ export type CompassMode = 'north' | 'runway'
 // coincidence of reusing the constant.
 const COMPASS_MODE_STORAGE_KEY = 'pilotCompassMode'
 
-function loadStoredCompassMode(): CompassMode {
-  if (typeof window === 'undefined') return 'north'
+// defaultMode only governs the FIRST-EVER load, when nothing has been
+// stored yet - a real stored preference (including an explicit 'north',
+// same as the previous hardcoded fallback below) always wins regardless
+// of what's passed here. This is the distinction that matters: reading
+// localStorage.getItem() as null (never set) is NOT the same case as it
+// returning the literal string 'north' (a user, or a previous default,
+// explicitly chose it) - collapsing both into one ternary (as this used
+// to) is exactly what would silently override a real NORTH preference
+// the moment defaultMode ever became something other than 'north'.
+function loadStoredCompassMode(defaultMode: CompassMode = 'north'): CompassMode {
+  if (typeof window === 'undefined') return defaultMode
   try {
-    return window.localStorage.getItem(COMPASS_MODE_STORAGE_KEY) === 'runway' ? 'runway' : 'north'
+    const stored = window.localStorage.getItem(COMPASS_MODE_STORAGE_KEY)
+    if (stored === 'north' || stored === 'runway') return stored
+    return defaultMode
   } catch {
-    return 'north'
+    return defaultMode
   }
 }
 
@@ -43,13 +54,22 @@ function loadStoredCompassMode(): CompassMode {
 // user who taps RUNWAY before that data is available still has that
 // intent remembered - the moment it does become available, the dial
 // starts rotating automatically with no need to tap the button again.
-export function useCompassMode(hasActiveRunwayData: boolean): {
+// defaultMode: passed straight through to loadStoredCompassMode's own
+// first-load-only fallback (see that function's own comment) - defaults
+// to 'north' so every existing caller (every TV-dashboard template,
+// RunwaysPage.tsx) is completely unaffected by this param's existence.
+// Only CompassPanel.tsx's own initialCompassMode prop (PilotViewPage.tsx
+// passing 'runway') ever supplies something else.
+export function useCompassMode(
+  hasActiveRunwayData: boolean,
+  defaultMode: CompassMode = 'north'
+): {
   compassMode: CompassMode
   effectiveCompassMode: CompassMode
   showNoRunwayNotice: boolean
   handleCompassModeChange: (next: CompassMode) => void
 } {
-  const [compassMode, setCompassMode] = useState<CompassMode>(loadStoredCompassMode)
+  const [compassMode, setCompassMode] = useState<CompassMode>(() => loadStoredCompassMode(defaultMode))
 
   function handleCompassModeChange(next: CompassMode) {
     setCompassMode(next)

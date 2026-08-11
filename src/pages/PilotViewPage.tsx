@@ -184,7 +184,7 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
             dashboard remains completely untouched either way -
             CompassPanel itself only gained an opt-in prop, defaulted
             off everywhere else. */}
-        <CompassPanel spacious hideReadout />
+        <CompassPanel spacious hideReadout initialCompassMode="runway" />
         <WeatherStatGrid />
         <PilotRunwayWindPanel refreshSignal={refreshTick} />
         {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,

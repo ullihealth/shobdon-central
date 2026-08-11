@@ -605,9 +605,25 @@ interface CompassPanelProps {
   // INSTRUMENT (rose + wind arrow + centre label) is never affected by
   // this prop, only the separate list below/beside it.
   hideReadout?: boolean
+  // Only the FIRST-EVER load's fallback, when this tenant's browser has
+  // no pilotCompassMode in localStorage yet - forwarded straight to
+  // useCompassMode's own defaultMode param (see that hook's own comment
+  // on why the null-vs-explicit-'north' distinction matters). Once a
+  // real preference is stored (by a toggle tap on ANY caller, since the
+  // key is shared - see useCompassMode's own comment), that stored value
+  // always wins here regardless of this prop, on this or any other
+  // caller. Defaults undefined (-> useCompassMode's own 'north' default)
+  // - every TV-dashboard template and RunwaysPage.tsx omits this and
+  // keeps today's NORTH first-load behaviour unchanged; only
+  // PilotViewPage.tsx passes 'runway'.
+  initialCompassMode?: CompassMode
 }
 
-export default function CompassPanel({ spacious = false, hideReadout = false }: CompassPanelProps = {}): JSX.Element {
+export default function CompassPanel({
+  spacious = false,
+  hideReadout = false,
+  initialCompassMode,
+}: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
   // async fetch of the tenant-scoped public config endpoint, so
@@ -667,7 +683,10 @@ export default function CompassPanel({ spacious = false, hideReadout = false }: 
   // called unconditionally on every render, same Rules-of-Hooks
   // constraint that already required the old inline useState here.
   const hasActiveRunwayData = clubProfile.activeRunwayEnd !== ''
-  const { compassMode, effectiveCompassMode, showNoRunwayNotice, handleCompassModeChange } = useCompassMode(hasActiveRunwayData)
+  const { compassMode, effectiveCompassMode, showNoRunwayNotice, handleCompassModeChange } = useCompassMode(
+    hasActiveRunwayData,
+    initialCompassMode
+  )
 
   useEffect(() => {
     let cancelled = false
