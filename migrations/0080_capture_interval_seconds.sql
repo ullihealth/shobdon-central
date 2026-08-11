@@ -1,0 +1,12 @@
+-- ADISP capture polling interval (seconds), live-configurable from
+-- /developertools (the actual Dev settings page - reverseCompassNeedle/
+-- pilotClockMode both already live there, not on /runways) - how often
+-- the PowerShell script on ATC PC2
+-- (public/downloads/capture-weathercentral.ps1) scrapes the
+-- local station and posts a new reading. DEFAULT 60 matches the
+-- script's own current hardcoded value exactly - this migration is a
+-- zero-visible-change addition on its own; behaviour only changes once
+-- an admin explicitly picks a different value from the dropdown (5/10/
+-- 15/30/60, enforced in functions/api/tenant/developer-settings/
+-- index.ts's own PUT validation).
+ALTER TABLE ops_panel_state ADD COLUMN captureIntervalSeconds INTEGER NOT NULL DEFAULT 60;

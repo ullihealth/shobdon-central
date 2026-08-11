@@ -342,6 +342,105 @@ function PilotClockModeToggle(): JSX.Element {
   )
 }
 
+const CAPTURE_INTERVAL_SECONDS_OPTIONS = [5, 10, 15, 30, 60] as const
+type CaptureIntervalSeconds = (typeof CAPTURE_INTERVAL_SECONDS_OPTIONS)[number]
+
+// ADISP capture polling interval (migration 0080) - same GET/PUT round
+// trip as ReverseNeedleToggle/PilotClockModeToggle above, sharing the
+// same developer-settings endpoint (a third independent field on the
+// same ops_panel_state row). Rendered as a <select>, not this page's
+// usual button-group pattern (PilotClockModeToggle/GyropediaIntervalToggle
+// above) - explicit instruction, 5 fixed numeric choices read more
+// naturally as a dropdown than 5 buttons in a row. 60 (this page's
+// default before a real value loads) matches ops_panel_state.
+// captureIntervalSeconds's own DEFAULT - never a flash of a wrong
+// selected option while loading.
+//
+// Live-reload, not a code deploy: the PC2 capture script
+// (public/downloads/capture-weathercentral.ps1) polls its own value
+// roughly once a minute during its capture loop and adopts a change
+// without needing to be restarted - PROVIDED PC2 is already running the
+// version of the script with that polling logic. The very first switch
+// to this version still needs the updated .ps1 re-downloaded and the
+// script restarted once on PC2; every change made here after that takes
+// effect on its own.
+function CaptureIntervalToggle(): JSX.Element {
+  const [loading, setLoading] = useState(true)
+  const [seconds, setSeconds] = useState<CaptureIntervalSeconds>(60)
+  const [status, setStatus] = useState<SaveStatus>('idle')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(DEVELOPER_SETTINGS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && CAPTURE_INTERVAL_SECONDS_OPTIONS.includes(data?.captureIntervalSeconds)) {
+          setSeconds(data.captureIntervalSeconds)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const next = Number(event.target.value) as CaptureIntervalSeconds
+    if (next === seconds) return
+    const previous = seconds
+    setSeconds(next)
+    setStatus('saving')
+    try {
+      const response = await fetch(DEVELOPER_SETTINGS_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ captureIntervalSeconds: next }),
+      })
+      if (response.ok) {
+        setStatus('saved')
+      } else {
+        setSeconds(previous)
+        setStatus('error')
+      }
+    } catch {
+      setSeconds(previous)
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
+      <div className="mb-1 text-sm font-bold uppercase tracking-widest text-amber-500">ADISP Capture Interval</div>
+      <p className="mb-4 text-sm text-slate-400">
+        How often the PC2 capture script scrapes the local ADISP station and posts a reading. Live-reload - PC2
+        adopts a change within roughly a minute, no restart needed, provided it's already running the updated
+        capture-weathercentral.ps1 (the first switch to this version still needs one manual re-download/restart).
+        Start at 15 or 30 seconds and only go lower once that's confirmed stable on the real station.
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={seconds}
+          disabled={loading || status === 'saving'}
+          onChange={handleChange}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none disabled:opacity-50"
+        >
+          {CAPTURE_INTERVAL_SECONDS_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option} seconds
+            </option>
+          ))}
+        </select>
+        {status === 'saving' && <span className="text-sm font-semibold text-slate-400">Saving…</span>}
+        {status === 'saved' && <span className="text-sm font-semibold text-green-400">✅ Saved.</span>}
+        {status === 'error' && <span className="text-sm font-semibold text-red-400">❌ Couldn't save - try again.</span>}
+      </div>
+    </div>
+  )
+}
+
 export default function DeveloperToolsPage(): JSX.Element {
   return (
     <div className="mx-auto max-w-3xl px-6 pb-10 pt-10">
@@ -366,6 +465,7 @@ export default function DeveloperToolsPage(): JSX.Element {
         </div>
         <ReverseNeedleToggle />
         <PilotClockModeToggle />
+        <CaptureIntervalToggle />
       </div>
     </div>
   )

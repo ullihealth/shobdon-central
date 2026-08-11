@@ -45,6 +45,40 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 const ALLOWED_SOURCE_TYPES = ["atc_capture", "internet", "third_party_api"];
 
+// Physical plausibility bounds - on top of, not instead of, the
+// presence/type check below (numberOrNull). That check alone catches a
+// missing/malformed field, but does nothing for a numeric-but-garbage
+// value (confirmed in practice against Shobdon's own ATC capture: a
+// broken source page has produced qnh_hpa=59, physically impossible).
+// Applies to every source_type, not just atc_capture - a garbage
+// reading from any vendor is equally implausible. Ceilings are
+// deliberately generous (never intended to reject genuine extreme
+// weather, only obvious garbage). Duplicated in worker/src/index.ts's
+// own copy of this same gate - see that file's comment for why
+// (deployed as a wholly separate Worker, no shared module to import
+// from).
+const WIND_DIR_MIN_DEG = 0;
+const WIND_DIR_MAX_DEG = 360;
+const WIND_SPEED_MIN_KT = 0;
+const WIND_SPEED_MAX_KT = 150;
+const QNH_MIN_HPA = 900;
+const QNH_MAX_HPA = 1050;
+const TEMP_MIN_C = -40;
+const TEMP_MAX_C = 50;
+
+function isPlausibleReading(windSpeedKt: number, windDirDeg: number, qnhHpa: number, tempC: number): boolean {
+  return (
+    windDirDeg >= WIND_DIR_MIN_DEG &&
+    windDirDeg <= WIND_DIR_MAX_DEG &&
+    windSpeedKt >= WIND_SPEED_MIN_KT &&
+    windSpeedKt <= WIND_SPEED_MAX_KT &&
+    qnhHpa >= QNH_MIN_HPA &&
+    qnhHpa <= QNH_MAX_HPA &&
+    tempC >= TEMP_MIN_C &&
+    tempC <= TEMP_MAX_C
+  );
+}
+
 interface IngestBody {
   sourceType?: unknown;
   observedAt?: unknown;
@@ -107,6 +141,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const tempC = numberOrNull(body.tempC);
   if (windSpeedKt === null || windDirDeg === null || qnhHpa === null || tempC === null) {
     return jsonResponse({ error: "windSpeedKt, windDirDeg, qnhHpa, and tempC are required numeric fields" }, 400);
+  }
+  if (!isPlausibleReading(windSpeedKt, windDirDeg, qnhHpa, tempC)) {
+    console.error("Rejecting implausible weather observation", {
+      tenantId: keyLookup.tenantId,
+      sourceType,
+      windSpeedKt,
+      windDirDeg,
+      qnhHpa,
+      tempC,
+    });
+    return jsonResponse({ error: "One or more fields are outside physically plausible bounds" }, 400);
   }
   const windGustKt = numberOrNull(body.windGustKt);
   const qfeHpa = numberOrNull(body.qfeHpa);

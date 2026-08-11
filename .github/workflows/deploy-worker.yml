@@ -44,6 +44,9 @@ jobs:
         run: npm ci
 
       - name: Build frontend (vite build)
+        # generate-pilot-version.mjs runs first as part of npm run build and
+        # requires Cloudflare auth to access D1 remotely. Without these env vars,
+        # the build falls back to a placeholder version like "0.0.0".
         run: npm run build
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

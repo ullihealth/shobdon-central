@@ -367,6 +367,59 @@ async function handleGetTheme(env: Env): Promise<Response> {
 // confirmed reachable from outside Cloudflare's own network (this Worker
 // makes a real external fetch, not an internal one).
 const INGEST_WEATHER_URL = 'https://airfieldcentral.com/api/ingest/weather'
+// Read counterpart - see functions/api/ingest/capture-interval.ts's own
+// comment for why this route exists (the capture script itself has no
+// way to hold a developer's browser session, so it can't call
+// /api/tenant/developer-settings directly; this Worker proxies the read
+// using the one secret it already holds for writes).
+//
+// Deliberately shobdon.airfieldcentral.com, NOT the bare apex
+// INGEST_WEATHER_URL above uses - confirmed directly (curl, bundle
+// hash comparison) that the bare apex is currently served by a stale,
+// out-of-date deployment that predates this route's existence, while
+// shobdon.airfieldcentral.com (an exact-match Pages custom domain) is
+// confirmed current. INGEST_WEATHER_URL still works via the apex only
+// because /api/ingest/weather already existed in whatever old
+// deployment serves it - a latent risk for that URL too, flagged
+// separately, not fixed here (out of this round's scope; this file is
+// already Shobdon-specific throughout, so hardcoding its own real
+// subdomain here is consistent with everything else in it, not a new
+// compromise).
+const CAPTURE_INTERVAL_URL = 'https://shobdon.airfieldcentral.com/api/ingest/capture-interval'
+
+// Physical plausibility bounds - on top of, not instead of, the type/
+// presence check in forwardToIngest below. That check alone catches a
+// watchdog-error/totally-missing capture, but does nothing for a scrape
+// that returns numeric-but-garbage values (confirmed in practice: a
+// broken ADISP page has produced qnh_hpa=59, physically impossible).
+// Ceilings are deliberately generous for Shobdon's real conditions
+// (inland Herefordshire, not an exposed coastal/high-altitude site) -
+// wide enough to never reject genuine extreme-weather data, tight
+// enough to catch obvious garbage. Duplicated in functions/api/ingest/
+// weather.ts's own copy of this same gate - this Worker is deployed
+// completely independently (see this file's own top comment), so
+// there's no shared module either side could import from.
+const WIND_DIR_MIN_DEG = 0
+const WIND_DIR_MAX_DEG = 360
+const WIND_SPEED_MIN_KT = 0
+const WIND_SPEED_MAX_KT = 150
+const QNH_MIN_HPA = 900
+const QNH_MAX_HPA = 1050
+const TEMP_MIN_C = -40
+const TEMP_MAX_C = 50
+
+function isPlausibleCapture(windSpeedKt: number, windDirDeg: number, qnhHpa: number, tempC: number): boolean {
+  return (
+    windDirDeg >= WIND_DIR_MIN_DEG &&
+    windDirDeg <= WIND_DIR_MAX_DEG &&
+    windSpeedKt >= WIND_SPEED_MIN_KT &&
+    windSpeedKt <= WIND_SPEED_MAX_KT &&
+    qnhHpa >= QNH_MIN_HPA &&
+    qnhHpa <= QNH_MAX_HPA &&
+    tempC >= TEMP_MIN_C &&
+    tempC <= TEMP_MAX_C
+  )
+}
 
 // Forwards this capture's already-parsed fields to the generic,
 // genuinely multi-tenant D1 ingestion endpoint, ADDITIONALLY to (never
@@ -398,6 +451,10 @@ async function forwardToIngest(parsed: Record<string, unknown>, capturedAt: stri
   // in a fully-trustworthy way either (RightInfoPanel/atcProvider.ts
   // just show whatever this cycle produced).
   if (typeof windSpeedKt !== 'number' || typeof windDirDeg !== 'number' || typeof qnhHpa !== 'number' || typeof tempC !== 'number') {
+    return
+  }
+  if (!isPlausibleCapture(windSpeedKt, windDirDeg, qnhHpa, tempC)) {
+    console.error('forwardToIngest: rejecting implausible capture', { windSpeedKt, windDirDeg, qnhHpa, tempC })
     return
   }
 
@@ -550,6 +607,54 @@ async function handleGetLatestReading(env: Env): Promise<Response> {
   })
 }
 
+// Proxies functions/api/ingest/capture-interval.ts for the PC2 capture
+// script's own live-reload polling (capture-weathercentral.ps1) - see
+// that file's own comment for why this indirection exists (the script
+// only ever holds this Worker's CAPTURE_KEY, checked by checkKey()
+// before this function is ever reached, never the separate
+// SHOBDON_INGEST_KEY used for the actual app-side call below).
+//
+// Always resolves to SOME number, never an error status or null -
+// deliberately matches the "never crash the loop, fall back to
+// whatever it was already using" posture the script itself also
+// implements independently. If SHOBDON_INGEST_KEY isn't configured, the
+// upstream call fails, or the response is malformed, this returns
+// captureIntervalSeconds: null rather than propagating a failure -
+// simpler for the script to handle (one shape to parse, "null means
+// keep your current value") than distinguishing between an HTTP error
+// and a successful-but-still-null read.
+async function handleGetCaptureInterval(env: Env): Promise<Response> {
+  if (!env.SHOBDON_INGEST_KEY) {
+    return new Response(JSON.stringify({ captureIntervalSeconds: null }), {
+      status: 200,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
+  }
+
+  try {
+    const upstream = await fetch(CAPTURE_INTERVAL_URL, {
+      headers: { Authorization: `Bearer ${env.SHOBDON_INGEST_KEY}` },
+    })
+    if (!upstream.ok) {
+      return new Response(JSON.stringify({ captureIntervalSeconds: null }), {
+        status: 200,
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      })
+    }
+    const data = (await upstream.json()) as { captureIntervalSeconds?: unknown }
+    const captureIntervalSeconds = typeof data.captureIntervalSeconds === 'number' ? data.captureIntervalSeconds : null
+    return new Response(JSON.stringify({ captureIntervalSeconds }), {
+      status: 200,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
+  } catch {
+    return new Response(JSON.stringify({ captureIntervalSeconds: null }), {
+      status: 200,
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    })
+  }
+}
+
 function renderEntry(entry: CaptureEntry): string {
   const payload = (entry.payload ?? {}) as { reportText?: unknown }
   const reportText = typeof payload.reportText === 'string' ? payload.reportText : JSON.stringify(entry.payload, null, 2)
@@ -694,6 +799,10 @@ export default {
 
     if (pathname === '/latest' && request.method === 'GET') {
       return handleGetLatestReading(env)
+    }
+
+    if (pathname === '/capture-interval' && request.method === 'GET') {
+      return handleGetCaptureInterval(env)
     }
 
     if (request.method === 'POST') return handlePost(request, env, ctx)
