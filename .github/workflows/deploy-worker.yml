@@ -45,6 +45,9 @@ jobs:
 
       - name: Build frontend (vite build)
         run: npm run build
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ec1676b8ffcf5e85467e3ed04b8fdfef
 
       - name: Build Pages Functions into the Worker entrypoint
         run: npx wrangler@4 pages functions build --outdir dist/_worker.js

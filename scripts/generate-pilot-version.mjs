@@ -101,16 +101,15 @@ try {
   // A failed version-stamp refresh must never fail the whole site's
   // build - the rest of /pilot (and every other route) has nothing to
   // do with this constant. If a previously-generated/committed file
-  // already exists, leave it exactly as-is (this deploy just doesn't
-  // update the stamp, the previous value carries over); only write a
-  // safe placeholder when the file doesn't exist at all yet (a fresh
-  // clone that's never run this successfully, or vite would fail to
-  // resolve the import entirely).
-  console.warn(`[generate-pilot-version] Couldn't read latest version from D1 (${err.message}).`)
+  // already exists, preserve it as the last-known-good version instead
+  // of replacing it with an obviously broken placeholder like "0.0.0".
+  // Only a fresh clone with no prior generated file at all can fall back
+  // to a placeholder, which must still be obvious in build logs.
+  console.error(`[generate-pilot-version] Failed to read latest version from D1: ${err.stack ?? err.message}`)
   if (existsSync(OUTPUT_PATH)) {
-    console.warn('[generate-pilot-version] Leaving existing generated file untouched.')
+    console.error('[generate-pilot-version] Keeping existing generated file as the last-known-good version.')
   } else {
-    console.warn('[generate-pilot-version] No existing generated file - writing a placeholder so the build can proceed.')
+    console.error('[generate-pilot-version] No existing generated file found. Writing a placeholder so the build can proceed.')
     writeGeneratedFile('AIRFIELD CENTRAL V0.0.0')
   }
 }
