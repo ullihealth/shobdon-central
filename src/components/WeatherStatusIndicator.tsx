@@ -94,19 +94,23 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
   // so /pilot's own header (hideIcon, text-only - see PilotHeader.tsx)
   // had no colour cue at all once the emoji was dropped. Keyed off the
   // emoji itself, not a separate `label === 'Shobdon LIVE'` check, so
-  // this also covers the ingested-cross-tenant-ATC branch above (which
+  // this also covers the ingested-cross-tenant-LIVE branch above (which
   // already deliberately reuses 🟢 for "genuinely live ATC data, just
   // captured at another tenant's site") without a second condition that
-  // could drift out of sync with that one. text-status-good is the same
-  // shared token CompassPanel.tsx's own active-runway highlight and
-  // RunwayWindWidget.tsx's "good" wind state already use - not a new
-  // colour picked independently.
+  // could drift out of sync with that one.
   const isLive = emoji === '🟢'
 
   return (
     <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">
       {!hideIcon && <span aria-hidden="true">{emoji}</span>}
-      <span className={isLive ? 'text-status-good' : undefined}>{label}</span>
+      {/* text-station-live (index.css --color-station-live-text), NOT
+          text-status-good - the two used to share a token by coincidence
+          (both happened to start green), but this badge answers "is this
+          reading really live ATC data" while status-good answers "is
+          this wind reading in the safe range", a different question that
+          must be free to diverge independently. Recolouring this badge
+          must never repaint RunwayWindWidget.tsx's own good-wind text. */}
+      <span className={isLive ? 'text-station-live' : undefined}>{label}</span>
     </div>
   )
 }

@@ -42,6 +42,14 @@
   --color-status-warn-text: #f59e0b;
   --color-status-bad-text: #ef4444;
 
+  /* WeatherStatusIndicator.tsx's "genuine live ATC reading" badge only -
+     deliberately its own token, not status-good-text above, even though
+     both start green: this badge answers "is this reading really live
+     ATC data", status-good-text answers "is this wind reading in the
+     safe range" - two different questions that happen to share a colour
+     today but must be free to diverge independently later. */
+  --color-station-live-text: #c8f336;
+
   /* Compass (CompassPanel.tsx inline SVG only) */
   --color-compass-fill: rgba(15, 23, 42, 0.95);
   --color-compass-ring: rgba(59, 130, 246, 0.25);

@@ -25,6 +25,7 @@ module.exports = {
         'status-good': 'var(--color-status-good-text)',
         'status-warn': 'var(--color-status-warn-text)',
         'status-bad': 'var(--color-status-bad-text)',
+        'station-live': 'var(--color-station-live-text)',
         'compass-disc-bg': 'var(--color-compass-disc-bg)',
       },
       // Café Template's footer ticker (CafeTicker.tsx) scroll-speed
