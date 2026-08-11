@@ -66,6 +66,21 @@ const FAQ_ENTRIES: FaqEntry[] = [
           the same default thresholds. Any airfield can request that theirs be adjusted to better match their own
           operating judgement.
         </FaqSubheading>
+        <FaqSubheading title="What do the green and red bars at each end of the runway mean?">
+          Those are threshold lights. Green marks whichever end of the runway is currently active (the direction
+          selected for takeoffs and landings); red marks the other end. This is set directly by whoever is running
+          the field and updates immediately when the active runway changes, independent of the wind reading itself.
+        </FaqSubheading>
+        <FaqSubheading title="Why does the label sometimes say 'Downwind' instead of 'Headwind'?">
+          Once the wind is coming from more than 90&deg; off the active runway&apos;s heading, it&apos;s genuinely
+          blowing from behind rather than ahead, so the label switches from Headwind to Downwind to reflect that.
+          The colour (green, amber or red) still shows severity the same way either side of that 90&deg; line, so
+          it&apos;s worth watching colour even while it still says Headwind, not just once it flips to Downwind.
+        </FaqSubheading>
+        <FaqSubheading title="What does the number in the middle of the compass mean?">
+          That&apos;s the same live wind reading everything else on the display is built from, shown as direction
+          then speed &mdash; for example &quot;280 / 7&quot; means wind from 280&deg; at 7 knots.
+        </FaqSubheading>
       </>
     ),
   },
