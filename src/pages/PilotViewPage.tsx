@@ -222,7 +222,7 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
             see that component's own hasRealContent gate), so the
             version stamp stays visible either way rather than depending
             on the ticker actually rendering. */}
-        <PilotVersionStamp />
+        <PilotVersionStamp refreshSignal={refreshTick} />
         <PilotFooterTicker />
       </div>
     </div>

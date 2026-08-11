@@ -24,7 +24,21 @@ interface ReleasedUpdate {
 // nothing real to show" shape as PilotFooterTicker.tsx's own
 // hasRealContent gate - a loading/failed fetch renders nothing rather
 // than a stale/placeholder version number.
-export default function PilotVersionStamp(): JSX.Element | null {
+//
+// refreshSignal - the same shared refreshTick PilotViewPage.tsx already
+// threads into PilotRunwayWindPanel/AutoNotamsScrollPanel/
+// PilotNoticesPanel (bumped by both the 60s auto-interval and pull-to-
+// refresh) - this component just never read it before, which meant a
+// pilot who pulled to refresh right after a new version shipped kept
+// seeing the version their tab first loaded with until a full app
+// restart. Included in the fetch effect's own dependency array, same
+// pattern those three components already use, so a bump re-runs the
+// fetch exactly the same way it does for them. Deliberately doesn't
+// reset `label` to null when a refetch starts - same as those other
+// panels' own state handling - so the stamp keeps showing the last
+// known-good version throughout a refetch (and stays on it if a
+// refetch fails) rather than flickering blank.
+export default function PilotVersionStamp({ refreshSignal }: { refreshSignal?: number }): JSX.Element | null {
   const [label, setLabel] = useState<string | null>(null)
 
   useEffect(() => {
@@ -44,7 +58,7 @@ export default function PilotVersionStamp(): JSX.Element | null {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshSignal])
 
   if (!label) return null
 
