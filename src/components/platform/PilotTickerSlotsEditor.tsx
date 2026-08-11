@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { TickerSlot, TickerSlotType } from '../CafeTicker'
+import { DEFAULT_TICKER_STYLE } from '../pilot/PilotFooterTicker'
+import TickerEmojiTextInput from '../TickerEmojiTextInput'
 
 // Platform-admin editor for a specific tenant's Pilot View sticky
 // ticker (migration 0070, tenants.pilot_ticker_slots_json). Mirrors
@@ -7,9 +9,11 @@ import type { TickerSlot, TickerSlotType } from '../CafeTicker'
 // numbered-row / type-select / Text-override / On-checkbox shape,
 // same slotOptionValue encoding trick - but against a genuinely
 // separate per-tenant config (own route, own slot count) rather than
-// that component's cafe_template_settings row. No style controls here
-// (Pilot View's ticker style is fixed, not per-tenant configurable,
-// per the approved plan) - content selection only.
+// that component's cafe_template_settings row. Pilot View's overall
+// ticker style (background/height/speed/etc) is still fixed, not
+// per-tenant configurable - but each slot can now override its own
+// text colour, same as the café ticker editor, falling back to
+// PilotFooterTicker.tsx's own DEFAULT_TICKER_STYLE.fontColor when unset.
 const PILOT_TICKER_SLOT_COUNT = 8
 
 interface SafetyNotice {
@@ -166,14 +170,34 @@ export default function PilotTickerSlotsEditor({ tenantId }: { tenantId: number 
                         />
                         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">On</span>
                       </label>
+                      <div
+                        className="flex shrink-0 items-center gap-1"
+                        title="This slot's own text colour (overrides the ticker's default colour)"
+                      >
+                        <input
+                          type="color"
+                          value={slot.textColor ?? DEFAULT_TICKER_STYLE.fontColor}
+                          onChange={(event) => updateSlot(slot.position, { textColor: event.target.value })}
+                          className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent"
+                        />
+                        {slot.textColor && (
+                          <button
+                            type="button"
+                            onClick={() => updateSlot(slot.position, { textColor: undefined })}
+                            className="text-[11px] font-semibold text-muted-500 hover:text-status-bad"
+                            title="Reset to the ticker's default colour"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {slot.textMode && (
-                      <input
-                        type="text"
+                      <TickerEmojiTextInput
                         value={slot.manualText ?? ''}
-                        onChange={(event) => updateSlot(slot.position, { manualText: event.target.value })}
+                        onChange={(value) => updateSlot(slot.position, { manualText: value })}
                         placeholder="Type this slot's message…"
-                        className="ml-8 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        className="ml-8 w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                       />
                     )}
                   </div>

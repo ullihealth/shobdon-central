@@ -19,7 +19,12 @@ interface SafetyNotice {
   enabled: boolean
 }
 
-const DEFAULT_TICKER_STYLE: TickerStyle = {
+// Exported so PilotTickerSlotsEditor.tsx can show this same fontColor as
+// its per-slot swatch's "inherited" default - this editor has no
+// tickerStyle state of its own (Pilot View's ticker style is otherwise
+// fixed, not per-tenant configurable), so this is the one real source of
+// truth for what an unset slot colour actually renders as.
+export const DEFAULT_TICKER_STYLE: TickerStyle = {
   backgroundColor: '#0f172a',
   backgroundOpacity: 100,
   heightPx: 36,

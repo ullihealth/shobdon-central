@@ -52,6 +52,16 @@ export interface TickerSlot {
   // content for this slot, shown verbatim (trimmed) instead of any
   // built-in type.
   manualText?: string
+  // Per-slot text colour round: independent of the whole-ticker
+  // TickerStyle.fontColor below (which stays the DEFAULT every slot
+  // falls back to when this is unset) - a genuinely per-slot override,
+  // applying regardless of whether the slot is in textMode or showing a
+  // built-in type (clock/forecast/notice/etc.), not just free-text
+  // slots. #rrggbb hex, same format/validation as TickerStyle's own two
+  // colour fields. Optional so slots saved before this field existed
+  // still type-check and fall back to the ticker's own fontColor
+  // exactly as before.
+  textColor?: string
 }
 
 export interface TickerGasPrices {
@@ -187,12 +197,28 @@ function gasPricesSegmentText(gasPrices: TickerGasPrices): string {
   return parts.length > 0 ? `FUEL PRICES: ${parts.join(' · ')}` : ''
 }
 
-// Resolves each configured, ENABLED slot to its display text - built-in
+// One resolved slot's own display text plus its own colour override (if
+// any) - a slot's `position`/other identity is deliberately NOT carried
+// through here (never was, even before textColor existed): several
+// downstream steps (the trailing empty-segment filter, the "no content
+// configured" fallback) already don't need it, and preserving position
+// specifically would invite a future caller to rely on
+// segments[i].position === i, which the trailing filter breaks anyway
+// (a disabled/empty slot's removal shifts every later index). Colour IS
+// carried through per-segment now (previously nothing but text
+// survived this resolution step at all) specifically so it can reach
+// renderSegments below.
+interface TickerSegment {
+  text: string
+  color?: string
+}
+
+// Resolves each configured, ENABLED slot to its display segment - built-in
 // types only, no per-slot fetching (all data is handed in as props,
 // already fetched once by the parent template/preview). A disabled slot
 // is skipped entirely (Part B), same as an empty/unset one - neither
 // ever renders as a blank segment.
-function useResolvedSegments(props: CafeTickerProps): string[] {
+function useResolvedSegments(props: CafeTickerProps): TickerSegment[] {
   const clockText = useClockText()
   const { slots, weather, liveDataUnavailable, visibilityHours, safetyNotices, gasPrices } = props
 
@@ -203,24 +229,30 @@ function useResolvedSegments(props: CafeTickerProps): string[] {
     .map((slot) => {
       // Text/Fuel rework: manualText REPLACES type/noticeId entirely for
       // this slot when textMode is on - not additive, an either/or (the
-      // admin UI greys out the type dropdown to match).
-      if (slot.textMode) return (slot.manualText ?? '').trim()
-      switch (slot.type) {
-        case 'clock':
-          return clockText
-        case 'forecast':
-          return forecastSegmentText(visibilityHours)
-        case 'conditions':
-          return conditionsSegmentText(weather, liveDataUnavailable)
-        case 'notice':
-          return noticeSegmentText(slot.noticeId, safetyNotices)
-        case 'fuel':
-          return gasPricesSegmentText(gasPrices)
-        default:
-          return ''
-      }
+      // admin UI greys out the type dropdown to match). textColor
+      // applies regardless of textMode - a slot's own colour override
+      // is independent of WHERE its text came from.
+      const text = slot.textMode
+        ? (slot.manualText ?? '').trim()
+        : (() => {
+            switch (slot.type) {
+              case 'clock':
+                return clockText
+              case 'forecast':
+                return forecastSegmentText(visibilityHours)
+              case 'conditions':
+                return conditionsSegmentText(weather, liveDataUnavailable)
+              case 'notice':
+                return noticeSegmentText(slot.noticeId, safetyNotices)
+              case 'fuel':
+                return gasPricesSegmentText(gasPrices)
+              default:
+                return ''
+            }
+          })()
+      return { text, color: slot.textColor }
     })
-    .filter((text) => text.trim().length > 0)
+    .filter((segment) => segment.text.trim().length > 0)
 }
 
 function hexToRgba(hex: string, opacityPercent: number): string {
@@ -247,7 +279,7 @@ function hexToRgba(hex: string, opacityPercent: number): string {
 // copy of the content is shown instead.
 export default function CafeTicker(props: CafeTickerProps): JSX.Element {
   const segments = useResolvedSegments(props)
-  const content = segments.length > 0 ? segments : ['Ticker has no content configured yet.']
+  const content: TickerSegment[] = segments.length > 0 ? segments : [{ text: 'Ticker has no content configured yet.' }]
   const { style } = props
   const isStatic = style.scrollSpeedPxPerSec <= 0
 
@@ -310,19 +342,26 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
   // low, bottom gets clipped" bug. Tying the line box tightly to the
   // glyphs themselves removes that asymmetric slack, so centering the
   // line box (below) actually centers the visible text.
-  const textStyle: CSSProperties = {
+  // No `color` here any more - it's resolved per-segment below (each
+  // slot's own textColor if set, else this same style.fontColor as
+  // before) - every other property still applies uniformly to every
+  // segment regardless of its own colour.
+  const baseTextStyle: CSSProperties = {
     fontSize: style.fontSizePx,
     lineHeight: 1,
-    color: style.fontColor,
     fontFamily: FONT_CSS_STACK[style.fontFamily],
   }
 
   function renderSegments(ref?: Ref<HTMLDivElement>) {
     return (
       <div ref={ref} className="flex shrink-0 items-center" style={{ gap: style.gapPx }}>
-        {content.map((text, index) => (
-          <span key={index} className="whitespace-nowrap font-semibold uppercase tracking-wide" style={textStyle}>
-            {text}
+        {content.map((segment, index) => (
+          <span
+            key={index}
+            className="whitespace-nowrap font-semibold uppercase tracking-wide"
+            style={{ ...baseTextStyle, color: segment.color || style.fontColor }}
+          >
+            {segment.text}
           </span>
         ))}
       </div>

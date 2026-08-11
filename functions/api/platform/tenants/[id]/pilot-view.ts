@@ -38,6 +38,11 @@ interface TickerSlotInput {
   noticeId?: string;
   textMode?: boolean;
   manualText?: string;
+  // Per-slot text colour - see CafeTicker.tsx's own TickerSlot.textColor
+  // comment and cafe-settings/index.ts's identical field (this is a
+  // second, independently-configured instance of the same content
+  // model, same posture as every other field in this interface).
+  textColor?: string;
 }
 
 interface SafetyNoticeRow {
@@ -50,6 +55,10 @@ interface SafetyNoticeRow {
 
 const VALID_TICKER_TYPES = ["clock", "forecast", "conditions", "notice", "fuel"];
 const MAX_MANUAL_TEXT_LENGTH = 200;
+// Same pattern cafe-settings/index.ts's own PUT already uses for its
+// whole-ticker colour fields - this file has no colour field of its own
+// to validate against until textColor.
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 // Fewer slots than the café ticker's 10 - a phone's readable ticker
 // width is narrower than a TV's, so a shorter fixed slot count keeps
 // the admin editor meaningful (a slot nobody will ever see scroll past
@@ -68,6 +77,7 @@ function normalizeSlot(slot: TickerSlotInput): TickerSlotInput {
     noticeId: slot.noticeId,
     textMode: !!slot.textMode,
     manualText: slot.manualText,
+    textColor: slot.textColor,
   };
 }
 
@@ -153,6 +163,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
       if (slot.manualText.length > MAX_MANUAL_TEXT_LENGTH) {
         return jsonResponse({ error: `tickerSlots[].manualText must be ${MAX_MANUAL_TEXT_LENGTH} characters or fewer` }, 400);
       }
+    }
+    if (slot.textColor !== undefined && !HEX_COLOR_PATTERN.test(slot.textColor)) {
+      return jsonResponse({ error: "tickerSlots[].textColor must be a #rrggbb hex colour" }, 400);
     }
   }
 

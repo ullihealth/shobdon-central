@@ -66,6 +66,12 @@ interface TickerSlotInput {
   // client-side resolution.
   textMode?: boolean;
   manualText?: string;
+  // Per-slot text colour, independent of the whole-ticker
+  // tickerFontColor below - see CafeTicker.tsx's own TickerSlot.textColor
+  // comment. #rrggbb hex, same HEX_COLOR_PATTERN as the whole-ticker
+  // colour fields below. Optional - unset means "use the ticker's own
+  // font colour", same fallback CafeTicker.tsx's renderSegments applies.
+  textColor?: string;
 }
 
 interface CafeSettingsInput {
@@ -150,6 +156,7 @@ function rowToApi(row: CafeSettingsRow) {
     noticeId: slot.noticeId,
     textMode: !!slot.textMode,
     manualText: slot.manualText,
+    textColor: slot.textColor,
   }));
   return {
     layoutMode: row.layoutMode,
@@ -224,6 +231,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
           return jsonResponse({ error: `tickerSlots[].manualText must be ${MAX_MANUAL_TEXT_LENGTH} characters or fewer` }, 400);
         }
       }
+      if (slot.textColor !== undefined && !HEX_COLOR_PATTERN.test(slot.textColor)) {
+        return jsonResponse({ error: "tickerSlots[].textColor must be a #rrggbb hex colour" }, 400);
+      }
     }
   }
   if (body.tickerBackgroundColor !== undefined && !HEX_COLOR_PATTERN.test(body.tickerBackgroundColor)) {
@@ -283,6 +293,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       noticeId: slot.noticeId,
       textMode: !!slot.textMode,
       manualText: slot.manualText,
+      textColor: slot.textColor,
     })),
     tickerBackgroundColor: body.tickerBackgroundColor ?? currentApi.tickerBackgroundColor,
     tickerBackgroundOpacity: body.tickerBackgroundOpacity ?? currentApi.tickerBackgroundOpacity,

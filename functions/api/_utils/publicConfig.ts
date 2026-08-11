@@ -886,7 +886,15 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       ? JSON.parse(cafeSettingsRow.tickerSlotsJson)
       : Array.from({ length: 10 }, (_, i) => ({ position: i + 1, type: null, enabled: true }))
     ).map(
-      (slot: { position: number; type: string | null; enabled?: boolean; noticeId?: string; textMode?: boolean; manualText?: string }) => ({
+      (slot: {
+        position: number;
+        type: string | null;
+        enabled?: boolean;
+        noticeId?: string;
+        textMode?: boolean;
+        manualText?: string;
+        textColor?: string;
+      }) => ({
         position: slot.position,
         type: slot.type,
         // Missing on an older saved config = enabled, same
@@ -902,10 +910,14 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // render blank once actually live. textMode/manualText
         // (Text/Fuel rework) added proactively here for the same
         // reason, rather than waiting to rediscover this same bug a
-        // third time.
+        // third time. textColor added the same way, proactively, for
+        // the identical reason - this explicit field list is exactly
+        // the kind of allowlist a new TickerSlot field silently falls
+        // through unless it's added here too.
         noticeId: slot.noticeId,
         textMode: !!slot.textMode,
         manualText: slot.manualText,
+        textColor: slot.textColor,
       })
     ),
     // heightPx/fontSizePx defaults: 40/22 (was 64/16) - matches

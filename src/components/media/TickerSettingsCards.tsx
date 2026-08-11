@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { TickerSlot, TickerSlotType, TickerStyle } from '../CafeTicker'
+import TickerEmojiTextInput from '../TickerEmojiTextInput'
 import {
   BUILT_IN_TICKER_PRESETS,
   DEFAULT_TICKER_STYLE,
@@ -494,14 +495,45 @@ export default function TickerSettingsCards(): JSX.Element | null {
                   />
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-500">On</span>
                 </label>
+                {/* Per-slot text colour - independent of the whole
+                    ticker's own Font colour above (Ticker Style
+                    section), and applies regardless of Text mode - a
+                    dropdown-content slot (clock/forecast/notice/etc.)
+                    can be recoloured exactly the same way as a free-text
+                    one. Swatch shows the ticker's own Font colour while
+                    this slot has no override of its own (implying "this
+                    slot is currently inheriting that colour"), same
+                    convention as every other colour input on this page -
+                    only actually WRITES textColor once the admin
+                    interacts with it. The small × only appears once a
+                    real override exists, so there's a way back to
+                    "inherit the ticker's own colour" without having to
+                    manually match its hex value by eye. */}
+                <div className="flex shrink-0 items-center gap-1" title="This slot's own text colour (overrides the ticker's Font colour above)">
+                  <input
+                    type="color"
+                    value={slot.textColor ?? tickerStyle.fontColor}
+                    onChange={(event) => updateSlot(slot.position, { textColor: event.target.value })}
+                    className="h-7 w-7 cursor-pointer rounded border border-border bg-transparent"
+                  />
+                  {slot.textColor && (
+                    <button
+                      type="button"
+                      onClick={() => updateSlot(slot.position, { textColor: undefined })}
+                      className="text-[11px] font-semibold text-muted-500 hover:text-status-bad"
+                      title="Reset to the ticker's own Font colour"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </div>
               {slot.textMode && (
-                <input
-                  type="text"
+                <TickerEmojiTextInput
                   value={slot.manualText ?? ''}
-                  onChange={(event) => updateSlot(slot.position, { manualText: event.target.value })}
+                  onChange={(value) => updateSlot(slot.position, { manualText: value })}
                   placeholder="Type this slot's message…"
-                  className="ml-8 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                  className="ml-8 w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                 />
               )}
             </div>
