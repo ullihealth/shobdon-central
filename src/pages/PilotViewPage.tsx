@@ -9,6 +9,7 @@ import { usePilotServiceWorker } from '../hooks/usePilotServiceWorker'
 import { usePilotDataFreshnessGuard } from '../hooks/usePilotDataFreshnessGuard'
 import TenantUnavailable from '../components/TenantUnavailable'
 import PilotLockedScreen from '../components/pilot/PilotLockedScreen'
+import PilotUpdateBanner from '../components/pilot/PilotUpdateBanner'
 import PilotHeader from '../components/pilot/PilotHeader'
 import WeatherStatGrid from '../components/pilot/WeatherStatGrid'
 import ForecastCloudbaseCluster from '../components/pilot/ForecastCloudbaseCluster'
@@ -225,7 +226,7 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
 // permanently, natural document scroll.
 export default function PilotViewPage(): JSX.Element {
   useDisplayHeartbeat('pilot')
-  usePilotServiceWorker()
+  const { updateAvailable, applyUpdate } = usePilotServiceWorker()
 
   // Scopes the touch-action/overscroll-behavior fix (index.css's own
   // .pilot-view-scroll-root rule) to this route only - html/body are
@@ -323,10 +324,18 @@ export default function PilotViewPage(): JSX.Element {
 
   if (unavailable) return <TenantUnavailable />
   if (!loaded) return <div className="min-h-screen bg-page-from" />
-  if (!mobileEnabled) return <PilotLockedScreen airfieldName={airfieldName} logoUrl={logoUrl} themeOverride={themeOverride} />
+  if (!mobileEnabled) {
+    return (
+      <>
+        {updateAvailable && <PilotUpdateBanner onTap={applyUpdate} />}
+        <PilotLockedScreen airfieldName={airfieldName} logoUrl={logoUrl} themeOverride={themeOverride} />
+      </>
+    )
+  }
 
   return (
     <WeatherProvider>
+      {updateAvailable && <PilotUpdateBanner onTap={applyUpdate} />}
       <PilotViewContent
         airfieldName={airfieldName}
         logoUrl={logoUrl}
