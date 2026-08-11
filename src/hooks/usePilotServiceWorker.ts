@@ -34,6 +34,17 @@ export interface PilotServiceWorkerUpdate {
 // controls FUTURE fetches from open tabs, it can't retroactively
 // refresh a bundle that's already sitting in memory, so without this,
 // nothing ever prompted a reload at all.
+//
+// How often to ask the browser to re-check pilot-sw.js for a new byte-
+// for-byte version while the app stays open in the background/
+// foreground, on top of the update check the browser already runs on
+// every fresh navigation to /pilot on its own. Deliberately light-touch
+// - this is a low-traffic page a pilot might leave open for hours
+// before a flight, not somewhere that benefits from aggressive polling,
+// and registration.update() itself is cheap (a single conditional-GET-
+// style byte comparison against pilot-sw.js, not a full app refetch).
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+
 export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
   // Guards the reload in handleControllerChange below so it only ever
@@ -45,6 +56,8 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
+
+    let updateIntervalId: number | undefined
 
     function handleControllerChange() {
       if (!reloadingRef.current) return
@@ -81,11 +94,24 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
         registration.addEventListener('updatefound', () => {
           if (registration.installing) trackInstallingWorker(registration.installing)
         })
+
+        // One check right away (catches a version that shipped while
+        // this pilot's browser had pilot-sw.js's own HTTP response
+        // cached from an earlier visit), then again every
+        // UPDATE_CHECK_INTERVAL_MS for as long as this tab stays open -
+        // update() itself only ever moves a new script into installing/
+        // waiting, it never activates anything on its own, so this
+        // can't bypass the tap-to-reload banner above.
+        registration.update().catch(() => {})
+        updateIntervalId = window.setInterval(() => {
+          registration.update().catch(() => {})
+        }, UPDATE_CHECK_INTERVAL_MS)
       })
       .catch(() => {})
 
     return () => {
       navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
+      if (updateIntervalId !== undefined) window.clearInterval(updateIntervalId)
     }
   }, [])
 
