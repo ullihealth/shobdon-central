@@ -84,7 +84,7 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
           // generic - never claim ATC for a reading that isn't one.
           activeProvider === 'ingested' && weather?.sourceTenantName
           ? weather.sourceReadingType === 'atc_capture'
-            ? { emoji: '🟢', label: `${firstWordUpper(weather.sourceTenantName)} ATC` }
+            ? { emoji: '🟢', label: `${firstWordUpper(weather.sourceTenantName)} LIVE` }
             : { emoji: '🟣', label: `SHARED: ${firstWordUpper(weather.sourceTenantName)}` }
           : STATUS_BY_PROVIDER[activeProvider]
 
