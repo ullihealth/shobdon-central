@@ -147,14 +147,17 @@ function useClockText(): string {
 // drifted from it.
 //
 // Each hour gets its own "+N <icon>" label so it's clear which icon is
-// which offset, not a bare run of symbols. Five NON-BREAKING spaces
-// between groups, not five regular ones - the span this text renders
+// which offset, not a bare run of symbols. Two NON-BREAKING spaces
+// between groups, not regular ones - the span this text renders
 // into is `whitespace-nowrap` (CSS `white-space: nowrap`), which only
 // stops wrapping, it does NOT stop the browser's normal whitespace
 // COLLAPSING - a run of regular spaces would still visually collapse to
 // one, silently undoing the "visible gap between hour groups" this was
-// asked for.   doesn't collapse, so the gap survives.
-const HOUR_GROUP_GAP = '     '
+// asked for.   doesn't collapse, so the gap survives. Cut down from
+// five (measured as noticeably wider than the single regular space
+// between an entry's own '+N' and its own icon, right before this -
+// that gap is untouched) to bring the two closer to visually even.
+const HOUR_GROUP_GAP = '  '
 
 function forecastSegmentText(visibilityHours: VisibilityHour[]): string {
   if (visibilityHours.length === 0) return '6-HOUR MET OFFICE FORECAST: Unavailable'
