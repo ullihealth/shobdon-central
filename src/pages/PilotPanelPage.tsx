@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import CafeTicker, { type TickerGasPrices, type TickerSlot } from '../components/CafeTicker'
+import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../components/CafeTicker'
 import PilotTickerSlotsCards, { PILOT_TICKER_SLOT_COUNT } from '../components/media/PilotTickerSlotsCards'
+import PilotTickerStyleCards from '../components/media/PilotTickerStyleCards'
 import PilotPreviewFrame from '../components/pilot/PilotPreviewFrame'
 import { DEFAULT_TICKER_STYLE } from '../components/pilot/PilotFooterTicker'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
@@ -52,11 +53,13 @@ const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null,
 // or saved by this component.
 function PilotPanelPreview({
   tickerSlots,
+  tickerStyle,
   backgroundOverride,
   safetyNotices,
   gasPrices,
 }: {
   tickerSlots: TickerSlot[]
+  tickerStyle: TickerStyle
   backgroundOverride: BackgroundOverride | null
   safetyNotices: SafetyNotice[]
   gasPrices: TickerGasPrices
@@ -77,7 +80,7 @@ function PilotPanelPreview({
           visibilityHours={visibilityHours}
           safetyNotices={safetyNotices}
           gasPrices={gasPrices}
-          style={DEFAULT_TICKER_STYLE}
+          style={tickerStyle}
         />
       </div>
     </PilotPreviewFrame>
@@ -89,6 +92,7 @@ export default function PilotPanelPage(): JSX.Element {
   const [tickerSlots, setTickerSlots] = useState<TickerSlot[]>(defaultTickerSlots())
   const [desktopTickerSlots, setDesktopTickerSlots] = useState<TickerSlot[]>([])
   const [backgroundOverride, setBackgroundOverride] = useState<BackgroundOverride | null>(null)
+  const [tickerStyle, setTickerStyle] = useState<TickerStyle>(DEFAULT_TICKER_STYLE)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
   const [gasPrices, setGasPrices] = useState<TickerGasPrices>(DEFAULT_GAS_PRICES)
@@ -104,6 +108,7 @@ export default function PilotPanelPage(): JSX.Element {
         }
         if (Array.isArray(data.desktopTickerSlots)) setDesktopTickerSlots(data.desktopTickerSlots)
         if (data.backgroundOverride) setBackgroundOverride(data.backgroundOverride)
+        if (data.tickerStyle) setTickerStyle(data.tickerStyle)
       })
       .catch(() => {})
       .finally(() => {
@@ -143,7 +148,7 @@ export default function PilotPanelPage(): JSX.Element {
       const response = await fetch('/api/tenant/pilot-view', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tickerSlots, backgroundOverride }),
+        body: JSON.stringify({ tickerSlots, backgroundOverride, tickerStyle }),
       })
       setSaveStatus(response.ok ? 'success' : 'error')
     } catch {
@@ -164,6 +169,8 @@ export default function PilotPanelPage(): JSX.Element {
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto]">
           <div className="flex flex-col gap-6">
             <PilotTickerSlotsCards slots={tickerSlots} onChange={setTickerSlots} desktopTickerSlots={desktopTickerSlots} />
+
+            <PilotTickerStyleCards style={tickerStyle} onChange={setTickerStyle} />
 
             <section className="rounded-2xl border border-border bg-panel p-6">
               <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Pilot Background</div>
@@ -216,6 +223,7 @@ export default function PilotPanelPage(): JSX.Element {
             <WeatherProvider forcedConfig={MOCK_CONFIG}>
               <PilotPanelPreview
                 tickerSlots={tickerSlots}
+                tickerStyle={tickerStyle}
                 backgroundOverride={backgroundOverride}
                 safetyNotices={safetyNotices}
                 gasPrices={gasPrices}
