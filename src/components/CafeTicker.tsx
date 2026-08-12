@@ -428,6 +428,22 @@ export default function CafeTicker(props: CafeTickerProps): JSX.Element {
               animationIterationCount: 'infinite',
               animationDuration: `${anim.durationSeconds}s`,
               '--cafe-ticker-distance': `${anim.distancePx}px`,
+              // Promotes this element to its own compositor layer up
+              // front, so the continuous transform: translateX() runs
+              // entirely on the compositor thread and stays smooth even
+              // when the rest of the page (clock tick, weather poll,
+              // other panels' own re-renders) does main-thread work at
+              // the same moment. Without this hint the browser is free
+              // to leave it on the main paint path, where it's fair game
+              // for exactly that kind of contention to show up as a
+              // dropped-frame stutter - a plausible cause investigated
+              // here (see the ResizeObserver/effect comment above) but
+              // not confirmed by instrumented local testing (12-20s of
+              // frame-by-frame sampling, incl. under 4x CPU throttling,
+              // showed zero dropped frames and zero animation restarts),
+              // so treat this as a defensive best-practice hint for a
+              // continuously-animating transform, not a proven fix.
+              willChange: 'transform',
             } as CSSProperties
           }
         >
