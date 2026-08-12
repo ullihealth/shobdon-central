@@ -58,6 +58,13 @@ interface AutoNotam {
   severity: NotamSeverity
 }
 
+// Carousel rotation state (dynamic NOTAM card restructure) - carries
+// identity (cardIndex) rather than being a bare type tag, so the render
+// branch can look up which of potentially many notamsFull cards is
+// currently showing. See the main component's rotationStates comment
+// for the full "why".
+type RotationState = { type: 'ops' } | { type: 'notamsFull'; cardIndex: number }
+
 // This file's own existing status-token classes (already used for the
 // NOTAMS "+N more" indicator below), not CompassPanel.tsx's raw Tailwind
 // colours - CompassPanel is out of scope and uses a different,
@@ -70,33 +77,65 @@ const SEVERITY_DOT_CLASSES: Record<NotamSeverity, string> = {
 
 const SEVERITY_ORDER: Record<NotamSeverity, number> = { critical: 0, warning: 1, info: 2 }
 
-const MAX_AUTO_NOTAMS_SHOWN = 3
+// Restructure (see this file's own carousel comments further down):
+// card 1 is now fixed/static (Runway In Use + Airfield Info + Notices,
+// never NOTAM content), and NOTAMs live exclusively on however many
+// dynamically-paginated "notamsFull" cards it takes to show all of
+// them without truncation - so the old per-entry character truncation
+// (AUTO_NOTAM_TRUNCATE_LENGTH/truncateAutoNotamText) and fixed 3-entry
+// cap (MAX_AUTO_NOTAMS_SHOWN) this section used to need are gone
+// entirely, replaced by NOTAM_CARD_CAP below (a cap on CARD count, not
+// per-card entry count).
+const NOTAM_CARD_CAP = 15
 
-// Empirically determined, not guessed: measured the real rendered
-// height of the "Runway In Use"/auto-NOTAMs/Airfield Info stack at
-// 1366x768 (the narrower of this app's two tested reference
-// resolutions) with exactly MAX_AUTO_NOTAMS_SHOWN synthetic entries at
-// increasing lengths - 121 characters was the longest that still fit
-// without pushing the stack past the viewport; 122 already overflowed
-// (a single additional wrapped line across all 3 entries costs ~45px
-// at this width, more than the ~43px of margin available at 121). 110
-// keeps a real safety margin below that exact breakpoint - the
-// trailing ellipsis adds one more character, and font rendering can
-// vary slightly by platform/browser, so sitting right at the measured
-// edge would be fragile.
-const AUTO_NOTAM_TRUNCATE_LENGTH = 110
+// Single measurement pass (not a drop-one/remeasure loop - see this
+// file's own comment on NotamsPanel's identical single-pass fix for
+// why that loop shape is a confirmed perf bug here) over EVERY NOTAM
+// entry rendered at once into one hidden, unbounded-height container -
+// walks cumulative offsetTop/offsetHeight and counts how many times
+// content crosses another multiple of one real card's own clientHeight,
+// i.e. how many cards greedy-packing would need. This count alone -
+// not the greedy split itself - is what callers use; the actual
+// entries-per-card grouping comes from chunkEvenly below instead, so a
+// tenant with e.g. 6 NOTAMs that greedily fit 5-per-card still lands on
+// 2 real cards, split ~3/3 rather than 5/1.
+function computeNotamPageCount(container: HTMLDivElement, itemCount: number): number {
+  if (itemCount === 0) return 0
+  const cardHeight = container.clientHeight
+  if (cardHeight <= 0) return 1
 
-interface TruncatedAutoNotam extends AutoNotam {
-  wasTruncated: boolean
+  let pages = 1
+  let pageStartTop = 0
+  for (const child of Array.from(container.children) as HTMLElement[]) {
+    if (child.offsetTop + child.offsetHeight - pageStartTop > cardHeight) {
+      pages += 1
+      pageStartTop = child.offsetTop
+    }
+  }
+  return Math.min(pages, NOTAM_CARD_CAP)
 }
 
-// Per-entry truncation - the first half of the overflow fix (task #43):
-// no single NOTAM, however long, can blow out the compact card's
-// height by itself. Whole-word-ish trim (trimEnd before the ellipsis)
-// so it doesn't cut off mid-word looking like a rendering glitch.
-function truncateAutoNotamText(notam: AutoNotam): TruncatedAutoNotam {
-  if (notam.text.length <= AUTO_NOTAM_TRUNCATE_LENGTH) return { ...notam, wasTruncated: false }
-  return { ...notam, text: `${notam.text.slice(0, AUTO_NOTAM_TRUNCATE_LENGTH).trimEnd()}…`, wasTruncated: true }
+// Balanced redistribution (not greedy fill-then-sparse-remainder) -
+// splits `items` into exactly `groupCount` groups whose sizes differ by
+// at most one entry, by index range rather than by re-measuring each
+// group's own rendered height. This is a deliberate simplification, not
+// an oversight: AutoNotamsFullPanel's own existing per-card overflow
+// protection (unchanged, reused as-is for every notamsFull card below)
+// still runs on whatever group it's given, so an unusually
+// content-heavy redistributed group that doesn't quite fit its card
+// still self-corrects at render time via that existing "+N more"
+// mechanism, exactly like it always has - this function only needs to
+// get card COUNT and rough balance right, not guarantee every group
+// individually fits.
+function chunkEvenly<T>(items: T[], groupCount: number): T[][] {
+  if (groupCount <= 0 || items.length === 0) return []
+  const groups: T[][] = []
+  for (let i = 0; i < groupCount; i++) {
+    const start = Math.floor((i * items.length) / groupCount)
+    const end = Math.floor(((i + 1) * items.length) / groupCount)
+    groups.push(items.slice(start, end))
+  }
+  return groups
 }
 
 // Shifted up one step from the original sm/md/lg=16/18/20px tier: each
@@ -113,7 +152,7 @@ const SIZE_CLASSES: Record<NoticeSize, string> = {
   xl: 'text-3xl', // 30px - new largest tier
 }
 
-// State B's content - each notice as its own block, blank-line-separated,
+// Renders the manual Safety Notices list - each notice as its own block, blank-line-separated,
 // smaller/scannable text (not text-3xl, which is sized for a single
 // glanceable value, not a list). overflow-hidden here is the hard
 // guarantee against ever visually breaking the page layout again,
@@ -129,7 +168,28 @@ const SIZE_CLASSES: Record<NoticeSize, string> = {
 // notamsOnly prop below, not by importing this directly, since the
 // notices array it needs is derived from state (useWeather + opsPanel
 // fetch) that lives in RightInfoPanel, not passed in from outside.
-function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
+//
+// compact (default false, the notamsOnly/Clubhouse2Template usage is
+// completely unaffected either way) - card 1 of the restructured OPS
+// Panel carousel passes true. Investigated after manual review flagged
+// Notices rendering empty and jumping straight to "+N more": the flex
+// chain from card 1's root down to this component's own containerRef
+// is intact and DOES pass down a real, correctly-computed height (
+// confirmed via getBoundingClientRect/computed-style inspection, not
+// assumed) - the actual cause is that this card's own chrome (p-5
+// padding, text-base title, mt-3 gap, mb-4 between entries) was sized
+// for when this component filled an ENTIRE rotation-state card on its
+// own (200-400px+ typical), and now only gets a fraction of card 1
+// alongside Runway In Use/Airfield Info (routinely under 160px total,
+// ~80px of actual content area) - at that size, this panel's own fixed
+// overhead was eating most of the available space before any notice
+// text was even measured, so real (if modest) admin-entered notices
+// legitimately didn't fit even one entry. compact tightens exactly
+// that fixed overhead (padding/title/margins), not notice font size
+// itself (SIZE_CLASSES, an admin-chosen setting, is unchanged) -
+// reclaims real content height so genuinely-sized notices have a
+// realistic chance of showing at least one entry before truncating.
+function NotamsPanel({ notices, compact = false }: { notices: SafetyNotice[]; compact?: boolean }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const indicatorMeasureRef = useRef<HTMLDivElement>(null)
   const [visibleCount, setVisibleCount] = useState(notices.length)
@@ -178,31 +238,46 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
   const hiddenCount = notices.length - visibleCount
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      {/* text-base, not the previous text-xs - this panel's title reads
-          "NOTAMS" but actually renders manual Safety Notices content
-          (see the file-level explanation above this component), so this
-          is treated as the desktop equivalent of Pilot View's "Club
-          Safety Notices" title for sizing purposes, not the automated
-          NOTAM feed title below. */}
-      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMS</div>
+    <div className={`relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card ${compact ? 'p-3' : 'p-5'}`}>
+      {/* Header text is "NOTICES" (was "NOTAMS") - this panel has
+          rendered manual admin-entered Safety Notices, not automated
+          NOTAMs, for a while now (see the surrounding comment above);
+          that mislabeling only became directly visible to end users
+          once NOTAMs and Notices were split onto genuinely separate
+          cards by the restructure - previously this title never shared
+          a rotation with a REAL "NOTAMs (full)" card to be confused
+          against. text-xs in compact mode (was always text-base) -
+          part of reclaiming card 1's fixed chrome overhead, see this
+          component's own compact comment above. */}
+      <div
+        className={`flex-shrink-0 text-center uppercase tracking-[0.25em] text-muted-500 ${compact ? 'text-xs' : 'text-base'}`}
+      >
+        NOTICES
+      </div>
       {/* relative - so the mapped items' own offsetTop below is measured
           from THIS element's top edge (matching el.clientHeight's own
           origin), not from some further-up positioned ancestor. */}
-      <div ref={containerRef} className="relative mt-3 min-h-0 flex-1 overflow-hidden">
+      <div className={`relative min-h-0 flex-1 overflow-hidden ${compact ? 'mt-1' : 'mt-3'}`} ref={containerRef}>
         {notices.slice(0, visibleCount).map((notice, index) => (
-          <div key={index} className={`mb-4 font-semibold text-primary last:mb-0 ${SIZE_CLASSES[notice.size]}`}>
+          <div
+            key={index}
+            className={`${compact ? 'mb-2' : 'mb-4'} font-semibold text-primary last:mb-0 ${SIZE_CLASSES[notice.size]}`}
+          >
             {notice.text}
           </div>
         ))}
       </div>
       {hiddenCount > 0 && (
-        <div className="flex-shrink-0 text-lg font-bold text-status-bad">
+        <div className={`flex-shrink-0 font-bold text-status-bad ${compact ? 'text-sm' : 'text-lg'}`}>
           +{hiddenCount} more — see /atc-control
         </div>
       )}
       {hiddenCount === 0 && notices.length > 0 && (
-        <div ref={indicatorMeasureRef} className="invisible absolute left-0 top-0 text-lg font-bold" aria-hidden="true">
+        <div
+          ref={indicatorMeasureRef}
+          className={`invisible absolute left-0 top-0 font-bold ${compact ? 'text-sm' : 'text-lg'}`}
+          aria-hidden="true"
+        >
           +{notices.length} more — see /atc-control
         </div>
       )}
@@ -210,20 +285,26 @@ function NotamsPanel({ notices }: { notices: SafetyNotice[] }): JSX.Element {
   )
 }
 
-// Second half of the overflow fix (task #43) - a conditional 3rd
-// rotation state, only ever entered when the compact state's own
-// truncation/cap actually dropped something (see hasAutoNotamOverflow
-// below). Shows every auto-NOTAM in full, untruncated text, so nothing
-// is ever permanently hidden - just deferred to this state. Same
-// dynamic scroll-height measurement as NotamsPanel above (copied, not
-// abstracted into a shared helper - the two differ in exactly the bits
-// that would make a shared abstraction more indirection than the
-// duplication it'd save: different source data shape, different per-
-// entry markup (a severity dot, not a size-keyed font class), no
-// "notices can be managed from ATC Control" framing since these are
-// read-only feed data). Same "no manual scrolling" guarantee too -
-// overflow-hidden throughout, entries dropped and counted rather than
-// made scrollable, zero viewer interaction required anywhere.
+// Renders ONE NOTAM card's worth of entries, in full, untruncated text -
+// reused unmodified across however many dynamic NOTAM cards the
+// restructure's pagination produces (see NotamMeasurementPass/
+// computeNotamPageCount/chunkEvenly further down): each call gets its
+// own pre-computed slice of the full NOTAM set, not the whole thing.
+// Its own dynamic scroll-height measurement below is still real, useful
+// work even though entries are already pre-paginated to roughly fit -
+// balanced redistribution groups by entry COUNT, not remeasured height
+// (see chunkEvenly's own comment), so this is the per-card safety net
+// that quietly self-corrects (drops entries, shows "+N more") if a
+// particular group still doesn't fit its box. Same dynamic scroll-height
+// measurement as NotamsPanel above (copied, not abstracted into a shared
+// helper - the two differ in exactly the bits that would make a shared
+// abstraction more indirection than the duplication it'd save: different
+// source data shape, different per-entry markup (a severity dot, not a
+// size-keyed font class), no "notices can be managed from ATC Control"
+// framing since these are read-only feed data). Same "no manual
+// scrolling" guarantee too - overflow-hidden throughout, entries dropped
+// and counted rather than made scrollable, zero viewer interaction
+// required anywhere.
 function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const indicatorMeasureRef = useRef<HTMLDivElement>(null)
@@ -271,6 +352,61 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
           +{notams.length} more
         </div>
       )}
+    </div>
+  )
+}
+
+// Hidden pre-render measurement pass (dynamic NOTAM card restructure) -
+// structurally an exact twin of AutoNotamsFullPanel above (same outer
+// classes, same per-entry markup) so per-entry heights measure
+// identically to how they'll actually render, rendered by the caller
+// into the REAL grid cell the visible carousel occupies
+// (`visibility: hidden`, not `display: none` - the latter collapses
+// dimensions to 0 and every entry would incorrectly measure as fitting)
+// so containerRef's clientHeight below genuinely equals one real card's
+// available content height, not a guessed/tracked-separately value.
+// Renders every NOTAM at once (not sliced) specifically so this single
+// layout effect can walk the whole set in one pass - see
+// computeNotamPageCount's own comment for why this doesn't reintroduce
+// the drop-one/remeasure loop this file already ruled out elsewhere.
+// No font-loading wait (e.g. document.fonts.ready) here, deliberately -
+// NotamsPanel/AutoNotamsFullPanel's own equivalent effects don't do
+// this either, so this matches their existing risk profile rather than
+// solving a problem neither of them has addressed.
+function NotamMeasurementPass({
+  notams,
+  onMeasured,
+}: {
+  notams: AutoNotam[]
+  onMeasured: (groups: AutoNotam[][]) => void
+}): JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const pageCount = computeNotamPageCount(el, notams.length)
+    onMeasured(chunkEvenly(notams, pageCount))
+    // onMeasured is a fresh closure every render (setNotamCardGroups
+    // wrapped inline by the caller) - depending on `notams` alone here
+    // (not onMeasured) is deliberate, matching this file's existing
+    // convention (e.g. NotamsPanel's own notices-keyed effects) of
+    // keying remeasurement on the actual DATA changing, not on a
+    // same-render callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notams])
+
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
+      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
+      <div ref={containerRef} className="relative mt-3 min-h-0 flex-1 overflow-hidden">
+        {notams.map((notam) => (
+          <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
+            <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
+            <span>{notam.text}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -353,57 +489,63 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     }
   }, [opsPanel?.showAutoNotams])
 
-  // Derived from autoNotams (fetched above) - computed here, ahead of
-  // the rotation-state effect below, specifically so that effect can
-  // depend on hasAutoNotamOverflow directly. Capped to
-  // MAX_AUTO_NOTAMS_SHOWN with a "+N more" indicator (unchanged), each
-  // VISIBLE entry additionally per-entry truncated (task #43, part 1 -
-  // see AUTO_NOTAM_TRUNCATE_LENGTH's own comment for how that limit was
-  // measured). hasAutoNotamOverflow (part 2) is true when either the
-  // cap hid whole entries, or truncation cut into any of the ones still
-  // shown - either case means the compact state doesn't have this
-  // tenant's complete NOTAM picture, which is exactly the condition
-  // that should pull in the 3rd rotation state below.
+  // Derived from autoNotams (fetched above) - full set, untruncated,
+  // severity-sorted. Distribution across dynamic NOTAM cards (below)
+  // happens against this same array; showAutoNotams gates it down to
+  // an empty list rather than filtering after the fact, so a tenant
+  // with the toggle off never triggers the measurement pass at all.
   const sortedAutoNotams = [...(autoNotams ?? [])].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity])
-  const visibleAutoNotamsRaw = sortedAutoNotams.slice(0, MAX_AUTO_NOTAMS_SHOWN)
-  const hiddenAutoNotamsCount = sortedAutoNotams.length - visibleAutoNotamsRaw.length
-  const visibleAutoNotams = visibleAutoNotamsRaw.map(truncateAutoNotamText)
-  const hasAutoNotamOverflow = hiddenAutoNotamsCount > 0 || visibleAutoNotams.some((n) => n.wasTruncated)
+  const notamsForPagination = (opsPanel?.showAutoNotams ?? true) ? sortedAutoNotams : []
 
-  // Carousel states, not a plain boolean flip anymore (task #43, part
-  // 3) - 'notamsFull' (AutoNotamsFullPanel) is spliced in ONLY when
-  // hasAutoNotamOverflow is true, so a tenant whose NOTAMs already fit
-  // never wastes rotation time on a state with nothing new to show.
-  const rotationStates: ('ops' | 'notamsFull' | 'notices')[] = [
-    'ops',
-    ...(hasAutoNotamOverflow ? (['notamsFull'] as const) : []),
-    'notices',
+  // Restructure: card 1 (Runway In Use/Airfield Info/Notices) is now
+  // fixed/static and never carries NOTAM content, so there's nothing
+  // left to measure there - all NOTAMs instead paginate across however
+  // many "notamsFull" cards it takes (NotamMeasurementPass below,
+  // rendered hidden in the real grid cell). null = not yet measured for
+  // the current notamsForPagination set (either still loading, or the
+  // hidden pass hasn't committed a result yet); [] = measured, zero
+  // NOTAM cards needed. Reset to null whenever the underlying NOTAM
+  // data changes so a remeasure runs - in practice today autoNotams
+  // only ever resolves once per mount (no polling refetch), so this is
+  // a one-time transition, but keying off the data rather than mount
+  // timing keeps this correct if that ever changes.
+  const [notamCardGroups, setNotamCardGroups] = useState<AutoNotam[][] | null>(null)
+  useEffect(() => {
+    setNotamCardGroups(null)
+  }, [autoNotams])
+
+  const measurementPending = notamsForPagination.length > 0 && notamCardGroups === null
+
+  // Carousel states now carry identity (cardIndex), not just a type tag
+  // - a bare 'notamsFull' string could only ever mean "the one NOTAMs
+  // card", which stops working the moment there can be more than one.
+  // 'notices' is gone entirely as its own state - Notices is part of
+  // the single fixed 'ops' card now (see the render branch below).
+  const rotationStates: RotationState[] = [
+    { type: 'ops' },
+    ...(notamCardGroups ?? []).map((_, cardIndex) => ({ type: 'notamsFull' as const, cardIndex })),
   ]
   // Ref mirroring the latest rotationStates array, read inside the
   // recursive-timeout effect below instead of closing over the array
-  // directly - rotationStates is deliberately NOT one of that effect's
-  // dependencies (see the comment on rotationIndex below: a mid-cycle
-  // change in hasAutoNotamOverflow shouldn't reset the cycle), so
-  // without this ref scheduleNext() would keep resolving state names/
-  // durations against a stale array captured whenever the effect last
-  // ran, instead of whatever's actually being rendered right now.
+  // directly - see that effect's own comment for why rotationStates.length
+  // (unlike the old hasAutoNotamOverflow boolean it replaced) IS a real
+  // dependency there now, but scheduleNext still needs the ref rather
+  // than a closed-over array so it always resolves against whatever's
+  // actually being rendered right now, not a stale snapshot from
+  // whenever the effect last (re)ran.
   const rotationStatesRef = useRef(rotationStates)
   rotationStatesRef.current = rotationStates
 
   // Always starts on State A (today's default appearance) on load/on
   // any config refetch, then advances via the recursive setTimeout
   // below - each state now reads its own independent duration
-  // (notamsOpsDurationSeconds/notamsFullDurationSeconds/
-  // noticesDurationSeconds, migration 0077) rather than one shared
-  // interval, matching LeftInfoPanel.tsx's own Summary/Chart flip
-  // (see that file's equivalent effect). notamsCarouselIntervalSeconds
-  // is left in place, unused, until this is confirmed working
-  // end-to-end.
-  // Read via `% rotationStates.length` at render time (not clamped
-  // here) so a mid-cycle change in hasAutoNotamOverflow - e.g. new
-  // NOTAM data arrives shrinking rotationStates from 3 states back to 2
-  // - can never leave rotationIndex pointing past the end of the
-  // (now shorter) array.
+  // (notamsOpsDurationSeconds/notamsFullDurationSeconds, migration
+  // 0077) rather than one shared interval, matching LeftInfoPanel.tsx's
+  // own Summary/Chart flip (see that file's equivalent effect).
+  // noticesDurationSeconds is no longer read here - Notices has no
+  // standalone rotation state anymore (folded into 'ops', see above) -
+  // left in place/unused in ops_panel_state itself, same posture this
+  // file already takes with notamsCarouselIntervalSeconds elsewhere.
   const [rotationIndex, setRotationIndex] = useState(0)
   const timerRef = useRef<number | undefined>(undefined)
 
@@ -411,17 +553,24 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     window.clearTimeout(timerRef.current)
     setRotationIndex(0)
     if (notamsOnly) return
+    // Genuinely nothing to rotate to yet (measurement pending, zero
+    // NOTAMs, or the toggle is off) - mirrors notamsOnly's own
+    // early-return above rather than starting a timer that would just
+    // flip state 0 back to state 0 forever. This is also what makes
+    // the transition below actually happen: rotationStates.length is a
+    // real dependency of this effect specifically so it re-runs (and
+    // this guard re-evaluates) the moment measurement completes and
+    // length grows past 1 - without it the timer would never start at
+    // all, having already returned early on the first, pre-measurement
+    // render.
+    if (rotationStates.length <= 1) return
 
     let index = 0
     const scheduleNext = () => {
       const states = rotationStatesRef.current
       const state = states[index % states.length]
       const seconds =
-        state === 'ops'
-          ? (opsPanel?.notamsOpsDurationSeconds ?? 5)
-          : state === 'notamsFull'
-            ? (opsPanel?.notamsFullDurationSeconds ?? 5)
-            : (opsPanel?.noticesDurationSeconds ?? 5)
+        state.type === 'ops' ? (opsPanel?.notamsOpsDurationSeconds ?? 5) : (opsPanel?.notamsFullDurationSeconds ?? 5)
       timerRef.current = window.setTimeout(() => {
         index += 1
         setRotationIndex(index)
@@ -431,26 +580,10 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     scheduleNext()
 
     return () => window.clearTimeout(timerRef.current)
-  }, [
-    notamsOnly,
-    opsPanel?.notamsOpsDurationSeconds,
-    opsPanel?.notamsFullDurationSeconds,
-    opsPanel?.noticesDurationSeconds,
-  ])
+  }, [notamsOnly, rotationStates.length, opsPanel?.notamsOpsDurationSeconds, opsPanel?.notamsFullDurationSeconds])
 
   const currentRotationState = rotationStates[rotationIndex % rotationStates.length]
 
-  // showAutoNotams now gates the automated feed in the OTHER carousel
-  // state (the cards branch below, "Runway In Use") rather than anything
-  // here - see autoNotamEntries/the Automated NOTAM section further
-  // down. This panel (State B) went back to manual notices only: the old
-  // weather.notams-sourced auto feed it used to merge in here was never
-  // actually a live external NOTAM source (it was whatever text showed
-  // up in a specific field scraped off the local ATC weather-station
-  // page, effectively always empty in practice) - real automated NOTAMs
-  // now come from functions/api/public/notams.ts instead, surfaced next
-  // to Runway Status/Circuit Direction where they're more visible.
-  const showAutoNotams = opsPanel?.showAutoNotams ?? true
   // enabled === false explicitly excludes a row from display entirely
   // (not greyed out, not counted toward "+N more" - simply absent from
   // the array NotamsPanel ever sees). !== false rather than === true so
@@ -460,7 +593,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   const manualNotices = (opsPanel?.safetyNotices ?? []).filter((n) => n.enabled !== false)
   // 'N/A' as a single block preserves the exact prior informational
   // behaviour (weather/mock-fallback uncertainty overrides even real
-  // manual notices) while fitting State B's one-block-per-entry shape.
+  // manual notices) while fitting NotamsPanel's own one-block-per-entry shape.
   const noticesForDisplay: SafetyNotice[] =
     !weather || liveDataUnavailable
       ? [{ text: 'N/A', size: 'md', enabled: true }]
@@ -471,8 +604,9 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // Runway Status and Circuit Direction come from ops_panel_state (set
   // via /atc-control); a null opsPanel (no /atc-control usage yet on
   // this tenant) falls back to the same static defaults this file used
-  // to hardcode, rather than showing blank cards. NOTAMS is no longer a
-  // 4th entry here - it's State B's own full panel below.
+  // to hardcode, rather than showing blank cards. NOTAM content never
+  // appears on this card at all (restructure) - it's exclusively on the
+  // dynamic notamsFull cards below.
   //
   // Airfield Info is a free-text field an admin may leave unset - unlike
   // the two fields above, there's no sensible non-empty default to fall
@@ -516,23 +650,60 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
       <div className="mb-5 flex-shrink-0 text-center text-lg font-semibold uppercase tracking-[0.25em] text-muted-400">
         Ops Panel
       </div>
-      <div className="min-h-0 flex-1">
-        {currentRotationState === 'notices' ? (
-          <NotamsPanel notices={noticesForDisplay} />
-        ) : currentRotationState === 'notamsFull' ? (
-          <AutoNotamsFullPanel notams={sortedAutoNotams} />
+      {/* relative - anchors the hidden measurement pass's absolute
+          inset-0 box below to THIS element's real, laid-out size (Option
+          A from the investigation: same ancestor chain/computed
+          width+height as the real card slot, not a separately-tracked
+          copy of them). */}
+      <div className="relative min-h-0 flex-1">
+        {/* Hidden pre-render measurement pass - mounted only while a
+            measurement is actually owed (real NOTAM data exists but
+            hasn't been paginated yet). visibility: hidden keeps this in
+            layout (so containerRef inside it gets a real clientHeight)
+            without painting or affecting the visible content stacked in
+            the same slot below; display:none would collapse it to zero
+            height and silently report everything fitting on one card. */}
+        {measurementPending && (
+          <div className="absolute inset-0" style={{ visibility: 'hidden' }} aria-hidden="true">
+            <NotamMeasurementPass notams={notamsForPagination} onMeasured={setNotamCardGroups} />
+          </div>
+        )}
+        {currentRotationState.type === 'notamsFull' ? (
+          <AutoNotamsFullPanel notams={notamCardGroups?.[currentRotationState.cardIndex] ?? []} />
         ) : (
-          // Content-sized, not stretched to fill the column (previously a
-          // `grid h-full` with `minmax(6.5rem, 1fr)` rows, forcing each
-          // card to grow tall with empty space below its label+value -
-          // that stretching is deliberately removed now: the Ops Panel
-          // column needs its real unused height reclaimed as genuine free
-          // space for a future carousel element, not consumed by two
-          // over-tall cards. flex-col + gap gives each card only the
-          // height its own padding+content needs; any leftover column
-          // height simply stays empty below, which is the point.
-          <div className="flex flex-col gap-4">
-            <div className="rounded-3xl border border-border bg-card p-5">
+          // Card 1 (fixed/static, never NOTAM content) - Runway In Use
+          // and Airfield Info are flex-shrink-0 (content-sized, as
+          // before); Notices is the one variable-length piece here, so
+          // it's the one wrapped in flex-1 min-h-0 - that's what gives
+          // NotamsPanel's own containerRef a genuine BOUNDED clientHeight
+          // to measure against (its overflow/"+N more" check is a no-op
+          // against a content-sized, unbounded box - scrollHeight would
+          // never exceed clientHeight if clientHeight just grows to fit).
+          // The outer h-full (new - the old three-cards-content-sized
+          // stack didn't need it, since nothing here used to need
+          // leftover space) is what makes that flex-1 have any real
+          // height to claim in the first place.
+          //
+          // gap-3/p-4/mt-2 here (was gap-4/p-5/mt-3) - investigated after
+          // manual review found Notices rendering empty ("+N more" with
+          // zero entries shown). Confirmed via computed-style inspection
+          // that the flex chain down to NotamsPanel is intact and DOES
+          // pass a real, correctly-computed height - Runway In Use/
+          // Airfield Info were already right where Jeff's own original
+          // sizing estimate put them (~20-25% of card 1 each), not
+          // bloated. The actual cause: combining three cards into the
+          // space one card (NotamsPanel, at full size) used to have
+          // alone left Notices with materially less room than before,
+          // and real admin-entered notices at this component's larger
+          // SIZE_CLASSES tiers routinely need more vertical space than
+          // that remainder had. This tightening (here) plus
+          // NotamsPanel's own `compact` mode (see that component's
+          // comment) together reclaim real, meaningful height rather
+          // than papering over the symptom - Runway In Use/Airfield
+          // Info's OWN single-line values don't need p-5/mt-3's full
+          // breathing room to stay readable.
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex-shrink-0 rounded-3xl border border-border bg-card p-4">
               <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Runway In Use</div>
               {opsPanel?.runwaysClosed ? (
                 // ATC override (migration 0054) - supersedes both values
@@ -541,7 +712,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
                 // for a closed runway. activeRunwayEnd/circuitDirection
                 // stay set underneath (see AtcControlPage.tsx's toggle
                 // comment), so this is purely a display swap.
-                <div className="mt-3 text-3xl font-semibold text-status-bad">RUNWAYS CLOSED</div>
+                <div className="mt-2 text-3xl font-semibold text-status-bad">RUNWAYS CLOSED</div>
               ) : (
                 // flex, not grid-cols-2 (was an even 50/50 split) - a
                 // 2-character runway number doesn't need the same width
@@ -552,39 +723,21 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
                 // runway number to its own content only; the circuit
                 // direction cell (flex-1) gets everything left over,
                 // which is what actually needs the extra width.
-                <div className="mt-3 flex items-center gap-4">
+                <div className="mt-2 flex items-center gap-4">
                   <div className="flex-shrink-0 text-3xl font-semibold text-primary">{runwayStatusValue}</div>
                   <div className="flex-1 text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
                 </div>
               )}
             </div>
-            {/* Beneath Runway In Use, above Airfield Info - NOTAMs are
-                more time-sensitive than Airfield Info's static text (PPR
-                hours etc.), so the more urgent thing sits higher.
-                showAutoNotams preserves the toggle's existing meaning:
-                ON shows this section when there's data, OFF shows
-                nothing here regardless (manual Safety Notices in State B
-                are unaffected by this flag either way). */}
-            {showAutoNotams && visibleAutoNotams.length > 0 && (
-              <div className="rounded-3xl border border-border bg-card p-5">
-                <div className="text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs</div>
-                <div className="mt-3 flex flex-col gap-2">
-                  {visibleAutoNotams.map((notam) => (
-                    <div key={notam.id} className="flex items-start gap-2 text-[15px] text-primary">
-                      <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
-                      <span>{notam.text}</span>
-                    </div>
-                  ))}
-                  {hiddenAutoNotamsCount > 0 && <div className="text-xs text-muted-500">+{hiddenAutoNotamsCount} more</div>}
-                </div>
-              </div>
-            )}
             {cards.map((card) => (
-              <div key={card.title} className="rounded-3xl border border-border bg-card p-5">
+              <div key={card.title} className="flex-shrink-0 rounded-3xl border border-border bg-card p-4">
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{card.title}</div>
-                <div className="mt-3 text-3xl font-semibold text-primary">{card.value}</div>
+                <div className="mt-2 text-3xl font-semibold text-primary">{card.value}</div>
               </div>
             ))}
+            <div className="min-h-0 flex-1">
+              <NotamsPanel notices={noticesForDisplay} compact />
+            </div>
           </div>
         )}
       </div>
