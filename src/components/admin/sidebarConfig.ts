@@ -71,6 +71,12 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'] },
       { to: '/design', label: 'Screens Design', allowedRoles: ['owner', 'admin'] },
       { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
+      // Pilot Panel round - configures /pilot's own ticker + background
+      // independently of the desktop dashboard. 'atc' included alongside
+      // owner/admin (unlike every other item in this group) per its own
+      // spec - matches the role list this page's RequireAuth and its
+      // backing /api/tenant/pilot-view endpoint both use.
+      { to: '/pilot-panel', label: 'Pilot Panel', allowedRoles: ['owner', 'admin', 'atc'] },
     ],
   },
   // Formerly an 11-item "Platform Admin" group listing every /platform/*

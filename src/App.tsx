@@ -32,6 +32,7 @@ import KnownDevicesPage from './pages/KnownDevicesPage'
 import UptimeReportPage from './pages/UptimeReportPage'
 import IpDirectoryPage from './pages/IpDirectoryPage'
 import RunwaysPage from './pages/RunwaysPage'
+import PilotPanelPage from './pages/PilotPanelPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
 import PreviewBanner from './components/PreviewBanner'
@@ -202,6 +203,14 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin']}>
                 <RunwaysPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/pilot-panel"
+            element={
+              <RequireAuth requireRole={['owner', 'admin', 'atc']}>
+                <PilotPanelPage />
               </RequireAuth>
             }
           />
