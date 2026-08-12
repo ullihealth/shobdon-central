@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { TickerStyle } from '../CafeTicker'
 import { BUILT_IN_TICKER_PRESETS } from '../../services/tickerStyleStore'
 
@@ -7,16 +8,32 @@ import { BUILT_IN_TICKER_PRESETS } from '../../services/tickerStyleStore'
 // import - confirmed in investigation). Controlled, not self-contained,
 // matching PilotTickerSlotsCards.tsx's own pattern: PilotPanelPage.tsx
 // owns tickerStyle state so the live phone-frame preview can read the
-// same in-progress draft this editor mutates. Custom-template UI (save/
-// list/apply/delete against the new server-persisted
-// pilot-ticker-style-templates endpoint) is a separate, later piece -
-// this file only covers the raw fields + built-in presets.
+// same in-progress draft this editor mutates.
+//
+// Custom templates ARE real, direct network calls from this component
+// (unlike the built-in presets below, which are pure client-side
+// "apply" with nothing to fetch) - server-persisted per tenant via
+// /api/tenant/pilot-ticker-style-templates, not localStorage like the
+// desktop ticker's own tickerStyleStore.ts custom templates. Deliberate
+// deviation, confirmed against the design_templates precedent (Screens
+// Design's own template library, which made the exact same
+// localStorage -> server move after confirming the browser-local
+// version never reached a tenant's real account).
+const TEMPLATES_URL = '/api/tenant/pilot-ticker-style-templates'
 const FONT_FAMILY_OPTIONS: TickerStyle['fontFamily'][] = ['Inter', 'Montserrat', 'Oswald']
 // Capped at 200 here, not desktop's 500 - matches
 // TickerSettingsCards.tsx's own UI slider cap, per Pilot Panel's
 // confirmed scope decision; the desktop endpoint's wider 500 stays
 // untouched.
 const MAX_SCROLL_SPEED = 200
+const MAX_NAME_LENGTH = 60
+
+interface StyleTemplate {
+  id: string
+  name: string
+  style: TickerStyle
+  createdAt: string
+}
 
 interface PilotTickerStyleCardsProps {
   style: TickerStyle
@@ -24,8 +41,63 @@ interface PilotTickerStyleCardsProps {
 }
 
 export default function PilotTickerStyleCards({ style, onChange }: PilotTickerStyleCardsProps): JSX.Element {
+  const [templates, setTemplates] = useState<StyleTemplate[]>([])
+  const [templateNameInput, setTemplateNameInput] = useState('')
+  const [templateSaving, setTemplateSaving] = useState(false)
+  const [templateError, setTemplateError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(TEMPLATES_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.templates)) setTemplates(data.templates)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   function updateStyle(patch: Partial<TickerStyle>) {
     onChange({ ...style, ...patch })
+  }
+
+  async function handleSaveAsTemplate() {
+    const name = templateNameInput.trim()
+    if (!name) return
+    setTemplateSaving(true)
+    setTemplateError(null)
+    try {
+      const response = await fetch(TEMPLATES_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, style }),
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        setTemplateError(body?.error ?? "Couldn't save template")
+        return
+      }
+      const created: StyleTemplate = await response.json()
+      setTemplates((prev) => [...prev, created])
+      setTemplateNameInput('')
+    } catch {
+      setTemplateError("Couldn't save template")
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
+  async function handleDeleteTemplate(id: string) {
+    const previous = templates
+    setTemplates((prev) => prev.filter((t) => t.id !== id))
+    try {
+      const response = await fetch(`${TEMPLATES_URL}/${id}`, { method: 'DELETE' })
+      if (!response.ok) setTemplates(previous)
+    } catch {
+      setTemplates(previous)
+    }
   }
 
   return (
@@ -48,6 +120,29 @@ export default function PilotTickerStyleCards({ style, onChange }: PilotTickerSt
             <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: preset.style.backgroundColor }} />
             {preset.name}
           </button>
+        ))}
+        {templates.map((template) => (
+          <div
+            key={template.id}
+            className="flex items-center gap-1 rounded-lg border border-border bg-slate-900/80 pl-1 pr-2 text-xs font-semibold text-slate-200"
+          >
+            <button
+              type="button"
+              onClick={() => onChange(template.style)}
+              className="flex items-center gap-2 rounded-md px-2 py-2 transition hover:text-accent-sky-400"
+            >
+              <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: template.style.backgroundColor }} />
+              {template.name}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteTemplate(template.id)}
+              className="text-muted-500 hover:text-status-bad"
+              title="Delete this saved template"
+            >
+              ×
+            </button>
+          </div>
         ))}
       </div>
 
@@ -154,6 +249,25 @@ export default function PilotTickerStyleCards({ style, onChange }: PilotTickerSt
             expected, not a bug.
           </span>
         </label>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+        <input
+          value={templateNameInput}
+          onChange={(event) => setTemplateNameInput(event.target.value)}
+          placeholder="New template name"
+          maxLength={MAX_NAME_LENGTH}
+          className="rounded-lg border border-border bg-slate-900 px-3 py-2 text-sm text-primary"
+        />
+        <button
+          type="button"
+          onClick={handleSaveAsTemplate}
+          disabled={!templateNameInput.trim() || templateSaving}
+          className="rounded-lg border border-border bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-accent-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {templateSaving ? 'Saving…' : 'Save as template'}
+        </button>
+        {templateError && <span className="text-xs font-semibold text-status-bad">{templateError}</span>}
       </div>
     </section>
   )
