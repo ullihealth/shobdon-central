@@ -48,6 +48,12 @@ export default function PilotFooterTicker(): JSX.Element | null {
   const [tickerSlots, setTickerSlots] = useState<TickerSlot[]>([])
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
   const [gasPrices, setGasPrices] = useState<TickerGasPrices>(DEFAULT_GAS_PRICES)
+  // Pilot Panel round (migration 0086) - overridable per-tenant, but
+  // starts at this exact constant and stays there for every tenant who
+  // hasn't saved their own style yet (data.pilotTickerStyle is null until
+  // they do) - the same inert-by-default posture pilotBackgroundOverride
+  // already established.
+  const [tickerStyle, setTickerStyle] = useState<TickerStyle>(DEFAULT_TICKER_STYLE)
 
   useEffect(() => {
     let cancelled = false
@@ -58,6 +64,7 @@ export default function PilotFooterTicker(): JSX.Element | null {
         if (Array.isArray(data.pilotTicker?.slots)) setTickerSlots(data.pilotTicker.slots)
         if (data.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
         if (data.gasPrices) setGasPrices(data.gasPrices)
+        if (data.pilotTickerStyle) setTickerStyle(data.pilotTickerStyle)
       })
       .catch(() => {})
     return () => {
@@ -76,7 +83,7 @@ export default function PilotFooterTicker(): JSX.Element | null {
         visibilityHours={visibilityHours}
         safetyNotices={safetyNotices}
         gasPrices={gasPrices}
-        style={DEFAULT_TICKER_STYLE}
+        style={tickerStyle}
       />
     </div>
   )

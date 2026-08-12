@@ -1,0 +1,14 @@
+-- Pilot Panel round: lets a tenant independently style /pilot's own
+-- ticker (background/font/height/speed/gap), instead of always using
+-- the fixed DEFAULT_TICKER_STYLE constant in PilotFooterTicker.tsx.
+-- Nullable, no DEFAULT - NULL = keep using that exact constant, same
+-- "presence/absence IS the on/off state" convention as
+-- pilot_background_override_json (migration 0085). Shape when set:
+-- the full TickerStyle object (backgroundColor, backgroundOpacity,
+-- heightPx, fontFamily, fontSizePx, fontColor, scrollSpeedPxPerSec,
+-- gapPx) - same 8 fields cafe_template_settings already stores as flat
+-- columns for the desktop ticker, bundled as one JSON blob here instead
+-- to match this table's own pilot_ticker_slots_json/
+-- pilot_background_override_json precedent, not the desktop table's
+-- older flat-column one.
+ALTER TABLE tenants ADD COLUMN pilot_ticker_style_json TEXT;

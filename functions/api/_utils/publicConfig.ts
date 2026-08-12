@@ -267,7 +267,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -280,6 +280,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         afisoFrequency: string;
         pilotTickerSlotsJson: string;
         pilotBackgroundOverrideJson: string | null;
+        pilotTickerStyleJson: string | null;
         mobileEnabled: number;
         windsockBand2Kt: number;
         windsockBand3Kt: number;
@@ -663,6 +664,42 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       pilotBackgroundOverride = null;
     }
   }
+  // Pilot Panel round (migration 0086) - optional per-tenant override of
+  // /pilot's ticker style (background/font/height/speed/gap), independent
+  // of PilotFooterTicker.tsx's own fixed DEFAULT_TICKER_STYLE constant.
+  // null (the column's default) means "keep using that constant exactly
+  // as before" - same inert-until-opted-in posture as
+  // pilotBackgroundOverride above.
+  interface PilotTickerStyle {
+    backgroundColor: string;
+    backgroundOpacity: number;
+    heightPx: number;
+    fontFamily: string;
+    fontSizePx: number;
+    fontColor: string;
+    scrollSpeedPxPerSec: number;
+    gapPx: number;
+  }
+  let pilotTickerStyle: PilotTickerStyle | null = null;
+  if (tenantRow?.pilotTickerStyleJson) {
+    try {
+      const parsed = JSON.parse(tenantRow.pilotTickerStyleJson) as Partial<PilotTickerStyle>;
+      if (
+        typeof parsed.backgroundColor === "string" &&
+        typeof parsed.backgroundOpacity === "number" &&
+        typeof parsed.heightPx === "number" &&
+        typeof parsed.fontFamily === "string" &&
+        typeof parsed.fontSizePx === "number" &&
+        typeof parsed.fontColor === "string" &&
+        typeof parsed.scrollSpeedPxPerSec === "number" &&
+        typeof parsed.gapPx === "number"
+      ) {
+        pilotTickerStyle = parsed as PilotTickerStyle;
+      }
+    } catch {
+      pilotTickerStyle = null;
+    }
+  }
   // Mobile access gating round (migration 0071) - PilotViewPage.tsx
   // renders its locked-state screen instead of the full view when this
   // is false. Testing-phase only right now (see that migration's own
@@ -978,6 +1015,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     afiso,
     pilotTicker,
     pilotBackgroundOverride,
+    pilotTickerStyle,
     mobileEnabled,
     windsock,
     arrowThresholds,
