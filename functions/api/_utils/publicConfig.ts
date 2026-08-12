@@ -267,7 +267,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -279,6 +279,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         afisoOpen: number;
         afisoFrequency: string;
         pilotTickerSlotsJson: string;
+        pilotBackgroundOverrideJson: string | null;
         mobileEnabled: number;
         windsockBand2Kt: number;
         windsockBand3Kt: number;
@@ -646,6 +647,22 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     pilotTickerSlots = [];
   }
   const pilotTicker = { slots: pilotTickerSlots };
+  // Pilot Panel round (migration 0085) - optional per-tenant override of
+  // /pilot's background colour, independent of the shared club_theme
+  // record the desktop dashboard uses. null (the column's default, and
+  // every existing tenant's current value) means "keep inheriting
+  // club_theme exactly as before" - PilotViewPage.tsx only departs from
+  // that when this is genuinely non-null, so this migration is inert
+  // for every tenant until they explicitly opt in via Pilot Panel.
+  let pilotBackgroundOverride: { backgroundColor: string } | null = null;
+  if (tenantRow?.pilotBackgroundOverrideJson) {
+    try {
+      const parsed = JSON.parse(tenantRow.pilotBackgroundOverrideJson) as { backgroundColor?: unknown };
+      if (typeof parsed.backgroundColor === "string") pilotBackgroundOverride = { backgroundColor: parsed.backgroundColor };
+    } catch {
+      pilotBackgroundOverride = null;
+    }
+  }
   // Mobile access gating round (migration 0071) - PilotViewPage.tsx
   // renders its locked-state screen instead of the full view when this
   // is false. Testing-phase only right now (see that migration's own
@@ -960,6 +977,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     cafeSettings,
     afiso,
     pilotTicker,
+    pilotBackgroundOverride,
     mobileEnabled,
     windsock,
     arrowThresholds,

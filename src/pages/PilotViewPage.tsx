@@ -32,6 +32,7 @@ interface PilotViewContentProps {
   afisoFrequency: string
   refreshTick: number
   onManualRefresh: () => void
+  pilotBackgroundOverride: { backgroundColor: string } | null
 }
 
 // Everything that used to render directly inside PilotViewPage's own
@@ -43,7 +44,15 @@ interface PilotViewContentProps {
 // refreshTick/loadBranding stay owned by the parent (several of them
 // gate whether WeatherProvider even renders at all, via the early
 // returns below) and are threaded down as plain props instead.
-function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, refreshTick, onManualRefresh }: PilotViewContentProps): JSX.Element {
+function PilotViewContent({
+  airfieldName,
+  logoUrl,
+  afisoOpen,
+  afisoFrequency,
+  refreshTick,
+  onManualRefresh,
+  pilotBackgroundOverride,
+}: PilotViewContentProps): JSX.Element {
   const { refetchNow, dataStale } = useWeather()
   usePilotDataFreshnessGuard()
 
@@ -61,7 +70,21 @@ function PilotViewContent({ airfieldName, logoUrl, afisoOpen, afisoFrequency, re
   const { pulling, pullDistance } = usePullToRefresh(handlePullRefresh)
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100">
+    // Pilot Panel round (migration 0085) - pilotBackgroundOverride null
+    // (every tenant's default) keeps today's exact gradient classes, an
+    // identical no-op. Non-null drops the gradient classes entirely
+    // (an inline backgroundColor alone would paint UNDER a still-active
+    // background-image gradient, not replace it) in favour of a plain
+    // inline solid colour - the admin's one explicit override colour,
+    // not blended with the shared gradient tokens.
+    <div
+      className={
+        pilotBackgroundOverride
+          ? 'min-h-screen pb-20 text-slate-100'
+          : 'min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100'
+      }
+      style={pilotBackgroundOverride ? { backgroundColor: pilotBackgroundOverride.backgroundColor } : undefined}
+    >
       {/* Sized to actually be legible at arm's length / outdoors, not
           fine print - was text-xs/text-muted-400 (12px, dim grey),
           easy to miss entirely against the page's own gradient
@@ -272,6 +295,7 @@ export default function PilotViewPage(): JSX.Element {
   // component's own comment).
   const [mobileEnabled, setMobileEnabled] = useState(true)
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
+  const [pilotBackgroundOverride, setPilotBackgroundOverride] = useState<{ backgroundColor: string } | null>(null)
   const [unavailable, setUnavailable] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
@@ -298,6 +322,7 @@ export default function PilotViewPage(): JSX.Element {
         }
         if (typeof data.mobileEnabled === 'boolean') setMobileEnabled(data.mobileEnabled)
         if (data.theme) setThemeOverride(data.theme as CSSProperties)
+        if (data.pilotBackgroundOverride) setPilotBackgroundOverride(data.pilotBackgroundOverride)
         if (data.mainDisplayActive === false) setUnavailable(true)
       })
       .catch(() => {})
@@ -354,6 +379,7 @@ export default function PilotViewPage(): JSX.Element {
         afisoFrequency={afisoFrequency}
         refreshTick={refreshTick}
         onManualRefresh={handleManualRefresh}
+        pilotBackgroundOverride={pilotBackgroundOverride}
       />
     </WeatherProvider>
   )
