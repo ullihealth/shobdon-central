@@ -285,10 +285,16 @@ const FULL_CARD_TARGET_QR_CM = 11.2
 // stays a real, visible margin (not a hairline) while giving the QR
 // noticeably more of the white area than 16px did.
 const FULL_CARD_QR_QUIET_MARGIN_PX = 8
-// Space reserved below the QR for the "Scan For Smartphone Pilot View"
-// caption - text-xs (matches "Runway"/"Circuit" elsewhere in this file)
-// plus its own margin-top, real but small relative to this card's size.
-const FULL_CARD_CAPTION_ROW_PX = 28
+// Space reserved below the QR for the "Scan For Smartphone"/"Pilot
+// View" caption - was 28px for the original single-line text-xs
+// caption; measured (real Playwright getBoundingClientRect, not
+// assumed) at 48.5px for the current two-line text-base version at
+// 1920x1080 (mt-2 8px + two 20.3px lines), rounded up to 50px with a
+// small safety margin. Using the larger viewport's own measurement
+// (1366x768 measures a shorter 38px, smaller font there) rather than
+// the smaller one, so the reserved space is never an underestimate at
+// the viewport where the caption is tallest in absolute terms.
+const FULL_CARD_CAPTION_ROW_PX = 50
 const FULL_CARD_QR_SIZE_FLOOR_PX = 60
 
 function computeFullCardQrSizePx(params: {
@@ -723,12 +729,20 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
         </div>
       </div>
       {/* Same label style as "Runway"/"Circuit" elsewhere in this panel
-          (text-xs uppercase tracking-[0.25em] text-muted-500) - matched
-          deliberately, per explicit instruction, so this caption reads
-          consistently with the rest of the Ops Panel's caption
-          language rather than inventing a new style for one card. */}
-      <div className="mt-1 flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">
-        Scan For Smartphone Pilot View
+          (uppercase tracking-[0.25em] text-muted-500, same weight - no
+          font-weight utility here, matching those captions' own
+          default/regular weight) - just larger (text-base, was text-xs)
+          and split across two lines for visibility, per explicit
+          instruction. Break is "Scan For Smartphone" / "Pilot View" -
+          the natural phrase boundary, and (measured, not assumed) the
+          longer of the two lines - confirmed comfortably narrower than
+          the card at both 1920x1080 and 1366x768, see this round's own
+          report for the real numbers. leading-tight keeps the two lines
+          close together as one caption block rather than reading as
+          separately spaced. */}
+      <div className="mt-2 flex-shrink-0 text-center text-base uppercase leading-tight tracking-[0.25em] text-muted-500">
+        <div>Scan For Smartphone</div>
+        <div>Pilot View</div>
       </div>
     </div>
   )
