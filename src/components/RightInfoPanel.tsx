@@ -741,16 +741,27 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
       {/* Bottom strip - caption left, QR right. Fixed height (not
           flex-1) so the top image zone above gets "everything else",
           matching the ~75-80/20-25 split from spec without two
-          hardcoded percentages that could drift apart on resize. */}
-      <div className="mt-4 flex flex-shrink-0 items-center justify-between gap-4">
-        {/* Same label style as the previous centered caption
-            (uppercase tracking-[0.25em] text-muted-500) - left-aligned
-            here instead of centered, stacked over two lines to read
-            naturally in a narrower left-hand column now that the QR
-            sits beside it rather than beneath it. */}
+          hardcoded percentages that could drift apart on resize.
+          justify-center (was justify-between) - centers the
+          caption+QR pair as a single group within the strip's full
+          width, so freed-up space (from narrowing the caption below)
+          splits evenly on both sides of the group instead of the QR
+          staying pinned to the strip's right edge. */}
+      <div className="mt-4 flex flex-shrink-0 items-center justify-center gap-4">
+        {/* Same label style as before (uppercase tracking-[0.25em]
+            text-muted-500), left-aligned - now broken across 4 short
+            lines instead of 2 longer ones, specifically to narrow this
+            column's own width (the widest line here, "Pilot App", is
+            meaningfully narrower than the previous widest line,
+            "Shobdon Pilot App") - narrower here directly means more
+            freed horizontal space for the centered group as a whole,
+            which is what actually pulls the QR back off the strip's
+            right edge. */}
         <div className="text-left text-base uppercase leading-tight tracking-[0.25em] text-muted-500">
-          <div>Scan For</div>
-          <div>Shobdon Pilot App</div>
+          <div>Scan</div>
+          <div>For</div>
+          <div>Shobdon</div>
+          <div>Pilot App</div>
         </div>
         {/* Explicit width+height (in px, from computeQrStripSquarePx),
             not a Tailwind fixed-height + aspect-square combo - that
