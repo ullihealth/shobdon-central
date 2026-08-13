@@ -742,22 +742,23 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
           flex-1) so the top image zone above gets "everything else",
           matching the ~75-80/20-25 split from spec without two
           hardcoded percentages that could drift apart on resize.
-          justify-center (was justify-between) - centers the
-          caption+QR pair as a single group within the strip's full
-          width, so freed-up space (from narrowing the caption below)
-          splits evenly on both sides of the group instead of the QR
-          staying pinned to the strip's right edge. */}
-      <div className="mt-4 flex flex-shrink-0 items-center justify-center gap-4">
-        {/* Same label style as before (uppercase tracking-[0.25em]
-            text-muted-500), left-aligned - now broken across 4 short
-            lines instead of 2 longer ones, specifically to narrow this
-            column's own width (the widest line here, "Pilot App", is
-            meaningfully narrower than the previous widest line,
-            "Shobdon Pilot App") - narrower here directly means more
-            freed horizontal space for the centered group as a whole,
-            which is what actually pulls the QR back off the strip's
-            right edge. */}
-        <div className="text-left text-base uppercase leading-tight tracking-[0.25em] text-muted-500">
+          justify-between (not justify-center, and not constrained to
+          the image's own column width above it) - anchors the caption
+          to the strip's own left edge and the QR to its right edge,
+          using the strip's FULL available width rather than the
+          image's narrower column, which is what actually maximizes the
+          gap between the (now larger) caption text and the QR. */}
+      <div className="mt-4 flex flex-shrink-0 items-center justify-between gap-4">
+        {/* Same uppercase/tracking/color caption style as before, just
+            bigger (text-2xl, was text-base) per explicit instruction to
+            make it noticeably larger - still 4 short lines (each line
+            independently short enough that a bigger font doesn't risk
+            wrapping within its own line). left-aligned, anchored to the
+            strip's own left edge via justify-between above (not
+            centered with the QR as a group anymore), which is the
+            "shift left" this round asked for relative to the previous
+            centered version. */}
+        <div className="text-left text-2xl uppercase leading-tight tracking-[0.25em] text-muted-500">
           <div>Scan</div>
           <div>For</div>
           <div>Shobdon</div>
