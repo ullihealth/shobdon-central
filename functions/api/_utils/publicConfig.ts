@@ -1003,6 +1003,15 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   };
 
   return {
+    // Stopgap for the QR/phone-mockup rotation slide's tenant gate
+    // (RightInfoPanel.tsx) - that slide's content (URL, phone image,
+    // "Shobdon Pilot App" caption) is currently Shobdon-specific and
+    // hardcoded, not yet tenant-configurable, so it must not render for
+    // any other tenant. tenantRow.slug was already selected above for
+    // isShobdonRelated's own internetProviderDisplayName check - just
+    // exposing that same already-fetched column here, not a new query
+    // or schema change.
+    slug: tenantRow?.slug ?? null,
     runwayGroups,
     theme,
     airfieldName,

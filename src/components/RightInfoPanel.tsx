@@ -847,6 +847,18 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
   // overall look, not verifying real physical QR scan size on a tenant's
   // actual TV.
   const [displayWidthCm, setDisplayWidthCm] = useState<number | null>(null)
+  // Stopgap tenant gate for the standalone QR/phone-mockup slide (see
+  // QR_CARD_ENABLED's own usage below) - that slide's content (the
+  // hardcoded PILOT_APP_URL, Shobdon's phone-mockup image, the "Shobdon
+  // Pilot App" caption) is Shobdon-specific and not yet tenant-
+  // configurable, but was rendering on every tenant's rotation
+  // regardless (a live cross-tenant content leak). Defaults to null
+  // (not 'shobdon'), so it stays OFF until the real slug loads - same
+  // fail-safe-closed default the opsPanel/displayWidthCm fields above
+  // already use, and correctly keeps the slide off entirely for the
+  // opsPanelData prop path (DesignPage.tsx's admin preview), which
+  // never populates this.
+  const [tenantSlug, setTenantSlug] = useState<string | null>(null)
 
   useEffect(() => {
     if (opsPanelData !== undefined) {
@@ -860,6 +872,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
         if (!cancelled) {
           setOpsPanel(data?.opsPanel ?? null)
           setDisplayWidthCm(typeof data?.displayWidthCm === 'number' ? data.displayWidthCm : null)
+          setTenantSlug(typeof data?.slug === 'string' ? data.slug : null)
         }
       })
       .catch(() => {})
@@ -937,9 +950,24 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
   // when QR_CARD_ENABLED is false, matching the same "don't include
   // state you're not going to render" convention notamCardGroups
   // already uses for zero NOTAMs.
+  //
+  // tenantSlug === 'shobdon' - URGENT STOPGAP: this slide's content is
+  // hardcoded Shobdon-specific (PILOT_APP_URL, the phone-mockup image,
+  // "Shobdon Pilot App" caption), but was rendering for every tenant's
+  // rotation regardless - a live cross-tenant content leak (Gyroplane
+  // Train, Swift, Demo, etc. were all showing Shobdon's own QR/branding).
+  // Gated at the array-construction level (not just hidden after
+  // rendering) so it's genuinely never selected by the rotation timer
+  // for any other tenant, not merely skipped visually. tenantSlug
+  // defaults to null until the self-fetch resolves, so this also stays
+  // off for that brief window even on Shobdon itself - acceptable
+  // (matches every other tenant-scoped field on this same fetch), and
+  // strictly safer than the alternative of briefly showing it everywhere.
+  // Remove this slug check once the QR slide is made properly
+  // per-tenant-configurable - it's a direct stopgap, not the real fix.
   const rotationStates: RotationState[] = [
     { type: 'ops' },
-    ...(QR_CARD_ENABLED ? [{ type: 'qr' as const }] : []),
+    ...(QR_CARD_ENABLED && tenantSlug === 'shobdon' ? [{ type: 'qr' as const }] : []),
     ...(notamCardGroups ?? []).map((_, cardIndex) => ({ type: 'notamsFull' as const, cardIndex })),
   ]
   // Ref mirroring the latest rotationStates array, read inside the
