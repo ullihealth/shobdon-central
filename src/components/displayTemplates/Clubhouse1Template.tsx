@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { useState } from 'react'
 import CentreDisplayPanel from '../CentreDisplayPanel'
 import FooterTicker from '../FooterTicker'
 import GasPricesPanel, { type GasPricesPublic } from '../GasPricesPanel'
@@ -82,6 +83,19 @@ export default function Clubhouse1Template({
   // panels/compass content to visually collide with "Powered by"/the
   // ticker at the bottom edge.
   const [stackRef, stackHeight] = useElementHeight<HTMLDivElement>()
+  // Cross-component coordination for RightInfoPanel's own 'qr' rotation
+  // slide (see that file's onQrSlideChange prop comment for why this is
+  // a plain callback rather than a shared context/lifted-state rewrite) -
+  // Ops Panel and Gas Prices are direct siblings ONLY here, so this
+  // state lives at the one parent that actually needs it, not anywhere
+  // more global. Instant swap (no CSS transition) between qr/non-qr -
+  // the rotation carousel already swaps its OTHER states (ops/notamsFull)
+  // instantly with no transition anywhere in this file's own pattern, so
+  // an instant Gas Prices show/hide stays visually consistent with how
+  // every other rotation change on this same panel already behaves,
+  // rather than introducing the one animated transition among several
+  // otherwise-instant swaps.
+  const [qrSlideActive, setQrSlideActive] = useState(false)
 
   return (
     <div
@@ -188,9 +202,19 @@ export default function Clubhouse1Template({
               itself. */}
           <div className={isDesktop ? 'flex h-full flex-col gap-4' : 'flex flex-col gap-4'}>
             <div className={isDesktop ? 'min-h-0 flex-1' : ''}>
-              <RightInfoPanel opsPanelData={opsPanelData} />
+              <RightInfoPanel opsPanelData={opsPanelData} onQrSlideChange={setQrSlideActive} />
             </div>
-            <GasPricesPanel gasPricesData={gasPricesData} />
+            {/* Hidden ONLY while the 'qr' slide is showing (see
+                qrSlideActive's own comment above) - removing this from
+                the flex layout entirely (not CSS-hiding it) is what lets
+                RightInfoPanel's own flex-1 sibling above naturally absorb
+                the full column height with zero extra height-forcing
+                logic needed here, same as how this column's flex-col+gap
+                already redistributes space between these two siblings
+                today. Every other rotation state (ops, notamsFull)
+                leaves qrSlideActive false, so Gas Prices renders exactly
+                as it always has then. */}
+            {!qrSlideActive && <GasPricesPanel gasPricesData={gasPricesData} />}
           </div>
         </div>
 

@@ -258,78 +258,86 @@ function computeQrSizePx(params: {
 // stretching the total cycle at high NOTAM counts.
 const QR_CARD_DURATION_SECONDS = 10
 
-// Full-card QR sizing (Ops Panel's internal rotation, standalone 'qr'
-// state) - deliberately NOT computeQrSizePx above. That formula solves
-// a different problem entirely: squeezing a QR into a 177x177px square
-// that shares its row with Runway In Use and must leave room for
-// Notices below in the same small card. None of that applies here -
-// this card gets its own full ~368x540px box (measured live via
-// Playwright at 1920x1080 before writing this), nothing else competing
-// for the space. display_width_cm plumbing (fetch/null-fallback/dev-
-// warning) is reused verbatim below - that part is a genuine physical-
-// screen fact, unrelated to which box the QR happens to sit in.
-//
-// FULL_CARD_TARGET_QR_CM - was 14cm originally, then 11.2cm (14 * 0.8,
-// see git history), now a further ~15% down: 11.2 * 0.85 = 9.52cm
-// exactly, not re-guessed. This is the second compounded reduction from
-// the original 14cm (9.52/14 = 68% of the original) - getting closer to
-// MIN_RELIABLE_QR_CM (6cm) than either previous round was, though still
-// comfortably clear of it. See this round's own real measured figures
-// wherever this change is reported, not assumed.
-const FULL_CARD_TARGET_QR_CM = 9.52
-// Quiet margin around the white QR area - was 16px, tightened to 8px
-// after visual review found it too thick relative to the QR itself.
-// This is a purely cosmetic CSS padding layer, NOT what actually
-// guarantees the ISO quiet-zone minimum - that's marginSize={4} on
-// QRCodeSVG itself below, which draws 4 modules of quiet zone as part
-// of the QR's own encoded size regardless of this padding value. 8px
-// stays a real, visible margin (not a hairline) while giving the QR
-// noticeably more of the white area than 16px did.
-const FULL_CARD_QR_QUIET_MARGIN_PX = 8
-// Space reserved below the QR for the "Scan For Smartphone"/"Pilot
-// View" caption - was 28px for the original single-line text-xs
-// caption; measured (real Playwright getBoundingClientRect, not
-// assumed) at 48.5px for the current two-line text-base version at
-// 1920x1080 (mt-2 8px + two 20.3px lines), rounded up to 50px with a
-// small safety margin. Using the larger viewport's own measurement
-// (1366x768 measures a shorter 38px, smaller font there) rather than
-// the smaller one, so the reserved space is never an underestimate at
-// the viewport where the caption is tallest in absolute terms.
-const FULL_CARD_CAPTION_ROW_PX = 50
-const FULL_CARD_QR_SIZE_FLOOR_PX = 60
+// Phone-mockup image for the standalone QR slide's top zone (see
+// PilotQrCard below) - static bundled asset, same convention as this
+// app's other static images (e.g. src/config/media.ts's landing-page
+// photo: public/images/<file>.<ext>, referenced at runtime as
+// /images/<file>.<ext>, Vite serves public/ at the site root
+// unchanged). Portrait PNG showing the /pilot PWA on a phone, rendered
+// with object-contain (proportional, never cropped/stretched) below.
+const PILOT_PHONE_MOCKUP_SRC = '/images/pilot-app-phone-mockup.png'
 
-function computeFullCardQrSizePx(params: {
-  windowWidthPx: number
-  displayWidthCm: number | null
-  cardWidthPx: number
-  cardHeightPx: number
-}): number {
-  const { windowWidthPx, displayWidthCm, cardWidthPx, cardHeightPx } = params
+// QR sizing for the standalone slide's bottom strip (Ops Panel's
+// internal rotation, 'qr' state) - deliberately NOT computeQrSizePx
+// above (that solves the small 177x177px Runway In Use/Circuit-square
+// problem) NOR the original centered full-card version this replaced
+// (see git history - that filled most of the card; this slide now
+// dedicates its top ~80% to a phone mockup image instead, leaving only
+// a bottom strip, shared with the caption, for the QR). Same
+// display_width_cm plumbing reused verbatim - still a genuine physical-
+// screen fact, unrelated to which box the QR sits in.
+//
+// Sized top-down from the physical cm target (same shape as
+// computeFullCardQrSizePx), NOT from a CSS-fixed square measured via
+// ref - an earlier version of this function tried "give the outer box
+// a fixed Tailwind h-20/sm:h-24 aspect-square size via CSS, then fit
+// the QR inside whatever that measures to" and hit two real problems:
+// (1) a Tailwind h-* + aspect-square item inside a flex ROW can have
+// its cross-axis (height) compressed by the browser's aspect-ratio/
+// flex-shrink interaction even with flex-shrink-0 set, confirmed via
+// Playwright - it measured 72px at 1366px width instead of the
+// intended 96px; (2) even at the sizes that DID apply, a fixed ~96px
+// box physically cannot fit a 6cm QR at any normal display_width_cm
+// (measured 4.8-4.9cm, under the 6cm floor, purely from the box being
+// too small - nothing to do with the cm math itself). Computing the
+// outer square's own pixel size FROM the cm target first (clamped only
+// against a sane share of the card's total height, not an arbitrary
+// fixed token) fixes both at once.
+const QR_STRIP_TARGET_CM = 6
+const QR_STRIP_QUIET_MARGIN_PX = 6
+const QR_STRIP_SIZE_FLOOR_PX = 60
+// Bottom strip's own height is capped at ~28% of the full card height
+// (spec calls for a "~20-25%" strip) - a little headroom above 25% so
+// the strip can still hit QR_STRIP_TARGET_CM on shorter viewports
+// before falling back to this cap, without letting the strip balloon
+// past what still reads as "top image zone dominates."
+const QR_STRIP_MAX_HEIGHT_SHARE = 0.28
+
+function computeQrStripSquarePx(params: { windowWidthPx: number; displayWidthCm: number | null; cardHeightPx: number }): number {
+  const { windowWidthPx, displayWidthCm, cardHeightPx } = params
 
   const effectiveDisplayWidthCm = displayWidthCm ?? DISPLAY_WIDTH_FALLBACK_CM
   if (displayWidthCm === null && shouldLogQrSizingWarnings()) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[RightInfoPanel] tenants.display_width_cm is not set - assuming ${DISPLAY_WIDTH_FALLBACK_CM}cm (~43in) for the standalone Pilot App QR card. Set it in /developertools for an accurate physical size.`
+      `[RightInfoPanel] tenants.display_width_cm is not set - assuming ${DISPLAY_WIDTH_FALLBACK_CM}cm (~43in) for the standalone Pilot App QR strip. Set it in /developertools for an accurate physical size.`
     )
   }
 
   const pxPerCm = windowWidthPx / effectiveDisplayWidthCm
-  const targetPx = FULL_CARD_TARGET_QR_CM * pxPerCm
+  const targetSquarePx = QR_STRIP_TARGET_CM * pxPerCm + 2 * QR_STRIP_QUIET_MARGIN_PX
 
-  const maxFromWidth = cardWidthPx - 2 * FULL_CARD_QR_QUIET_MARGIN_PX
-  const maxFromHeight = cardHeightPx - FULL_CARD_CAPTION_ROW_PX - 2 * FULL_CARD_QR_QUIET_MARGIN_PX
+  const maxFromCard = cardHeightPx * QR_STRIP_MAX_HEIGHT_SHARE
 
-  const clamped = Math.min(targetPx, maxFromWidth, maxFromHeight)
-  const finalSize = Math.max(FULL_CARD_QR_SIZE_FLOOR_PX, Math.floor(clamped))
+  // Math.ceil, not floor - flooring the OUTER square (which still has
+  // the quiet margin subtracted off afterwards for the actual QR SVG
+  // size) was rounding the achieved cm size down to just under the 6cm
+  // target/floor (5.96cm measured, not 6.0cm) - confirmed via
+  // Playwright. Ceil keeps the achieved size at-or-just-above the
+  // target instead of a rounding-driven undershoot.
+  const clamped = Math.min(targetSquarePx, maxFromCard)
+  const finalSize = Math.max(QR_STRIP_SIZE_FLOOR_PX + 2 * QR_STRIP_QUIET_MARGIN_PX, Math.ceil(clamped))
+  const finalQrPx = finalSize - 2 * QR_STRIP_QUIET_MARGIN_PX
 
-  if (finalSize / pxPerCm < MIN_RELIABLE_QR_CM && shouldLogQrSizingWarnings()) {
+  if (finalQrPx / pxPerCm < MIN_RELIABLE_QR_CM && shouldLogQrSizingWarnings()) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[RightInfoPanel] Standalone Pilot App QR card clamped to ${(finalSize / pxPerCm).toFixed(1)}cm - under the ${MIN_RELIABLE_QR_CM}cm reliable-scan floor. Showing it anyway rather than hiding it; this card's box is normally generous (~368x540px at 1920x1080), so this would only fire on a genuinely small/narrow Ops Panel column or an inaccurate display_width_cm.`
+      `[RightInfoPanel] Standalone Pilot App QR strip clamped to ${(finalQrPx / pxPerCm).toFixed(1)}cm - under the ${MIN_RELIABLE_QR_CM}cm reliable-scan floor. Showing it anyway rather than hiding it; this would only fire on a genuinely short Ops Panel column or an inaccurate display_width_cm.`
     )
   }
 
+  // Returns the OUTER white square's px size (quiet margin included) -
+  // callers derive the QR SVG's own size as size - 2*QR_STRIP_QUIET_MARGIN_PX.
   return finalSize
 }
 
@@ -668,38 +676,43 @@ function NotamMeasurementPass({
 }
 
 // Standalone Pilot App QR rotation card - one of RightInfoPanel's own
-// rotation states (see rotationStates below), given the exact same full
-// card footprint as AutoNotamsFullPanel above (own h-full bordered/
-// rounded/padded card, sized by the SAME parent box - not the small
-// 177x177px Runway In Use/Circuit square, which this component has
-// nothing to do with). Self-contained ref + useLayoutEffect measurement
-// (same shape as every other measuring component in this file) rather
-// than reading sizing from RightInfoPanel's own top-level state,
-// because this card mounts fresh each time the carousel rotates onto
-// it (the ternary swaps components, not CSS-hide - same as
-// AutoNotamsFullPanel/the 'ops' branch already do) - it needs to
-// measure its own real box on ITS OWN mount, not rely on a
-// continuously-updated ref elsewhere in a component that isn't
-// currently rendering it.
+// rotation states (see rotationStates below). Now renders full COLUMN
+// height (not just the card footprint AutoNotamsFullPanel gets) while
+// this slide is showing - see onQrSlideChange/RightInfoPanelProps'
+// own comment and Clubhouse1Template.tsx for the sibling
+// (GasPricesPanel) hide/show half of that mechanism; this component
+// itself doesn't know or care that its parent column happens to be
+// taller during its own mount, it just fills h-full same as always.
+//
+// Layout: top zone (flex-1, the phone mockup image, proportion
+// governed entirely by the QR strip's own fixed height below claiming
+// the rest - no explicit 75/80% split coded anywhere, letting flex-1
+// naturally absorb "however much is left" keeps this correct at both
+// tested viewports without two separate hardcoded percentages that
+// could drift out of sync) + bottom strip (fixed-height row, caption
+// left/QR right).
+//
+// QR sizing here is deliberately NOT computeFullCardQrSizePx (that
+// function's own width/height-clamp shape assumed a centered QR that
+// could claim most of the card - this strip's QR box is small,
+// square, and right-aligned instead). The white QR square's OUTER
+// size is set by CSS alone (h-full aspect-square on the strip's own
+// row height, measured via ref for its real resulting px), then
+// computeQrStripSizePx sizes the QR SVG itself to fit within that
+// square net of quiet-margin, same physical-cm-target approach as
+// before just against a smaller box.
 function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX.Element {
-  const contentRef = useRef<HTMLDivElement>(null)
-  const [qrSizePx, setQrSizePx] = useState<number>(() => {
-    if (typeof window === 'undefined') return FULL_CARD_QR_SIZE_FLOOR_PX
-    return Math.max(
-      FULL_CARD_QR_SIZE_FLOOR_PX,
-      Math.floor((FULL_CARD_TARGET_QR_CM * window.innerWidth) / DISPLAY_WIDTH_FALLBACK_CM)
-    )
-  })
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [squarePx, setSquarePx] = useState<number>(QR_STRIP_SIZE_FLOOR_PX + 2 * QR_STRIP_QUIET_MARGIN_PX)
 
   useLayoutEffect(() => {
     function recompute() {
-      const el = contentRef.current
+      const el = cardRef.current
       if (!el) return
-      setQrSizePx(
-        computeFullCardQrSizePx({
+      setSquarePx(
+        computeQrStripSquarePx({
           windowWidthPx: window.innerWidth,
           displayWidthCm,
-          cardWidthPx: el.clientWidth,
           cardHeightPx: el.clientHeight,
         })
       )
@@ -709,51 +722,54 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
     return () => window.removeEventListener('resize', recompute)
   }, [displayWidthCm])
 
+  const qrSizePx = squarePx - 2 * QR_STRIP_QUIET_MARGIN_PX
+
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      {/* justify-end (was justify-center) - pushes the QR to the bottom
-          of this flex-1 area, right above the caption, so all the
-          area's own spare vertical space (however much there ends up
-          being) concentrates ABOVE the QR instead of splitting evenly
-          above/below it. That reserved space is intentionally left
-          empty here - not filled with anything - for a smartphone image
-          planned for a future round. Doesn't affect
-          computeFullCardQrSizePx's own available-height math at all;
-          that's about how much TOTAL space this area has, not where
-          within it the QR sits. */}
-      <div ref={contentRef} className="flex min-h-0 flex-1 flex-col items-center justify-end gap-2">
-        {/* Same white-quiet-zone-background pattern as the small
-            square's own (paused) QR rendering - FULL_CARD_QR_QUIET_MARGIN_PX
-            is CSS padding on this white box itself (white space between
-            its own outer edge and the QR SVG inside it), purely
-            cosmetic breathing room on top of the real ISO quiet-zone
-            guarantee, which comes entirely from marginSize={4} on
-            QRCodeSVG below - that draws 4 modules of quiet zone as part
-            of the QR's own encoded size, independent of this padding
-            value, so tightening this padding never risks the ISO
-            minimum. */}
+    <div ref={cardRef} className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
+      {/* Top zone - phone mockup image, contain (never crop/stretch),
+          centered. min-h-0 lets this shrink below its image's natural
+          size on a short viewport instead of overflowing, same fix
+          shape used throughout this file's other flex children. */}
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+        <img
+          src={PILOT_PHONE_MOCKUP_SRC}
+          alt="Pilot App preview on a smartphone"
+          className="h-full max-h-full w-full max-w-full object-contain"
+        />
+      </div>
+
+      {/* Bottom strip - caption left, QR right. Fixed height (not
+          flex-1) so the top image zone above gets "everything else",
+          matching the ~75-80/20-25 split from spec without two
+          hardcoded percentages that could drift apart on resize. */}
+      <div className="mt-4 flex flex-shrink-0 items-center justify-between gap-4">
+        {/* Same label style as the previous centered caption
+            (uppercase tracking-[0.25em] text-muted-500) - left-aligned
+            here instead of centered, stacked over two lines to read
+            naturally in a narrower left-hand column now that the QR
+            sits beside it rather than beneath it. */}
+        <div className="text-left text-base uppercase leading-tight tracking-[0.25em] text-muted-500">
+          <div>Scan For</div>
+          <div>Shobdon Pilot App</div>
+        </div>
+        {/* Explicit width+height (in px, from computeQrStripSquarePx),
+            not a Tailwind fixed-height + aspect-square combo - that
+            combination measured SMALLER than intended inside this flex row (a real
+            aspect-ratio/flex-shrink interaction, confirmed via
+            Playwright, not just a theoretical concern - see
+            computeQrStripSquarePx's own comment for the full story),
+            so the outer box's real pixel size is computed in JS and
+            applied directly instead. Same white-quiet-zone-background
+            pattern as the full-card version - QR_STRIP_QUIET_MARGIN_PX
+            is purely cosmetic CSS padding; the real ISO quiet-zone
+            guarantee is entirely marginSize={4} on QRCodeSVG below,
+            independent of this padding value. */}
         <div
-          className="flex items-center justify-center rounded-3xl bg-white"
-          style={{ padding: FULL_CARD_QR_QUIET_MARGIN_PX }}
+          className="flex flex-shrink-0 items-center justify-center rounded-2xl bg-white"
+          style={{ width: squarePx, height: squarePx, padding: QR_STRIP_QUIET_MARGIN_PX }}
         >
           <QRCodeSVG value={PILOT_APP_URL} size={qrSizePx} level="M" marginSize={4} />
         </div>
-      </div>
-      {/* Same label style as "Runway"/"Circuit" elsewhere in this panel
-          (uppercase tracking-[0.25em] text-muted-500, same weight - no
-          font-weight utility here, matching those captions' own
-          default/regular weight) - just larger (text-base, was text-xs)
-          and split across two lines for visibility, per explicit
-          instruction. Break is "Scan For Smartphone" / "Pilot View" -
-          the natural phrase boundary, and (measured, not assumed) the
-          longer of the two lines - confirmed comfortably narrower than
-          the card at both 1920x1080 and 1366x768, see this round's own
-          report for the real numbers. leading-tight keeps the two lines
-          close together as one caption block rather than reading as
-          separately spaced. */}
-      <div className="mt-2 flex-shrink-0 text-center text-base uppercase leading-tight tracking-[0.25em] text-muted-500">
-        <div>Scan For Smartphone</div>
-        <div>Pilot View</div>
       </div>
     </div>
   )
@@ -778,9 +794,27 @@ interface RightInfoPanelProps {
   // tenant's real safety notices in that scenario. Every existing
   // caller (the real public dashboard) omits this and is unaffected.
   opsPanelData?: OpsPanelPublic | null
+  // Cross-component coordination for the full-height 'qr' slide (see
+  // this file's own rotationStates/currentRotationState below) - fired
+  // whenever the currently-showing rotation state changes between "the
+  // qr slide" and "anything else". Deliberately a plain boolean
+  // callback prop, not a shared context/lifted-state rewrite: RightInfoPanel
+  // and GasPricesPanel are direct siblings under ONE parent
+  // (Clubhouse1Template.tsx), and RightInfoPanel already owns its own
+  // rotation timing entirely internally (matches this file's own
+  // established "self-contained, self-managed" convention, same as its
+  // self-fetch above) - a callback that only NOTIFIES the parent, without
+  // requiring RightInfoPanel to give up control of its own timer/state to
+  // an external store, is the minimal-footprint fit here. A context would
+  // suit a genuinely deep/broad audience (this file's own WeatherContext
+  // import is exactly that shape, many unrelated consumers) - two direct
+  // siblings under one parent don't need that reach. Optional/undefined-safe
+  // - every caller that doesn't pass it (ClassicTemplate.tsx, Clubhouse2Template.tsx,
+  // neither of which pairs this component with Gas Prices) is unaffected.
+  onQrSlideChange?: (isQrSlide: boolean) => void
 }
 
-export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPanelProps = {}): JSX.Element {
+export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChange }: RightInfoPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
 
   // Self-contained fetch of the public config, matching MediaPanel.tsx's
@@ -958,6 +992,23 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   }, [notamsOnly, rotationStates.length, opsPanel?.notamsOpsDurationSeconds, opsPanel?.notamsFullDurationSeconds])
 
   const currentRotationState = rotationStates[rotationIndex % rotationStates.length]
+
+  // Notify the parent (Clubhouse1Template.tsx) whenever the qr slide
+  // starts/stops showing - see onQrSlideChange's own prop comment for
+  // why this is a plain notification callback rather than a bigger
+  // architectural change. Effect (not called inline during render) so
+  // it never fires the parent's own setState synchronously during
+  // RightInfoPanel's render pass - React would warn/misbehave on a
+  // parent state update triggered mid-child-render otherwise. Depends
+  // on the actual boolean value (not the whole currentRotationState
+  // object, which is a new object reference every render regardless of
+  // whether the type actually changed) so this only actually calls the
+  // callback on genuine ops<->qr<->notamsFull transitions, not on every
+  // one of this component's own re-renders.
+  const isQrSlide = currentRotationState.type === 'qr'
+  useEffect(() => {
+    onQrSlideChange?.(isQrSlide)
+  }, [isQrSlide, onQrSlideChange])
 
   // enabled === false explicitly excludes a row from display entirely
   // (not greyed out, not counted toward "+N more" - simply absent from
