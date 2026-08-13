@@ -269,18 +269,22 @@ const QR_CARD_DURATION_SECONDS = 10
 // warning) is reused verbatim below - that part is a genuine physical-
 // screen fact, unrelated to which box the QR happens to sit in.
 //
-// FULL_CARD_TARGET_QR_CM (14cm, not the small square's 9cm) - this much
-// bigger box means there's no reason to stay small: 14cm sits in the
-// middle of the requested 12-15cm range, and at 1920x1080/110cm
-// (17.45px/cm) that's ~244px against a 368px-wide/~500px-tall-after-
-// caption box - comfortable margin either side, not pinned to the edge
-// of what fits like the small square's 9cm often is.
-const FULL_CARD_TARGET_QR_CM = 14
-// Quiet margin around the white QR area - bigger than the small
-// square's 10px (QR_QUIET_MARGIN_PX), proportional to this card being
-// substantially larger; still a real, visible dark-bg-card margin, not
-// a hairline.
-const FULL_CARD_QR_QUIET_MARGIN_PX = 16
+// FULL_CARD_TARGET_QR_CM - was 14cm (see git history for the original
+// full reasoning); reduced 20% after visual review found it slightly
+// too large relative to the rest of the card - 14 * 0.8 = 11.2cm
+// exactly, not a re-guessed round number. Still comfortably clear of
+// MIN_RELIABLE_QR_CM (6cm) - see this round's own real measured figures
+// wherever this change is reported, not assumed.
+const FULL_CARD_TARGET_QR_CM = 11.2
+// Quiet margin around the white QR area - was 16px, tightened to 8px
+// after visual review found it too thick relative to the QR itself.
+// This is a purely cosmetic CSS padding layer, NOT what actually
+// guarantees the ISO quiet-zone minimum - that's marginSize={4} on
+// QRCodeSVG itself below, which draws 4 modules of quiet zone as part
+// of the QR's own encoded size regardless of this padding value. 8px
+// stays a real, visible margin (not a hairline) while giving the QR
+// noticeably more of the white area than 16px did.
+const FULL_CARD_QR_QUIET_MARGIN_PX = 8
 // Space reserved below the QR for the "Scan For Smartphone Pilot View"
 // caption - text-xs (matches "Runway"/"Circuit" elsewhere in this file)
 // plus its own margin-top, real but small relative to this card's size.
@@ -703,10 +707,14 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
       <div ref={contentRef} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
         {/* Same white-quiet-zone-background pattern as the small
             square's own (paused) QR rendering - FULL_CARD_QR_QUIET_MARGIN_PX
-            is the visible dark-bg-card margin between this box's outer
-            edge and the white area, marginSize={4} on QRCodeSVG itself
-            additionally draws the ISO-spec-minimum 4 modules of quiet
-            zone as part of the encoded QR. */}
+            is CSS padding on this white box itself (white space between
+            its own outer edge and the QR SVG inside it), purely
+            cosmetic breathing room on top of the real ISO quiet-zone
+            guarantee, which comes entirely from marginSize={4} on
+            QRCodeSVG below - that draws 4 modules of quiet zone as part
+            of the QR's own encoded size, independent of this padding
+            value, so tightening this padding never risks the ISO
+            minimum. */}
         <div
           className="flex items-center justify-center rounded-3xl bg-white"
           style={{ padding: FULL_CARD_QR_QUIET_MARGIN_PX }}
