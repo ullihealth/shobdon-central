@@ -749,16 +749,15 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
           image's narrower column, which is what actually maximizes the
           gap between the (now larger) caption text and the QR. */}
       <div className="mt-4 flex flex-shrink-0 items-center justify-between gap-4">
-        {/* Same uppercase/tracking/color caption style as before, just
-            bigger (text-2xl, was text-base) per explicit instruction to
-            make it noticeably larger - still 4 short lines (each line
-            independently short enough that a bigger font doesn't risk
-            wrapping within its own line). left-aligned, anchored to the
-            strip's own left edge via justify-between above (not
-            centered with the QR as a group anymore), which is the
-            "shift left" this round asked for relative to the previous
-            centered version. */}
-        <div className="text-left text-2xl uppercase leading-tight tracking-[0.25em] text-muted-500">
+        {/* Same uppercase/tracking/color caption style as before.
+            text-[22px] (was text-2xl/24px) - the previous round's
+            increase read slightly too large; nudged down 2px, an
+            arbitrary-value class since Tailwind's default scale has no
+            step between text-xl (20px) and text-2xl (24px). Position/
+            spacing/alignment otherwise untouched - still 4 short lines,
+            left-aligned, anchored to the strip's own left edge via
+            justify-between above. */}
+        <div className="text-left text-[22px] uppercase leading-tight tracking-[0.25em] text-muted-500">
           <div>Scan</div>
           <div>For</div>
           <div>Shobdon</div>
