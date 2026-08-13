@@ -19,7 +19,24 @@ const PILOT_APP_URL = 'https://shobdon.airfieldcentral.com/pilot'
 // squares stay matched-size exactly as before), purely gated so the QR
 // itself can come back with a one-line flip once there's a decision,
 // with no rebuilding.
+//
+// This flag ONLY controls the small Runway In Use/Circuit square's own
+// QR-vs-CIRCUIT-text content - explicitly left false, untouched, by the
+// new standalone QR rotation card below (QR_CARD_ENABLED). Flipping
+// THIS flag on would also resurrect the small square's QR, which was
+// explicitly told to stay as-is/unrelated to that work - kept as two
+// separate flags specifically so the two features can be toggled
+// independently rather than one switch controlling both.
 const QR_ENABLED = false
+
+// New standalone QR rotation card (Ops Panel's internal carousel) -
+// separate flag from QR_ENABLED above on purpose (see that constant's
+// own comment for why they can't share one switch). Defaults true so
+// this round's work is live/testable now; flip to false to pull the
+// card out of rotation entirely (omitted from rotationStates below,
+// not just hidden) with no rebuilding, same one-line-flip convenience
+// QR_ENABLED already established.
+const QR_CARD_ENABLED = true
 
 type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -81,8 +98,10 @@ interface AutoNotam {
 // identity (cardIndex) rather than being a bare type tag, so the render
 // branch can look up which of potentially many notamsFull cards is
 // currently showing. See the main component's rotationStates comment
-// for the full "why".
-type RotationState = { type: 'ops' } | { type: 'notamsFull'; cardIndex: number }
+// for the full "why". 'qr' added for the standalone Pilot App QR
+// rotation card - a single fixed entry, same shape as 'ops', not a
+// per-instance identity like 'notamsFull' needs.
+type RotationState = { type: 'ops' } | { type: 'qr' } | { type: 'notamsFull'; cardIndex: number }
 
 // This file's own existing status-token classes (already used for the
 // NOTAMS "+N more" indicator below), not CompassPanel.tsx's raw Tailwind
@@ -220,6 +239,83 @@ function computeQrSizePx(params: {
     // eslint-disable-next-line no-console
     console.warn(
       `[RightInfoPanel] Pilot App QR clamped to ${(finalSize / pxPerCm).toFixed(1)}cm to keep the matched Runway In Use/QR squares within the row and protect Notices' available space - under the ${MIN_RELIABLE_QR_CM}cm reliable-scan floor. Showing it anyway rather than hiding it; consider a taller/wider Ops Panel column or confirming display_width_cm is accurate for this tenant.`
+    )
+  }
+
+  return finalSize
+}
+
+// Standalone Pilot App QR rotation card - deliberately its own fixed
+// duration, not a reuse of notamsFullDurationSeconds (that field is
+// semantically "NOTAMs," and reusing it would tie QR screen time to a
+// setting an admin thinks only controls NOTAM display). Hardcoded for
+// now rather than a new tenant-configurable column/migration - can
+// become one later without disturbing anything else here. 10s, not the
+// 5s other cards default to: a QR needs meaningfully more than a
+// glance-and-read duration for a genuine "notice it, get phone out,
+// open camera, scan" cold-start flow - 10s (2x the other cards'
+// default) is a round, easy-to-explain floor without disproportionately
+// stretching the total cycle at high NOTAM counts.
+const QR_CARD_DURATION_SECONDS = 10
+
+// Full-card QR sizing (Ops Panel's internal rotation, standalone 'qr'
+// state) - deliberately NOT computeQrSizePx above. That formula solves
+// a different problem entirely: squeezing a QR into a 177x177px square
+// that shares its row with Runway In Use and must leave room for
+// Notices below in the same small card. None of that applies here -
+// this card gets its own full ~368x540px box (measured live via
+// Playwright at 1920x1080 before writing this), nothing else competing
+// for the space. display_width_cm plumbing (fetch/null-fallback/dev-
+// warning) is reused verbatim below - that part is a genuine physical-
+// screen fact, unrelated to which box the QR happens to sit in.
+//
+// FULL_CARD_TARGET_QR_CM (14cm, not the small square's 9cm) - this much
+// bigger box means there's no reason to stay small: 14cm sits in the
+// middle of the requested 12-15cm range, and at 1920x1080/110cm
+// (17.45px/cm) that's ~244px against a 368px-wide/~500px-tall-after-
+// caption box - comfortable margin either side, not pinned to the edge
+// of what fits like the small square's 9cm often is.
+const FULL_CARD_TARGET_QR_CM = 14
+// Quiet margin around the white QR area - bigger than the small
+// square's 10px (QR_QUIET_MARGIN_PX), proportional to this card being
+// substantially larger; still a real, visible dark-bg-card margin, not
+// a hairline.
+const FULL_CARD_QR_QUIET_MARGIN_PX = 16
+// Space reserved below the QR for the "Scan For Smartphone Pilot View"
+// caption - text-xs (matches "Runway"/"Circuit" elsewhere in this file)
+// plus its own margin-top, real but small relative to this card's size.
+const FULL_CARD_CAPTION_ROW_PX = 28
+const FULL_CARD_QR_SIZE_FLOOR_PX = 60
+
+function computeFullCardQrSizePx(params: {
+  windowWidthPx: number
+  displayWidthCm: number | null
+  cardWidthPx: number
+  cardHeightPx: number
+}): number {
+  const { windowWidthPx, displayWidthCm, cardWidthPx, cardHeightPx } = params
+
+  const effectiveDisplayWidthCm = displayWidthCm ?? DISPLAY_WIDTH_FALLBACK_CM
+  if (displayWidthCm === null && shouldLogQrSizingWarnings()) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[RightInfoPanel] tenants.display_width_cm is not set - assuming ${DISPLAY_WIDTH_FALLBACK_CM}cm (~43in) for the standalone Pilot App QR card. Set it in /developertools for an accurate physical size.`
+    )
+  }
+
+  const pxPerCm = windowWidthPx / effectiveDisplayWidthCm
+  const targetPx = FULL_CARD_TARGET_QR_CM * pxPerCm
+
+  const maxFromWidth = cardWidthPx - 2 * FULL_CARD_QR_QUIET_MARGIN_PX
+  const maxFromHeight = cardHeightPx - FULL_CARD_CAPTION_ROW_PX - 2 * FULL_CARD_QR_QUIET_MARGIN_PX
+
+  const clamped = Math.min(targetPx, maxFromWidth, maxFromHeight)
+  const finalSize = Math.max(FULL_CARD_QR_SIZE_FLOOR_PX, Math.floor(clamped))
+
+  if (finalSize / pxPerCm < MIN_RELIABLE_QR_CM && shouldLogQrSizingWarnings()) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[RightInfoPanel] Standalone Pilot App QR card clamped to ${(finalSize / pxPerCm).toFixed(1)}cm - under the ${MIN_RELIABLE_QR_CM}cm reliable-scan floor. Showing it anyway rather than hiding it; this card's box is normally generous (~368x540px at 1920x1080), so this would only fire on a genuinely small/narrow Ops Panel column or an inaccurate display_width_cm.`
     )
   }
 
@@ -560,6 +656,76 @@ function NotamMeasurementPass({
   )
 }
 
+// Standalone Pilot App QR rotation card - one of RightInfoPanel's own
+// rotation states (see rotationStates below), given the exact same full
+// card footprint as AutoNotamsFullPanel above (own h-full bordered/
+// rounded/padded card, sized by the SAME parent box - not the small
+// 177x177px Runway In Use/Circuit square, which this component has
+// nothing to do with). Self-contained ref + useLayoutEffect measurement
+// (same shape as every other measuring component in this file) rather
+// than reading sizing from RightInfoPanel's own top-level state,
+// because this card mounts fresh each time the carousel rotates onto
+// it (the ternary swaps components, not CSS-hide - same as
+// AutoNotamsFullPanel/the 'ops' branch already do) - it needs to
+// measure its own real box on ITS OWN mount, not rely on a
+// continuously-updated ref elsewhere in a component that isn't
+// currently rendering it.
+function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX.Element {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [qrSizePx, setQrSizePx] = useState<number>(() => {
+    if (typeof window === 'undefined') return FULL_CARD_QR_SIZE_FLOOR_PX
+    return Math.max(
+      FULL_CARD_QR_SIZE_FLOOR_PX,
+      Math.floor((FULL_CARD_TARGET_QR_CM * window.innerWidth) / DISPLAY_WIDTH_FALLBACK_CM)
+    )
+  })
+
+  useLayoutEffect(() => {
+    function recompute() {
+      const el = contentRef.current
+      if (!el) return
+      setQrSizePx(
+        computeFullCardQrSizePx({
+          windowWidthPx: window.innerWidth,
+          displayWidthCm,
+          cardWidthPx: el.clientWidth,
+          cardHeightPx: el.clientHeight,
+        })
+      )
+    }
+    recompute()
+    window.addEventListener('resize', recompute)
+    return () => window.removeEventListener('resize', recompute)
+  }, [displayWidthCm])
+
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
+      <div ref={contentRef} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
+        {/* Same white-quiet-zone-background pattern as the small
+            square's own (paused) QR rendering - FULL_CARD_QR_QUIET_MARGIN_PX
+            is the visible dark-bg-card margin between this box's outer
+            edge and the white area, marginSize={4} on QRCodeSVG itself
+            additionally draws the ISO-spec-minimum 4 modules of quiet
+            zone as part of the encoded QR. */}
+        <div
+          className="flex items-center justify-center rounded-3xl bg-white"
+          style={{ padding: FULL_CARD_QR_QUIET_MARGIN_PX }}
+        >
+          <QRCodeSVG value={PILOT_APP_URL} size={qrSizePx} level="M" marginSize={4} />
+        </div>
+      </div>
+      {/* Same label style as "Runway"/"Circuit" elsewhere in this panel
+          (text-xs uppercase tracking-[0.25em] text-muted-500) - matched
+          deliberately, per explicit instruction, so this caption reads
+          consistently with the rest of the Ops Panel's caption
+          language rather than inventing a new style for one card. */}
+      <div className="mt-1 flex-shrink-0 text-center text-xs uppercase tracking-[0.25em] text-muted-500">
+        Scan For Smartphone Pilot View
+      </div>
+    </div>
+  )
+}
+
 interface RightInfoPanelProps {
   // When true, skips the A/B flip timer and the Runway Status/Circuit
   // Direction/Airfield Info cards entirely, always rendering just
@@ -683,8 +849,18 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // card", which stops working the moment there can be more than one.
   // 'notices' is gone entirely as its own state - Notices is part of
   // the single fixed 'ops' card now (see the render branch below).
+  //
+  // 'qr' spliced in right after 'ops', before any NOTAM entries - per
+  // explicit instruction, so it appears reliably early in every cycle
+  // regardless of how many NOTAM cards currently exist, rather than its
+  // wait-before-first-appearance scaling with NOTAM count the way it
+  // would at the end of the array. Omitted entirely (not just hidden)
+  // when QR_CARD_ENABLED is false, matching the same "don't include
+  // state you're not going to render" convention notamCardGroups
+  // already uses for zero NOTAMs.
   const rotationStates: RotationState[] = [
     { type: 'ops' },
+    ...(QR_CARD_ENABLED ? [{ type: 'qr' as const }] : []),
     ...(notamCardGroups ?? []).map((_, cardIndex) => ({ type: 'notamsFull' as const, cardIndex })),
   ]
   // Ref mirroring the latest rotationStates array, read inside the
@@ -732,7 +908,11 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
       const states = rotationStatesRef.current
       const state = states[index % states.length]
       const seconds =
-        state.type === 'ops' ? (opsPanel?.notamsOpsDurationSeconds ?? 5) : (opsPanel?.notamsFullDurationSeconds ?? 5)
+        state.type === 'ops'
+          ? (opsPanel?.notamsOpsDurationSeconds ?? 5)
+          : state.type === 'qr'
+            ? QR_CARD_DURATION_SECONDS
+            : (opsPanel?.notamsFullDurationSeconds ?? 5)
       timerRef.current = window.setTimeout(() => {
         index += 1
         setRotationIndex(index)
@@ -906,6 +1086,8 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
         )}
         {currentRotationState.type === 'notamsFull' ? (
           <AutoNotamsFullPanel notams={notamCardGroups?.[currentRotationState.cardIndex] ?? []} />
+        ) : currentRotationState.type === 'qr' ? (
+          <PilotQrCard displayWidthCm={displayWidthCm} />
         ) : (
           // Card 1 (fixed/static, never NOTAM content) - Runway In Use
           // and Airfield Info are flex-shrink-0 (content-sized, as
