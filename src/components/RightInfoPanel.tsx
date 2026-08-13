@@ -855,9 +855,12 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // runwayNumberFontPx (left square) - the runway number is now the
   // square's ONLY content (circuit direction moved to the right square,
   // this round), so it can run larger than when the two shared one
-  // square - ratio bumped from 0.34 to 0.55, re-measured to confirm
-  // still-visible padding on all sides at both 1920x1080 and 1366x768.
-  const runwayNumberFontPx = Math.max(18, Math.round(squareSize * 0.55))
+  // square - ratio bumped from 0.34 to 0.55 in an earlier round, then
+  // nudged back down to 0.53 after visual review found 0.55 (97px at
+  // 1920x1080) slightly overpowering - 0.53 lands at 94px there, a 3px
+  // reduction, re-measured to confirm padding stays clearly visible on
+  // all sides after the drop.
+  const runwayNumberFontPx = Math.max(18, Math.round(squareSize * 0.53))
   // circuitLabelFontPx (right square, QR paused) - "RIGHT"/"LEFT" and
   // "CIRCUIT" stacked on two lines; CIRCUIT (7 characters) is the wider
   // line regardless of direction, so it's the binding width case -
@@ -1054,14 +1057,14 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
                   </div>
                 )}
                 {/* Caption below the square, on the card's normal dark
-                    background - "Runway In Use" now (was "Pilots App",
-                    paired with the QR that's currently paused). Same
-                    label style as "Runway" on the left square, matched
+                    background - "Circuit" now (was "Runway In Use",
+                    which read oddly for a square whose content is the
+                    circuit direction, not "Pilots App" further back
+                    when it was still paired with the QR). Same label
+                    style as "Runway" on the left square, matched
                     caption row height (mt-1, single text-xs line) so
                     both columns still read as equal tiles. */}
-                <div className="mt-1 text-center text-xs uppercase tracking-[0.25em] text-muted-500">
-                  Runway In Use
-                </div>
+                <div className="mt-1 text-center text-xs uppercase tracking-[0.25em] text-muted-500">Circuit</div>
               </div>
             </div>
             {/* p-3/mt-1/text-2xl (was p-4/mt-2/text-3xl) - tightened
