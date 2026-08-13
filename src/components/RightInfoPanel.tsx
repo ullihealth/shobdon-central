@@ -269,13 +269,14 @@ const QR_CARD_DURATION_SECONDS = 10
 // warning) is reused verbatim below - that part is a genuine physical-
 // screen fact, unrelated to which box the QR happens to sit in.
 //
-// FULL_CARD_TARGET_QR_CM - was 14cm (see git history for the original
-// full reasoning); reduced 20% after visual review found it slightly
-// too large relative to the rest of the card - 14 * 0.8 = 11.2cm
-// exactly, not a re-guessed round number. Still comfortably clear of
-// MIN_RELIABLE_QR_CM (6cm) - see this round's own real measured figures
+// FULL_CARD_TARGET_QR_CM - was 14cm originally, then 11.2cm (14 * 0.8,
+// see git history), now a further ~15% down: 11.2 * 0.85 = 9.52cm
+// exactly, not re-guessed. This is the second compounded reduction from
+// the original 14cm (9.52/14 = 68% of the original) - getting closer to
+// MIN_RELIABLE_QR_CM (6cm) than either previous round was, though still
+// comfortably clear of it. See this round's own real measured figures
 // wherever this change is reported, not assumed.
-const FULL_CARD_TARGET_QR_CM = 11.2
+const FULL_CARD_TARGET_QR_CM = 9.52
 // Quiet margin around the white QR area - was 16px, tightened to 8px
 // after visual review found it too thick relative to the QR itself.
 // This is a purely cosmetic CSS padding layer, NOT what actually
@@ -710,7 +711,17 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div ref={contentRef} className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
+      {/* justify-end (was justify-center) - pushes the QR to the bottom
+          of this flex-1 area, right above the caption, so all the
+          area's own spare vertical space (however much there ends up
+          being) concentrates ABOVE the QR instead of splitting evenly
+          above/below it. That reserved space is intentionally left
+          empty here - not filled with anything - for a smartphone image
+          planned for a future round. Doesn't affect
+          computeFullCardQrSizePx's own available-height math at all;
+          that's about how much TOTAL space this area has, not where
+          within it the QR sits. */}
+      <div ref={contentRef} className="flex min-h-0 flex-1 flex-col items-center justify-end gap-2">
         {/* Same white-quiet-zone-background pattern as the small
             square's own (paused) QR rendering - FULL_CARD_QR_QUIET_MARGIN_PX
             is CSS padding on this white box itself (white space between
