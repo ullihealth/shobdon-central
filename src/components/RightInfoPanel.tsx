@@ -1066,7 +1066,17 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
   // grid row taller than the single-line runway value needed, leaving
   // visible empty space under that value. The "Runway In Use" label
   // itself already says everything "Open" was adding.
-  const runwayStatusValue = opsPanel ? opsPanel.activeRunwayEnd : '08/26'
+  // '--' (was '08/26') - the previous fallback used the airfield's full
+  // runway-PAIR designator (both physical ends), but this square only
+  // ever shows a single active runway END once real data loads (e.g.
+  // "26", 1-2 characters) - '08/26' is 5 characters, wider than
+  // runwayNumberFontPx's square/font ratio was ever tuned to fit, so it
+  // visibly overflowed and got clipped by the square's own
+  // overflow-hidden during the real (network-fetch-length) window
+  // before opsPanel loads on every page load. '--' matches the real
+  // field's own 1-2 character shape, so it renders at the exact same
+  // size as a real value - nothing to overflow.
+  const runwayStatusValue = opsPanel ? opsPanel.activeRunwayEnd : '--'
   const cards = [...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : [])]
 
   // Pilot App QR sizing - refs into the real rendered DOM (card 1's own
@@ -1136,6 +1146,23 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
   // reduction, re-measured to confirm padding stays clearly visible on
   // all sides after the drop.
   const runwayNumberFontPx = Math.max(18, Math.round(squareSize * 0.53))
+  // Defensive against a repeat of this round's '08/26' overflow bug -
+  // runwayNumberFontPx's 0.53 ratio was tuned by real measurement
+  // against a 1-2 character runway end (e.g. "26", occasionally "26L"
+  // with a suffix). It's normally never anything else (activeRunwayEnd
+  // is a controlled ATC field, and the fallback above is now the same
+  // 1-2 character shape), but if runwayStatusValue is ever LONGER than
+  // that for any reason not anticipated here (a future fallback change,
+  // an unexpected data value, anything), scale the font down
+  // proportionally to length instead of silently overflowing and
+  // relying on the square's own overflow-hidden to crop it into an
+  // illegible clipped fragment (which is exactly what '08/26' did).
+  // Only kicks in above 2 characters - the real/common case is
+  // completely unaffected (same font size as before).
+  const runwayDisplayFontPx =
+    runwayStatusValue.length <= 2
+      ? runwayNumberFontPx
+      : Math.max(12, Math.round(runwayNumberFontPx * (2 / runwayStatusValue.length)))
   // circuitLabelFontPx (right square, QR paused) - "RIGHT"/"LEFT" and
   // "CIRCUIT" stacked on two lines; CIRCUIT (7 characters) is the wider
   // line regardless of direction, so it's the binding width case -
@@ -1268,7 +1295,10 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
                         CLOSED
                       </div>
                     ) : (
-                      <div className="font-bold leading-none text-primary" style={{ fontSize: runwayNumberFontPx }}>
+                      <div
+                        className="whitespace-nowrap font-bold leading-none text-primary"
+                        style={{ fontSize: runwayDisplayFontPx }}
+                      >
                         {runwayStatusValue}
                       </div>
                     )}
