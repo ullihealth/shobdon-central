@@ -1,0 +1,32 @@
+-- Physical screen width (cm) of the real TV/monitor a tenant's dashboard
+-- runs on - needed because window.innerWidth only reports CSS pixel
+-- width, not physical size: a 1920x1080 43in TV and a 1920x1080 24in
+-- monitor report identically, but the Ops Panel QR tile
+-- (RightInfoPanel.tsx) needs to render at a real physical size to stay
+-- reliably scannable, so it has to know the actual screen width in cm to
+-- convert px -> cm correctly. No browser API exposes this - it has to be
+-- a stored, developer-set value.
+--
+-- Developer-editable only via /developertools (functions/api/tenant/
+-- developer-settings), no self-service UI - same "developer sets this on
+-- request, tenant never touches it" posture as arrow_tailwind_kt/
+-- arrow_crosswind_kt/arrow_headwind_kt (migration 0081), though those are
+-- edited via direct D1 update with no UI at all; this one gets a real
+-- GET/PUT control since it's expected to need setting for every new
+-- tenant onboarded (a QR feature is meaningless without it), not just
+-- occasional per-tenant correction requests.
+--
+-- Nullable, no DEFAULT - NULL is the genuine "not yet confirmed for this
+-- tenant" state, distinct from any real measured value (including one
+-- that happens to be small/large). RightInfoPanel.tsx falls back to an
+-- assumed 110cm (~43in) when null and logs a dev-mode console.warn so a
+-- missing value is never silently wrong.
+ALTER TABLE tenants ADD COLUMN display_width_cm REAL;
+
+-- Shobdon seeded to the same 110cm (~43in) placeholder RightInfoPanel.tsx
+-- assumes when this column is null - Jeff has not yet confirmed the real
+-- clubhouse screen's physical width. This value should be corrected (and
+-- this comment's own "placeholder" framing no longer accurate) once he
+-- has - not a real measurement yet, just carrying forward the same
+-- working assumption used for the original QR sizing calculation.
+UPDATE tenants SET display_width_cm = 110 WHERE slug = 'shobdon';

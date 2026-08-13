@@ -1,6 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { useWeather } from '../context/WeatherContext'
 import { NOTAMS_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+
+// Static, tenant-agnostic pilot-app URL - deliberately no query params or
+// session/tenant data (this renders on the public, unauthenticated TV
+// dashboard; the /pilot route itself resolves the tenant from whatever
+// subdomain a viewer's phone actually loads it on, same as every other
+// public route in this app - see resolveTenantHost.ts).
+const PILOT_APP_URL = 'https://shobdon.airfieldcentral.com/pilot'
+
+// Paused pending a design decision - see conversation history (the QR
+// tile was replaced with a plain "RIGHT/LEFT CIRCUIT" text tile in the
+// right square). Deliberately NOT ripping out computeQrSizePx,
+// tenants.display_width_cm (migration 0088), or the /developertools
+// DisplayWidthField that feeds it - all of that stays live and correct
+// underneath (squareSize below still derives from qrSizePx, so both
+// squares stay matched-size exactly as before), purely gated so the QR
+// itself can come back with a one-line flip once there's a decision,
+// with no rebuilding.
+const QR_ENABLED = false
 
 type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -76,6 +95,136 @@ const SEVERITY_DOT_CLASSES: Record<NotamSeverity, string> = {
 }
 
 const SEVERITY_ORDER: Record<NotamSeverity, number> = { critical: 0, warning: 1, info: 2 }
+
+// Pilot App QR sizing (dynamic NOTAM restructure's follow-on round) -
+// replaces the old fixed 1600px viewport-width breakpoint entirely.
+// window.innerWidth is CSS pixel width, not physical size - a 1920x1080
+// 43in TV and a 1920x1080 24in monitor report identically, but the QR
+// needs to be nearly double the physical size on the TV to stay
+// reliably scannable from a few feet away. There's no browser API for a
+// screen's real physical size, so it comes from tenants.display_width_cm
+// (migration 0088, developer-set per tenant, see DeveloperToolsPage.tsx's
+// DisplayWidthField) - null (not yet confirmed for this tenant) falls
+// back to DISPLAY_WIDTH_FALLBACK_CM with a dev-mode console.warn, so a
+// missing value is never silently wrong, just visibly assumed.
+//
+// pxPerCm = window.innerWidth / displayWidthCm, targetQrSizePx = 9 * that
+// (9cm - the middle of the 8-10cm reliable-scan range from the original
+// investigation). Clamped against the row's REAL measured available
+// space (both width - so Runway In Use never gets squeezed below a
+// readable minimum - and height - so Notices never loses the minimum
+// space it needs, the exact regression the old 1600px gate existed to
+// prevent) rather than hidden below a fixed breakpoint - a tenant on a
+// genuinely small display now gets the largest QR that actually fits,
+// always visible, instead of no QR at all below an arbitrary cutoff.
+// Still logs a dev-mode warning if even that clamped size can't reach
+// MIN_RELIABLE_QR_CM - visibility into a real constraint, not silent
+// under-sizing.
+const DISPLAY_WIDTH_FALLBACK_CM = 110
+const TARGET_QR_CM = 9
+const MIN_RELIABLE_QR_CM = 6
+// Empirically measured (real Playwright diagnostic, previous round): at
+// 1366x768 a Notices WRAPPER height of 157px was exactly what let
+// NotamsPanel's own compact mode fit one real entry + "+N more" rather
+// than truncating to zero (the bug that round fixed). Verified against
+// the same number here rather than re-guessing - an earlier draft of
+// this constant used ~96px (a rough content-area-only estimate) and
+// measurably under-protected Notices at this exact viewport, reproducing
+// the zero-entries regression the QR row's added height risks.
+const MIN_NOTICES_HEIGHT_PX = 157
+const ROW_GAP_PX = 12 // gap-3
+// Matched-square restyle - Runway In Use and the QR card are now equal
+// squares, each with its own label caption BELOW (not inside) the
+// square, so the two constants below replace the old asymmetric-row
+// chrome constants (MIN_RUNWAY_CARD_WIDTH_PX/QR_CARD_HORIZONTAL_CHROME_PX/
+// QR_CARD_VERTICAL_CHROME_PX) entirely rather than extending them - that
+// old math assumed Runway In Use filled the row's remaining width as a
+// rectangle, which no longer describes this layout at all.
+//
+// QR_QUIET_MARGIN_PX - the small dark-bg-card strip between the square's
+// outer edge and the white QR background (requirement: visible/
+// intentional, not a hairline, and the white area must never touch the
+// square's outer edge). Applied on all 4 sides, so it costs 2x in both
+// the width and height budgets below. Bumped from an initial 6px to 10px
+// after visual review asked for more breathing room on all sides, not
+// just one edge - the QR itself shrinks a little as a direct result
+// (see computeQrSizePx's own real measured trade-off, reported at the
+// time this was raised).
+const QR_QUIET_MARGIN_PX = 10
+// CAPTION_ROW_HEIGHT_PX - "RUNWAY"/"PILOTS APP" now live outside their
+// squares, as one shared caption row beneath both (mt-1 + a single line
+// of text-[9px] tracking-[0.2em] uppercase) - a real, if small, height
+// cost the row's total footprint still has to account for, subtracted
+// once (not per-card - both captions sit in the same horizontal strip).
+const CAPTION_ROW_HEIGHT_PX = 20
+const QR_SIZE_FLOOR_PX = 40
+
+// "Dev mode" for these warnings' purposes, deliberately broader than
+// bare import.meta.env.DEV - this whole app is developed/reviewed as a
+// `vite build` served by `wrangler pages dev` (this session's own
+// established convention, every round), never `vite dev`, so
+// import.meta.env.DEV alone is FALSE in every real local-review session
+// and these warnings would never fire where they're most needed. Same
+// "localhost/pages.dev preview = not real production" signal
+// resolveTenantHost.ts's own PAGES_PREVIEW_SUFFIX check already uses
+// server-side, reimplemented here for the client since functions/ and
+// src/ are separate builds with no shared import path.
+function shouldLogQrSizingWarnings(): boolean {
+  if (import.meta.env.DEV) return true
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname
+  return host === 'localhost' || host.endsWith('.pages.dev')
+}
+
+function computeQrSizePx(params: {
+  windowWidthPx: number
+  displayWidthCm: number | null
+  card1HeightPx: number
+  rowWidthPx: number
+  airfieldInfoHeightPx: number
+}): number {
+  const { windowWidthPx, displayWidthCm, card1HeightPx, rowWidthPx, airfieldInfoHeightPx } = params
+
+  const effectiveDisplayWidthCm = displayWidthCm ?? DISPLAY_WIDTH_FALLBACK_CM
+  if (displayWidthCm === null && shouldLogQrSizingWarnings()) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[RightInfoPanel] tenants.display_width_cm is not set - assuming ${DISPLAY_WIDTH_FALLBACK_CM}cm (~43in) for Pilot App QR sizing. Set it in /developertools for an accurate physical size.`
+    )
+  }
+
+  const pxPerCm = windowWidthPx / effectiveDisplayWidthCm
+  const targetQrSizePx = TARGET_QR_CM * pxPerCm
+
+  // Height constraint - how big can the (now square) card get before
+  // Notices, sharing card 1's total height below the shared caption row,
+  // drops under its own minimum.
+  const maxSquareFromHeight = card1HeightPx - airfieldInfoHeightPx - 2 * ROW_GAP_PX - MIN_NOTICES_HEIGHT_PX - CAPTION_ROW_HEIGHT_PX
+
+  // Width constraint - two EQUAL squares now share the row (matched-
+  // square restyle), so each gets at most half the row's width minus the
+  // gap between them - not "whatever Runway In Use doesn't need," which
+  // no longer applies now that Runway In Use is forced to match the QR
+  // square's size exactly rather than filling remaining space.
+  const maxSquareFromWidth = (rowWidthPx - ROW_GAP_PX) / 2
+
+  const maxSquareSize = Math.min(maxSquareFromHeight, maxSquareFromWidth)
+  // The square has to hold the QR SVG plus its own quiet margin on both
+  // sides - back that out to get the SVG's own actual max size.
+  const maxQrSizeFromSquare = maxSquareSize - 2 * QR_QUIET_MARGIN_PX
+
+  const clamped = Math.min(targetQrSizePx, maxQrSizeFromSquare)
+  const finalSize = Math.max(QR_SIZE_FLOOR_PX, Math.floor(clamped))
+
+  if (finalSize / pxPerCm < MIN_RELIABLE_QR_CM && shouldLogQrSizingWarnings()) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[RightInfoPanel] Pilot App QR clamped to ${(finalSize / pxPerCm).toFixed(1)}cm to keep the matched Runway In Use/QR squares within the row and protect Notices' available space - under the ${MIN_RELIABLE_QR_CM}cm reliable-scan floor. Showing it anyway rather than hiding it; consider a taller/wider Ops Panel column or confirming display_width_cm is accurate for this tenant.`
+    )
+  }
+
+  return finalSize
+}
 
 // Restructure (see this file's own carousel comments further down):
 // card 1 is now fixed/static (Runway In Use + Airfield Info + Notices,
@@ -443,6 +592,16 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // Skipped entirely when opsPanelData is provided (see that prop's own
   // comment).
   const [opsPanel, setOpsPanel] = useState<OpsPanelPublic | null>(opsPanelData ?? null)
+  // tenants.display_width_cm (migration 0088) - a top-level sibling of
+  // opsPanel on the public config response, not part of OpsPanelPublic
+  // itself (it's a tenant/hardware fact, not an ops-panel setting - see
+  // computeQrSizePx's own comment). Only available via this component's
+  // own self-fetch below; the opsPanelData prop path (DesignPage.tsx's
+  // admin preview) has no equivalent, so preview always falls back to
+  // DISPLAY_WIDTH_FALLBACK_CM - acceptable, that path is for checking
+  // overall look, not verifying real physical QR scan size on a tenant's
+  // actual TV.
+  const [displayWidthCm, setDisplayWidthCm] = useState<number | null>(null)
 
   useEffect(() => {
     if (opsPanelData !== undefined) {
@@ -453,7 +612,10 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled) setOpsPanel(data?.opsPanel ?? null)
+        if (!cancelled) {
+          setOpsPanel(data?.opsPanel ?? null)
+          setDisplayWidthCm(typeof data?.displayWidthCm === 'number' ? data.displayWidthCm : null)
+        }
       })
       .catch(() => {})
     return () => {
@@ -630,8 +792,79 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
   // visible empty space under that value. The "Runway In Use" label
   // itself already says everything "Open" was adding.
   const runwayStatusValue = opsPanel ? opsPanel.activeRunwayEnd : '08/26'
-  const circuitDirectionValue = `${circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left')} circuit`
   const cards = [...(airfieldInfoText ? [{ title: 'Airfield Info', value: airfieldInfoText }] : [])]
+
+  // Pilot App QR sizing - refs into the real rendered DOM (card 1's own
+  // root for total available height, the Runway In Use/QR row for
+  // available width, Airfield Info's own card for its real height) so
+  // computeQrSizePx clamps against actual layout rather than guessed
+  // constants. Declared unconditionally (before the notamsOnly early
+  // return below) per the rules of hooks - notamsOnly's own branch never
+  // renders card 1 at all, so these refs simply stay unattached/null
+  // there, which computeQrSizePx's own effect already guards against.
+  const card1RootRef = useRef<HTMLDivElement>(null)
+  const rowContainerRef = useRef<HTMLDivElement>(null)
+  const airfieldInfoCardRef = useRef<HTMLDivElement>(null)
+  const [qrSizePx, setQrSizePx] = useState<number>(() => {
+    // Synchronous initial guess (no DOM measurement available yet on
+    // first render) so the row has a real size to paint immediately -
+    // corrected, before the browser paints, by the layout effect below
+    // once refs are attached. Uses the fallback cm assumption
+    // unconditionally here (the tenant's real displayWidthCm hasn't
+    // loaded yet either); the effect re-runs once it has.
+    if (typeof window === 'undefined') return 120
+    return Math.max(QR_SIZE_FLOOR_PX, Math.floor((TARGET_QR_CM * window.innerWidth) / DISPLAY_WIDTH_FALLBACK_CM))
+  })
+
+  useLayoutEffect(() => {
+    function recompute() {
+      const card1El = card1RootRef.current
+      const rowEl = rowContainerRef.current
+      if (!card1El || !rowEl) return
+      setQrSizePx(
+        computeQrSizePx({
+          windowWidthPx: window.innerWidth,
+          displayWidthCm,
+          card1HeightPx: card1El.clientHeight,
+          rowWidthPx: rowEl.clientWidth,
+          airfieldInfoHeightPx: airfieldInfoCardRef.current?.clientHeight ?? 0,
+        })
+      )
+    }
+    recompute()
+    window.addEventListener('resize', recompute)
+    return () => window.removeEventListener('resize', recompute)
+  }, [displayWidthCm, cards.length, noticesForDisplay.length, opsPanel?.runwaysClosed])
+
+  // Matched-square restyle - the QR SVG's own clamped size plus its
+  // quiet margin on both sides is the canonical square size; Runway In
+  // Use's square just matches this value exactly (see the row's own
+  // render comment), not an independently-sized card.
+  const squareSize = qrSizePx + 2 * QR_QUIET_MARGIN_PX
+
+  // Text sizes scale proportionally with squareSize rather than using
+  // fixed Tailwind classes - found via real measurement (not assumed) in
+  // an earlier round that a fixed size correct at 1920x1080 (squareSize
+  // ~177px) overflowed with NEGATIVE padding at 1366x768 (squareSize
+  // ~81px, computeQrSizePx clamps the square smaller there to protect
+  // Notices) - the square's real size varies per-viewport/per-tenant by
+  // design, so a fixed px/rem size can't be correct at every size the
+  // square can actually end up; scaling proportionally keeps the same
+  // relative fit at any squareSize instead.
+  //
+  // runwayNumberFontPx (left square) - the runway number is now the
+  // square's ONLY content (circuit direction moved to the right square,
+  // this round), so it can run larger than when the two shared one
+  // square - ratio bumped from 0.34 to 0.55, re-measured to confirm
+  // still-visible padding on all sides at both 1920x1080 and 1366x768.
+  const runwayNumberFontPx = Math.max(18, Math.round(squareSize * 0.55))
+  // circuitLabelFontPx (right square, QR paused) - "RIGHT"/"LEFT" and
+  // "CIRCUIT" stacked on two lines; CIRCUIT (7 characters) is the wider
+  // line regardless of direction, so it's the binding width case -
+  // ratio calibrated by real measurement against both directions at
+  // 1920x1080 and 1366x768 (see this round's report for the actual
+  // numbers), not guessed.
+  const circuitLabelFontPx = Math.max(12, Math.round(squareSize * 0.19))
 
   // notamsOnly skips the "Ops Panel" heading/flip-state wrapper entirely -
   // NotamsPanel already renders its own complete, self-styled bordered
@@ -702,37 +935,152 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData }: RightInfoPa
           // than papering over the symptom - Runway In Use/Airfield
           // Info's OWN single-line values don't need p-5/mt-3's full
           // breathing room to stay readable.
-          <div className="flex h-full flex-col gap-3">
-            <div className="flex-shrink-0 rounded-3xl border border-border bg-card p-4">
-              <div className="text-xs uppercase tracking-[0.25em] text-muted-500">Runway In Use</div>
-              {opsPanel?.runwaysClosed ? (
-                // ATC override (migration 0054) - supersedes both values
-                // below as one combined message, not two separately-red
-                // cells: a circuit direction has no operational meaning
-                // for a closed runway. activeRunwayEnd/circuitDirection
-                // stay set underneath (see AtcControlPage.tsx's toggle
-                // comment), so this is purely a display swap.
-                <div className="mt-2 text-3xl font-semibold text-status-bad">RUNWAYS CLOSED</div>
-              ) : (
-                // flex, not grid-cols-2 (was an even 50/50 split) - a
-                // 2-character runway number doesn't need the same width
-                // as "Left circuit"/"Right circuit", and giving it half
-                // the row was exactly backwards: the runway number sat in
-                // a mostly-empty column while circuit direction was
-                // starved for room and wrapped. flex-shrink-0 sizes the
-                // runway number to its own content only; the circuit
-                // direction cell (flex-1) gets everything left over,
-                // which is what actually needs the extra width.
-                <div className="mt-2 flex items-center gap-4">
-                  <div className="flex-shrink-0 text-3xl font-semibold text-primary">{runwayStatusValue}</div>
-                  <div className="flex-1 text-3xl font-semibold text-primary">{circuitDirectionValue}</div>
+          <div className="flex h-full flex-col gap-3" ref={card1RootRef}>
+            {/* Runway In Use / Pilot App QR row - always rendered now
+                (the old fixed 1600px viewport-width breakpoint is gone
+                entirely, see computeQrSizePx's own comment). QR size is
+                an explicit px value computed from the tenant's real
+                physical screen width, clamped against this row's actual
+                measured space - so the row's own height is whatever that
+                clamped size needs, not driven by a flex ratio/CSS
+                percentage the way the previous round's QR row was. */}
+            {/* Matched-square restyle - Runway In Use and the QR card are
+                now two equal squares (width === height, and the two
+                match each other exactly), each with its own label
+                caption BELOW the square rather than a header above/
+                inside it. squareSize is derived from qrSizePx (the QR
+                is the scan-critical constraint computeQrSizePx already
+                solves for) plus its own quiet margin on both sides -
+                Runway In Use doesn't get an independent size, it just
+                matches whatever that comes out to, per spec ("sized to
+                match each other exactly regardless of content"). */}
+            <div className="flex flex-shrink-0 gap-3" ref={rowContainerRef}>
+              <div className="flex flex-col items-center" style={{ width: squareSize }}>
+                <div
+                  className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card"
+                  style={{ width: squareSize, height: squareSize }}
+                >
+                  {/* Number-only now (circuit direction moved to the
+                      right square, this round) - a single centered
+                      element, p-3 keeps it off the square's own edges
+                      at any squareSize. runwaysClosed shows "CLOSED"
+                      here instead - the right square keeps showing
+                      circuit direction regardless of closure (that text
+                      is still factually correct, it's just this square's
+                      big number that loses meaning when the runway
+                      itself is shut), so only this one element swaps. */}
+                  <div className="flex h-full w-full items-center justify-center p-3">
+                    {opsPanel?.runwaysClosed ? (
+                      // ATC override (migration 0054) - activeRunwayEnd
+                      // stays set underneath (see AtcControlPage.tsx's
+                      // toggle comment), this is purely a display swap.
+                      // "CLOSED" (6 characters) can't run as large as the
+                      // 2-character runway number and still fit on one
+                      // line - sized off circuitLabelFontPx instead (the
+                      // ratio already calibrated for a similar-length
+                      // word, "CIRCUIT", 7 characters, on the right
+                      // square) with the same headroom multiplier the
+                      // old two-line "RUNWAYS"/"CLOSED" state used.
+                      <div
+                        className="whitespace-nowrap font-bold leading-none text-status-bad"
+                        style={{ fontSize: circuitLabelFontPx * 1.3 }}
+                      >
+                        CLOSED
+                      </div>
+                    ) : (
+                      <div className="font-bold leading-none text-primary" style={{ fontSize: runwayNumberFontPx }}>
+                        {runwayStatusValue}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+                {/* Caption BELOW the square, outside its own container -
+                    replaces the old "RUNWAY IN USE" header entirely (no
+                    header inside/above the square anymore). Same label
+                    style as NOTICES/AIRFIELD INFO elsewhere in this
+                    panel (text-xs uppercase tracking-[0.25em]
+                    text-muted-500), matched font-size/weight/letter-
+                    spacing against the QR square's own "PILOTS APP"
+                    caption below so the two read as a deliberate pair. */}
+                <div className="mt-1 text-center text-xs uppercase tracking-[0.25em] text-muted-500">Runway</div>
+              </div>
+              <div className="flex flex-col items-center" style={{ width: squareSize }}>
+                {QR_ENABLED ? (
+                  // Outer square is the card's own dark bg-card
+                  // background; padding here is QR_QUIET_MARGIN_PX - a
+                  // real, visible (not hairline) dark margin between the
+                  // square's outer edge and the white QR area, so the
+                  // white background never touches the square's own
+                  // border.
+                  <div
+                    className="rounded-3xl border border-border bg-card"
+                    style={{ width: squareSize, height: squareSize, padding: QR_QUIET_MARGIN_PX }}
+                  >
+                    {/* White fills the rest of the square inside that
+                        margin - this is the QR's actual quiet zone
+                        background, not just decoration. marginSize={4} on
+                        QRCodeSVG itself additionally draws 4 modules of
+                        quiet zone as part of the encoded QR (ISO spec
+                        minimum), which scales correctly with module size
+                        regardless of how this white area is sized -
+                        belt-and-braces with the card's own dark margin. */}
+                    <div className="flex h-full w-full items-center justify-center rounded-3xl bg-white">
+                      <QRCodeSVG value={PILOT_APP_URL} size={qrSizePx} level="M" marginSize={4} />
+                    </div>
+                  </div>
+                ) : (
+                  // QR paused (see QR_ENABLED's own comment) - same
+                  // outer square (still bg-card, no white area at all
+                  // while paused), circuit direction stacked over two
+                  // rows instead. "CIRCUIT" (7 characters) is the wider
+                  // line regardless of direction - circuitLabelFontPx is
+                  // calibrated against it, see that constant's comment.
+                  <div
+                    className="flex flex-col items-center justify-center gap-1 overflow-hidden rounded-3xl border border-border bg-card p-3"
+                    style={{ width: squareSize, height: squareSize }}
+                  >
+                    <div
+                      className="whitespace-nowrap font-bold leading-none text-primary"
+                      style={{ fontSize: circuitLabelFontPx }}
+                    >
+                      {circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left').toUpperCase()}
+                    </div>
+                    <div
+                      className="whitespace-nowrap font-bold leading-none text-primary"
+                      style={{ fontSize: circuitLabelFontPx }}
+                    >
+                      CIRCUIT
+                    </div>
+                  </div>
+                )}
+                {/* Caption below the square, on the card's normal dark
+                    background - "Runway In Use" now (was "Pilots App",
+                    paired with the QR that's currently paused). Same
+                    label style as "Runway" on the left square, matched
+                    caption row height (mt-1, single text-xs line) so
+                    both columns still read as equal tiles. */}
+                <div className="mt-1 text-center text-xs uppercase tracking-[0.25em] text-muted-500">
+                  Runway In Use
+                </div>
+              </div>
             </div>
-            {cards.map((card) => (
-              <div key={card.title} className="flex-shrink-0 rounded-3xl border border-border bg-card p-4">
+            {/* p-3/mt-1/text-2xl (was p-4/mt-2/text-3xl) - tightened
+                alongside the QR row above, to give Notices back some of
+                the height the new row's own taller (QR-driven) footprint
+                costs it. Small/single-line content either way; doesn't
+                need the old full-size breathing room to stay readable.
+                ref on the first (only) card - airfieldInfoHeightPx in
+                computeQrSizePx needs a real measured height, and `cards`
+                is always 0 or 1 entries (see this const's own comment
+                above), so there's never more than one to attach it to. */}
+            {cards.map((card, index) => (
+              <div
+                key={card.title}
+                ref={index === 0 ? airfieldInfoCardRef : undefined}
+                className="flex-shrink-0 rounded-3xl border border-border bg-card p-3"
+              >
                 <div className="text-xs uppercase tracking-[0.25em] text-muted-500">{card.title}</div>
-                <div className="mt-2 text-3xl font-semibold text-primary">{card.value}</div>
+                <div className="mt-1 text-2xl font-semibold text-primary">{card.value}</div>
               </div>
             ))}
             <div className="min-h-0 flex-1">

@@ -441,6 +441,120 @@ function CaptureIntervalToggle(): JSX.Element {
   )
 }
 
+// Physical screen width (cm) of the real TV/monitor this tenant's
+// dashboard runs on (migration 0088, tenants.display_width_cm) - needed
+// because window.innerWidth only reports CSS pixel width, not physical
+// size (a 1920x1080 43in TV and a 1920x1080 24in monitor report
+// identically), and the Ops Panel QR tile (RightInfoPanel.tsx) needs a
+// real physical size to stay reliably scannable. Lives on tenants, not
+// ops_panel_state like the other controls on this page, but bundled into
+// the same developer-settings GET/PUT and this same page anyway - still
+// "developer sets this on request, no self-service" like everything
+// else here, just a different underlying table.
+//
+// Free-text number input + explicit Save (not save-on-blur/an immediate
+// toggle like this page's other controls) - unlike a fixed set of
+// buttons/a dropdown, a physical measurement is free-form and easy to
+// mistype, so an explicit confirm step before it round-trips matches
+// this page's existing "Saving.../Saved./error" status pattern without
+// firing a save on every keystroke or an accidental blur.
+//
+// Empty input saves null (explicit "not yet confirmed" - see migration
+// 0088's own comment), not 0 or an error - RightInfoPanel.tsx falls back
+// to an assumed 110cm and logs a dev-mode warning whenever this is null,
+// so leaving it unset is a real, supported state, not a mistake to block.
+function DisplayWidthField(): JSX.Element {
+  const [loading, setLoading] = useState(true)
+  const [savedValue, setSavedValue] = useState<number | null>(null)
+  const [inputValue, setInputValue] = useState('')
+  const [status, setStatus] = useState<SaveStatus>('idle')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(DEVELOPER_SETTINGS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const value = typeof data?.displayWidthCm === 'number' ? data.displayWidthCm : null
+        setSavedValue(value)
+        setInputValue(value === null ? '' : String(value))
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleSave() {
+    const trimmed = inputValue.trim()
+    const next = trimmed === '' ? null : Number(trimmed)
+    if (next !== null && (!Number.isFinite(next) || next <= 0)) {
+      setStatus('error')
+      return
+    }
+    setStatus('saving')
+    try {
+      const response = await fetch(DEVELOPER_SETTINGS_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayWidthCm: next }),
+      })
+      if (response.ok) {
+        setSavedValue(next)
+        setStatus('saved')
+      } else {
+        setStatus('error')
+      }
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  const dirty = !loading && inputValue.trim() !== (savedValue === null ? '' : String(savedValue))
+
+  return (
+    <div className="mt-10 rounded-2xl border border-dashed border-amber-700/50 bg-amber-950/10 p-8">
+      <div className="mb-1 text-sm font-bold uppercase tracking-widest text-amber-500">Display Physical Width</div>
+      <p className="mb-4 text-sm text-slate-400">
+        The real, physical width (in centimetres) of the TV/monitor this tenant's Ops Panel QR code renders on -
+        there's no browser API for this, so it has to be set here from the actual hardware. Left blank, the QR
+        sizing calculation assumes 110cm (~43in) and logs a console warning in dev mode so a missing value is
+        never silently wrong.
+      </p>
+      <div className="flex items-center gap-3">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={1}
+          step="0.5"
+          value={inputValue}
+          disabled={loading}
+          onChange={(event) => setInputValue(event.target.value)}
+          placeholder="e.g. 95"
+          className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none disabled:opacity-50"
+        />
+        <span className="text-sm text-slate-400">cm</span>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={loading || status === 'saving' || !dirty}
+          className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-bold uppercase tracking-widest text-slate-300 transition hover:border-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Save
+        </button>
+        {status === 'saving' && <span className="text-sm font-semibold text-slate-400">Saving…</span>}
+        {status === 'saved' && <span className="text-sm font-semibold text-green-400">✅ Saved.</span>}
+        {status === 'error' && (
+          <span className="text-sm font-semibold text-red-400">❌ Enter a positive number, or leave blank to clear.</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function DeveloperToolsPage(): JSX.Element {
   return (
     <div className="mx-auto max-w-3xl px-6 pb-10 pt-10">
@@ -466,6 +580,7 @@ export default function DeveloperToolsPage(): JSX.Element {
         <ReverseNeedleToggle />
         <PilotClockModeToggle />
         <CaptureIntervalToggle />
+        <DisplayWidthField />
       </div>
     </div>
   )

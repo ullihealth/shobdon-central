@@ -16,6 +16,7 @@
     "fabric": "^7.4.0",
     "kysely": "^0.29.3",
     "kysely-d1": "^0.4.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.1",

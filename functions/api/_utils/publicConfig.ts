@@ -267,7 +267,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -291,6 +291,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         arrowHeadwindKt: number;
         qnhQfeOffsetHpa: number | null;
         activeWeatherProvider: string | null;
+        displayWidthCm: number | null;
         slug: string;
         parentSlug: string | null;
       }>(),
@@ -732,6 +733,14 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     crosswindKt: tenantRow?.arrowCrosswindKt ?? 5,
     headwindKt: tenantRow?.arrowHeadwindKt ?? 3,
   };
+  // Physical screen width in cm (migration 0088) - null passed through
+  // as-is, NOT defaulted here. Unlike windsock/arrowThresholds above,
+  // null is a meaningful distinct state ("not yet confirmed for this
+  // tenant"), and the fallback assumption plus its own dev-mode warning
+  // belong client-side, in RightInfoPanel.tsx (the only consumer),
+  // rather than being silently applied here where nothing would ever see
+  // the warning.
+  const displayWidthCm = tenantRow?.displayWidthCm ?? null;
 
   const cameraSlots = cameraRows.results.map((row) => ({
     slot: row.slotNumber,
@@ -1019,6 +1028,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     mobileEnabled,
     windsock,
     arrowThresholds,
+    displayWidthCm,
   };
 }
 

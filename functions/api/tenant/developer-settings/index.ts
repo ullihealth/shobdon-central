@@ -45,10 +45,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .bind(organizationId)
     .first<{ reverseCompassNeedle: number; pilotClockMode: string | null; captureIntervalSeconds: number | null }>();
 
+  // Separate table (tenants, not ops_panel_state) and separate query -
+  // display_width_cm (migration 0088) is a physical fact about the
+  // tenant's own hardware, same table arrow_tailwind_kt/has_physical_atc
+  // live on, not an ops-panel display setting. Bundled into this same
+  // endpoint/page anyway since it's still "developer-only, no self-
+  // service" the same as everything else here - see DeveloperToolsPage's
+  // own DisplayWidthField comment for the full reasoning.
+  const tenantRow = await env.DB
+    .prepare("SELECT display_width_cm AS displayWidthCm FROM tenants WHERE organization_id = ?")
+    .bind(organizationId)
+    .first<{ displayWidthCm: number | null }>();
+
   return jsonResponse({
     reverseCompassNeedle: !!row?.reverseCompassNeedle,
     pilotClockMode: row?.pilotClockMode ?? "summer",
     captureIntervalSeconds: row?.captureIntervalSeconds ?? 60,
+    displayWidthCm: tenantRow?.displayWidthCm ?? null,
   });
 };
 
@@ -58,13 +71,21 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const { organizationId } = result.membership;
 
   const body = (await request.json().catch(() => null)) as
-    | { reverseCompassNeedle?: boolean; pilotClockMode?: string; captureIntervalSeconds?: number }
+    | {
+        reverseCompassNeedle?: boolean;
+        pilotClockMode?: string;
+        captureIntervalSeconds?: number;
+        displayWidthCm?: number | null;
+      }
     | null;
   if (
     !body ||
-    (body.reverseCompassNeedle === undefined && body.pilotClockMode === undefined && body.captureIntervalSeconds === undefined)
+    (body.reverseCompassNeedle === undefined &&
+      body.pilotClockMode === undefined &&
+      body.captureIntervalSeconds === undefined &&
+      body.displayWidthCm === undefined)
   ) {
-    return jsonResponse({ error: "Provide reverseCompassNeedle, pilotClockMode, and/or captureIntervalSeconds" }, 400);
+    return jsonResponse({ error: "Provide reverseCompassNeedle, pilotClockMode, captureIntervalSeconds, and/or displayWidthCm" }, 400);
   }
   if (body.reverseCompassNeedle !== undefined && typeof body.reverseCompassNeedle !== "boolean") {
     return jsonResponse({ error: "reverseCompassNeedle must be a boolean" }, 400);
@@ -77,6 +98,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     !CAPTURE_INTERVAL_SECONDS_OPTIONS.includes(body.captureIntervalSeconds as CaptureIntervalSeconds)
   ) {
     return jsonResponse({ error: `captureIntervalSeconds must be one of: ${CAPTURE_INTERVAL_SECONDS_OPTIONS.join(", ")}` }, 400);
+  }
+  // null is a valid, meaningful value here (explicitly clears back to
+  // "not yet confirmed" - see migration 0088's own comment), so only
+  // reject non-null values that aren't a sane positive width - not
+  // `!body.displayWidthCm`, which would also reject 0/null-ish falsy
+  // values that should either be a validation error (0) or the valid
+  // clear-to-null case (handled separately, not by this check).
+  if (
+    body.displayWidthCm !== undefined &&
+    body.displayWidthCm !== null &&
+    (typeof body.displayWidthCm !== "number" || !Number.isFinite(body.displayWidthCm) || body.displayWidthCm <= 0)
+  ) {
+    return jsonResponse({ error: "displayWidthCm must be a positive number of centimetres, or null" }, 400);
   }
 
   const current = await env.DB
@@ -102,6 +136,21 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     )
     .bind(organizationId, nextReverseCompassNeedle ? 1 : 0, nextPilotClockMode, nextCaptureIntervalSeconds, now)
     .run();
+
+  // Separate table, separate targeted UPDATE (not part of the
+  // ops_panel_state upsert above) - only fires when displayWidthCm is
+  // actually part of this request, so toggling e.g. reverseCompassNeedle
+  // alone never touches the tenants row at all. Every tenant row already
+  // exists by the time this endpoint is reachable (requireDeveloper
+  // resolves a real membership/organization), unlike ops_panel_state
+  // which may not have a row yet - a plain UPDATE, not an upsert, is
+  // correct here.
+  if (body.displayWidthCm !== undefined) {
+    await env.DB
+      .prepare("UPDATE tenants SET display_width_cm = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(body.displayWidthCm, now, organizationId)
+      .run();
+  }
 
   return jsonResponse({ ok: true });
 };
