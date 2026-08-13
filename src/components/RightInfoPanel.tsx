@@ -750,14 +750,14 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
           gap between the (now larger) caption text and the QR. */}
       <div className="mt-4 flex flex-shrink-0 items-center justify-between gap-4">
         {/* Same uppercase/tracking/color caption style as before.
-            text-[22px] (was text-2xl/24px) - the previous round's
-            increase read slightly too large; nudged down 2px, an
-            arbitrary-value class since Tailwind's default scale has no
-            step between text-xl (20px) and text-2xl (24px). Position/
-            spacing/alignment otherwise untouched - still 4 short lines,
-            left-aligned, anchored to the strip's own left edge via
-            justify-between above. */}
-        <div className="text-left text-[22px] uppercase leading-tight tracking-[0.25em] text-muted-500">
+            text-[20px] (was text-[22px], was text-2xl/24px before
+            that) - second consecutive size-down nudge, another 2px per
+            explicit instruction. Position/spacing/alignment otherwise
+            untouched - still 4 short lines (5 visually at 1366x768,
+            where "Pilot App" wraps to its own two lines - pre-existing,
+            confirmed unaffected by this change), left-aligned, anchored
+            to the strip's own left edge via justify-between above. */}
+        <div className="text-left text-[20px] uppercase leading-tight tracking-[0.25em] text-muted-500">
           <div>Scan</div>
           <div>For</div>
           <div>Shobdon</div>
