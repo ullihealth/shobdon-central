@@ -164,24 +164,33 @@ export default function Clubhouse1Template({
             <CentreDisplayPanel mediaData={mediaData} />
           </div>
 
-          {/* Gas Prices (task #42) sits above the Ops Panel, both sharing
-              this one right-hand column. flex-col + gap here (not two
-              independent h-full siblings) is what actually "shrinks" the
-              Ops Panel now that gas prices no longer rotate through its
-              own Safety Notices - RightInfoPanel's OWN outer box already
-              only sizes its content to what it needs (see that file's own
-              comment on why it went from a stretched grid to flex-col),
-              but this column wrapper was still pinning it to the FULL
-              column height regardless. min-h-0 on the RightInfoPanel
-              wrapper is required for flex-1 to actually shrink it below
-              its content's natural height on a short viewport, rather
-              than overflowing - same fix shape as CentreDisplayPanel's
-              own flex children elsewhere on this page. */}
+          {/* Ops Panel sits above Gas Prices, both sharing this one
+              right-hand column (order swapped from the original Gas
+              Prices-above-Ops-Panel layout - Ops Panel now renders
+              first/top, Gas Prices second/bottom, per explicit
+              instruction). flex-col + gap here (not two independent
+              h-full siblings) is what actually "shrinks" the Ops Panel
+              to its own content height - RightInfoPanel's OWN outer box
+              already only sizes its content to what it needs (see that
+              file's own comment on why it went from a stretched grid to
+              flex-col), but this column wrapper was still pinning it to
+              the FULL column height regardless. min-h-0 on the
+              RightInfoPanel wrapper is required for flex-1 to actually
+              shrink it below its content's natural height on a short
+              viewport, rather than overflowing - same fix shape as
+              CentreDisplayPanel's own flex children elsewhere on this
+              page. Swapping JSX order alone is sufficient here: flex-1
+              absorbs whatever space the OTHER (content-sized) sibling
+              doesn't need regardless of which order the two appear in,
+              so Ops Panel keeps taking the flexible remainder and Gas
+              Prices keeps its own fixed content height either way - no
+              other spacing/margin adjustment needed for the swap
+              itself. */}
           <div className={isDesktop ? 'flex h-full flex-col gap-4' : 'flex flex-col gap-4'}>
-            <GasPricesPanel gasPricesData={gasPricesData} />
             <div className={isDesktop ? 'min-h-0 flex-1' : ''}>
               <RightInfoPanel opsPanelData={opsPanelData} />
             </div>
+            <GasPricesPanel gasPricesData={gasPricesData} />
           </div>
         </div>
 
