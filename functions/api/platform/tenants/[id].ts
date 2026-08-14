@@ -48,6 +48,16 @@ interface TenantRow {
   subscriptionNotes: string;
   qnhQfeOffsetHpa: number | null;
   deletedAt: string | null;
+  // QR/phone-mockup slide per-tenant config, Step 1 (migration 0089) -
+  // read/written here so this endpoint's own full-row-rewrite (see this
+  // file's own header comment) doesn't silently null them out on an
+  // unrelated PATCH (e.g. toggling weatherPublic) that omits them from
+  // its body - every field this route knows about gets read into
+  // `current` and re-written via `??` fallback for exactly this reason.
+  qrSlideEnabled: number;
+  qrTargetUrl: string;
+  qrCaptionText: string;
+  qrMockupR2Key: string | null;
 }
 
 interface PatchBody {
@@ -94,6 +104,20 @@ interface PatchBody {
   // visible effect while the link exists, same posture as
   // runwayGroups/gasPrices edits on a linked tenant today.
   qnhQfeOffsetHpa?: number | null;
+  // QR/phone-mockup slide per-tenant config, Step 1 (migration 0089) -
+  // RightInfoPanel.tsx does not read these yet this step (still gated
+  // on the hardcoded tenantSlug === 'shobdon' stopgap, commit acef934) -
+  // this only makes the fields readable/writable via this API and the
+  // platform-admin dev UI. qrMockupR2Key is normally written by the
+  // dedicated upload endpoint (functions/api/platform/tenants/[id]/
+  // qr-mockup.ts, same shape as logo.ts/logoUpload.ts), but is also
+  // accepted here (e.g. to explicitly clear it back to null without a
+  // real re-upload) - same reasoning qnhQfeOffsetHpa's own null-clear
+  // case above already establishes for this endpoint.
+  qrSlideEnabled?: boolean;
+  qrTargetUrl?: string;
+  qrCaptionText?: string;
+  qrMockupR2Key?: string | null;
   // Migration 0044 - true archives (see this file's own handling below,
   // which also forces active false in the same write); false explicitly
   // un-archives (restores deleted_at to NULL, but deliberately does NOT
@@ -141,6 +165,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "subscriptionNotes",
     "qnhQfeOffsetHpa",
     "archived",
+    "qrSlideEnabled",
+    "qrTargetUrl",
+    "qrCaptionText",
+    "qrMockupR2Key",
   ];
   if (!fields.some((field) => body[field] !== undefined)) {
     return jsonResponse({ error: `Provide at least one of: ${fields.join(", ")}` }, 400);
@@ -158,6 +186,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "globalLinkEnabled",
     "afisoOpen",
     "mobileEnabled",
+    "qrSlideEnabled",
   ] as const) {
     if (body[field] !== undefined && typeof body[field] !== "boolean") {
       return jsonResponse({ error: `${field} must be a boolean` }, 400);
@@ -165,6 +194,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   }
   if (body.afisoFrequency !== undefined && typeof body.afisoFrequency !== "string") {
     return jsonResponse({ error: "afisoFrequency must be a string" }, 400);
+  }
+  if (body.qrTargetUrl !== undefined && typeof body.qrTargetUrl !== "string") {
+    return jsonResponse({ error: "qrTargetUrl must be a string" }, 400);
+  }
+  if (body.qrCaptionText !== undefined && typeof body.qrCaptionText !== "string") {
+    return jsonResponse({ error: "qrCaptionText must be a string" }, 400);
+  }
+  if (body.qrMockupR2Key !== undefined && body.qrMockupR2Key !== null && typeof body.qrMockupR2Key !== "string") {
+    return jsonResponse({ error: "qrMockupR2Key must be a string or null" }, 400);
   }
   // null is a valid, meaningful value here (explicitly clears the fixed
   // offset, reverting to independent rounding) - unlike storageQuotaBytes
@@ -199,7 +237,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               mobile_enabled AS mobileEnabled,
               subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
               qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
-              deleted_at AS deletedAt
+              deleted_at AS deletedAt,
+              qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl,
+              qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key
        FROM tenants WHERE id = ?`
     )
     .bind(tenantId)
@@ -236,6 +276,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     // falls back to current.
     qnhQfeOffsetHpa: body.qnhQfeOffsetHpa !== undefined ? body.qnhQfeOffsetHpa : current.qnhQfeOffsetHpa,
     deletedAt: body.archived === true ? now : body.archived === false ? null : current.deletedAt,
+    qrSlideEnabled: body.qrSlideEnabled ?? !!current.qrSlideEnabled,
+    qrTargetUrl: body.qrTargetUrl ?? current.qrTargetUrl,
+    qrCaptionText: body.qrCaptionText ?? current.qrCaptionText,
+    // NOT `body.qrMockupR2Key ?? current.qrMockupR2Key` - null is a real,
+    // deliberate value a caller can send here (explicitly clear the
+    // mockup back to "nothing uploaded"), same reasoning as
+    // qnhQfeOffsetHpa above. Only an actually-omitted field (undefined)
+    // falls back to current.
+    qrMockupR2Key: body.qrMockupR2Key !== undefined ? body.qrMockupR2Key : current.qrMockupR2Key,
   };
 
   await env.DB
@@ -244,7 +293,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               carousel_budget_seconds = ?, carousel_budget_enabled = ?, global_link_enabled = ?,
               afiso_open = ?, afiso_frequency = ?,
               mobile_enabled = ?,
-              subscription_status = ?, subscription_notes = ?, qnh_qfe_offset_hpa = ?, deleted_at = ?, updated_at = ?
+              subscription_status = ?, subscription_notes = ?, qnh_qfe_offset_hpa = ?, deleted_at = ?,
+              qr_slide_enabled = ?, qr_target_url = ?, qr_caption_text = ?, qr_mockup_r2_key = ?,
+              updated_at = ?
        WHERE id = ?`
     )
     .bind(
@@ -265,6 +316,10 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.subscriptionNotes,
       next.qnhQfeOffsetHpa,
       next.deletedAt,
+      next.qrSlideEnabled ? 1 : 0,
+      next.qrTargetUrl,
+      next.qrCaptionText,
+      next.qrMockupR2Key,
       now,
       tenantId
     )

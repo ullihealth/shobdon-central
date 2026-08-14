@@ -267,7 +267,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -294,6 +294,16 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         displayWidthCm: number | null;
         slug: string;
         parentSlug: string | null;
+        // QR/phone-mockup slide per-tenant config, Step 1 (migration
+        // 0089) - selected here so it's reachable on the public config
+        // response (see the qrSlide object built below), but
+        // RightInfoPanel.tsx does not read it yet this step - it still
+        // gates on the hardcoded tenantSlug === 'shobdon' stopgap
+        // (commit acef934).
+        qrSlideEnabled: number;
+        qrTargetUrl: string;
+        qrCaptionText: string;
+        qrMockupR2Key: string | null;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
     // Shobdon's own station (its QFE datum vs QNH sea-level datum), not a
@@ -649,6 +659,20 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     pilotTickerSlots = [];
   }
   const pilotTicker = { slots: pilotTickerSlots };
+  // QR/phone-mockup slide per-tenant config, Step 1 (migration 0089) -
+  // same {enabled, ...fields} shape as afiso above, mockupImageUrl
+  // built from qr_mockup_r2_key the exact same way logoUrl is built
+  // from logo_r2_key a few lines up. RightInfoPanel.tsx does not read
+  // this object yet this step - it still gates the slide on the
+  // hardcoded tenantSlug === 'shobdon' stopgap (commit acef934); this
+  // only makes the data reachable so a later step can switch over to it.
+  const qrSlide = {
+    enabled: !!tenantRow?.qrSlideEnabled,
+    targetUrl: tenantRow?.qrTargetUrl ?? "",
+    captionText: tenantRow?.qrCaptionText ?? "",
+    mockupImageUrl:
+      tenantRow?.qrMockupR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenantRow.qrMockupR2Key}` : null,
+  };
   // Pilot Panel round (migration 0085) - optional per-tenant override of
   // /pilot's background colour, independent of the shared club_theme
   // record the desktop dashboard uses. null (the column's default, and
@@ -1032,6 +1056,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     cafeSettings,
     afiso,
     pilotTicker,
+    qrSlide,
     pilotBackgroundOverride,
     pilotTickerStyle,
     mobileEnabled,

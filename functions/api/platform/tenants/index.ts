@@ -55,6 +55,15 @@ interface TenantRow {
   createdAt: string;
   subscriptionStatus: string;
   subscriptionNotes: string;
+  // Step 1 of the QR/phone-mockup slide's per-tenant config rollout
+  // (migration 0089) - RightInfoPanel.tsx's own gating logic is
+  // untouched this step (still tenantSlug === 'shobdon'), these fields
+  // are only readable/writable via this API and the platform-admin dev
+  // UI so far.
+  qrSlideEnabled: number;
+  qrTargetUrl: string;
+  qrCaptionText: string;
+  qrMockupR2Key: string | null;
 }
 
 interface UsageRow {
@@ -113,7 +122,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                 afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
                 mobile_enabled AS mobileEnabled, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
                 organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt,
-                subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes
+                subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
+                qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl,
+                qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key
          FROM tenants WHERE deleted_at IS NULL ORDER BY created_at`
       )
       .all<TenantRow>(),
@@ -213,6 +224,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       qnhQfeOffsetHpa: tenant.qnhQfeOffsetHpa,
       usedBytes: (tenant.organizationId && usageByOrg.get(tenant.organizationId)) || 0,
       logoUrl: tenant.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenant.logoR2Key}` : null,
+      qrSlideEnabled: !!tenant.qrSlideEnabled,
+      qrTargetUrl: tenant.qrTargetUrl,
+      qrCaptionText: tenant.qrCaptionText,
+      qrMockupImageUrl:
+        tenant.qrMockupR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenant.qrMockupR2Key}` : null,
       createdAt: tenant.createdAt,
       displays: (displaysByTenant.get(tenant.id) ?? []).map((display) => ({
         id: display.id,
