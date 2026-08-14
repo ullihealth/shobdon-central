@@ -36,6 +36,18 @@ Re-exporting the same image with the colour profile explicitly converted to
 sRGB (rather than "keep current display/device profile") fixed the tint -
 see commit `3a8350b`.
 
+### sRGB only - Display P3 is intentionally not accepted
+
+Decided explicitly, not by default: **Display P3 does not satisfy this
+standard**, even though it's a legitimate, well-defined portable colour
+space (unlike a device-calibration profile such as the "Display" profile
+above). sRGB has broader and more consistent support specifically across
+embedded/smart-TV browsers - the exact rendering environment this standard
+exists to protect - so sRGB-only is the simpler, safer bar to hold every
+image asset to, rather than maintaining a list of "acceptable wide-gamut
+profiles" and trusting every embedded browser to handle each of them
+correctly.
+
 ## How to avoid this when exporting a new/replaced image
 
 When exporting from Affinity Photo, Photoshop, or similar - explicitly
@@ -57,3 +69,11 @@ It also runs automatically as a pre-commit hook (husky + lint-staged) against
 any staged file under `public/**/*.{png,jpg,jpeg}` - a commit is blocked with
 a clear error if a non-sRGB profile is detected. See `.husky/pre-commit` and
 the `lint-staged` block in `package.json`.
+
+## Known non-compliant asset, not yet in use
+
+`public/images/davis-vantage-pro2.png` (currently untracked, not wired up
+anywhere in the app) carries a **Display P3** profile - it will fail the
+pre-commit check and must be re-exported to sRGB before it's ever staged or
+used in the project. Flagged here so this isn't rediscovered from scratch
+later.
