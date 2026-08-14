@@ -22,3 +22,12 @@ Any UI/layout prompt gets checked at a phone-width viewport (~375px) before bein
 called done, in addition to desktop - always, not just when explicitly asked.
 Absolute-positioned elements over background images are the most likely thing to
 break at narrow widths; check those first when present.
+
+## Image assets must use sRGB, not a device-specific colour profile
+
+See IMAGE_ASSETS.md for the full standard and the incident that prompted it (a
+device-specific Mac colour profile caused a visible green tint on a real TV,
+invisible on a Mac browser). A pre-commit hook (scripts/check-image-color-profile.mjs,
+wired via husky/lint-staged) checks staged images under public/ automatically -
+but check any new/replaced image asset's ICC profile yourself before committing
+regardless, since the hook only helps on a machine it's actually installed on.
