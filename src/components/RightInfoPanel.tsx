@@ -3,13 +3,6 @@ import { QRCodeSVG } from 'qrcode.react'
 import { useWeather } from '../context/WeatherContext'
 import { NOTAMS_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 
-// Static, tenant-agnostic pilot-app URL - deliberately no query params or
-// session/tenant data (this renders on the public, unauthenticated TV
-// dashboard; the /pilot route itself resolves the tenant from whatever
-// subdomain a viewer's phone actually loads it on, same as every other
-// public route in this app - see resolveTenantHost.ts).
-const PILOT_APP_URL = 'https://shobdon.airfieldcentral.com/pilot'
-
 // Standalone QR rotation card (Ops Panel's internal carousel) - flip to
 // false to pull the card out of rotation entirely (omitted from
 // rotationStates below, not just hidden) with no rebuilding. The small
@@ -245,15 +238,6 @@ function computeQrSizePx(params: {
 // default) is a round, easy-to-explain floor without disproportionately
 // stretching the total cycle at high NOTAM counts.
 const QR_CARD_DURATION_SECONDS = 10
-
-// Phone-mockup image for the standalone QR slide's top zone (see
-// PilotQrCard below) - static bundled asset, same convention as this
-// app's other static images (e.g. src/config/media.ts's landing-page
-// photo: public/images/<file>.<ext>, referenced at runtime as
-// /images/<file>.<ext>, Vite serves public/ at the site root
-// unchanged). Portrait PNG showing the /pilot PWA on a phone, rendered
-// with object-contain (proportional, never cropped/stretched) below.
-const PILOT_PHONE_MOCKUP_SRC = '/images/pilot-app-phone-mockup.png'
 
 // QR sizing for the standalone slide's bottom strip (Ops Panel's
 // internal rotation, 'qr' state) - deliberately NOT computeQrSizePx
@@ -689,7 +673,17 @@ function NotamMeasurementPass({
 // computeQrStripSizePx sizes the QR SVG itself to fit within that
 // square net of quiet-margin, same physical-cm-target approach as
 // before just against a smaller box.
-function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX.Element {
+function PilotQrCard({
+  displayWidthCm,
+  targetUrl,
+  captionText,
+  mockupImageUrl,
+}: {
+  displayWidthCm: number | null
+  targetUrl: string
+  captionText: string
+  mockupImageUrl: string
+}): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
   const [squarePx, setSquarePx] = useState<number>(QR_STRIP_SIZE_FLOOR_PX + 2 * QR_STRIP_QUIET_MARGIN_PX)
 
@@ -720,7 +714,7 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
           shape used throughout this file's other flex children. */}
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
         <img
-          src={PILOT_PHONE_MOCKUP_SRC}
+          src={mockupImageUrl}
           alt="Pilot App preview on a smartphone"
           className="h-full max-h-full w-full max-w-full object-contain"
         />
@@ -737,20 +731,23 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
           image's narrower column, which is what actually maximizes the
           gap between the (now larger) caption text and the QR. */}
       <div className="mt-4 flex flex-shrink-0 items-center justify-between gap-4">
-        {/* Same uppercase/tracking/color caption style as before.
-            text-[18px] (was text-[20px], text-[22px], text-2xl/24px
-            before that) - third consecutive size-down nudge, another
-            2px per explicit instruction. Position/spacing/alignment
-            otherwise untouched - still 4 short lines (5 visually at
-            1366x768, where "Pilot App" wraps to its own two lines -
-            pre-existing, confirmed unaffected by this change),
-            left-aligned, anchored to the strip's own left edge via
-            justify-between above. */}
+        {/* Same uppercase/tracking/color caption style as before
+            (text-[18px], after several consecutive size-down nudges).
+            Per-tenant free text now (Step 3 of the QR slide rollout) -
+            was 4 hardcoded lines specific to Shobdon's own caption
+            ("Scan"/"For"/"Shobdon"/"Pilot App"). Split on whitespace,
+            one word per line, as the generic default for arbitrary
+            tenant-provided text - simple and predictable rather than
+            trying to guess which words should share a line for text
+            this component has never seen before. Left-aligned, anchored
+            to the strip's own left edge via justify-between above. */}
         <div className="text-left text-[18px] uppercase leading-tight tracking-[0.25em] text-muted-500">
-          <div>Scan</div>
-          <div>For</div>
-          <div>Shobdon</div>
-          <div>Pilot App</div>
+          {captionText
+            .trim()
+            .split(/\s+/)
+            .map((word, index) => (
+              <div key={index}>{word}</div>
+            ))}
         </div>
         {/* Explicit width+height (in px, from computeQrStripSquarePx),
             not a Tailwind fixed-height + aspect-square combo - that
@@ -768,7 +765,7 @@ function PilotQrCard({ displayWidthCm }: { displayWidthCm: number | null }): JSX
           className="flex flex-shrink-0 items-center justify-center rounded-2xl bg-white"
           style={{ width: squarePx, height: squarePx, padding: QR_STRIP_QUIET_MARGIN_PX }}
         >
-          <QRCodeSVG value={PILOT_APP_URL} size={qrSizePx} level="M" marginSize={4} />
+          <QRCodeSVG value={targetUrl} size={qrSizePx} level="M" marginSize={4} />
         </div>
       </div>
     </div>
@@ -835,18 +832,22 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
   // overall look, not verifying real physical QR scan size on a tenant's
   // actual TV.
   const [displayWidthCm, setDisplayWidthCm] = useState<number | null>(null)
-  // Stopgap tenant gate for the standalone QR/phone-mockup slide (see
-  // QR_CARD_ENABLED's own usage below) - that slide's content (the
-  // hardcoded PILOT_APP_URL, Shobdon's phone-mockup image, the "Shobdon
-  // Pilot App" caption) is Shobdon-specific and not yet tenant-
-  // configurable, but was rendering on every tenant's rotation
-  // regardless (a live cross-tenant content leak). Defaults to null
-  // (not 'shobdon'), so it stays OFF until the real slug loads - same
-  // fail-safe-closed default the opsPanel/displayWidthCm fields above
-  // already use, and correctly keeps the slide off entirely for the
-  // opsPanelData prop path (DesignPage.tsx's admin preview), which
-  // never populates this.
-  const [tenantSlug, setTenantSlug] = useState<string | null>(null)
+  // Per-tenant config for the standalone QR/phone-mockup slide (see
+  // QR_CARD_ENABLED's own usage below) - Step 3 of that slide's rollout,
+  // replacing the earlier tenantSlug === 'shobdon' stopgap (commit
+  // acef934) that fixed a live cross-tenant content leak by hardcoding
+  // the gate to one tenant while the real per-tenant fields (migration
+  // 0089) were being built. Defaults to null, so the slide stays OFF
+  // until the real config loads - same fail-safe-closed default the
+  // opsPanel/displayWidthCm fields above already use, and correctly
+  // keeps the slide off entirely for the opsPanelData prop path
+  // (DesignPage.tsx's admin preview), which never populates this.
+  const [qrSlideConfig, setQrSlideConfig] = useState<{
+    enabled: boolean
+    targetUrl: string
+    captionText: string
+    mockupImageUrl: string | null
+  } | null>(null)
 
   useEffect(() => {
     if (opsPanelData !== undefined) {
@@ -860,7 +861,16 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
         if (!cancelled) {
           setOpsPanel(data?.opsPanel ?? null)
           setDisplayWidthCm(typeof data?.displayWidthCm === 'number' ? data.displayWidthCm : null)
-          setTenantSlug(typeof data?.slug === 'string' ? data.slug : null)
+          setQrSlideConfig(
+            data?.qrSlide && typeof data.qrSlide === 'object'
+              ? {
+                  enabled: !!data.qrSlide.enabled,
+                  targetUrl: typeof data.qrSlide.targetUrl === 'string' ? data.qrSlide.targetUrl : '',
+                  captionText: typeof data.qrSlide.captionText === 'string' ? data.qrSlide.captionText : '',
+                  mockupImageUrl: typeof data.qrSlide.mockupImageUrl === 'string' ? data.qrSlide.mockupImageUrl : null,
+                }
+              : null
+          )
         }
       })
       .catch(() => {})
@@ -939,23 +949,35 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
   // state you're not going to render" convention notamCardGroups
   // already uses for zero NOTAMs.
   //
-  // tenantSlug === 'shobdon' - URGENT STOPGAP: this slide's content is
-  // hardcoded Shobdon-specific (PILOT_APP_URL, the phone-mockup image,
-  // "Shobdon Pilot App" caption), but was rendering for every tenant's
-  // rotation regardless - a live cross-tenant content leak (Gyroplane
-  // Train, Swift, Demo, etc. were all showing Shobdon's own QR/branding).
-  // Gated at the array-construction level (not just hidden after
-  // rendering) so it's genuinely never selected by the rotation timer
-  // for any other tenant, not merely skipped visually. tenantSlug
-  // defaults to null until the self-fetch resolves, so this also stays
-  // off for that brief window even on Shobdon itself - acceptable
-  // (matches every other tenant-scoped field on this same fetch), and
-  // strictly safer than the alternative of briefly showing it everywhere.
-  // Remove this slug check once the QR slide is made properly
-  // per-tenant-configurable - it's a direct stopgap, not the real fix.
+  // Per-tenant gate (Step 3 of the QR slide rollout, migration 0089) -
+  // replaces the earlier tenantSlug === 'shobdon' stopgap (commit
+  // acef934, itself a fix for a live cross-tenant content leak - the
+  // slide was rendering Shobdon's own hardcoded content on every
+  // tenant's rotation). qrSlideConfig defaults to null until the
+  // self-fetch resolves, so this stays off for that brief window on
+  // every tenant including one that has it enabled - acceptable (same
+  // fail-safe-closed posture as the stopgap it replaces).
+  //
+  // Also requires a real mockupImageUrl and a non-empty targetUrl, not
+  // just `enabled` - a tenant can flip the toggle on before uploading an
+  // image via the Platform Tenants dev UI (qr_mockup_r2_key stays null
+  // until they do), and an empty target URL would encode a meaningless
+  // QR. Per explicit instruction: don't add the 'qr' entry to rotation
+  // at all in that case, rather than showing a broken/empty card -
+  // logged below so a developer notices the tenant needs to finish
+  // configuring it, not silently missing from the rotation.
+  const qrSlideReady = !!(qrSlideConfig?.enabled && qrSlideConfig.mockupImageUrl && qrSlideConfig.targetUrl.trim())
+  if (qrSlideConfig?.enabled && !qrSlideReady && shouldLogQrSizingWarnings()) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[RightInfoPanel] QR slide is enabled for this tenant but not fully configured yet (${
+        !qrSlideConfig.mockupImageUrl ? 'no mockup image uploaded' : 'target URL is empty'
+      }) - omitted from the rotation until both are set via the Platform Tenants dev tools.`
+    )
+  }
   const rotationStates: RotationState[] = [
     { type: 'ops' },
-    ...(QR_CARD_ENABLED && tenantSlug === 'shobdon' ? [{ type: 'qr' as const }] : []),
+    ...(QR_CARD_ENABLED && qrSlideReady ? [{ type: 'qr' as const }] : []),
     ...(notamCardGroups ?? []).map((_, cardIndex) => ({ type: 'notamsFull' as const, cardIndex })),
   ]
   // Ref mirroring the latest rotationStates array, read inside the
@@ -1226,7 +1248,17 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
         {currentRotationState.type === 'notamsFull' ? (
           <AutoNotamsFullPanel notams={notamCardGroups?.[currentRotationState.cardIndex] ?? []} />
         ) : currentRotationState.type === 'qr' ? (
-          <PilotQrCard displayWidthCm={displayWidthCm} />
+          // qrSlideReady (checked when rotationStates was built above)
+          // already guarantees qrSlideConfig is non-null with a real
+          // mockupImageUrl and non-empty targetUrl whenever this branch
+          // can actually be reached this render - the ?? fallbacks here
+          // are just to satisfy the type checker, not real runtime cases.
+          <PilotQrCard
+            displayWidthCm={displayWidthCm}
+            targetUrl={qrSlideConfig?.targetUrl ?? ''}
+            captionText={qrSlideConfig?.captionText ?? ''}
+            mockupImageUrl={qrSlideConfig?.mockupImageUrl ?? ''}
+          />
         ) : (
           // Card 1 (fixed/static, never NOTAM content) - Runway In Use
           // and Airfield Info are flex-shrink-0 (content-sized, as
