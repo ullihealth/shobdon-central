@@ -127,6 +127,16 @@ interface PlatformTenant {
   // that's linked to a parent has no visible effect while the link
   // exists, since the parent's own value wins.
   qnhQfeOffsetHpa: number | null
+  // QR/phone-mockup rotation slide per-tenant config, Step 2 (migration
+  // 0089, schema+backend landed in commit 8af682b). RightInfoPanel.tsx
+  // does not read these yet - it still gates the slide on the
+  // hardcoded tenantSlug === 'shobdon' stopgap (commit acef934) until a
+  // later step switches it over. This round only makes the fields
+  // editable here.
+  qrSlideEnabled: boolean
+  qrTargetUrl: string
+  qrCaptionText: string
+  qrMockupImageUrl: string | null
   usedBytes: number
   logoUrl: string | null
   createdAt: string
@@ -154,6 +164,7 @@ type BooleanField =
   | 'globalLinkEnabled'
   | 'afisoOpen'
   | 'mobileEnabled'
+  | 'qrSlideEnabled'
 type SortOrder = 'name-asc' | 'date-desc' | 'date-asc'
 
 function formatMb(bytes: number): string {
@@ -338,6 +349,98 @@ function AfisoFrequencyEditor({ tenant, onSaved }: { tenant: PlatformTenant; onS
         }}
         placeholder="122.250"
         className="mt-1 w-24 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+      />
+    </div>
+  )
+}
+
+// QR/phone-mockup slide per-tenant config, Step 2 (migration 0089
+// schema, commit 8af682b) - same save-on-blur pattern as
+// AfisoFrequencyEditor above, for tenants.qr_target_url. Free text
+// deliberately (no URL-format validation) - same reasoning
+// AfisoFrequencyEditor's own comment gives for its field: a strict
+// format check risks rejecting a real value more than it protects
+// anything, and this is a developer-only control, not self-service.
+// w-56 (224px), not AfisoFrequencyEditor's w-24 - a real target URL
+// (e.g. "https://shobdon.airfieldcentral.com/pilot", 43 characters) is
+// far longer than a radio frequency like "122.250"; w-56 shows most or
+// all of a typical tenant subdomain URL at this font size without
+// making this one field dominate the row the other compact editors
+// share.
+function QrTargetUrlEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (targetUrl: string) => void }): JSX.Element {
+  const [value, setValue] = useState(tenant.qrTargetUrl)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(tenant.qrTargetUrl)
+  }, [tenant.qrTargetUrl])
+
+  async function commit() {
+    const trimmed = value.trim()
+    if (trimmed === tenant.qrTargetUrl) return
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { qrTargetUrl: trimmed })
+    setSaving(false)
+    if (updated) onSaved(updated.qrTargetUrl)
+    else setValue(tenant.qrTargetUrl)
+  }
+
+  return (
+    <div className="min-w-[140px]">
+      <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">QR target URL</div>
+      <input
+        type="text"
+        value={value}
+        disabled={saving}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+        }}
+        placeholder="https://<tenant>.airfieldcentral.com/pilot"
+        className="mt-1 w-56 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+      />
+    </div>
+  )
+}
+
+// Same shape as QrTargetUrlEditor above, for tenants.qr_caption_text.
+// w-40 (160px) - wider than AfisoFrequencyEditor's w-24 (a caption like
+// "SCAN FOR SHOBDON PILOT APP" is longer than a frequency), narrower
+// than the URL field above (a caption is typically shorter than a full
+// URL).
+function QrCaptionTextEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (captionText: string) => void }): JSX.Element {
+  const [value, setValue] = useState(tenant.qrCaptionText)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setValue(tenant.qrCaptionText)
+  }, [tenant.qrCaptionText])
+
+  async function commit() {
+    const trimmed = value.trim()
+    if (trimmed === tenant.qrCaptionText) return
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, { qrCaptionText: trimmed })
+    setSaving(false)
+    if (updated) onSaved(updated.qrCaptionText)
+    else setValue(tenant.qrCaptionText)
+  }
+
+  return (
+    <div className="min-w-[140px]">
+      <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">QR caption text</div>
+      <input
+        type="text"
+        value={value}
+        disabled={saving}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+        }}
+        placeholder="SCAN FOR PILOT APP"
+        className="mt-1 w-40 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
       />
     </div>
   )
@@ -643,6 +746,68 @@ function LogoEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (log
       <div className="flex h-8 w-14 shrink-0 items-center justify-center rounded border border-slate-700 bg-slate-900/80">
         {tenant.logoUrl ? (
           <img src={tenant.logoUrl} alt="" className="h-full w-full object-contain" />
+        ) : (
+          <span className="text-[9px] text-muted-500">None</span>
+        )}
+      </div>
+      <label className="cursor-pointer text-xs font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+        {uploading ? 'Uploading…' : 'Replace'}
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/svg+xml,image/webp,image/avif"
+          onChange={handleUpload}
+          disabled={uploading}
+          className="hidden"
+        />
+      </label>
+      {error && <span className="text-xs text-status-bad">{error}</span>}
+    </div>
+  )
+}
+
+// QR/phone-mockup slide per-tenant config, Step 2 (migration 0089
+// schema, commit 8af682b) - direct mirror of LogoEditor above (same
+// thumbnail-preview + hidden-file-input-under-a-label shape, same
+// Uploading…/Replace states), posting to the already-built
+// tenants/[id]/qr-mockup endpoint (functions/api/_utils/qrMockupUpload.ts)
+// instead of .../logo. Placed next to LogoEditor in the same row per
+// the earlier investigation's own reasoning - grouping "the two image
+// assets this tenant has" together reads more naturally than splitting
+// one off into the text-field row below.
+function QrMockupEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: (mockupImageUrl: string) => void }): JSX.Element {
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      const response = await fetch(`${TENANTS_URL}/${tenant.id}/qr-mockup`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        setError(data?.error || 'Upload failed')
+        return
+      }
+      if (data?.mockupImageUrl) onSaved(data.mockupImageUrl as string)
+    } catch {
+      setError('Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex h-8 w-14 shrink-0 items-center justify-center rounded border border-slate-700 bg-slate-900/80">
+        {tenant.qrMockupImageUrl ? (
+          <img src={tenant.qrMockupImageUrl} alt="" className="h-full w-full object-contain" />
         ) : (
           <span className="text-[9px] text-muted-500">None</span>
         )}
@@ -1218,6 +1383,18 @@ export default function PlatformTenantsPage(): JSX.Element {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, logoUrl } : t)))
   }
 
+  function handleQrTargetUrlSaved(tenantId: number, qrTargetUrl: string) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, qrTargetUrl } : t)))
+  }
+
+  function handleQrCaptionTextSaved(tenantId: number, qrCaptionText: string) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, qrCaptionText } : t)))
+  }
+
+  function handleQrMockupSaved(tenantId: number, qrMockupImageUrl: string) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, qrMockupImageUrl } : t)))
+  }
+
   function handleDisplaySaved(tenantId: number, displayId: number, patch: Partial<DisplayPatchResult>) {
     setTenants((prev) =>
       prev.map((t) =>
@@ -1692,6 +1869,10 @@ export default function PlatformTenantsPage(): JSX.Element {
                       </div>
                     </div>
                     <LogoEditor tenant={selectedTenant} onSaved={(logoUrl) => handleLogoSaved(selectedTenant.id, logoUrl)} />
+                    <QrMockupEditor
+                      tenant={selectedTenant}
+                      onSaved={(mockupImageUrl) => handleQrMockupSaved(selectedTenant.id, mockupImageUrl)}
+                    />
                   </div>
                   <div className="overflow-hidden rounded-xl border border-border/60">
                     <SettingsToggleRow
@@ -1734,6 +1915,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                       checked={selectedTenant.mobileEnabled}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'mobileEnabled', next)}
                     />
+                    <SettingsToggleRow
+                      label="QR slide enabled"
+                      checked={selectedTenant.qrSlideEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'qrSlideEnabled', next)}
+                    />
                   </div>
                   <div className="mt-4 flex flex-wrap items-end gap-6">
                     <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
@@ -1748,6 +1934,14 @@ export default function PlatformTenantsPage(): JSX.Element {
                     <QnhQfeOffsetEditor
                       tenant={selectedTenant}
                       onSaved={(offset) => handleQnhQfeOffsetSaved(selectedTenant.id, offset)}
+                    />
+                    <QrTargetUrlEditor
+                      tenant={selectedTenant}
+                      onSaved={(targetUrl) => handleQrTargetUrlSaved(selectedTenant.id, targetUrl)}
+                    />
+                    <QrCaptionTextEditor
+                      tenant={selectedTenant}
+                      onSaved={(captionText) => handleQrCaptionTextSaved(selectedTenant.id, captionText)}
                     />
                     <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
                     <Link
