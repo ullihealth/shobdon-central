@@ -10,32 +10,13 @@ import { NOTAMS_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 // public route in this app - see resolveTenantHost.ts).
 const PILOT_APP_URL = 'https://shobdon.airfieldcentral.com/pilot'
 
-// Paused pending a design decision - see conversation history (the QR
-// tile was replaced with a plain "RIGHT/LEFT CIRCUIT" text tile in the
-// right square). Deliberately NOT ripping out computeQrSizePx,
-// tenants.display_width_cm (migration 0088), or the /developertools
-// DisplayWidthField that feeds it - all of that stays live and correct
-// underneath (squareSize below still derives from qrSizePx, so both
-// squares stay matched-size exactly as before), purely gated so the QR
-// itself can come back with a one-line flip once there's a decision,
-// with no rebuilding.
-//
-// This flag ONLY controls the small Runway In Use/Circuit square's own
-// QR-vs-CIRCUIT-text content - explicitly left false, untouched, by the
-// new standalone QR rotation card below (QR_CARD_ENABLED). Flipping
-// THIS flag on would also resurrect the small square's QR, which was
-// explicitly told to stay as-is/unrelated to that work - kept as two
-// separate flags specifically so the two features can be toggled
-// independently rather than one switch controlling both.
-const QR_ENABLED = false
-
-// New standalone QR rotation card (Ops Panel's internal carousel) -
-// separate flag from QR_ENABLED above on purpose (see that constant's
-// own comment for why they can't share one switch). Defaults true so
-// this round's work is live/testable now; flip to false to pull the
-// card out of rotation entirely (omitted from rotationStates below,
-// not just hidden) with no rebuilding, same one-line-flip convenience
-// QR_ENABLED already established.
+// Standalone QR rotation card (Ops Panel's internal carousel) - flip to
+// false to pull the card out of rotation entirely (omitted from
+// rotationStates below, not just hidden) with no rebuilding. The small
+// Runway In Use/Circuit square's own paused QR-vs-CIRCUIT-text toggle
+// (formerly a separate QR_ENABLED flag) was removed once this full-
+// height slide fully superseded it - that square now always shows
+// circuit direction, unconditionally.
 const QR_CARD_ENABLED = true
 
 type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -208,7 +189,7 @@ function computeQrSizePx(params: {
   if (displayWidthCm === null && shouldLogQrSizingWarnings()) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[RightInfoPanel] tenants.display_width_cm is not set - assuming ${DISPLAY_WIDTH_FALLBACK_CM}cm (~43in) for Pilot App QR sizing. Set it in /developertools for an accurate physical size.`
+      `[RightInfoPanel] tenants.display_width_cm is not set - assuming ${DISPLAY_WIDTH_FALLBACK_CM}cm (~43in) for the Runway In Use/Circuit matched-square sizing. Set it in /developertools for an accurate physical size.`
     )
   }
 
@@ -235,10 +216,17 @@ function computeQrSizePx(params: {
   const clamped = Math.min(targetQrSizePx, maxQrSizeFromSquare)
   const finalSize = Math.max(QR_SIZE_FLOOR_PX, Math.floor(clamped))
 
+  // MIN_RELIABLE_QR_CM is a holdover threshold name from when this
+  // function sized an actual rendered QR (see this file's own history -
+  // the small square's QR was removed once the standalone full-height
+  // QR slide superseded it). Still a meaningful, real floor to warn
+  // against here: it's the same physical-size tuning this square's
+  // Runway/Circuit text sizing inherited, just no longer about scan
+  // reliability specifically.
   if (finalSize / pxPerCm < MIN_RELIABLE_QR_CM && shouldLogQrSizingWarnings()) {
     // eslint-disable-next-line no-console
     console.warn(
-      `[RightInfoPanel] Pilot App QR clamped to ${(finalSize / pxPerCm).toFixed(1)}cm to keep the matched Runway In Use/QR squares within the row and protect Notices' available space - under the ${MIN_RELIABLE_QR_CM}cm reliable-scan floor. Showing it anyway rather than hiding it; consider a taller/wider Ops Panel column or confirming display_width_cm is accurate for this tenant.`
+      `[RightInfoPanel] Runway In Use/Circuit matched-square size clamped to ${(finalSize / pxPerCm).toFixed(1)}cm to protect Notices' available space - under the ${MIN_RELIABLE_QR_CM}cm floor these squares were originally tuned against. Consider a taller/wider Ops Panel column or confirming display_width_cm is accurate for this tenant.`
     )
   }
 
@@ -1280,16 +1268,20 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
                 measured space - so the row's own height is whatever that
                 clamped size needs, not driven by a flex ratio/CSS
                 percentage the way the previous round's QR row was. */}
-            {/* Matched-square restyle - Runway In Use and the QR card are
-                now two equal squares (width === height, and the two
-                match each other exactly), each with its own label
-                caption BELOW the square rather than a header above/
-                inside it. squareSize is derived from qrSizePx (the QR
-                is the scan-critical constraint computeQrSizePx already
-                solves for) plus its own quiet margin on both sides -
-                Runway In Use doesn't get an independent size, it just
-                matches whatever that comes out to, per spec ("sized to
-                match each other exactly regardless of content"). */}
+            {/* Matched-square restyle - Runway In Use and Circuit are
+                two equal squares (width === height, and the two match
+                each other exactly), each with its own label caption
+                BELOW the square rather than a header above/inside it.
+                squareSize is derived from qrSizePx/computeQrSizePx
+                below - a holdover name from when this row's right
+                square could render an actual QR code (now removed, see
+                this file's own history); the sizing math itself is
+                still genuinely shared/live for both squares' box size
+                and font ratios, just no longer QR-specific in what it
+                produces. Runway In Use doesn't get an independent size,
+                it just matches whatever that comes out to, per spec
+                ("sized to match each other exactly regardless of
+                content"). */}
             <div className="flex flex-shrink-0 gap-3" ref={rowContainerRef}>
               <div className="flex flex-col items-center" style={{ width: squareSize }}>
                 <div
@@ -1344,54 +1336,30 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
                 <div className="mt-1 text-center text-xs uppercase tracking-[0.25em] text-muted-500">Runway</div>
               </div>
               <div className="flex flex-col items-center" style={{ width: squareSize }}>
-                {QR_ENABLED ? (
-                  // Outer square is the card's own dark bg-card
-                  // background; padding here is QR_QUIET_MARGIN_PX - a
-                  // real, visible (not hairline) dark margin between the
-                  // square's outer edge and the white QR area, so the
-                  // white background never touches the square's own
-                  // border.
+                {/* Circuit direction, unconditionally - this square's
+                    own former QR-vs-CIRCUIT-text toggle (QR_ENABLED) was
+                    removed once the full-height standalone QR rotation
+                    slide fully superseded it (see PilotQrCard elsewhere
+                    in this file). "CIRCUIT" (7 characters) is the wider
+                    line regardless of direction - circuitLabelFontPx is
+                    calibrated against it, see that constant's comment. */}
+                <div
+                  className="flex flex-col items-center justify-center gap-1 overflow-hidden rounded-3xl border border-border bg-card p-3"
+                  style={{ width: squareSize, height: squareSize }}
+                >
                   <div
-                    className="rounded-3xl border border-border bg-card"
-                    style={{ width: squareSize, height: squareSize, padding: QR_QUIET_MARGIN_PX }}
+                    className="whitespace-nowrap font-bold leading-none text-primary"
+                    style={{ fontSize: circuitLabelFontPx }}
                   >
-                    {/* White fills the rest of the square inside that
-                        margin - this is the QR's actual quiet zone
-                        background, not just decoration. marginSize={4} on
-                        QRCodeSVG itself additionally draws 4 modules of
-                        quiet zone as part of the encoded QR (ISO spec
-                        minimum), which scales correctly with module size
-                        regardless of how this white area is sized -
-                        belt-and-braces with the card's own dark margin. */}
-                    <div className="flex h-full w-full items-center justify-center rounded-3xl bg-white">
-                      <QRCodeSVG value={PILOT_APP_URL} size={qrSizePx} level="M" marginSize={4} />
-                    </div>
+                    {circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left').toUpperCase()}
                   </div>
-                ) : (
-                  // QR paused (see QR_ENABLED's own comment) - same
-                  // outer square (still bg-card, no white area at all
-                  // while paused), circuit direction stacked over two
-                  // rows instead. "CIRCUIT" (7 characters) is the wider
-                  // line regardless of direction - circuitLabelFontPx is
-                  // calibrated against it, see that constant's comment.
                   <div
-                    className="flex flex-col items-center justify-center gap-1 overflow-hidden rounded-3xl border border-border bg-card p-3"
-                    style={{ width: squareSize, height: squareSize }}
+                    className="whitespace-nowrap font-bold leading-none text-primary"
+                    style={{ fontSize: circuitLabelFontPx }}
                   >
-                    <div
-                      className="whitespace-nowrap font-bold leading-none text-primary"
-                      style={{ fontSize: circuitLabelFontPx }}
-                    >
-                      {circuitDirectionLabel(opsPanel?.circuitDirection ?? 'left').toUpperCase()}
-                    </div>
-                    <div
-                      className="whitespace-nowrap font-bold leading-none text-primary"
-                      style={{ fontSize: circuitLabelFontPx }}
-                    >
-                      CIRCUIT
-                    </div>
+                    CIRCUIT
                   </div>
-                )}
+                </div>
                 {/* Caption below the square, on the card's normal dark
                     background - "Circuit" now (was "Runway In Use",
                     which read oddly for a square whose content is the
