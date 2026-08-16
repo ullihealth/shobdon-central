@@ -12,6 +12,14 @@ import { NOTAMS_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 // circuit direction, unconditionally.
 const QR_CARD_ENABLED = true
 
+// Same value/name as PilotViewPage.tsx's own REFRESH_INTERVAL_MS - not
+// imported from there (that file has no shared exports, and this
+// component is a different, desktop-side self-fetch entirely) but
+// deliberately the same 60s cadence for consistency across desktop/
+// /pilot, per the runway-direction staleness fix (see this file's own
+// refreshTick comment below).
+const REFRESH_INTERVAL_MS = 60_000
+
 type NoticeSize = 'sm' | 'md' | 'lg' | 'xl'
 
 interface SafetyNotice {
@@ -848,6 +856,32 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
     captionText: string
     mockupImageUrl: string | null
   } | null>(null)
+  // Runway-direction staleness bug fix: this self-fetch used to run only
+  // once on mount, same as every other desktop panel's own self-fetch -
+  // fine for opsPanel/displayWidthCm/qrSlideConfig's OTHER fields, which
+  // change rarely, but activeRunwayEnd/circuitDirection (inside opsPanel)
+  // can change at any time via SADDS automation (functions/api/ingest/
+  // weather.ts) or a manual ATC Control publish, with nothing to tell an
+  // already-open TV/browser tab it's now stale - confirmed as the root
+  // cause of a real production incident (runway direction stuck after a
+  // SADDS toggle, while wind/QNH/temp kept updating live via
+  // WeatherContext's own polling). refreshTick mirrors /pilot's own fix
+  // for the identical problem (PilotViewPage.tsx's 60s tick, consumed by
+  // PilotRunwayWindPanel.tsx via a `refreshSignal` prop) - same interval,
+  // same "increment a counter, add it to this effect's deps to re-run
+  // the existing fetch" mechanism, just owned locally rather than
+  // threaded down as a prop, since this component (like every other
+  // desktop panel) is already established as fully self-contained/self-
+  // fetching, not driven by parent-supplied state - see this file's own
+  // repeated comments on that convention. Deliberately not a NEW/third
+  // polling pattern, just this same one applied without prop-threading.
+  const [refreshTick, setRefreshTick] = useState(0)
+
+  useEffect(() => {
+    if (opsPanelData !== undefined) return
+    const interval = window.setInterval(() => setRefreshTick((tick) => tick + 1), REFRESH_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [opsPanelData])
 
   useEffect(() => {
     if (opsPanelData !== undefined) {
@@ -877,7 +911,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
     return () => {
       cancelled = true
     }
-  }, [opsPanelData])
+  }, [opsPanelData, refreshTick])
 
   // Automated NOTAM feed (functions/api/public/notams.ts) - fetched once
   // here at top-level mount, NOT inside the cards branch below. The A/B

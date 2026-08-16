@@ -15,6 +15,15 @@ import RunwayWindWidget, { type WindsockThresholds } from './RunwayWindWidget'
 // elsewhere), not a new pattern.
 const DEFAULT_WINDSOCK: WindsockThresholds = { band2Kt: 3, band3Kt: 7, band4Kt: 11, band5Kt: 15 }
 
+// Runway-direction staleness fix - same 60s value as PilotViewPage.tsx's
+// own REFRESH_INTERVAL_MS/RightInfoPanel.tsx's own copy of the same
+// constant (no shared export between them - each self-fetching
+// component here owns its constants independently, this codebase's own
+// established per-file-default convention, same note as
+// DEFAULT_WINDSOCK just above). See refreshTick's own comment below for
+// why this exists.
+const REFRESH_INTERVAL_MS = 60_000
+
 // Same gate PilotRunwayWindPanel.tsx already uses before rendering
 // RunwayWindWidget - a freshly-added-but-not-yet-configured runway group
 // (both identifiers still blank) would otherwise show an empty "--/--"
@@ -688,6 +697,29 @@ export default function CompassPanel({
     initialCompassMode
   )
 
+  // Runway-direction staleness bug fix: this self-fetch used to run only
+  // once on mount, matching a wider desktop-side pattern (RightInfoPanel.tsx
+  // had the identical gap) - fine for arrowThresholds/windsock, which
+  // change rarely, but activeRunwayEnd/circuitDirection can change at any
+  // time via SADDS automation or a manual ATC Control publish, with
+  // nothing telling an already-open TV/browser tab it's now stale.
+  // Confirmed as the root cause of a real production incident (runway
+  // direction stuck after a SADDS toggle, while wind/QNH/temp kept
+  // updating live via WeatherContext's own polling - a structurally
+  // different, already-continuous fetch this component doesn't touch).
+  // Mirrors /pilot's own fix for the identical problem (PilotViewPage.tsx's
+  // 60s tick, consumed by PilotRunwayWindPanel.tsx via a `refreshSignal`
+  // prop) - same interval, same "increment a counter, add it to the
+  // fetch effect's deps" mechanism, just owned locally rather than
+  // threaded down as a prop, since this component is already
+  // self-contained/self-fetching like every other desktop panel, not
+  // driven by parent-supplied state.
+  const [refreshTick, setRefreshTick] = useState(0)
+  useEffect(() => {
+    const interval = window.setInterval(() => setRefreshTick((tick) => tick + 1), REFRESH_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
@@ -717,7 +749,7 @@ export default function CompassPanel({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshTick])
 
   const compassState = useMemo<CompassState | null>(() => {
     if (!weather || clubProfile.runwayGroups.length === 0) return null
