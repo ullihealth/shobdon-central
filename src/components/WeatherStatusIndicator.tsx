@@ -52,7 +52,7 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
         // which is always Open-Meteo, never a different registered
         // provider.
         ? { emoji: '🔵', label: internetProviderDisplayName }
-        : { emoji: '🟢', label: 'Shobdon LIVE' }
+        : { emoji: '🟢', label: 'Shobdon Radio' }
       : activeProvider === 'internet'
         ? {
             emoji: '🔵',
@@ -93,7 +93,7 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
   // the label was always the same slate-200 grey regardless of state,
   // so /pilot's own header (hideIcon, text-only - see PilotHeader.tsx)
   // had no colour cue at all once the emoji was dropped. Keyed off the
-  // emoji itself, not a separate `label === 'Shobdon LIVE'` check, so
+  // emoji itself, not a separate `label === 'Shobdon Radio'` check, so
   // this also covers the ingested-cross-tenant-LIVE branch above (which
   // already deliberately reuses 🟢 for "genuinely live ATC data, just
   // captured at another tenant's site") without a second condition that
@@ -128,7 +128,7 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
           must never repaint RunwayWindWidget.tsx's own good-wind text.
           uppercase here (not on the div, which would also affect a
           future non-uppercase label) - scoped to isLive precisely
-          because that's the exact same "Shobdon LIVE"/"{STATION} LIVE"
+          because that's the exact same "Shobdon Radio"/"{STATION} LIVE"
           pair this token exists for, verified to be the ONLY two
           branches that ever set emoji to 🟢. */}
       <span className={isLive ? 'text-station-live uppercase' : undefined}>{label}</span>
