@@ -621,17 +621,21 @@ interface CompassPanelProps {
   // real preference is stored (by a toggle tap on ANY caller, since the
   // key is shared - see useCompassMode's own comment), that stored value
   // always wins here regardless of this prop, on this or any other
-  // caller. Defaults undefined (-> useCompassMode's own 'north' default)
-  // - every TV-dashboard template and RunwaysPage.tsx omits this and
-  // keeps today's NORTH first-load behaviour unchanged; only
-  // PilotViewPage.tsx passes 'runway'.
+  // caller. Defaults to 'runway' (this component's own default below,
+  // not useCompassMode's - that hook's own 'north' default still stands
+  // for its one remaining direct caller, RunwaysPage.tsx, which bypasses
+  // this component entirely and is deliberately left on North) - every
+  // TV-dashboard template (ClassicTemplate/Clubhouse2Template/
+  // CentreDisplayPanel) omits this prop and so now gets RUNWAY on a
+  // genuinely first-ever load, matching PilotViewPage.tsx's own explicit
+  // 'runway', which needs no change itself.
   initialCompassMode?: CompassMode
 }
 
 export default function CompassPanel({
   spacious = false,
   hideReadout = false,
-  initialCompassMode,
+  initialCompassMode = 'runway',
 }: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
