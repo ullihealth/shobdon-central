@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 import { TENANT_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup } from '../types/clubProfile'
 import RunwayStripPreview from '../components/RunwayStripPreview'
@@ -235,12 +234,19 @@ export default function RunwaysPage(): JSX.Element {
     setSelectedIndex((prev) => Math.max(0, Math.min(prev, groups.length - 2)))
   }
 
-  // Same PUT-then-refresh-trigger flow as /design's
-  // handleApplyToLiveScreen - runwayGroups is a full-replace body area
-  // (functions/api/tenant/config.ts DELETEs and re-inserts everything for
-  // this org on each call), so the complete staged list is always sent,
-  // not a diff. Gated behind confirm() since it affects the shared,
-  // physically-visible display, not just this browser.
+  // Same PUT-then-refresh flow as /design's handleApplyToLiveScreen -
+  // runwayGroups is a full-replace body area (functions/api/tenant/
+  // config.ts DELETEs and re-inserts everything for this org on each
+  // call), so the complete staged list is always sent, not a diff.
+  // Gated behind confirm() since it affects the shared, physically-
+  // visible display, not just this browser. "Refresh displays" round -
+  // the dashboard-reload side effect this used to trigger itself
+  // (fetch(REFRESH_TRIGGER_URL), with no tenant awareness) now happens
+  // server-side, inside the PUT above, scoped to this tenant only - see
+  // functions/api/tenant/config.ts's own comment (gated on
+  // body.runwayGroups, matching exactly what this call sends).
+  // Previously this client-side call reloaded EVERY tenant's live
+  // dashboard on every runway save here, not just this one's.
   async function handleUpdateDashboard() {
     if (
       !window.confirm(
@@ -261,7 +267,6 @@ export default function RunwaysPage(): JSX.Element {
         setApplyStatus('error')
         return
       }
-      await fetch(REFRESH_TRIGGER_URL)
       setApplyStatus('success')
     } catch {
       setApplyStatus('error')

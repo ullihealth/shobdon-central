@@ -15,7 +15,6 @@ import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
 import { currentMedia } from '../config/media'
-import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 import { TENANT_CONFIG_URL, BRANDING_LOGO_URL, OPS_PANEL_URL, GAS_PRICES_URL } from '../config/publicApi'
 
 const DEFAULT_GAS_PRICES: GasPricesPublic = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
@@ -1067,9 +1066,14 @@ export default function DesignPage(): JSX.Element {
       // Was a POST to the Worker's global theme KV key - now a PUT to the
       // tenant-scoped, authenticated config endpoint (this page is gated
       // behind login, so the session cookie is already present on this
-      // same-origin request). REFRESH_TRIGGER_URL is unrelated to where
-      // the theme is stored - it just tells PC2 to reload so its next
-      // page load re-fetches the now-updated public config - untouched.
+      // same-origin request). "Refresh displays" round - the dashboard-
+      // reload side effect this used to trigger itself (fetch(
+      // REFRESH_TRIGGER_URL), with no tenant awareness) now happens
+      // server-side, inside this same PUT, scoped to this tenant only -
+      // see functions/api/tenant/config.ts's own comment (gated on
+      // body.theme, matching exactly what this call sends). Previously
+      // this client-side call reloaded EVERY tenant's live dashboard on
+      // every theme save here, not just this one's.
       const themeResponse = await fetch(TENANT_CONFIG_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1079,7 +1083,6 @@ export default function DesignPage(): JSX.Element {
         setApplyStatus('error')
         return
       }
-      await fetch(REFRESH_TRIGGER_URL)
 
       if (needsTemplatePush) {
         const response = await fetch('/api/tenant/displays', {

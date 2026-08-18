@@ -24,6 +24,7 @@
 // needs write access here too, or the ticker's Notice-slot editing
 // silently 403s despite the rest of the page working.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { resolveTenantSlug, triggerTenantRefresh } from "../../_utils/refreshDisplays";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -32,6 +33,19 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+  // "Refresh displays" round - AtcControlPage.tsx's "Update Dashboard"
+  // save used to fire fetch(REFRESH_TRIGGER_URL) itself, client-side,
+  // with no tenant awareness at all - since that flag was global, saving
+  // ANY tenant's ops panel silently reloaded EVERY tenant's live
+  // dashboard. Moved server-side instead of just adding a `?tenant=`
+  // param to the client's own call: this handler already knows the
+  // caller's true tenant via the authenticated session (requireRoles
+  // below), so resolving the refresh target here makes it structurally
+  // impossible to target the wrong tenant - there's no client-supplied
+  // tenant identity to get wrong. See _utils/refreshDisplays.ts's own
+  // comment for the CAPTURE_KEY/FALLBACK_CAPTURE_KEY shape this shares
+  // with capture-refresh.ts/capture-logs.ts.
+  CAPTURE_KEY?: string;
 }
 
 interface OpsPanelRow {
@@ -413,6 +427,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       now
     )
     .run();
+
+  // Refreshes this SAME tenant's own live displays, never any other
+  // tenant's - see _utils/refreshDisplays.ts's own comment for why this
+  // moved server-side. Awaited (Pages Functions have no ctx.waitUntil in
+  // this codebase's own hand-rolled PagesFunction type - an unawaited
+  // promise risks being dropped once this function returns), but
+  // triggerTenantRefresh swallows its own errors and is timeout-bounded,
+  // so a slow/failed Worker call adds a small bounded amount of latency
+  // here, never fails this response.
+  const tenantSlug = await resolveTenantSlug(env.DB, organizationId);
+  if (tenantSlug) {
+    await triggerTenantRefresh(env, tenantSlug);
+  }
 
   return jsonResponse({ ok: true });
 };

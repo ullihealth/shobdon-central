@@ -11,6 +11,7 @@
 
 import { requireOwner, jsonResponse, syncOrganizationIdentity, type D1Database } from "../_utils/tenantAuth";
 import { buildPublicConfigData } from "../_utils/publicConfig";
+import { resolveTenantSlug, triggerTenantRefresh } from "../_utils/refreshDisplays";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -20,6 +21,18 @@ type PagesFunction<Env = unknown> = (context: {
 interface Env {
   DB: D1Database;
   MEDIA_PUBLIC_BASE_URL?: string;
+  // "Refresh displays" round - this endpoint is shared by SIX different
+  // callers (DesignPage, CafeMediaPage, ConfigPage, RunwaysPage,
+  // AirfieldLocationSection, WeatherSourceSelector - all PUT here), only
+  // two of which (Design's theme save, Runways' runwayGroups save)
+  // previously fired their own client-side fetch(REFRESH_TRIGGER_URL).
+  // The PUT handler below gates the server-side trigger on those exact
+  // same two fields (body.theme / body.runwayGroups) so this stays
+  // scoped to precisely those two save flows, not a blanket "refresh on
+  // any /api/tenant/config write" that would newly affect the other four
+  // callers, which never triggered a refresh before. See
+  // _utils/refreshDisplays.ts's own comment for the CAPTURE_KEY shape.
+  CAPTURE_KEY?: string;
 }
 
 interface RunwayGroupRow {
@@ -425,7 +438,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       .run();
   }
 
+  // "Refresh displays" round - set by the runwayGroups/theme blocks
+  // below (RunwaysPage.tsx's and DesignPage.tsx's own saves,
+  // respectively - the only two of this endpoint's six callers that
+  // ever triggered a refresh), consumed once near this handler's own
+  // return so sending both fields in one request (nothing does today)
+  // can't double-trigger.
+  let shouldTriggerRefresh = false;
+
   if (Array.isArray(body.runwayGroups)) {
+    shouldTriggerRefresh = true;
     await env.DB.prepare("DELETE FROM runway_groups WHERE organizationId = ?").bind(organizationId).run();
     for (const [index, group] of body.runwayGroups.entries()) {
       await env.DB
@@ -455,6 +477,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (body.theme && typeof body.theme === "object") {
+    shouldTriggerRefresh = true;
     await env.DB
       .prepare(
         "INSERT INTO club_theme (organizationId, tokensJson, updatedAt) VALUES (?, ?, ?) ON CONFLICT(organizationId) DO UPDATE SET tokensJson = excluded.tokensJson, updatedAt = excluded.updatedAt"
@@ -472,6 +495,20 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         )
         .bind(organizationId, slot.slot, slot.label, slot.url, now)
         .run();
+    }
+  }
+
+  // Refreshes this SAME tenant's own live displays, never any other
+  // tenant's - see refreshDisplays.ts's own comment. Awaited (Pages
+  // Functions have no ctx.waitUntil in this codebase's own hand-rolled
+  // PagesFunction type - an unawaited promise risks being dropped once
+  // this function returns), but triggerTenantRefresh swallows its own
+  // errors and is timeout-bounded, so a slow/failed Worker call adds a
+  // small bounded amount of latency here, never fails this response.
+  if (shouldTriggerRefresh) {
+    const tenantSlug = await resolveTenantSlug(env.DB, organizationId);
+    if (tenantSlug) {
+      await triggerTenantRefresh(env, tenantSlug);
     }
   }
 

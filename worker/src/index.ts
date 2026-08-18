@@ -122,10 +122,55 @@ function escapeHtml(value: string): string {
 // the app and clears the flag the moment it's read, whether or not the app
 // actually reloads that cycle. This keeps the worker itself simple - the
 // "don't interrupt an in-progress capture" logic lives entirely client-side.
-const REFRESH_FLAG_KEY = 'refresh-requested'
+//
+// Platform "refresh displays" round - this used to be ONE global key, read
+// by every tenant's dashboard regardless of which tenant it belonged to.
+// Found in review that this was already a live, unintentional side effect:
+// AtcControlPage.tsx's "Update Dashboard" save calls this same trigger to
+// reload the dashboard it just changed, which meant saving ANY tenant's ops
+// panel silently reloaded EVERY OTHER tenant's live screen too. The key is
+// now namespaced per tenant slug so a refresh only ever affects the tenant
+// it names - REFRESH_ALL_SENTINEL below is the one deliberate exception,
+// and it fans out by writing that same per-tenant key for every tenant
+// individually (server-side), not by inventing a second "everyone" flag
+// concept that RemoteRefreshWatcher would need its own separate polling
+// path for.
+function refreshFlagKey(tenantSlug: string): string {
+  return `refresh-requested:${tenantSlug}`
+}
 
-async function handleSetRefreshFlag(env: Env): Promise<Response> {
-  await env.CAPTURES.put(REFRESH_FLAG_KEY, new Date().toISOString())
+// Bare `/refresh?key=...` with no `?tenant=` - PC2's own phone-bookmark
+// shortcut, unchanged since before per-tenant scoping existed. Must keep
+// meaning exactly what it always has (refresh Shobdon's own display),
+// never silently reinterpreted as "refresh everyone" just because this
+// route grew tenant-awareness for other callers.
+const DEFAULT_REFRESH_TENANT_SLUG = 'shobdon'
+
+const REFRESH_ALL_SENTINEL = 'all'
+
+// Dynamic, not hardcoded - same query shape runWeatherFallbackCheck already
+// uses to enumerate tenants, so a future tenant is included in "refresh all"
+// automatically, with no per-tenant wiring here either.
+async function fetchActiveTenantSlugs(env: Env): Promise<string[]> {
+  const { results } = await env.DB
+    .prepare('SELECT slug FROM tenants WHERE active = 1 AND deleted_at IS NULL')
+    .bind()
+    .all<{ slug: string }>()
+  return results.map((row) => row.slug)
+}
+
+async function handleSetRefreshFlag(request: Request, env: Env): Promise<Response> {
+  const tenantParam = new URL(request.url).searchParams.get('tenant') || DEFAULT_REFRESH_TENANT_SLUG
+
+  let summary: string
+  if (tenantParam === REFRESH_ALL_SENTINEL) {
+    const slugs = await fetchActiveTenantSlugs(env)
+    await Promise.all(slugs.map((slug) => env.CAPTURES.put(refreshFlagKey(slug), new Date().toISOString())))
+    summary = `${slugs.length} tenant display${slugs.length === 1 ? '' : 's'}`
+  } else {
+    await env.CAPTURES.put(refreshFlagKey(tenantParam), new Date().toISOString())
+    summary = `"${tenantParam}"`
+  }
 
   const html = `<!doctype html>
 <html>
@@ -137,8 +182,8 @@ async function handleSetRefreshFlag(env: Env): Promise<Response> {
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#03101a; color:#e2e8f0; padding:2rem; max-width:600px; margin:0 auto; text-align:center;">
   <h1 style="font-size:1.25rem;">✅ Refresh requested</h1>
-  <p style="color:#94a3b8;">PC2 will pick this up within about 15 seconds - immediately if it's idle, or right after
-  the current capture finishes if one is running.</p>
+  <p style="color:#94a3b8;">Flagged for ${escapeHtml(summary)}. Live displays will pick this up within about 15
+  seconds - immediately if idle, or right after any in-progress capture finishes.</p>
 </body>
 </html>`
 
@@ -148,10 +193,13 @@ async function handleSetRefreshFlag(env: Env): Promise<Response> {
   })
 }
 
-async function handleCheckRefreshFlag(env: Env): Promise<Response> {
-  const flag = await env.CAPTURES.get(REFRESH_FLAG_KEY)
+async function handleCheckRefreshFlag(request: Request, env: Env): Promise<Response> {
+  const tenantParam = new URL(request.url).searchParams.get('tenant') || DEFAULT_REFRESH_TENANT_SLUG
+  const key = refreshFlagKey(tenantParam)
+
+  const flag = await env.CAPTURES.get(key)
   if (flag) {
-    await env.CAPTURES.delete(REFRESH_FLAG_KEY)
+    await env.CAPTURES.delete(key)
   }
 
   return new Response(JSON.stringify({ refreshRequested: !!flag }), {
@@ -1040,11 +1088,11 @@ export default {
     const pathname = new URL(request.url).pathname
 
     if (pathname === '/refresh' && request.method === 'GET') {
-      return handleSetRefreshFlag(env)
+      return handleSetRefreshFlag(request, env)
     }
 
     if (pathname === '/refresh-check' && request.method === 'GET') {
-      return handleCheckRefreshFlag(env)
+      return handleCheckRefreshFlag(request, env)
     }
 
     if (pathname === '/investigate' && request.method === 'POST') {

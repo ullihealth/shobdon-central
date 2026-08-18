@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
-import { REFRESH_TRIGGER_URL } from '../config/captureEndpoint'
 
 const AIRFIELD_INFO_MAX_LENGTH = 60
 const SAFETY_NOTICE_MAX_LENGTH = 40
@@ -417,7 +416,12 @@ export default function AtcControlPage(): JSX.Element {
         setApplyStatus('error')
         return
       }
-      await fetch(REFRESH_TRIGGER_URL)
+      // "Refresh displays" round - the dashboard-reload side effect this
+      // used to trigger itself (fetch(REFRESH_TRIGGER_URL), with no
+      // tenant awareness) now happens server-side, inside the PUT above,
+      // scoped to this tenant only - see ops-panel/index.ts's own
+      // comment. Previously this client-side call reloaded EVERY
+      // tenant's live dashboard on every save here, not just this one's.
       setApplyStatus('success')
     } catch {
       setApplyStatus('error')

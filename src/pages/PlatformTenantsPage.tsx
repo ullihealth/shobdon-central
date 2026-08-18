@@ -6,6 +6,7 @@ import type { MemberRole } from '../types/member'
 import PilotTickerSlotsEditor from '../components/platform/PilotTickerSlotsEditor'
 
 const TENANTS_URL = '/api/platform/tenants'
+const REFRESH_DISPLAYS_URL = '/api/platform/refresh-displays'
 
 // Client-side mirror of functions/api/_utils/tenantSlug.ts's own
 // SLUG_FORMAT - instant typo feedback without a network round-trip.
@@ -195,6 +196,21 @@ async function patchTenant(id: number, body: Record<string, boolean | number | s
     body: JSON.stringify(body),
   })
   return response.ok ? response.json() : null
+}
+
+// "Refresh displays" round - `tenant` is a slug (this tenant only) or
+// the literal "all" (every active tenant, fanned out server-side by the
+// Worker - see functions/api/platform/refresh-displays.ts's own
+// comment). Returns whether the request succeeded; the endpoint itself
+// is the auth boundary (requirePlatformAdmin) - the CAPTURE_KEY the
+// Worker actually checks never reaches this client at all.
+async function triggerRefreshDisplays(tenant: string): Promise<boolean> {
+  const response = await fetch(REFRESH_DISPLAYS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenant }),
+  })
+  return response.ok
 }
 
 type DisplayPatchResult = { active: boolean; entitled: boolean; entitlementTrialExpiresAt: string | null }
@@ -443,6 +459,43 @@ function QrCaptionTextEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSa
         className="mt-1 w-40 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
       />
     </div>
+  )
+}
+
+type RefreshDisplaysStatus = 'idle' | 'loading' | 'success' | 'error'
+
+// "Refresh displays" round - an ACTION button, not a field editor like
+// its neighbours above, but colocated here since it's the same
+// per-tenant-row unit of UI. No confirm() gate, unlike Suspend/Archive
+// further down this file - reloading one tenant's own live screen is
+// low-stakes (a few seconds of blank/reload flash on THEIR OWN display,
+// nothing destructive or irreversible), unlike the page-level "refresh
+// all tenants" action below, which deliberately does confirm first
+// given its much larger blast radius.
+function RefreshDisplaysButton({ tenant }: { tenant: PlatformTenant }): JSX.Element {
+  const [status, setStatus] = useState<RefreshDisplaysStatus>('idle')
+
+  async function handleClick() {
+    setStatus('loading')
+    const ok = await triggerRefreshDisplays(tenant.slug)
+    setStatus(ok ? 'success' : 'error')
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={status === 'loading'}
+      className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10 disabled:opacity-60"
+    >
+      {status === 'loading'
+        ? 'Refreshing…'
+        : status === 'success'
+          ? 'Refreshed ✓'
+          : status === 'error'
+            ? 'Failed - retry'
+            : 'Refresh this tenant’s displays'}
+    </button>
   )
 }
 
@@ -1460,6 +1513,24 @@ export default function PlatformTenantsPage(): JSX.Element {
     setSelectedTenantId((prev) => (prev === tenantId ? null : prev))
   }
 
+  // "Refresh displays" round - page-level fan-out over every active
+  // tenant (same underlying endpoint/Worker primitive as
+  // RefreshDisplaysButton above, just called with "all" instead of one
+  // slug - see refresh-displays.ts's own comment on why this isn't a
+  // separate mechanism). Confirm-gated, unlike the per-tenant button:
+  // this one reloads every live screen platform-wide, not just one
+  // tenant's own.
+  const [refreshAllStatus, setRefreshAllStatus] = useState<RefreshDisplaysStatus>('idle')
+
+  async function handleRefreshAllDisplays() {
+    const message =
+      'Refresh every tenant’s live displays now? Every dashboard currently open, across every airfield, will reload within about 15 seconds.'
+    if (!window.confirm(message)) return
+    setRefreshAllStatus('loading')
+    const ok = await triggerRefreshDisplays('all')
+    setRefreshAllStatus(ok ? 'success' : 'error')
+  }
+
   const [onboarding, setOnboarding] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; slug: string; email: string } | null>(null)
   const [onboardError, setOnboardError] = useState<string | null>(null)
@@ -1640,12 +1711,28 @@ export default function PlatformTenantsPage(): JSX.Element {
               Platform · Tenants
             </Link>
           </h1>
-          <Link
-            to="/platform/onboarding-content"
-            className="pt-2 text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
-          >
-            Edit onboarding content →
-          </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={handleRefreshAllDisplays}
+              disabled={refreshAllStatus === 'loading'}
+              className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10 disabled:opacity-60"
+            >
+              {refreshAllStatus === 'loading'
+                ? 'Refreshing all…'
+                : refreshAllStatus === 'success'
+                  ? 'Refreshed all ✓'
+                  : refreshAllStatus === 'error'
+                    ? 'Failed - retry'
+                    : 'Refresh all tenant displays'}
+            </button>
+            <Link
+              to="/platform/onboarding-content"
+              className="text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
+            >
+              Edit onboarding content →
+            </Link>
+          </div>
         </div>
 
         {/* Own labeled block, not squeezed beside another link in the
@@ -1950,6 +2037,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                     >
                       Manage reserved slots (5/8/12) →
                     </Link>
+                    <RefreshDisplaysButton tenant={selectedTenant} />
                   </div>
 
                   <PilotTickerSlotsEditor tenantId={selectedTenant.id} />
