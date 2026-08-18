@@ -41,7 +41,19 @@ export interface WeatherData {
   // shared tenant's own internet/third-party feed and style/label
   // accordingly - must never claim "ATC" for data that didn't actually
   // come from a physical station.
-  sourceReadingType?: 'atc_capture' | 'internet' | 'third_party_api'
+  //
+  // 'met_office_fallback' (platform weather-fallback cron round) -
+  // distinct from 'internet' deliberately: 'internet' means a tenant's
+  // own GENUINE primary source is an internet-based API; this means the
+  // station-owning parent tenant's real 'atc' feed went stale and the
+  // platform-level cron job (worker/src/index.ts's scheduled handler)
+  // substituted a Met Office/SAWS reading into weather_observations on
+  // its behalf, auditable/distinguishable from a real capture by this
+  // tag alone. WeatherStatusIndicator.tsx gives this the SAME blue
+  // "Met-Office SAWS" treatment activeProvider 'atc''s own client-side
+  // fallback already shows on the source tenant's own dashboard - a
+  // subtenant should see the identical story its parent would.
+  sourceReadingType?: 'atc_capture' | 'internet' | 'third_party_api' | 'met_office_fallback'
 }
 
 // 'mock' means the station could not be reached or its response could not

@@ -43,7 +43,19 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-const ALLOWED_SOURCE_TYPES = ["atc_capture", "internet", "third_party_api"];
+// 'met_office_fallback' (platform weather-fallback cron round) - written
+// by worker/src/index.ts's scheduled handler on behalf of a
+// station-owning ('atc') tenant whose real feed has gone stale,
+// distinct from 'internet' (a tenant's own genuine primary source being
+// an internet API) so a substituted reading is always auditable/
+// distinguishable from a real one. That handler writes directly to D1
+// (system-level access, not a per-tenant API key - see its own comment
+// for why), so this endpoint itself never actually receives a POST with
+// this sourceType in practice today; it's accepted here anyway so the
+// validation list stays the single source of truth for every value this
+// column can legitimately hold, not just the ones reachable through
+// this one endpoint.
+const ALLOWED_SOURCE_TYPES = ["atc_capture", "internet", "third_party_api", "met_office_fallback"];
 
 // Physical plausibility bounds - on top of, not instead of, the
 // presence/type check below (numberOrNull). That check alone catches a

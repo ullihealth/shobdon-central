@@ -12,6 +12,42 @@
 // Auth is a single shared-secret query param (?key=...), checked on every
 // method. Not hardened - just enough that this isn't an open, indexable log.
 
+// Platform weather-fallback cron round - genuinely imported (not
+// duplicated) from the main app's own source tree, unlike
+// WIND_DIR_MIN_DEG/isPlausibleCapture below (which ARE duplicated, see
+// that comment for why: no shared module existed for those before now).
+// Confirmed this specific cross-directory relative import bundles
+// cleanly under this Worker's own `wrangler deploy` (dry-run tested
+// directly, not assumed) - both files are plain TypeScript with only
+// type-only imports of their own, nothing browser/Pages-Functions-
+// specific, so nothing about being bundled into a separately-deployed
+// Worker changes their behaviour. Reusing the actual function (not a
+// second implementation) is what the platform weather-fallback design
+// explicitly called for - the UK Met Office model preference, the
+// fallback-to-default-blend retry, and the exact field mapping all stay
+// in the one place every other caller (manually-selected 'internet'
+// provider, WeatherContext's own 'atc' fallback) already relies on.
+import { fetchOpenMeteoWeather } from '../../src/services/internetProviders/openMeteo'
+import type { WeatherConfig } from '../../src/types/weatherConfig'
+
+// Minimal local D1 binding type - same "hand-roll a narrow local type
+// rather than pull in a dependency" convention MinimalExecutionContext
+// below already establishes, matching the shape functions/api/_utils/
+// tenantAuth.ts's own D1Database type already uses for the identical
+// reason there. Added for the platform weather-fallback cron
+// (runWeatherFallbackCheck below) - this Worker previously had no D1
+// access at all, communicating with the database only indirectly via
+// forwardToIngest's authenticated HTTP call to the Pages Functions app.
+export type D1Database = {
+  prepare: (query: string) => {
+    bind: (...values: unknown[]) => {
+      run: () => Promise<{ success: boolean }>
+      first: <T = Record<string, unknown>>() => Promise<T | null>
+      all: <T = unknown>() => Promise<{ results: T[] }>
+    }
+  }
+}
+
 export interface Env {
   CAPTURES: KVNamespace
   CAPTURE_KEY: string
@@ -23,6 +59,15 @@ export interface Env {
   // committed - same posture as CAPTURE_KEY already has via wrangler.toml
   // + the Cloudflare dashboard.
   SHOBDON_INGEST_KEY?: string
+  // Platform weather-fallback cron round - same production D1 database
+  // functions/ already binds as `DB` (wrangler.toml, database_id
+  // 31656f0d-...), bound here too so runWeatherFallbackCheck can read
+  // every station-owning ('atc') tenant and write a Met Office/SAWS
+  // fallback reading on their behalf, system-level, without needing a
+  // per-tenant API key (see that function's own comment for why the
+  // existing SHOBDON_INGEST_KEY pattern above doesn't generalize to
+  // this job).
+  DB: D1Database
 }
 
 // Minimal structural subset of the real Workers ExecutionContext - just
@@ -33,6 +78,13 @@ export interface Env {
 // types as a real dependency in this directory, which has none today.
 interface MinimalExecutionContext {
   waitUntil(promise: Promise<unknown>): void
+}
+
+// Same minimal-local-type convention as MinimalExecutionContext above -
+// only the one field runWeatherFallbackCheck's own trigger actually
+// wants to log, not the full real Workers ScheduledController shape.
+interface MinimalScheduledEvent {
+  cron: string
 }
 
 const MAX_HISTORY = 20
@@ -419,6 +471,216 @@ function isPlausibleCapture(windSpeedKt: number, windDirDeg: number, qnhHpa: num
     tempC >= TEMP_MIN_C &&
     tempC <= TEMP_MAX_C
   )
+}
+
+// Platform weather-fallback cron (see wrangler.toml's own [triggers]
+// crons) - checked every FALLBACK_CRON_INTERVAL_MINUTES, matching
+// WeatherContext.tsx's own FALLBACK_RECHECK_INTERVAL_SECONDS (5 min) so
+// the server-side job and the one remaining client-side state machine
+// (Shobdon's own 'atc'-provider dashboard, which reads the live KV
+// capture directly, not D1 - see this function's own closing comment)
+// operate on the same cadence instead of two independently-tuned
+// numbers that could drift apart. STALE_THRESHOLD_MINUTES is 2x that
+// interval - same "tolerate one missed run before treating it as a
+// genuine outage, not just ordinary poll-timing jitter" reasoning
+// atcProvider.ts's own 2x-cadence threshold already uses for its much
+// tighter (~60s) per-poll check.
+const FALLBACK_CRON_INTERVAL_MINUTES = 5
+const STALE_THRESHOLD_MINUTES = FALLBACK_CRON_INTERVAL_MINUTES * 2
+
+// Platform-level weather continuity guarantee - runs on a schedule,
+// independent of any single tenant's own capture pipeline. For every
+// tenant that OWNS a physical station (active_weather_provider = 'atc'
+// - queried fresh on every run, never hardcoded, so this automatically
+// covers every future airfield onboarded the same way Shobdon was, with
+// zero additional wiring), checks whether its most recent GENUINE
+// capture (weather_observations.source_type = 'atc_capture', NOT
+// latest_conditions.last_updated_at - see the staleness-feedback-loop
+// comment right above the query below for why that distinction is load-
+// bearing) is still fresh. If not (that tenant's own PC2-equivalent has
+// stopped sending - the same "capture stopped" condition
+// atcProvider.ts's own per-poll staleness check already detects
+// client-side, just checked here on a slower, platform-wide cadence
+// instead of per-browser-tab), fetches a Met Office/SAWS reading for
+// that tenant's own stored lat/lon (tenants.lat/lon) via
+// fetchOpenMeteoWeather - imported, not reimplemented, see this file's
+// own import comment - and writes it straight into
+// weather_observations/latest_conditions for that SAME tenant, tagged
+// source_type = 'met_office_fallback' (see that column's own comment in
+// functions/api/ingest/weather.ts and types/weather.ts's
+// sourceReadingType).
+//
+// Once this tenant's own data stream is continuous again (real capture
+// OR this fallback), EVERY subtenant linked to it via parent_tenant_id
+// inherits the fix for free - functions/api/public/weather-latest.ts's
+// existing resolveEffectiveTenantById already reads whichever tenant is
+// the effective source, with no subtenant-specific code anywhere. This
+// is the whole point of moving the guarantee here instead of extending
+// WeatherContext.tsx's own client-side 'atc' effect to also cover
+// 'ingested' consumers (the shape explicitly rejected for this round) -
+// one server-side job covers the station-owning tenant AND every one of
+// its subtenants at once, for this tenant and every future one, rather
+// than requiring every dashboard consumer to independently detect and
+// react to the same staleness.
+//
+// Deliberately writes to D1 directly (env.DB, a system-level binding on
+// THIS Worker) rather than POSTing through the authenticated
+// /api/ingest/weather endpoint the way a real station relay does
+// (forwardToIngest below, or PC2's own script, via SHOBDON_INGEST_KEY).
+// That endpoint's per-tenant API key model is right for "one specific
+// device authenticating as the one tenant it belongs to," but wrong
+// here: this job legitimately needs to write on behalf of an arbitrary,
+// dynamically-discovered set of tenants, and API keys are SHA-256
+// hashed at rest with the raw value never recoverable after generation
+// (apiKeys.ts's own comment) - minting and securely storing one more
+// named secret per future station-owning tenant purely so this job
+// could authenticate as each of them is exactly the kind of per-tenant
+// wiring this whole round exists to eliminate.
+//
+// The INSERT/UPSERT shape below mirrors (does not import - separately
+// deployed Worker, no shared build for runtime code, same reason
+// WIND_DIR_MIN_DEG etc. above are already duplicated rather than
+// imported) functions/api/ingest/weather.ts's own POST handler exactly,
+// including deliberately leaving runway/runway_hand as NULL - Open-Meteo
+// has no runway concept, and a NULL runway is what already makes that
+// endpoint's own ops_panel_state sync block a no-op (its own
+// `if (runway !== null)` guard) rather than this fallback data ever
+// silently overwriting the ATC Control page's "official" runway-in-use
+// state, which has its own separate SADDS automation flag and must stay
+// untouched by this.
+//
+// NOT yet wired to Shobdon's own 'atc'-provider dashboard: that reads
+// the live KV capture endpoint directly (fetchAtcWeather/LATEST_READING_URL),
+// never weather_observations/D1, so this job keeping D1 fresh does not
+// by itself help the station-owning tenant's OWN dashboard - it already
+// has its own working client-side fallback (WeatherContext.tsx's
+// 'atc'-only effect), untouched by this round. Unifying the
+// station-owning tenant's own dashboard onto this same D1-backed path
+// (so this one job becomes the ENTIRE platform's single continuity
+// guarantee, full stop) is a real, larger follow-up worth doing
+// deliberately, not a side effect of this change - see this round's own
+// report.
+async function runWeatherFallbackCheck(env: Env): Promise<void> {
+  const { results: stationTenants } = await env.DB
+    .prepare("SELECT id, lat, lon FROM tenants WHERE active_weather_provider = 'atc' AND active = 1 AND deleted_at IS NULL")
+    .bind()
+    .all<{ id: number; lat: number | null; lon: number | null }>()
+
+  for (const tenant of stationTenants) {
+    // No known location - nothing to fetch a fallback reading FOR. Not
+    // logged as an error - a station-owning tenant with lat/lon unset
+    // yet is a real, valid interim onboarding state, same posture
+    // publicApi.ts's own null-coalescing fallbacks already take
+    // elsewhere for an incompletely-configured tenant.
+    if (typeof tenant.lat !== 'number' || typeof tenant.lon !== 'number') continue
+
+    // Staleness-feedback-loop fix (code review round): this MUST read
+    // the tenant's last GENUINE 'atc_capture' observation, never
+    // latest_conditions.last_updated_at - the fallback's own upsert
+    // below writes that exact column, so checking it would let the
+    // fallback's own write make the row look "fresh" again and silence
+    // itself for the next 1-2 cron ticks instead of re-checking (and
+    // re-writing) every single tick a real station stays down, letting
+    // displayed weather lag up to STALE_THRESHOLD_MINUTES behind actual
+    // conditions instead of one cron interval. Scoping to source_type =
+    // 'atc_capture' specifically (not just "any observation") is what
+    // keeps the fallback job blind to its own prior writes - a self-
+    // reinforcing "fresh because I made it fresh" loop is exactly the
+    // bug this guards against.
+    //
+    // Confirmed efficient before writing this: idx_weather_tenant_time
+    // (tenant_id, observed_at DESC) - migrations/0022_tenant_schema.sql -
+    // already lets SQLite's planner do an index range scan keyed on
+    // tenant_id, walking rows in observed_at DESC order (no separate
+    // sort step) and applying the source_type filter per row as it
+    // goes, stopping at the first match for LIMIT 1 - verified via
+    // EXPLAIN QUERY PLAN against local D1
+    // ("SEARCH weather_observations USING INDEX idx_weather_tenant_time
+    // (tenant_id=?)"). Real captures run far more often (~60s cadence,
+    // atcProvider.ts) than this 5-minute cron, so in practice this walks
+    // at most a handful of rows before finding the latest real capture -
+    // not a full-table or even full-per-tenant scan - so no new index
+    // was needed.
+    const latestCapture = await env.DB
+      .prepare("SELECT observed_at AS observedAt FROM weather_observations WHERE tenant_id = ? AND source_type = 'atc_capture' ORDER BY observed_at DESC LIMIT 1")
+      .bind(tenant.id)
+      .first<{ observedAt: string }>()
+
+    const lastCaptureMs = latestCapture?.observedAt ? Date.parse(latestCapture.observedAt) : NaN
+    const isStale = Number.isNaN(lastCaptureMs) || Date.now() - lastCaptureMs > STALE_THRESHOLD_MINUTES * 60 * 1000
+    if (!isStale) continue
+
+    try {
+      // Minimal WeatherConfig stub - fetchOpenMeteoWeather only ever
+      // reads config.internet.latitude/longitude (confirmed against its
+      // own source before reusing it here, not assumed); every other
+      // field exists only to satisfy the shared type this call site
+      // doesn't otherwise need, never actually read by this call.
+      const stubConfig: WeatherConfig = {
+        activeProvider: 'internet',
+        atc: { stationUrl: '', refreshIntervalSeconds: 60, connectionTimeoutMs: 5000, autoReconnectEnabled: true },
+        internet: { provider: 'open-meteo', latitude: tenant.lat, longitude: tenant.lon, refreshIntervalSeconds: 60 },
+      }
+      const { data } = await fetchOpenMeteoWeather(stubConfig)
+
+      if (!isPlausibleCapture(data.windSpeed, data.windDirection, data.qnh, data.temperature)) {
+        console.error('runWeatherFallbackCheck: rejecting implausible Open-Meteo reading', { tenantId: tenant.id, data })
+        continue
+      }
+
+      const observedAt = new Date().toISOString()
+      const insertResult = await env.DB
+        .prepare(
+          `INSERT INTO weather_observations
+             (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, qfe_hpa, temp_c, dewpoint_c, visibility_m, raw_snapshot_id, source_type, notams_json, runway, runway_hand)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          tenant.id,
+          observedAt,
+          data.windSpeed,
+          data.windDirection,
+          data.windGust ?? null,
+          data.qnh,
+          null,
+          data.temperature,
+          data.dewpoint ?? null,
+          null,
+          null,
+          'met_office_fallback',
+          JSON.stringify([]),
+          null,
+          null
+        )
+        .run()
+      if (!insertResult.success) {
+        console.error('runWeatherFallbackCheck: failed to insert fallback observation', { tenantId: tenant.id })
+        continue
+      }
+
+      const inserted = await env.DB
+        .prepare('SELECT id FROM weather_observations WHERE tenant_id = ? ORDER BY id DESC LIMIT 1')
+        .bind(tenant.id)
+        .first<{ id: number }>()
+
+      await env.DB
+        .prepare(
+          `INSERT INTO latest_conditions (tenant_id, observation_id, last_updated_at, expected_interval_min, is_stale)
+           VALUES (?, ?, ?, 10, 0)
+           ON CONFLICT(tenant_id) DO UPDATE SET
+             observation_id = excluded.observation_id,
+             last_updated_at = excluded.last_updated_at,
+             is_stale = 0`
+        )
+        .bind(tenant.id, inserted?.id ?? null, observedAt)
+        .run()
+    } catch (error) {
+      console.error('runWeatherFallbackCheck: fallback fetch/write failed', {
+        tenantId: tenant.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 }
 
 // Forwards this capture's already-parsed fields to the generic,
@@ -809,5 +1071,17 @@ export default {
     if (request.method === 'GET') return handleGet(env)
 
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS })
+  },
+
+  // Platform weather-fallback cron round. Fires on wrangler.worker.toml's
+  // [triggers] crons schedule (every FALLBACK_CRON_INTERVAL_MINUTES) -
+  // see runWeatherFallbackCheck's own comment for the full design. Same
+  // waitUntil(...catch(() => {})) shape handlePost already uses for
+  // forwardToIngest: one bad tenant/fetch must never surface as an
+  // uncaught exception that Cloudflare would otherwise log as a failed
+  // cron invocation, since runWeatherFallbackCheck already isolates and
+  // logs per-tenant failures internally.
+  async scheduled(_event: MinimalScheduledEvent, env: Env, ctx: MinimalExecutionContext): Promise<void> {
+    ctx.waitUntil(runWeatherFallbackCheck(env).catch((error) => console.error('runWeatherFallbackCheck failed', error)))
   },
 }

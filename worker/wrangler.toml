@@ -8,3 +8,25 @@ compatibility_date = "2026-07-01"
 [[kv_namespaces]]
 binding = "CAPTURES"
 id = "3b9cf9c372684ed3b94dcad4dfef6165"
+
+# Platform weather-fallback cron round - this Worker was previously
+# D1-free (KV only). Same database_id as the root wrangler.toml and
+# wrangler.worker.toml's own [[d1_databases]] blocks (shobdon-central) -
+# not a separate copy. Bound here so runWeatherFallbackCheck can write
+# weather_observations/latest_conditions directly, without going through
+# the per-tenant-API-key-authenticated ingest endpoint (see that
+# function's own comment for why a system-level binding was chosen
+# instead - per-tenant keys don't scale to N future tenants with zero
+# additional wiring).
+[[d1_databases]]
+binding = "DB"
+database_name = "shobdon-central"
+database_id = "31656f0d-3bf3-4c0f-96bb-39bf90c9e179"
+
+# Fires runWeatherFallbackCheck on a 5-minute cadence, matching
+# FALLBACK_CRON_INTERVAL_MINUTES (src/index.ts) and
+# WeatherContext.tsx's own FALLBACK_RECHECK_INTERVAL_SECONDS, so the
+# platform-level guarantee rechecks staleness on the same cadence the
+# existing client-side ATC fallback already does.
+[triggers]
+crons = ["*/5 * * * *"]

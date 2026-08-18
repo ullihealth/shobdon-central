@@ -84,8 +84,37 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
           // generic - never claim ATC for a reading that isn't one.
           activeProvider === 'ingested' && weather?.sourceTenantName
           ? weather.sourceReadingType === 'atc_capture'
-            ? { emoji: '🟢', label: `${firstWordUpper(weather.sourceTenantName)} LIVE` }
-            : { emoji: '🟣', label: `SHARED: ${firstWordUpper(weather.sourceTenantName)}` }
+            ? // Shobdon-branding round: the source tenant's name is only
+              // ever "Shobdon" itself today (the only tenant with real
+              // physical ATC capture - see WeatherStatusIndicator's own
+              // production data check), but this stays name-driven
+              // rather than a blanket "always say Radio here" - a future
+              // subtenant sharing a DIFFERENT physical-ATC tenant's feed
+              // must keep that tenant's own "{NAME} LIVE" label
+              // unchanged, not inherit Shobdon's own rebrand.
+              {
+                emoji: '🟢',
+                label:
+                  firstWordUpper(weather.sourceTenantName) === 'SHOBDON'
+                    ? 'Shobdon Radio'
+                    : `${firstWordUpper(weather.sourceTenantName)} LIVE`,
+              }
+            : // Platform weather-fallback cron round - the parent
+              // (station-owning) tenant's own real feed went stale and
+              // worker/src/index.ts's scheduled handler substituted a
+              // Met Office/SAWS reading on its behalf (source_type
+              // 'met_office_fallback', written straight into
+              // weather_observations for the PARENT tenant - see that
+              // handler's own comment). A subtenant reading this via
+              // 'ingested' should see the exact same blue "Met-Office
+              // SAWS" story the parent's own 'atc'-provider dashboard
+              // shows during ITS client-side fallback, not the generic
+              // purple "SHARED" treatment below, which would tell a
+              // viewer nothing about why the data looks different from
+              // usual.
+              weather.sourceReadingType === 'met_office_fallback'
+              ? { emoji: '🔵', label: internetProviderDisplayName }
+              : { emoji: '🟣', label: `SHARED: ${firstWordUpper(weather.sourceTenantName)}` }
           : STATUS_BY_PROVIDER[activeProvider]
 
   // Colour round: text now carries the same "this is a genuine live ATC

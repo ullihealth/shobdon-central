@@ -39,7 +39,7 @@ function stringArrayField(value: unknown): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : []
 }
 
-const SOURCE_READING_TYPES = new Set(['atc_capture', 'internet', 'third_party_api'])
+const SOURCE_READING_TYPES = new Set(['atc_capture', 'internet', 'third_party_api', 'met_office_fallback'])
 
 function asSourceReadingType(value: string): WeatherData['sourceReadingType'] {
   return SOURCE_READING_TYPES.has(value) ? (value as WeatherData['sourceReadingType']) : undefined
