@@ -101,35 +101,78 @@ interface SignupResult {
 const SLUG_FORMAT = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/
 const SLUG_CHECK_DEBOUNCE_MS = 400
 
+// Venue/café onboarding round - client-side mirror of
+// tenantSlug.ts's own exported CAFE_SLUG_SUFFIX, same "mirror for
+// instant feedback, server stays the real enforcement" posture
+// SLUG_FORMAT above already established. The café branch's slug is
+// auto-generated from the venue name (slugifyVenueName below), never
+// typed directly - this suffix is always appended, never optional.
+const CAFE_SLUG_SUFFIX = '-media'
+
+type SignupType = 'airfield' | 'venue_cafe'
+
+// Best-effort client-side slug derivation - deliberately looser than
+// SLUG_FORMAT's own strict validation (which still runs, server-side,
+// against the FULL derived value including suffix - see
+// trial-signup.ts's venue_cafe branch). Collapses anything that isn't
+// a-z0-9 into single hyphens and trims leading/trailing ones, same
+// general shape check-slug.ts's own reserved-word/format layer expects.
+function slugifyVenueName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 // Real provisioning on submit (a genuine organization + tenants row via
 // TRIAL_SIGNUP_URL), not a fake lead-capture form - but deliberately
 // does not create a login (no password collected, by design - see
 // functions/api/public/trial-signup.ts's own comment). The success
 // state reflects that honestly rather than implying a working login
 // exists yet.
+//
+// Venue/café onboarding round - forks into two field sets sharing one
+// submission path. signupType picked via a fork BEFORE any field
+// renders (below), so a visitor never sees a field for the product
+// they didn't pick. contactEmail/lat/lon are shared state either way
+// (same field, same purpose, same validation in both branches) -
+// clubName/location (airfield) and venueName/interestedParentAirfield
+// (venue_cafe) are branch-specific. Slug handling differs the most:
+// airfield keeps the existing manually-typed + live-checked field;
+// venue_cafe derives it from venueName (slugifyVenueName + the mandatory
+// -media suffix) and shows it as a read-only preview, never a text input
+// - see the café branch's own JSX below.
 function SignupForm(): JSX.Element {
+  const [signupType, setSignupType] = useState<SignupType>('airfield')
+
+  // Airfield-branch-only fields
   const [clubName, setClubName] = useState('')
-  const [contactEmail, setContactEmail] = useState('')
   const [location, setLocation] = useState('')
+  const [slug, setSlug] = useState('')
+
+  // Venue/café-branch-only fields
+  const [venueName, setVenueName] = useState('')
+  const [interestedParentAirfield, setInterestedParentAirfield] = useState('')
+
+  // Shared - same field/purpose/validation in both branches
+  const [contactEmail, setContactEmail] = useState('')
   // Required (weather-share investigation round) - the free-text
   // `location` field above was never actually wired to weather despite
   // its own "for weather lookup" label, which let a real tenant get
   // created with no usable coordinates at all. Kept separate from that
   // field rather than replacing it - `location` is a human-readable note
   // for Jeff's own manual follow-up (see this file's own top comment),
-  // these two are the real, geocodable values.
+  // these two are the real, geocodable values. Also the venue_cafe
+  // branch's ONLY location input - that branch collects no separate
+  // free-text location note (see trial-signup.ts's own comment on why).
   const [lat, setLat] = useState('')
   const [lon, setLon] = useState('')
+
   const [status, setStatus] = useState<SignupStatus>('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [result, setResult] = useState<SignupResult | null>(null)
 
-  // Required here, unlike the platform-admin invite flow's own optional
-  // version of this same field - Jeff's own reasoning: a self-serve
-  // customer choosing their address up front avoids ever having to tell
-  // them afterward "actually, please switch to this new URL instead" -
-  // there's no admin relationship here to smooth that over.
-  const [slug, setSlug] = useState('')
   const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>(
     { status: 'idle' }
   )
@@ -139,21 +182,37 @@ function SignupForm(): JSX.Element {
   const latValid = lat.trim() !== '' && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
   const lonValid = lon.trim() !== '' && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
 
+  // Airfield branch - required here, unlike the platform-admin invite
+  // flow's own optional version of this same field - Jeff's own
+  // reasoning: a self-serve customer choosing their address up front
+  // avoids ever having to tell them afterward "actually, please switch
+  // to this new URL instead" - there's no admin relationship here to
+  // smooth that over.
   const trimmedSlug = slug.trim()
   const slugFormatError =
     trimmedSlug && !SLUG_FORMAT.test(trimmedSlug)
       ? '3-63 characters: lowercase letters, numbers, and hyphens only, not starting or ending with a hyphen'
       : null
 
+  // Venue/café branch - derived, not typed. Truncates the venue-name
+  // portion (not the suffix) to stay under the 63-char DNS-label ceiling
+  // SLUG_FORMAT/tenantSlug.ts's own isValidSlugFormat both enforce.
+  const cafeSlugBase = slugifyVenueName(venueName).slice(0, 63 - CAFE_SLUG_SUFFIX.length)
+  const cafeSlug = cafeSlugBase ? `${cafeSlugBase}${CAFE_SLUG_SUFFIX}` : ''
+
+  const effectiveSlug = signupType === 'venue_cafe' ? cafeSlug : trimmedSlug
+  const effectiveSlugCheckable = signupType === 'venue_cafe' ? !!cafeSlug : !!trimmedSlug && !slugFormatError
+
   useEffect(() => {
-    if (!trimmedSlug || slugFormatError) {
+    if (!effectiveSlugCheckable) {
       setSlugCheck({ status: 'idle' })
       return
     }
     let cancelled = false
     setSlugCheck({ status: 'checking' })
     const timeoutId = window.setTimeout(() => {
-      fetch(`${PUBLIC_CHECK_SLUG_URL}?slug=${encodeURIComponent(trimmedSlug)}`)
+      const signupTypeParam = signupType === 'venue_cafe' ? '&signupType=venue_cafe' : ''
+      fetch(`${PUBLIC_CHECK_SLUG_URL}?slug=${encodeURIComponent(effectiveSlug)}${signupTypeParam}`)
         .then((response) => (response.ok ? response.json() : null))
         .then((data) => {
           if (cancelled || !data) return
@@ -167,7 +226,7 @@ function SignupForm(): JSX.Element {
       cancelled = true
       window.clearTimeout(timeoutId)
     }
-  }, [trimmedSlug, slugFormatError])
+  }, [effectiveSlug, effectiveSlugCheckable, signupType])
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
@@ -175,11 +234,24 @@ function SignupForm(): JSX.Element {
     setStatus('submitting')
     setErrorMessage('')
 
+    const body =
+      signupType === 'venue_cafe'
+        ? {
+            signupType,
+            venueName,
+            contactEmail,
+            slug: cafeSlug,
+            lat: parsedLat,
+            lon: parsedLon,
+            interestedParentAirfield: interestedParentAirfield.trim() || undefined,
+          }
+        : { signupType, clubName, contactEmail, location, slug: trimmedSlug, lat: parsedLat, lon: parsedLon }
+
     try {
       const response = await fetch(TRIAL_SIGNUP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clubName, contactEmail, location, slug: trimmedSlug, lat: parsedLat, lon: parsedLon }),
+        body: JSON.stringify(body),
       })
       const data = (await response.json().catch(() => null)) as
         | { ok?: boolean; slug?: string; subdomain?: string; error?: string }
@@ -204,8 +276,9 @@ function SignupForm(): JSX.Element {
       <div className="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-6 text-center">
         <p className="text-lg font-semibold text-slate-100">You're set up.</p>
         <p className="mt-2 text-slate-300">
-          {clubName}'s space is reserved at <span className="font-mono text-sky-400">{result.subdomain}</span>. We'll
-          be in touch to finish setting things up — if you have any questions in the meantime, contact us at{' '}
+          {(signupType === 'venue_cafe' ? venueName : clubName)}'s space is reserved at{' '}
+          <span className="font-mono text-sky-400">{result.subdomain}</span>. We'll be in touch to finish setting
+          things up — if you have any questions in the meantime, contact us at{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`} className="text-sky-400 hover:underline">
             {SUPPORT_EMAIL}
           </a>
@@ -217,44 +290,122 @@ function SignupForm(): JSX.Element {
 
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-slate-700 bg-slate-900/80 p-6">
+      {/* The fork - picked before any field renders, per its own spec.
+          Two toggle buttons rather than a <select> - only two options,
+          and the visual weight of a real choice (not a dropdown default
+          that could go unnoticed) matches how consequential this pick
+          is - it decides the entire rest of the form. */}
+      <div className="mb-5 grid grid-cols-2 gap-2 rounded-lg border border-slate-700 bg-slate-950/60 p-1">
+        <button
+          type="button"
+          onClick={() => setSignupType('airfield')}
+          className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+            signupType === 'airfield' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Airfield / Clubhouse dashboard
+        </button>
+        <button
+          type="button"
+          onClick={() => setSignupType('venue_cafe')}
+          className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+            signupType === 'venue_cafe' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Café / Venue screen only
+        </button>
+      </div>
+
       <div className="space-y-4">
-        <div>
-          <label htmlFor="clubName" className="mb-1 block text-sm font-medium text-slate-300">
-            Club / airfield name
-          </label>
-          <input
-            id="clubName"
-            type="text"
-            required
-            maxLength={100}
-            value={clubName}
-            onChange={(event) => setClubName(event.target.value)}
-            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-            placeholder="e.g. Shobdon Airfield"
-          />
-        </div>
-        <div>
-          <label htmlFor="slug" className="mb-1 block text-sm font-medium text-slate-300">
-            Your dashboard address
-          </label>
-          <input
-            id="slug"
-            type="text"
-            required
-            maxLength={63}
-            value={slug}
-            onChange={(event) => setSlug(event.target.value.toLowerCase())}
-            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-            placeholder="e.g. shobdon"
-          />
-          <p className="mt-1 text-xs text-slate-500">
-            {trimmedSlug || 'yourclub'}.airfieldcentral.com
-            {slugFormatError && <span className="ml-2 text-red-400">{slugFormatError}</span>}
-            {!slugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-slate-400">Checking…</span>}
-            {!slugFormatError && slugCheck.status === 'available' && <span className="ml-2 text-emerald-400">Available</span>}
-            {!slugFormatError && slugCheck.status === 'unavailable' && <span className="ml-2 text-red-400">{slugCheck.reason}</span>}
-          </p>
-        </div>
+        {signupType === 'airfield' ? (
+          <>
+            <div>
+              <label htmlFor="clubName" className="mb-1 block text-sm font-medium text-slate-300">
+                Club / airfield name
+              </label>
+              <input
+                id="clubName"
+                type="text"
+                required
+                maxLength={100}
+                value={clubName}
+                onChange={(event) => setClubName(event.target.value)}
+                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                placeholder="e.g. Shobdon Airfield"
+              />
+            </div>
+            <div>
+              <label htmlFor="slug" className="mb-1 block text-sm font-medium text-slate-300">
+                Your dashboard address
+              </label>
+              <input
+                id="slug"
+                type="text"
+                required
+                maxLength={63}
+                value={slug}
+                onChange={(event) => setSlug(event.target.value.toLowerCase())}
+                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                placeholder="e.g. shobdon"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                {trimmedSlug || 'yourclub'}.airfieldcentral.com
+                {slugFormatError && <span className="ml-2 text-red-400">{slugFormatError}</span>}
+                {!slugFormatError && slugCheck.status === 'checking' && <span className="ml-2 text-slate-400">Checking…</span>}
+                {!slugFormatError && slugCheck.status === 'available' && <span className="ml-2 text-emerald-400">Available</span>}
+                {!slugFormatError && slugCheck.status === 'unavailable' && <span className="ml-2 text-red-400">{slugCheck.reason}</span>}
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label htmlFor="venueName" className="mb-1 block text-sm font-medium text-slate-300">
+                Venue name
+              </label>
+              <input
+                id="venueName"
+                type="text"
+                required
+                maxLength={100}
+                value={venueName}
+                onChange={(event) => setVenueName(event.target.value)}
+                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                placeholder="e.g. Goodwood Clubhouse Café"
+              />
+              {/* Read-only preview, not an input - the whole point of
+                  this branch's slug rule is that it's never freely
+                  typed, see this file's own top comment on SignupForm. */}
+              <p className="mt-1 text-xs text-slate-500">
+                {cafeSlug || 'yourvenue-media'}.airfieldcentral.com
+                {venueName.trim() && !cafeSlug && (
+                  <span className="ml-2 text-red-400">Venue name needs at least one letter or number</span>
+                )}
+                {cafeSlug && slugCheck.status === 'checking' && <span className="ml-2 text-slate-400">Checking…</span>}
+                {cafeSlug && slugCheck.status === 'available' && <span className="ml-2 text-emerald-400">Available</span>}
+                {cafeSlug && slugCheck.status === 'unavailable' && <span className="ml-2 text-red-400">{slugCheck.reason}</span>}
+              </p>
+            </div>
+            <div>
+              <label htmlFor="interestedParentAirfield" className="mb-1 block text-sm font-medium text-slate-300">
+                Which airfield is this venue based at? <span className="font-normal text-slate-500">(optional)</span>
+              </label>
+              <input
+                id="interestedParentAirfield"
+                type="text"
+                maxLength={200}
+                value={interestedParentAirfield}
+                onChange={(event) => setInterestedParentAirfield(event.target.value)}
+                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                placeholder="e.g. Shobdon Airfield"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                We won't link your venue to their dashboard automatically - just tell us, and we'll connect it by
+                hand.
+              </p>
+            </div>
+          </>
+        )}
         <div>
           <label htmlFor="contactEmail" className="mb-1 block text-sm font-medium text-slate-300">
             Contact email
@@ -270,21 +421,23 @@ function SignupForm(): JSX.Element {
             placeholder="you@example.com"
           />
         </div>
-        <div>
-          <label htmlFor="location" className="mb-1 block text-sm font-medium text-slate-300">
-            Location
-          </label>
-          <input
-            id="location"
-            type="text"
-            required
-            maxLength={200}
-            value={location}
-            onChange={(event) => setLocation(event.target.value)}
-            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-            placeholder="e.g. Shobdon, Herefordshire or EGBS"
-          />
-        </div>
+        {signupType === 'airfield' && (
+          <div>
+            <label htmlFor="location" className="mb-1 block text-sm font-medium text-slate-300">
+              Location
+            </label>
+            <input
+              id="location"
+              type="text"
+              required
+              maxLength={200}
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+              placeholder="e.g. Shobdon, Herefordshire or EGBS"
+            />
+          </div>
+        )}
         <div className="flex gap-3">
           <div className="flex-1">
             <label htmlFor="lat" className="mb-1 block text-sm font-medium text-slate-300">
@@ -316,7 +469,9 @@ function SignupForm(): JSX.Element {
           </div>
         </div>
         <p className="text-xs text-slate-500">
-          Latitude/longitude power your dashboard's weather - find yours at{' '}
+          {signupType === 'venue_cafe'
+            ? "Latitude/longitude give your screen's regional weather line from day one - find yours at"
+            : "Latitude/longitude power your dashboard's weather - find yours at"}{' '}
           <a href="https://www.latlong.net" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">
             latlong.net
           </a>
@@ -330,7 +485,7 @@ function SignupForm(): JSX.Element {
         type="submit"
         disabled={
           status === 'submitting' ||
-          !!slugFormatError ||
+          !effectiveSlugCheckable ||
           slugCheck.status !== 'available' ||
           (lat.trim() !== '' && !latValid) ||
           (lon.trim() !== '' && !lonValid)
@@ -341,11 +496,11 @@ function SignupForm(): JSX.Element {
       </button>
 
       <p className="mt-4 text-xs leading-relaxed text-slate-500">
-        <span className="font-medium text-slate-400">Privacy:</span> When you request a trial, we collect your
-        club/airfield name, contact email, and location so we can set up your dashboard and follow up with you. We
-        don't sell or share this information with third parties beyond what's needed to run the service (for
-        example, payment processing once billing is set up). You can ask us to delete your information at any time
-        by emailing{' '}
+        <span className="font-medium text-slate-400">Privacy:</span> When you request a trial, we collect your{' '}
+        {signupType === 'venue_cafe' ? 'venue name' : 'club/airfield name'}, contact email, and location so we can
+        set up your dashboard and follow up with you. We don't sell or share this information with third parties
+        beyond what's needed to run the service (for example, payment processing once billing is set up). You can
+        ask us to delete your information at any time by emailing{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} className="text-sky-500 hover:underline">
           {SUPPORT_EMAIL}
         </a>
