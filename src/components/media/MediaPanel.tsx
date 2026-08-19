@@ -278,29 +278,64 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
           0063's own comment) - a viewport-covering portal, not a
           bigger version of the normal box, so it genuinely takes over
           the whole screen the way a video/camera slide's "fullscreen"
-          is meant to read. Rendered ONLY while the currently active
-          slot has autoFullscreen set - re-evaluates every activeIndex
-          change (the same timer-driven state already cycling the
-          carousel above), so it appears and disappears automatically
-          each time this slide's turn comes around, with no separate
-          state of its own to fall out of sync. Portaled to
-          document.body rather than rendered in place, since this
-          component can sit arbitrarily deep inside a template's own
-          layout (Clubhouse1Template's centre column, Café's zone
-          panes) - position:fixed alone isn't reliable from inside an
-          ancestor that happens to set its own transform/filter, which
-          would silently confine it to that ancestor's box instead of
-          the real viewport. The slots underneath stay mounted and
-          rendering exactly as before (same "never destroy an iframe's
-          state" invariant the plain absolute-stack above already
-          relies on) - this overlay only ever sits visually on top. */}
-      {activeSlot?.autoFullscreen &&
-        createPortal(
-          <div className="fixed inset-0 z-50 bg-black">
-            <MediaSlotRenderer slot={activeSlot} isActive />
-          </div>,
-          document.body
-        )}
+          is meant to read. Portaled to document.body rather than
+          rendered in place, since this component can sit arbitrarily
+          deep inside a template's own layout (Clubhouse1Template's
+          centre column, Café's zone panes, and Screens Design's own
+          live preview - confirmed that one actually DOES apply a CSS
+          transform to scale the whole template down, see
+          Clubhouse1Template.tsx's own isPreview comment) -
+          position:fixed alone isn't reliable from inside an ancestor
+          that happens to set its own transform/filter, which would
+          silently confine it to that ancestor's box instead of the
+          real viewport.
+
+          Remount round: this used to be conditionally CREATED
+          (`activeSlot?.autoFullscreen && createPortal(...)`), mounting
+          a brand-new second <MediaSlotRenderer> instance for
+          activeSlot every time it became the active slide, and
+          destroying it the instant the carousel moved on. That's a
+          real DOM/iframe reload each cycle, not just a visibility
+          change - the exact "still alive" property the plain
+          absolute-stack above was built to guarantee for the SAME
+          reason didn't apply to this second, portaled copy at all.
+          Confirmed via a live YouTube-embedded webcam slide: autoplay
+          silently died and required a manual click to resume every
+          time the carousel rotated back to it, specifically (and only)
+          when auto-expand was enabled - the zoom/crop appearance
+          setting was not the cause (it's a CSS transform on the
+          already-mounted iframe, see zoomPanTransformStyle - never
+          triggers a remount on its own).
+
+          Fixed the same way the main stack already solved this: the
+          portal itself is now always present (unconditional), and
+          every slot that has autoFullscreen set gets exactly ONE
+          always-mounted instance inside it, toggled visible only while
+          it's the active slide via the identical `invisible`-class
+          technique used above - never conditionally created/destroyed.
+          Slots without autoFullscreen get no portaled copy at all (no
+          change for them). A slot's fullscreen copy and its own
+          always-mounted copy in the main stack above ARE both live
+          simultaneously while that slide is active (the fullscreen one
+          visually on top, z-50) - not a new cost introduced here, the
+          original code already had exactly the same overlap whenever a
+          slide WAS active, just followed by a destroy/recreate cycle
+          this fix removes. */}
+      {createPortal(
+        <>
+          {effectiveSlots
+            .filter((slot) => slot.autoFullscreen)
+            .map((slot) => {
+              const isActive = activeSlot?.slotNumber === slot.slotNumber
+              return (
+                <div key={slot.slotNumber} className={`fixed inset-0 z-50 bg-black ${isActive ? '' : 'invisible'}`}>
+                  <MediaSlotRenderer slot={slot} isActive={isActive} />
+                </div>
+              )
+            })}
+        </>,
+        document.body
+      )}
     </div>
   )
 }
