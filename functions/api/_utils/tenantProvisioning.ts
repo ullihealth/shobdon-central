@@ -32,6 +32,12 @@ export interface CreateTenantOrganizationParams {
   // before anything else. trial-signup.ts's slug is always
   // human-chosen, so it always passes true.
   subdomainConfirmed: boolean;
+  // Venue/café onboarding round (migration 0090) - optional and
+  // defaults to 'airfield' below, so onboard.ts's own call site (which
+  // has no venue_cafe creation path in this round's scope) needs zero
+  // changes to keep creating airfield tenants exactly as it always has.
+  // Only trial-signup.ts's venue_cafe branch ever passes 'venue_cafe'.
+  tenantType?: "airfield" | "venue_cafe";
 }
 
 export type CreateTenantOrganizationResult =
@@ -51,7 +57,7 @@ export async function createTenantOrganization(
   db: D1Database,
   params: CreateTenantOrganizationParams
 ): Promise<CreateTenantOrganizationResult> {
-  const { slug, name, lat, lon, subdomainConfirmed } = params;
+  const { slug, name, lat, lon, subdomainConfirmed, tenantType = "airfield" } = params;
 
   // Fast-path pre-check, same as both callers already did independently -
   // the try/catch below (around both INSERTs, on tenants.slug/
@@ -76,10 +82,10 @@ export async function createTenantOrganization(
   try {
     await db
       .prepare(
-        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, 1, 0, NULL, ?, ?)`
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed, tenant_type)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, 1, 0, NULL, ?, ?, ?)`
       )
-      .bind(slug, name, subdomain, organizationId, lat, lon, DEFAULT_BRAND_DISPLAY, subdomainConfirmed ? 1 : 0)
+      .bind(slug, name, subdomain, organizationId, lat, lon, DEFAULT_BRAND_DISPLAY, subdomainConfirmed ? 1 : 0, tenantType)
       .run();
   } catch {
     // The organization row created just above is now orphaned - harmless
