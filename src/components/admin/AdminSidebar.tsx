@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { MemberRole } from '../../types/member'
-import { SIDEBAR_GROUPS, STANDALONE_ITEMS, type SidebarItem } from './sidebarConfig'
+import { SIDEBAR_GROUPS, STANDALONE_ITEMS, type SidebarItem, type TenantType } from './sidebarConfig'
 import SidebarGroup from './SidebarGroup'
 import SidebarUserMenu from './SidebarUserMenu'
 import { useHostReachable } from '../../hooks/useHostReachable'
@@ -18,7 +18,19 @@ function loadCollapsedGroups(): Record<string, boolean> {
   }
 }
 
-function isItemVisible(item: SidebarItem, role: MemberRole | null, isDeveloper: boolean, cafeEntitled: boolean): boolean {
+function isItemVisible(
+  item: SidebarItem,
+  role: MemberRole | null,
+  isDeveloper: boolean,
+  cafeEntitled: boolean,
+  tenantType: TenantType
+): boolean {
+  // Venue/café onboarding round - checked first and independently of
+  // every other gate below (same "combinable, not mutually exclusive"
+  // posture requireCafeEntitlement already has - see SidebarItem's own
+  // comment): an aviation-only item stays hidden for a venue_cafe tenant
+  // regardless of role/developer/entitlement.
+  if (item.hideForTenantType?.includes(tenantType)) return false
   if (item.requireCafeEntitlement && !cafeEntitled) return false
   if (item.requireDeveloper) return isDeveloper
   if (item.allowedRoles) return !!role && item.allowedRoles.includes(role)
@@ -40,6 +52,13 @@ export default function AdminSidebar(): JSX.Element {
   // gates the Cafe Media item below. Fails closed (false) until the
   // fetch resolves, same as role/isDeveloper above.
   const [cafeEntitled, setCafeEntitled] = useState(false)
+  // Venue/café onboarding round - defaults to 'airfield' (matching
+  // tenants.tenant_type's own column default), not null/undefined -
+  // nothing in <nav> renders until !loading below anyway, so there's no
+  // loading-flash window where this default would visibly matter; it
+  // only exists to keep TenantType a two-value union instead of adding
+  // a third "unknown" state throughout isItemVisible.
+  const [tenantType, setTenantType] = useState<TenantType>('airfield')
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadCollapsedGroups())
   // Empty until /api/tenant/me resolves, not another tenant's real name -
@@ -70,6 +89,7 @@ export default function AdminSidebar(): JSX.Element {
         setRole(data?.role ?? null)
         setIsDeveloper(!!data?.isDeveloper)
         setCafeEntitled(!!data?.cafeEntitled)
+        if (data?.tenantType === 'venue_cafe') setTenantType('venue_cafe')
         if (data?.organizationName) setOrganizationName(data.organizationName)
         setTenantSubdomain(data?.subdomain ?? null)
       })
@@ -115,10 +135,10 @@ export default function AdminSidebar(): JSX.Element {
 
   const visibleGroups = SIDEBAR_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled)),
+    items: group.items.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled, tenantType)),
   })).filter((group) => group.items.length > 0)
 
-  const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled))
+  const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled, tenantType))
 
   return (
     <aside className="sticky top-0 flex h-screen w-64 flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">

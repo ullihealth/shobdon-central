@@ -73,10 +73,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // reachable at that hostname yet (DNS/custom-domain provisioning is a
   // separate, still-manual step - see onboard.ts's own comment) - this
   // field reports the intended host, not a live/reachable guarantee.
+  // tenantType (migration 0090, venue/café onboarding round) added to
+  // this SAME existing query rather than a new one - same "explicit
+  // SELECT list, explicit returned object" endpoint shape this file
+  // already has, and the exact known field-stripping trap flagged during
+  // investigation: adding the column to tenants alone does nothing here
+  // without this addition AND the matching addition to the returned
+  // object below. Drives AdminSidebar.tsx's sidebarConfig.ts
+  // hideForTenantType gate.
   const tenantRow = await env.DB
-    .prepare("SELECT subdomain FROM tenants WHERE organization_id = ?")
+    .prepare("SELECT subdomain, tenant_type AS tenantType FROM tenants WHERE organization_id = ?")
     .bind(result.membership.organizationId)
-    .first<{ subdomain: string | null }>();
+    .first<{ subdomain: string | null; tenantType: string }>();
 
   return jsonResponse({
     role: result.membership.role,
@@ -86,6 +94,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     hasAcceptedTerms: !!userRow?.termsAcceptedAt,
     cafeEntitled,
     subdomain: tenantRow?.subdomain ?? null,
+    // Defaults to 'airfield' (matching the column's own DEFAULT) rather
+    // than null - AdminSidebar.tsx's TenantType is a plain two-value
+    // union with no "unknown" state to represent a genuinely-missing row.
+    tenantType: tenantRow?.tenantType === "venue_cafe" ? "venue_cafe" : "airfield",
     memberships,
   });
 };

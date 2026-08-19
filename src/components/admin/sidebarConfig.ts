@@ -1,5 +1,18 @@
 import type { MemberRole } from '../../types/member'
 
+// Venue/café onboarding round (migration 0090) - structural product
+// marker, separate from and orthogonal to tenant_displays' active/
+// entitled flags. tenant_type drives what THIS sidebar renders;
+// active/entitled drives billing/access to a product a tenant
+// structurally already has - an airfield tenant with its Reception
+// Dashboard entitlement switched off still gets the full aviation nav
+// (greyed/upsell), it hasn't become a café tenant. Kept here rather than
+// a new src/types/tenant.ts - the only current consumer of this type is
+// sidebar gating (AdminSidebar.tsx), same "define it where it's used"
+// posture MemberRole itself doesn't quite follow but this narrower type
+// does for now.
+export type TenantType = 'airfield' | 'venue_cafe'
+
 // One item in the sidebar. allowedRoles is the visibility gate for
 // ordinary tenant-role items; requireDeveloper is a separate gate for the
 // cross-tenant developer flag (see AdminSidebar.tsx's isItemVisible) - an
@@ -7,13 +20,23 @@ import type { MemberRole } from '../../types/member'
 // both. requireCafeEntitlement is orthogonal to both (a live fact from
 // tenant_displays, not a role) and can combine with allowedRoles - Cafe
 // Media needs both "one of these roles" AND "this tenant's cafe-tv
-// display is entitled", not either alone.
+// display is entitled", not either alone. hideForTenantType is also
+// orthogonal and combinable - an aviation-only item stays hidden for a
+// venue_cafe tenant regardless of role/entitlement, and a venue_cafe
+// tenant is never actually entitled to cafe-tv-gated items being hidden
+// FOR the opposite reason anyway. Framed as "hide for" rather than
+// "show only for" because only a handful of items are aviation-specific
+// - most of the sidebar (Members, Media Library, Screens Design, Media
+// Screen itself) is product-neutral or IS the café product, so an
+// allow-list would need tagging almost every item instead of the few
+// exceptions.
 export interface SidebarItem {
   to: string
   label: string
   allowedRoles?: MemberRole[]
   requireDeveloper?: boolean
   requireCafeEntitlement?: boolean
+  hideForTenantType?: TenantType[]
 }
 
 export interface SidebarGroupConfig {
@@ -30,7 +53,14 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     id: 'content',
     label: 'Content',
     items: [
-      { to: '/media-manager', label: 'Dashboard Manager', allowedRoles: ['owner', 'admin', 'media'] },
+      // Venue/café onboarding round - hidden for venue_cafe: this page
+      // manages the MAIN Reception Dashboard's own carousel slots, a
+      // product venue_cafe tenants don't have (their own main
+      // tenant_displays row is created entitled=0/active=0, see
+      // trial-signup.ts's venue_cafe branch) - linking to it would be a
+      // dead end, same reasoning requireCafeEntitlement already applies
+      // to Cafe Media below for the inverse case.
+      { to: '/media-manager', label: 'Dashboard Manager', allowedRoles: ['owner', 'admin', 'media'], hideForTenantType: ['venue_cafe'] },
       // 'cafe' role added here (not to Dashboard Manager above) - a
       // brand-new role scoped to exactly Cafe Media + Media Library,
       // nothing else. 'media' still deliberately excluded from Cafe
@@ -42,7 +72,12 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       // CafeMediaPage.tsx already self-gates the route itself (shows
       // FeatureUpsellPanel instead of the editor when unentitled) - this
       // just keeps the sidebar from linking to that dead end.
-      { to: '/cafe-media', label: 'Cafe Media', allowedRoles: ['owner', 'admin', 'cafe'], requireCafeEntitlement: true },
+      //
+      // Label renamed Cafe Media -> Media Screen (venue/café onboarding
+      // round) - the product itself is being renamed platform-wide, not
+      // just relabelled for this one tenant type; route stays
+      // /cafe-media unchanged (a URL, not customer-facing copy).
+      { to: '/cafe-media', label: 'Media Screen', allowedRoles: ['owner', 'admin', 'cafe'], requireCafeEntitlement: true },
       // Split out of Dashboard Manager (which used to embed the whole
       // library UI below its carousel slots) into its own page, shared by
       // both Dashboard Manager and Cafe Media's Source dropdowns. Keeps
@@ -57,7 +92,8 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
     id: 'operations',
     label: 'Operations',
-    items: [{ to: '/atc-control', label: 'ATC Control', allowedRoles: ['owner', 'admin', 'atc'] }],
+    // Venue/café onboarding round - aviation-only, hidden for venue_cafe.
+    items: [{ to: '/atc-control', label: 'ATC Control', allowedRoles: ['owner', 'admin', 'atc'], hideForTenantType: ['venue_cafe'] }],
   },
   {
     id: 'people',
@@ -68,15 +104,25 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     id: 'settings',
     label: 'Settings',
     items: [
-      { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'] },
+      // Weather Config/Runways: venue/café onboarding round, aviation-
+      // only, hidden for venue_cafe. Screens Design is deliberately NOT
+      // hidden - it themes BOTH the main dashboard and the café screen
+      // (DesignPage.tsx's own isDashboard/screenLabel branching), so a
+      // venue_cafe tenant needs it to theme their own Media Screen -
+      // hiding it would leave that tenant with no way to change their
+      // one product's own colours/branding.
+      { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'], hideForTenantType: ['venue_cafe'] },
       { to: '/design', label: 'Screens Design', allowedRoles: ['owner', 'admin'] },
-      { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'] },
+      { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'], hideForTenantType: ['venue_cafe'] },
       // Pilot Panel round - configures /pilot's own ticker + background
       // independently of the desktop dashboard. 'atc' included alongside
       // owner/admin (unlike every other item in this group) per its own
       // spec - matches the role list this page's RequireAuth and its
-      // backing /api/tenant/pilot-view endpoint both use.
-      { to: '/pilot-panel', label: 'Pilot Panel', allowedRoles: ['owner', 'admin', 'atc'] },
+      // backing /api/tenant/pilot-view endpoint both use. Venue/café
+      // onboarding round - hidden for venue_cafe: /pilot is the Pilot's
+      // App product (bundled into the aviation "Airfield Pack"), not
+      // something a standalone venue tenant has.
+      { to: '/pilot-panel', label: 'Pilot Panel', allowedRoles: ['owner', 'admin', 'atc'], hideForTenantType: ['venue_cafe'] },
     ],
   },
   // Formerly an 11-item "Platform Admin" group listing every /platform/*
