@@ -41,6 +41,7 @@
 import { cloneTenantTemplate } from "../_utils/cloneTenant";
 import { validateSlugCandidate, CAFE_SLUG_SUFFIX } from "../_utils/tenantSlug";
 import { createTenantOrganization } from "../_utils/tenantProvisioning";
+import { geocodePostcode } from "../_utils/postcodeGeocode";
 // Imported (not a separate hand-rolled local type, unlike this endpoint's
 // pre-existing convention) because cloneTenantTemplate below is typed
 // against this exact D1Database shape - passing env.DB through to it
@@ -130,14 +131,19 @@ interface RequestBody {
   // Airfield branch
   clubName?: unknown;
   location?: unknown;
-  // Venue/café branch
+  lat?: unknown;
+  lon?: unknown;
+  // Venue/café branch - postcode replaces lat/lon (migration-free round:
+  // a café owner has no reason to know their own coordinates, unlike the
+  // airfield branch's audience) - geocoded server-side via
+  // geocodePostcode(), never trusts a client-supplied lat/lon for this
+  // branch.
   venueName?: unknown;
+  postcode?: unknown;
   interestedParentAirfield?: unknown;
   // Shared
   contactEmail?: unknown;
   slug?: unknown;
-  lat?: unknown;
-  lon?: unknown;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -169,12 +175,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!contactEmail || contactEmail.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(contactEmail)) {
     return jsonResponse({ error: "A valid contact email is required" }, 400);
   }
-  if (!isValidLat(body.lat)) {
-    return jsonResponse({ error: "A valid latitude (-90 to 90) is required" }, 400);
-  }
-  if (!isValidLon(body.lon)) {
-    return jsonResponse({ error: "A valid longitude (-180 to 180) is required" }, 400);
-  }
+  // lat/lon validation moved into each branch below - venue_cafe derives
+  // them from a postcode (geocodePostcode) instead of accepting raw
+  // client-supplied coordinates.
 
   const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : "";
   if (!slug) {
@@ -202,11 +205,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     const interestedParentAirfield = interestedParentAirfieldRaw || null;
 
+    // Authoritative geocode - the ONE gate this branch trusts for
+    // lat/lon, never a client-supplied value (there isn't one to trust;
+    // the client only ever sends the raw postcode string). A failed
+    // geocode is a validation failure (400), never a silent fallback to
+    // missing/null coordinates - see this round's own brief for why.
+    const postcodeRaw = typeof body.postcode === "string" ? body.postcode : "";
+    const geocode = await geocodePostcode(postcodeRaw);
+    if (!geocode.valid || typeof geocode.lat !== "number" || typeof geocode.lon !== "number") {
+      return jsonResponse({ error: geocode.error ?? "Postcode not found" }, 400);
+    }
+
     const created = await createTenantOrganization(env.DB, {
       slug,
       name: venueName,
-      lat: body.lat,
-      lon: body.lon,
+      lat: geocode.lat,
+      lon: geocode.lon,
       subdomainConfirmed: true,
       tenantType: "venue_cafe",
     });
@@ -246,25 +260,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       .bind(tenantId, trialExpiryIso(CAFE_TRIAL_DAYS))
       .run();
 
-    // location_text is NOT NULL, but the venue_cafe branch deliberately
-    // collects no separate free-text location field (only lat/lon,
-    // real geocodable values - see the café field list this endpoint
-    // was built against). Synthesized from venueName rather than left
-    // blank or requiring a schema change to make the column nullable -
-    // this column's whole purpose is "a human-readable note for Jeff's
-    // own manual follow-up" (this file's own top comment), and the venue
-    // name already serves that purpose reasonably on its own.
+    // location_text is NOT NULL, but the venue_cafe branch collects no
+    // separate free-text location field of its own - venueName + the
+    // geocoded, canonically-formatted postcode ("Goodwood Clubhouse
+    // Cafe, HR6 9HB") reads more usefully for manual review than either
+    // alone, now that a real postcode exists (previously synthesized
+    // from venueName only, before this round added postcode collection).
     await env.DB
       .prepare("INSERT INTO trial_signups (tenant_id, contact_email, location_text, interested_parent_airfield) VALUES (?, ?, ?, ?)")
-      .bind(tenantId, contactEmail, venueName, interestedParentAirfield)
+      .bind(tenantId, contactEmail, `${venueName}, ${geocode.postcode}`, interestedParentAirfield)
       .run();
 
     return jsonResponse({ ok: true, slug, subdomain });
   }
 
   // Airfield branch - unchanged field set/validation from before this
-  // round, just now also creating tenant_displays rows (the confirmed
-  // gap) and writing tenant_type='airfield' explicitly.
+  // round (still raw lat/lon, not postcode - that swap is venue_cafe-
+  // only, see this branch's own field list in the top comment), just
+  // now also creating tenant_displays rows (the confirmed gap) and
+  // writing tenant_type='airfield' explicitly.
   const clubName = typeof body.clubName === "string" ? body.clubName.trim() : "";
   const location = typeof body.location === "string" ? body.location.trim() : "";
 
@@ -273,6 +287,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (!location || location.length > LOCATION_MAX_LENGTH) {
     return jsonResponse({ error: `Location is required (max ${LOCATION_MAX_LENGTH} characters)` }, 400);
+  }
+  if (!isValidLat(body.lat)) {
+    return jsonResponse({ error: "A valid latitude (-90 to 90) is required" }, 400);
+  }
+  if (!isValidLon(body.lon)) {
+    return jsonResponse({ error: "A valid longitude (-180 to 180) is required" }, 400);
   }
   const slugValidation = validateSlugCandidate(slug);
   if (!slugValidation.valid) {

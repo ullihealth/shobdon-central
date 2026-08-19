@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { PUBLIC_CHECK_SLUG_URL, TRIAL_SIGNUP_URL } from '../config/publicApi'
+import { PUBLIC_CHECK_SLUG_URL, PUBLIC_CHECK_POSTCODE_URL, TRIAL_SIGNUP_URL } from '../config/publicApi'
 import { LATEST_READING_URL } from '../config/captureEndpoint'
 
 // Public marketing/landing page for Airfield Central, live at the bare
@@ -154,6 +154,17 @@ function SignupForm(): JSX.Element {
   // Venue/café-branch-only fields
   const [venueName, setVenueName] = useState('')
   const [interestedParentAirfield, setInterestedParentAirfield] = useState('')
+  // Postcode round - replaces the airfield branch's raw Lat/Long for
+  // this branch specifically: a café owner has no reason to know their
+  // own coordinates, unlike the airfield branch's audience. Geocoded via
+  // postcodes.io, both here (live check, advisory only) and
+  // authoritatively server-side in trial-signup.ts - see that file's own
+  // comment for why the server never trusts a client-supplied lat/lon
+  // for this branch at all.
+  const [postcode, setPostcode] = useState('')
+  const [postcodeCheck, setPostcodeCheck] = useState<{ status: 'idle' | 'checking' | 'valid' | 'invalid'; reason?: string }>(
+    { status: 'idle' }
+  )
 
   // Shared - same field/purpose/validation in both branches
   const [contactEmail, setContactEmail] = useState('')
@@ -163,9 +174,9 @@ function SignupForm(): JSX.Element {
   // created with no usable coordinates at all. Kept separate from that
   // field rather than replacing it - `location` is a human-readable note
   // for Jeff's own manual follow-up (see this file's own top comment),
-  // these two are the real, geocodable values. Also the venue_cafe
-  // branch's ONLY location input - that branch collects no separate
-  // free-text location note (see trial-signup.ts's own comment on why).
+  // these two are the real, geocodable values. Airfield-branch-only as
+  // of the postcode round - venue_cafe now collects Postcode instead
+  // (above), never raw lat/lon.
   const [lat, setLat] = useState('')
   const [lon, setLon] = useState('')
 
@@ -181,6 +192,38 @@ function SignupForm(): JSX.Element {
   const parsedLon = Number(lon)
   const latValid = lat.trim() !== '' && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
   const lonValid = lon.trim() !== '' && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
+
+  // Loose client-side format check - same "instant feedback, server
+  // stays the real authority" posture SLUG_FORMAT already has for slugs.
+  // postcodes.io's own response (debounced below) is what actually
+  // decides valid/invalid; this only avoids firing a network call for an
+  // obviously-incomplete value while someone's still typing.
+  const trimmedPostcode = postcode.trim()
+  const postcodeFormatLooksComplete = /^[A-Za-z]{1,2}\d[A-Za-z\d]?\s?\d[A-Za-z]{2}$/.test(trimmedPostcode)
+
+  useEffect(() => {
+    if (signupType !== 'venue_cafe' || !postcodeFormatLooksComplete) {
+      setPostcodeCheck({ status: 'idle' })
+      return
+    }
+    let cancelled = false
+    setPostcodeCheck({ status: 'checking' })
+    const timeoutId = window.setTimeout(() => {
+      fetch(`${PUBLIC_CHECK_POSTCODE_URL}?postcode=${encodeURIComponent(trimmedPostcode)}`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (cancelled || !data) return
+          setPostcodeCheck(data.valid ? { status: 'valid' } : { status: 'invalid', reason: data.error })
+        })
+        .catch(() => {
+          if (!cancelled) setPostcodeCheck({ status: 'idle' })
+        })
+    }, SLUG_CHECK_DEBOUNCE_MS)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [trimmedPostcode, postcodeFormatLooksComplete, signupType])
 
   // Airfield branch - required here, unlike the platform-admin invite
   // flow's own optional version of this same field - Jeff's own
@@ -230,7 +273,11 @@ function SignupForm(): JSX.Element {
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
-    if (!latValid || !lonValid) return
+    if (signupType === 'venue_cafe') {
+      if (postcodeCheck.status !== 'valid') return
+    } else if (!latValid || !lonValid) {
+      return
+    }
     setStatus('submitting')
     setErrorMessage('')
 
@@ -241,8 +288,7 @@ function SignupForm(): JSX.Element {
             venueName,
             contactEmail,
             slug: cafeSlug,
-            lat: parsedLat,
-            lon: parsedLon,
+            postcode: trimmedPostcode,
             interestedParentAirfield: interestedParentAirfield.trim() || undefined,
           }
         : { signupType, clubName, contactEmail, location, slug: trimmedSlug, lat: parsedLat, lon: parsedLon }
@@ -404,6 +450,29 @@ function SignupForm(): JSX.Element {
                 hand.
               </p>
             </div>
+            <div>
+              <label htmlFor="postcode" className="mb-1 block text-sm font-medium text-slate-300">
+                Postcode
+              </label>
+              <input
+                id="postcode"
+                type="text"
+                required
+                maxLength={10}
+                value={postcode}
+                onChange={(event) => setPostcode(event.target.value.toUpperCase())}
+                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                placeholder="e.g. HR6 9HB"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Gives your screen's regional weather line from day one.
+                {postcodeFormatLooksComplete && postcodeCheck.status === 'checking' && (
+                  <span className="ml-1 text-slate-400">Checking…</span>
+                )}
+                {postcodeCheck.status === 'valid' && <span className="ml-1 text-emerald-400">Recognised</span>}
+                {postcodeCheck.status === 'invalid' && <span className="ml-1 text-red-400">{postcodeCheck.reason}</span>}
+              </p>
+            </div>
           </>
         )}
         <div>
@@ -438,45 +507,47 @@ function SignupForm(): JSX.Element {
             />
           </div>
         )}
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label htmlFor="lat" className="mb-1 block text-sm font-medium text-slate-300">
-              Latitude
-            </label>
-            <input
-              id="lat"
-              required
-              value={lat}
-              onChange={(event) => setLat(event.target.value)}
-              inputMode="decimal"
-              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-              placeholder="52.2416"
-            />
-          </div>
-          <div className="flex-1">
-            <label htmlFor="lon" className="mb-1 block text-sm font-medium text-slate-300">
-              Longitude
-            </label>
-            <input
-              id="lon"
-              required
-              value={lon}
-              onChange={(event) => setLon(event.target.value)}
-              inputMode="decimal"
-              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-              placeholder="-2.8821"
-            />
-          </div>
-        </div>
-        <p className="text-xs text-slate-500">
-          {signupType === 'venue_cafe'
-            ? "Latitude/longitude give your screen's regional weather line from day one - find yours at"
-            : "Latitude/longitude power your dashboard's weather - find yours at"}{' '}
-          <a href="https://www.latlong.net" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">
-            latlong.net
-          </a>
-          .
-        </p>
+        {signupType === 'airfield' && (
+          <>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label htmlFor="lat" className="mb-1 block text-sm font-medium text-slate-300">
+                  Latitude
+                </label>
+                <input
+                  id="lat"
+                  required
+                  value={lat}
+                  onChange={(event) => setLat(event.target.value)}
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                  placeholder="52.2416"
+                />
+              </div>
+              <div className="flex-1">
+                <label htmlFor="lon" className="mb-1 block text-sm font-medium text-slate-300">
+                  Longitude
+                </label>
+                <input
+                  id="lon"
+                  required
+                  value={lon}
+                  onChange={(event) => setLon(event.target.value)}
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
+                  placeholder="-2.8821"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              Latitude/longitude power your dashboard's weather - find yours at{' '}
+              <a href="https://www.latlong.net" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">
+                latlong.net
+              </a>
+              .
+            </p>
+          </>
+        )}
       </div>
 
       {status === 'error' && <p className="mt-4 text-sm text-red-400">{errorMessage}</p>}
@@ -487,8 +558,9 @@ function SignupForm(): JSX.Element {
           status === 'submitting' ||
           !effectiveSlugCheckable ||
           slugCheck.status !== 'available' ||
-          (lat.trim() !== '' && !latValid) ||
-          (lon.trim() !== '' && !lonValid)
+          (signupType === 'venue_cafe'
+            ? postcodeCheck.status !== 'valid'
+            : (lat.trim() !== '' && !latValid) || (lon.trim() !== '' && !lonValid))
         }
         className="mt-5 w-full rounded-lg bg-sky-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-60"
       >
