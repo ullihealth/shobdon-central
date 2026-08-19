@@ -125,6 +125,63 @@ function slugifyVenueName(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+// Fork-placement round - this used to be a small toggle bar rendered
+// INSIDE SignupForm, well below the CTA buttons and Pricing section, and
+// styled far more lightly than either. Extracted to its own component
+// and lifted above the CTA buttons in LandingPage's own render order
+// (see that function below) because this decision - which of two
+// completely different forms a visitor fills in - deserves the same
+// visual weight as the Pricing section immediately above it, not the
+// subordinate treatment a form-internal toggle implied. Card
+// width/padding/border (rounded-xl, p-6) and the "Choose your setup"
+// heading (text-2xl font-bold) deliberately mirror the Pricing section's
+// own card/heading treatment exactly, one section up - same visual
+// register, not a redesign of either. The two option cards' own content
+// (label + one-line qualifier) and click behaviour (forced-choice,
+// freely switchable) are unchanged from the previous round - only their
+// container's size and this component's position moved.
+interface ProductChoiceProps {
+  signupType: SignupType | null
+  setSignupType: (type: SignupType) => void
+}
+
+function ProductChoiceFork({ signupType, setSignupType }: ProductChoiceProps): JSX.Element {
+  return (
+    <section className="mt-20">
+      <h2 className="text-center text-2xl font-bold">Choose your setup</h2>
+      <div className="mx-auto mt-8 max-w-2xl">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setSignupType('airfield')}
+            className={`rounded-xl border p-6 text-left transition ${
+              signupType === 'airfield'
+                ? 'border-sky-500 bg-sky-500/10'
+                : 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
+            }`}
+          >
+            <div className="text-lg font-semibold text-slate-100">Airfield / Clubhouse dashboard</div>
+            <p className="mt-2 text-slate-400">You manage weather, runway status, and NOTAMs for pilots</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSignupType('venue_cafe')}
+            className={`rounded-xl border p-6 text-left transition ${
+              signupType === 'venue_cafe'
+                ? 'border-sky-500 bg-sky-500/10'
+                : 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
+            }`}
+          >
+            <div className="text-lg font-semibold text-slate-100">Café / Venue screen only</div>
+            <p className="mt-2 text-slate-400">You want an ad/media screen - no aviation data needed</p>
+          </button>
+        </div>
+        {!signupType && <p className="mt-6 text-center text-base font-medium text-slate-300">Choose one to continue.</p>}
+      </div>
+    </section>
+  )
+}
+
 // Real provisioning on submit (a genuine organization + tenants row via
 // TRIAL_SIGNUP_URL), not a fake lead-capture form - but deliberately
 // does not create a login (no password collected, by design - see
@@ -134,26 +191,26 @@ function slugifyVenueName(name: string): string {
 //
 // Venue/café onboarding round - forks into two field sets sharing one
 // submission path. signupType picked via a fork BEFORE any field
-// renders (below), so a visitor never sees a field for the product
-// they didn't pick. contactEmail/lat/lon are shared state either way
-// (same field, same purpose, same validation in both branches) -
-// clubName/location (airfield) and venueName/interestedParentAirfield
-// (venue_cafe) are branch-specific. Slug handling differs the most:
-// airfield keeps the existing manually-typed + live-checked field;
-// venue_cafe derives it from venueName (slugifyVenueName + the mandatory
-// -media suffix) and shows it as a read-only preview, never a text input
-// - see the café branch's own JSX below.
-function SignupForm(): JSX.Element {
-  // Selection-step round - starts genuinely unselected (not defaulted to
-  // 'airfield') so a visitor makes a real, conscious choice rather than
-  // ever silently inheriting one. Every existing signupType === 'x'
-  // comparison elsewhere in this component already treats null as
-  // "neither branch", so this needed no changes anywhere else that
-  // reads signupType - only the JSX below (which now gates the field
-  // sets on signupType being set at all) and the two option buttons
-  // themselves (which now set it on click) needed touching.
-  const [signupType, setSignupType] = useState<SignupType | null>(null)
-
+// renders, so a visitor never sees a field for the product they didn't
+// pick. contactEmail/lat/lon are shared state either way (same field,
+// same purpose, same validation in both branches) - clubName/location
+// (airfield) and venueName/interestedParentAirfield (venue_cafe) are
+// branch-specific. Slug handling differs the most: airfield keeps the
+// existing manually-typed + live-checked field; venue_cafe derives it
+// from venueName (slugifyVenueName + the mandatory -media suffix) and
+// shows it as a read-only preview, never a text input - see the café
+// branch's own JSX below.
+//
+// Fork-placement round - signupType/setSignupType are now owned by
+// LandingPage itself and passed down as props, not local state here.
+// The picker UI (ProductChoiceFork, below) moved out of this form
+// entirely, up above the CTA buttons, so it needed to be visible - and
+// clickable - before this component (rendered further down the page,
+// at the "Start Your Free Trial" scroll target) ever mounts anything
+// meaningful. This component still owns every field's own state and
+// still gates the field set on signupType being non-null - only WHERE
+// the selection itself is made moved, not how the fields respond to it.
+function SignupForm({ signupType, setSignupType }: ProductChoiceProps): JSX.Element {
   // Airfield-branch-only fields
   const [clubName, setClubName] = useState('')
   const [location, setLocation] = useState('')
@@ -350,48 +407,6 @@ function SignupForm(): JSX.Element {
 
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-slate-700 bg-slate-900/80 p-6">
-      {/* The fork - picked before any field renders, per its own spec.
-          Selection-step round: starts genuinely unselected (neither card
-          highlighted, no fields below) rather than defaulting to
-          'airfield' - a visitor un-familiar with the site could
-          otherwise start filling in the wrong form without ever having
-          consciously chosen. Two roomier cards (not the previous compact
-          toggle pill) with a one-line qualifier each, specifically so
-          the choice doesn't rest on the label wording alone - "Café /
-          Venue screen only" reads as jargon to someone who's never seen
-          this site's own product names before. Clicking the OTHER card
-          after a choice is already made still just re-sets signupType -
-          nothing about this is a one-way lock, so a mis-tap is a single
-          click to correct, not a page reload. */}
-      <div className="mb-5 grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => setSignupType('airfield')}
-          className={`rounded-lg border p-4 text-left transition ${
-            signupType === 'airfield'
-              ? 'border-sky-500 bg-sky-500/10'
-              : 'border-slate-700 bg-slate-950/60 hover:border-slate-500'
-          }`}
-        >
-          <div className="text-sm font-semibold text-slate-100">Airfield / Clubhouse dashboard</div>
-          <div className="mt-1 text-xs text-slate-400">You manage weather, runway status, and NOTAMs for pilots</div>
-        </button>
-        <button
-          type="button"
-          onClick={() => setSignupType('venue_cafe')}
-          className={`rounded-lg border p-4 text-left transition ${
-            signupType === 'venue_cafe'
-              ? 'border-sky-500 bg-sky-500/10'
-              : 'border-slate-700 bg-slate-950/60 hover:border-slate-500'
-          }`}
-        >
-          <div className="text-sm font-semibold text-slate-100">Café / Venue screen only</div>
-          <div className="mt-1 text-xs text-slate-400">You want an ad/media screen - no aviation data needed</div>
-        </button>
-      </div>
-
-      {!signupType && <p className="text-center text-sm text-slate-500">Choose one to continue.</p>}
-
       {signupType && (
       <>
       <div className="space-y-4">
@@ -786,6 +801,11 @@ function LiveDashboardPreview(): JSX.Element {
 
 export default function LandingPage(): JSX.Element {
   const signupRef = useRef<HTMLDivElement>(null)
+  // Fork-placement round - lifted from SignupForm's own local state so
+  // ProductChoiceFork (rendered here, above the CTA buttons) and
+  // SignupForm (rendered further down, at signupRef) share one selection
+  // instead of each owning a disconnected copy.
+  const [signupType, setSignupType] = useState<SignupType | null>(null)
 
   function scrollToSignup(): void {
     signupRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -923,6 +943,15 @@ export default function LandingPage(): JSX.Element {
           </p>
         </section>
 
+        {/* PRODUCT CHOICE - fork-placement round: moved above the CTA
+            buttons (was previously inside SignupForm itself, well below
+            them) so the decision that determines which entire form a
+            visitor sees reads with the same weight as Pricing directly
+            above it, and is made before "Start Your Free Trial" rather
+            than after. See ProductChoiceFork's own comment for the full
+            reasoning. */}
+        <ProductChoiceFork signupType={signupType} setSignupType={setSignupType} />
+
         {/* CTA FORK */}
         <section className="mt-20 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <button
@@ -941,10 +970,26 @@ export default function LandingPage(): JSX.Element {
         </section>
 
         {/* Signup form itself - target of "Start Your Free Trial" above,
-            scrolled to rather than a separate route/modal. */}
-        <section ref={signupRef} className="mx-auto mt-12 max-w-md">
-          <SignupForm />
-        </section>
+            scrolled to rather than a separate route/modal. signupType is
+            now owned by LandingPage (above) and passed down, not local
+            to SignupForm - see that component's own comment.
+            signupRef sits on its own always-present anchor rather than
+            on this section directly - found in review that mounting
+            SignupForm unconditionally left its own bordered/padded
+            <form> wrapper visibly rendering EMPTY (no fields, since
+            SignupForm's own internal gate already hides those) whenever
+            no choice had been made yet, an awkward blank box sitting
+            between the CTA buttons and the FAQ. Only mounting SignupForm
+            once signupType is set removes that box entirely rather than
+            just hiding its contents, while the anchor keeps
+            scrollToSignup's target stable regardless of selection
+            state. */}
+        <div ref={signupRef} />
+        {signupType && (
+          <section className="mx-auto mt-12 max-w-md">
+            <SignupForm signupType={signupType} setSignupType={setSignupType} />
+          </section>
+        )}
 
         {/* FAQ */}
         <section className="mx-auto mt-20 max-w-2xl">
