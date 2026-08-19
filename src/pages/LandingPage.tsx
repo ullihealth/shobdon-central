@@ -144,7 +144,15 @@ function slugifyVenueName(name: string): string {
 // -media suffix) and shows it as a read-only preview, never a text input
 // - see the café branch's own JSX below.
 function SignupForm(): JSX.Element {
-  const [signupType, setSignupType] = useState<SignupType>('airfield')
+  // Selection-step round - starts genuinely unselected (not defaulted to
+  // 'airfield') so a visitor makes a real, conscious choice rather than
+  // ever silently inheriting one. Every existing signupType === 'x'
+  // comparison elsewhere in this component already treats null as
+  // "neither branch", so this needed no changes anywhere else that
+  // reads signupType - only the JSX below (which now gates the field
+  // sets on signupType being set at all) and the two option buttons
+  // themselves (which now set it on click) needed touching.
+  const [signupType, setSignupType] = useState<SignupType | null>(null)
 
   // Airfield-branch-only fields
   const [clubName, setClubName] = useState('')
@@ -273,6 +281,12 @@ function SignupForm(): JSX.Element {
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault()
+    // Belt-and-braces - the submit button itself is only ever rendered
+    // once signupType is set (see the JSX below), so this should be
+    // unreachable, but this keeps the branch below (which assumes one
+    // of the two literal values) honest without needing a non-null
+    // assertion.
+    if (!signupType) return
     if (signupType === 'venue_cafe') {
       if (postcodeCheck.status !== 'valid') return
     } else if (!latValid || !lonValid) {
@@ -337,31 +351,49 @@ function SignupForm(): JSX.Element {
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-slate-700 bg-slate-900/80 p-6">
       {/* The fork - picked before any field renders, per its own spec.
-          Two toggle buttons rather than a <select> - only two options,
-          and the visual weight of a real choice (not a dropdown default
-          that could go unnoticed) matches how consequential this pick
-          is - it decides the entire rest of the form. */}
-      <div className="mb-5 grid grid-cols-2 gap-2 rounded-lg border border-slate-700 bg-slate-950/60 p-1">
+          Selection-step round: starts genuinely unselected (neither card
+          highlighted, no fields below) rather than defaulting to
+          'airfield' - a visitor un-familiar with the site could
+          otherwise start filling in the wrong form without ever having
+          consciously chosen. Two roomier cards (not the previous compact
+          toggle pill) with a one-line qualifier each, specifically so
+          the choice doesn't rest on the label wording alone - "Café /
+          Venue screen only" reads as jargon to someone who's never seen
+          this site's own product names before. Clicking the OTHER card
+          after a choice is already made still just re-sets signupType -
+          nothing about this is a one-way lock, so a mis-tap is a single
+          click to correct, not a page reload. */}
+      <div className="mb-5 grid grid-cols-2 gap-3">
         <button
           type="button"
           onClick={() => setSignupType('airfield')}
-          className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-            signupType === 'airfield' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+          className={`rounded-lg border p-4 text-left transition ${
+            signupType === 'airfield'
+              ? 'border-sky-500 bg-sky-500/10'
+              : 'border-slate-700 bg-slate-950/60 hover:border-slate-500'
           }`}
         >
-          Airfield / Clubhouse dashboard
+          <div className="text-sm font-semibold text-slate-100">Airfield / Clubhouse dashboard</div>
+          <div className="mt-1 text-xs text-slate-400">You manage weather, runway status, and NOTAMs for pilots</div>
         </button>
         <button
           type="button"
           onClick={() => setSignupType('venue_cafe')}
-          className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-            signupType === 'venue_cafe' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+          className={`rounded-lg border p-4 text-left transition ${
+            signupType === 'venue_cafe'
+              ? 'border-sky-500 bg-sky-500/10'
+              : 'border-slate-700 bg-slate-950/60 hover:border-slate-500'
           }`}
         >
-          Café / Venue screen only
+          <div className="text-sm font-semibold text-slate-100">Café / Venue screen only</div>
+          <div className="mt-1 text-xs text-slate-400">You want an ad/media screen - no aviation data needed</div>
         </button>
       </div>
 
+      {!signupType && <p className="text-center text-sm text-slate-500">Choose one to continue.</p>}
+
+      {signupType && (
+      <>
       <div className="space-y-4">
         {signupType === 'airfield' ? (
           <>
@@ -578,6 +610,8 @@ function SignupForm(): JSX.Element {
         </a>
         .
       </p>
+      </>
+      )}
     </form>
   )
 }
