@@ -1,0 +1,33 @@
+-- Venue/café onboarding round - a tenant needs an explicit, structural
+-- "what kind of product does this tenant use" marker, separate from and
+-- orthogonal to tenant_displays' active/entitled flags (migration 0034).
+-- tenant_type drives what the SIDEBAR renders (aviation nav vs reduced
+-- café nav); active/entitled drives billing/access to a product this
+-- tenant already structurally has. An airfield tenant with its Reception
+-- Dashboard entitlement switched off should still see the full aviation
+-- sidebar (greyed/upsell) - it hasn't become a café tenant just because
+-- a display got turned off.
+--
+-- DEFAULT 'airfield' backfills every existing row (Shobdon, Gyroplane
+-- Train, Swift Microlight, and any other tenant already in the table)
+-- as the type they all structurally already are - this table has no
+-- café-only tenant today, so a blanket 'airfield' default is correct
+-- for 100% of existing rows, not a guess that happens to be safe for
+-- most of them. Confirmed directly via pragma_table_info before writing
+-- this (not migration history, per investigation) that no tenant_type
+-- column exists yet.
+ALTER TABLE tenants ADD COLUMN tenant_type TEXT NOT NULL DEFAULT 'airfield';
+
+-- Free-text, optional, populated only by the venue_cafe signup branch
+-- (LandingPage.tsx's "Which airfield is this venue based at?" field).
+-- Deliberately does NOT touch tenants.parent_tenant_id - linking stays a
+-- manual step via the existing Parent Airfield dropdown in
+-- /platform/tenants (functions/api/platform/tenants/[id]/parent-tenant.ts).
+-- This column exists purely so the developer sees what the requester
+-- actually typed while reviewing trial_signups, the same "record intent
+-- for manual follow-up" purpose every other column on this table already
+-- serves (see trial-signup.ts's own top comment) - no new draft/pending
+-- tenant STATE is introduced by this column; a NULL value here is simply
+-- "the airfield branch, or a venue that didn't name one," not a lifecycle
+-- flag.
+ALTER TABLE trial_signups ADD COLUMN interested_parent_airfield TEXT;

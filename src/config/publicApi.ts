@@ -129,6 +129,12 @@ export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'
 // try/catch is the real guarantee against a race.
 export const PUBLIC_CHECK_SLUG_URL = '/api/public/check-slug'
 
+// Postcode round - same advisory-only shape as PUBLIC_CHECK_SLUG_URL
+// above, for the venue_cafe signup branch's Postcode field -
+// functions/api/public/check-postcode.ts. trial-signup.ts's own
+// geocodePostcode() call is the real, authoritative gate.
+export const PUBLIC_CHECK_POSTCODE_URL = '/api/public/check-postcode'
+
 // Platform-admin only: mints a new tenant + single-use invite link -
 // functions/api/platform/tenants/onboard.ts. Consumed by
 // PlatformTenantsPage.tsx's "Onboard new tenant" button.

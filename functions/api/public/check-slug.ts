@@ -13,7 +13,7 @@
 // fast form feedback, and can never fully close the race between two
 // concurrent requests on its own.
 import { jsonResponse, type D1Database } from "../_utils/tenantAuth";
-import { validateSlugCandidate } from "../_utils/tenantSlug";
+import { validateSlugCandidate, CAFE_SLUG_SUFFIX } from "../_utils/tenantSlug";
 import { isRateLimited, type KVNamespace } from "../_utils/rateLimit";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -40,7 +40,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const slug = (new URL(request.url).searchParams.get("slug") ?? "").trim().toLowerCase();
   if (!slug) return jsonResponse({ error: "slug query param is required" }, 400);
 
-  const validation = validateSlugCandidate(slug);
+  // Venue/café onboarding round - ?signupType=venue_cafe makes this
+  // live-typing check enforce the exact same -media suffix rule
+  // trial-signup.ts's own real submission enforces below, via the same
+  // shared validateSlugCandidate() call - so this can never show
+  // "available" for a slug the real submission would then reject.
+  const signupType = new URL(request.url).searchParams.get("signupType");
+  const requiredSuffix = signupType === "venue_cafe" ? CAFE_SLUG_SUFFIX : undefined;
+
+  const validation = validateSlugCandidate(slug, requiredSuffix);
   if (!validation.valid) {
     return jsonResponse({ available: false, reason: validation.error });
   }

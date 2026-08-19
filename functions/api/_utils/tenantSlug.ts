@@ -63,13 +63,28 @@ export interface SlugValidationResult {
   error?: string;
 }
 
-// Format + reserved-word check only - deliberately does NOT touch the
-// database. Whether/how to check current availability differs between
-// a live-typing check endpoint (a single fresh SELECT) and the actual
-// create endpoint (a pre-check, then a try/catch around the INSERT
-// itself for the real atomic guarantee) - both call this first, then
-// do their own DB-touching work on top.
-export function validateSlugCandidate(slug: string): SlugValidationResult {
+// Venue/café onboarding round - every venue_cafe signup's subdomain must
+// end in this suffix (LandingPage.tsx auto-generates it client-side from
+// the venue name, e.g. "goodwood" -> "goodwood-media"). Exported so
+// LandingPage.tsx's own preview text and this file's server-side
+// enforcement (validateSlugCandidate's requiredSuffix param below) never
+// drift apart into two independently-typed copies of the same string.
+export const CAFE_SLUG_SUFFIX = "-media";
+
+// Format + reserved-word (+ optional required-suffix) check only -
+// deliberately does NOT touch the database. Whether/how to check current
+// availability differs between a live-typing check endpoint (a single
+// fresh SELECT) and the actual create endpoint (a pre-check, then a
+// try/catch around the INSERT itself for the real atomic guarantee) -
+// both call this first, then do their own DB-touching work on top.
+//
+// requiredSuffix (venue/café onboarding round): threaded through by both
+// check-slug.ts and trial-signup.ts, keyed off the same signupType each
+// already validates independently - a single shared function is what
+// keeps the live-typing check and the real submission unable to
+// disagree, rather than two copies of a "does this end in -media" rule
+// that could drift.
+export function validateSlugCandidate(slug: string, requiredSuffix?: string): SlugValidationResult {
   if (!isValidSlugFormat(slug)) {
     return {
       valid: false,
@@ -78,6 +93,9 @@ export function validateSlugCandidate(slug: string): SlugValidationResult {
   }
   if (RESERVED_SLUGS.has(slug)) {
     return { valid: false, error: "That subdomain is reserved" };
+  }
+  if (requiredSuffix && !slug.endsWith(requiredSuffix)) {
+    return { valid: false, error: `Subdomain must end with "${requiredSuffix}"` };
   }
   return { valid: true };
 }
