@@ -346,7 +346,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .bind(token, tenantId, organizationId, result.userId, expiresAt, email)
     .run();
 
-  const origin = new URL(request.url).origin;
+  // Invite-link host round - was always new URL(request.url).origin,
+  // meaning the link read as whichever tenant's own subdomain the
+  // platform admin happened to be browsing /platform/tenants from (e.g.
+  // shobdon.airfieldcentral.com/onboard/:token for a brand-new,
+  // unrelated tenant) - cosmetically confusing, though harmless, since
+  // both [token].ts's own GET validation and accept.ts's own POST
+  // (confirmed by direct inspection, not assumed) resolve tenant
+  // identity purely from the token via tenant_invites, with zero Host
+  // header dependency anywhere. The invite genuinely isn't "on" any
+  // tenant's subdomain until accepted, so the plain root domain reads
+  // more accurately regardless of which subdomain generated it.
+  //
+  // Only swapped in for a real *.airfieldcentral.com origin - local dev
+  // (localhost) and Pages preview deployments (*.pages.dev) keep using
+  // the current request's own origin, same as before, since a
+  // hardcoded production domain there would point the link at the real
+  // live site instead of whatever's actually being tested against.
+  const requestOrigin = new URL(request.url).origin;
+  const originHost = new URL(requestOrigin).hostname;
+  const origin = originHost === "airfieldcentral.com" || originHost.endsWith(".airfieldcentral.com") ? "https://airfieldcentral.com" : requestOrigin;
   const inviteUrl = `${origin}/onboard/${token}`;
 
   return jsonResponse({ tenantId, slug, email, inviteUrl, expiresAt });
