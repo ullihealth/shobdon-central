@@ -656,6 +656,83 @@ function ParentAirfieldEditor({
   )
 }
 
+// Pilot camera view round - manages this tenant's tenants.
+// primary_camera_slot_number/primary_camera_id (migration 0091) via
+// functions/api/platform/tenants/[id]/primary-camera.ts. Structural
+// clone of ParentAirfieldEditor just above: fetch current selection +
+// candidate list fresh on every tenant switch, PUT on change, a plain
+// <select> with a "— None —" clearing option. Unlike that editor,
+// candidates come from the SERVER response (not a client-side prop),
+// since they're this tenant's own camera_slots/cameras rows, not
+// something PlatformTenantsPage already has loaded - see that route's
+// own top comment for why it combines both mechanisms into one ref
+// string ("slot:<n>" / "cam:<id>") rather than exposing two selects.
+function PrimaryCameraEditor({ tenant }: { tenant: PlatformTenant }): JSX.Element {
+  const [candidates, setCandidates] = useState<{ ref: string; label: string }[]>([])
+  const [selectedRef, setSelectedRef] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch(`${TENANTS_URL}/${tenant.id}/primary-camera`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        setCandidates(data?.candidates ?? [])
+        setSelectedRef(data?.selectedRef ?? null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tenant.id])
+
+  async function handleChange(nextRef: string) {
+    const value = nextRef || null
+    setSaving(true)
+    const response = await fetch(`${TENANTS_URL}/${tenant.id}/primary-camera`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: value }),
+    })
+    const data = response.ok ? await response.json().catch(() => null) : null
+    setSaving(false)
+    if (data) {
+      setCandidates(data.candidates ?? [])
+      setSelectedRef(data.selectedRef ?? null)
+    }
+  }
+
+  return (
+    <div className="min-w-[220px]">
+      <div className="mb-1 text-xs uppercase tracking-wide text-muted-400">Primary Camera (Pilot View)</div>
+      <select
+        value={selectedRef ?? ''}
+        disabled={loading || saving}
+        onChange={(event) => handleChange(event.target.value)}
+        className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none disabled:opacity-50"
+      >
+        <option value="">— None —</option>
+        {candidates.map((c) => (
+          <option key={c.ref} value={c.ref}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-[11px] text-muted-500">
+        The camera /pilot's camera icon opens. Only cameras with a real, non-LAN-only feed actually play there - a
+        mode="local"-only camera shows as configured here but reads as "no usable camera" on /pilot itself (every
+        /pilot client is off-site, never on the airfield's own network). Independent of which camera(s) this
+        tenant's TV dashboard carousel shows.
+      </p>
+    </div>
+  )
+}
+
 // Same inline-edit-on-blur pattern as QuotaEditor above - a developer
 // customer-service fix (e.g. a tenant's name has a typo or their logo
 // was uploaded badly-sized) shouldn't need a separate "Edit" mode.
@@ -2145,6 +2222,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                       onSaved={(captionText) => handleQrCaptionTextSaved(selectedTenant.id, captionText)}
                     />
                     <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
+                    <PrimaryCameraEditor tenant={selectedTenant} />
                     <Link
                       to={`/platform/tenants/${selectedTenant.id}/carousel-owner-slots`}
                       className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10"
