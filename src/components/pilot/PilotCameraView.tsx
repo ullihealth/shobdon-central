@@ -1,8 +1,19 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { zoomPanTransformStyle } from '../media/MediaSlotRenderer'
+import type { CropRect } from '../../types/mediaLibrary'
 
 interface PilotCameraViewProps {
   url: string
+  // Crop consistency round - the same crop the dashboard carousel slide
+  // for this camera already uses (functions/api/_utils/publicConfig.ts's
+  // own primaryCameraCropRect), applied via the SAME
+  // zoomPanTransformStyle() the dashboard's own MediaSlotRenderer.tsx
+  // uses - not a second implementation of this math. Identity crop
+  // (x:0,y:0,width:100,height:100) resolves to a no-op style, same as
+  // an un-zoomed dashboard slide - so a camera with no crop configured
+  // keeps rendering raw here exactly as it did before this round.
+  cropRect: CropRect
   onClose: () => void
 }
 
@@ -34,16 +45,16 @@ interface PilotCameraViewProps {
 // remounting the iframe via the `key` prop forces a genuinely fresh
 // load, and the caption underneath sets the expectation up front so a
 // frozen frame doesn't read as this feature being broken.
-export default function PilotCameraView({ url, onClose }: PilotCameraViewProps): JSX.Element {
+export default function PilotCameraView({ url, cropRect, onClose }: PilotCameraViewProps): JSX.Element {
   const [reloadKey, setReloadKey] = useState(0)
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-black">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black">
       <iframe
         key={reloadKey}
         src={url}
         className="h-full w-full"
-        style={{ border: 0 }}
+        style={{ border: 0, ...zoomPanTransformStyle(cropRect) }}
         allow="autoplay; encrypted-media"
         allowFullScreen
         title="Airfield camera"

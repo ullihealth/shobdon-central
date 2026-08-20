@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
+import type { CropRect } from '../types/mediaLibrary'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -312,6 +313,11 @@ export default function PilotViewPage(): JSX.Element {
   // EVERYTHING (header, footer ticker, the lot), not just within
   // whichever card the tap originated from.
   const [primaryCameraUrl, setPrimaryCameraUrl] = useState<string | null>(null)
+  // Crop consistency round - the same crop the dashboard carousel slide
+  // for this camera already uses (publicConfig.ts's own
+  // primaryCameraCropRect), defaults to identity (a no-op transform,
+  // see PilotCameraView's own comment) until the real fetch resolves.
+  const [primaryCameraCropRect, setPrimaryCameraCropRect] = useState<CropRect>({ x: 0, y: 0, width: 100, height: 100 })
   const [cameraViewOpen, setCameraViewOpen] = useState(false)
 
   function loadBranding() {
@@ -343,6 +349,7 @@ export default function PilotViewPage(): JSX.Element {
         // null must actually clear a previously-set url rather than
         // leave it stale.
         setPrimaryCameraUrl(typeof data.primaryCameraUrl === 'string' ? data.primaryCameraUrl : null)
+        if (data.primaryCameraCropRect) setPrimaryCameraCropRect(data.primaryCameraCropRect)
         if (data.mainDisplayActive === false) setUnavailable(true)
       })
       .catch(() => {})
@@ -404,7 +411,7 @@ export default function PilotViewPage(): JSX.Element {
         onOpenCamera={() => setCameraViewOpen(true)}
       />
       {cameraViewOpen && primaryCameraUrl && (
-        <PilotCameraView url={primaryCameraUrl} onClose={() => setCameraViewOpen(false)} />
+        <PilotCameraView url={primaryCameraUrl} cropRect={primaryCameraCropRect} onClose={() => setCameraViewOpen(false)} />
       )}
     </WeatherProvider>
   )
