@@ -20,6 +20,7 @@ import PilotFooterTicker from '../components/pilot/PilotFooterTicker'
 import PilotVersionStamp from '../components/pilot/PilotVersionStamp'
 import PilotRunwayWindPanel from '../components/pilot/PilotRunwayWindPanel'
 import PilotWindCard from '../components/pilot/PilotWindCard'
+import PilotCameraView from '../components/pilot/PilotCameraView'
 import CompassPanel from '../components/CompassPanel'
 import GasPricesPanel from '../components/GasPricesPanel'
 
@@ -33,6 +34,8 @@ interface PilotViewContentProps {
   refreshTick: number
   onManualRefresh: () => void
   pilotBackgroundOverride: { backgroundColor: string } | null
+  primaryCameraUrl: string | null
+  onOpenCamera: () => void
 }
 
 // Everything that used to render directly inside PilotViewPage's own
@@ -52,6 +55,8 @@ function PilotViewContent({
   refreshTick,
   onManualRefresh,
   pilotBackgroundOverride,
+  primaryCameraUrl,
+  onOpenCamera,
 }: PilotViewContentProps): JSX.Element {
   const { refetchNow, dataStale } = useWeather()
   usePilotDataFreshnessGuard()
@@ -198,7 +203,7 @@ function PilotViewContent({
             Confirmed via direct measurement, not just this reasoning:
             gap between button-bottom and the compass SVG's own top edge
             was -9px before this move, still -9px after. */}
-        <PilotWindCard />
+        <PilotWindCard primaryCameraUrl={primaryCameraUrl} onOpenCamera={onOpenCamera} />
         {/* Compass instrument - hideReadout drops its own text readout
             list (Wind/Headwind/Crosswind/Trend), since the runway/wind
             panel below already shows Wind/Headwind/Crosswind; the rose/
@@ -299,6 +304,15 @@ export default function PilotViewPage(): JSX.Element {
   const [unavailable, setUnavailable] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
+  // Camera view round - primaryCameraUrl comes straight from
+  // publicConfig.ts's own already-resolved field (null covers both
+  // "not configured" and "local-mode-only, unusable off-site" - see
+  // that file's own comment). cameraViewOpen is owned here, not inside
+  // PilotWindCard, because PilotCameraView needs to render above
+  // EVERYTHING (header, footer ticker, the lot), not just within
+  // whichever card the tap originated from.
+  const [primaryCameraUrl, setPrimaryCameraUrl] = useState<string | null>(null)
+  const [cameraViewOpen, setCameraViewOpen] = useState(false)
 
   function loadBranding() {
     fetch(PUBLIC_CONFIG_URL)
@@ -323,6 +337,12 @@ export default function PilotViewPage(): JSX.Element {
         if (typeof data.mobileEnabled === 'boolean') setMobileEnabled(data.mobileEnabled)
         if (data.theme) setThemeOverride(data.theme as CSSProperties)
         if (data.pilotBackgroundOverride) setPilotBackgroundOverride(data.pilotBackgroundOverride)
+        // Unconditional, unlike the falsy-skips-update fields above -
+        // null is a real, meaningful value here (no usable camera), not
+        // an absent-field placeholder, so a refetch that now returns
+        // null must actually clear a previously-set url rather than
+        // leave it stale.
+        setPrimaryCameraUrl(typeof data.primaryCameraUrl === 'string' ? data.primaryCameraUrl : null)
         if (data.mainDisplayActive === false) setUnavailable(true)
       })
       .catch(() => {})
@@ -380,7 +400,12 @@ export default function PilotViewPage(): JSX.Element {
         refreshTick={refreshTick}
         onManualRefresh={handleManualRefresh}
         pilotBackgroundOverride={pilotBackgroundOverride}
+        primaryCameraUrl={primaryCameraUrl}
+        onOpenCamera={() => setCameraViewOpen(true)}
       />
+      {cameraViewOpen && primaryCameraUrl && (
+        <PilotCameraView url={primaryCameraUrl} onClose={() => setCameraViewOpen(false)} />
+      )}
     </WeatherProvider>
   )
 }

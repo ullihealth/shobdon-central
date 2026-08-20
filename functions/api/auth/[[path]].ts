@@ -82,9 +82,34 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
             "airfield-central.jeffthompson.workers.dev",
             "airfieldcentral.com",
             "*.airfieldcentral.com",
+            // Local dev round - `wrangler pages dev` (this session's own
+            // established local-testing command) serves on localhost, a
+            // Host this allowlist never covered, so resolveDynamicBaseURL
+            // (node_modules/better-auth/dist/utils/url.mjs) silently fell
+            // back to the production .pages.dev URL for every local
+            // request. Wildcard on the port, not a single hardcoded
+            // "localhost:8788" - matchesHostPattern (same file) does a
+            // plain string/wildcard compare with no port-stripping, so a
+            // future dev port change wouldn't silently break this again.
+            // Confirmed via direct source inspection (matchesHostPattern +
+            // wildcardMatch) that "*" here can't accidentally widen to
+            // match any REAL production host - it's anchored to the
+            // literal "localhost:" prefix, and no external request can
+            // ever legitimately arrive with that Host value.
+            "localhost:*",
           ],
           fallback: "https://shobdon-central.pages.dev",
-          protocol: "https",
+          // Local dev round - was hardcoded "https", which overrides
+          // better-auth's own built-in dev-ergonomics inference
+          // (getProtocolFromSource/isLoopbackForDevScheme, same url.mjs)
+          // that would otherwise correctly resolve "http" for a loopback
+          // host and "https" for everything else. Removed entirely rather
+          // than set conditionally - on Cloudflare, request.url already
+          // reflects the real scheme the edge received (confirmed via the
+          // same source read: getProtocolFromSource checks the request's
+          // own URL protocol before ever falling back to the loopback
+          // check), so omitting this is correct for production too, not
+          // just a local-dev carve-out.
         },
         // Same fix, same reasoning, for the CSRF/origin allowlist - was a
         // single hardcoded string (env.AUTH_TRUSTED_ORIGIN). Wildcard syntax
@@ -98,6 +123,18 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
           "https://airfield-central.jeffthompson.workers.dev",
           "https://airfieldcentral.com",
           "https://*.airfieldcentral.com",
+          // Local dev round - the actual root cause of local sign-in
+          // failing outright (not a bad-credentials issue): better-auth's
+          // own CSRF/origin-check middleware (origin-check.mjs,
+          // validateOrigin) rejects any sign-in whose Origin header isn't
+          // an exact/wildcard match in this list, with a 403 thrown
+          // BEFORE credentials are ever checked - confirmed via direct
+          // source read, not assumed from symptoms alone. Scheme-specific
+          // ("http://", not "https://") since matchesOriginPattern's
+          // wildcard branch matches the full origin string including
+          // scheme - a plain HTTP origin was never going to match any of
+          // the https-only patterns above regardless of host.
+          "http://localhost:*",
         ],
         basePath: "/api/auth",
         emailAndPassword: {
