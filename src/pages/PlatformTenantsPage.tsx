@@ -2004,7 +2004,18 @@ export default function PlatformTenantsPage(): JSX.Element {
                     behind lat/lon being filled first: Jeff wants to pick
                     a parent BEFORE deciding whether to type coordinates
                     at all, since a parent link makes them optional (see
-                    latOk/lonOk's own comment above). */}
+                    latOk/lonOk's own comment above).
+
+                    Visibility round: selecting a real parent also clears
+                    any typed lat/lon, not just hides the fields below -
+                    without this, a value typed BEFORE picking a parent
+                    would linger in state while its field disappears, and
+                    if it happened to be invalid (non-blank, out of
+                    range), latOk/lonOk would stay false with no visible
+                    field left to fix it, silently blocking submission.
+                    Clearing on select keeps "parent selected" and
+                    "fields hidden" always mean the same thing: nothing
+                    entered, will inherit the parent's own coordinates. */}
                 {onboardTenantType === 'venue_cafe' && (
                   <div className="flex flex-col gap-1.5">
                     <label htmlFor="onboard-parent" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
@@ -2013,7 +2024,13 @@ export default function PlatformTenantsPage(): JSX.Element {
                     <select
                       id="onboard-parent"
                       value={parentTenantSlug}
-                      onChange={(event) => setParentTenantSlug(event.target.value)}
+                      onChange={(event) => {
+                        setParentTenantSlug(event.target.value)
+                        if (event.target.value) {
+                          setLat('')
+                          setLon('')
+                        }
+                      }}
                       className="w-56 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                     >
                       <option value="">— None —</option>
@@ -2025,32 +2042,42 @@ export default function PlatformTenantsPage(): JSX.Element {
                     </select>
                   </div>
                 )}
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Latitude{parentSelected ? ' (optional)' : ''}
-                  </label>
-                  <input
-                    id="onboard-lat"
-                    value={lat}
-                    onChange={(event) => setLat(event.target.value)}
-                    placeholder="52.2416"
-                    inputMode="decimal"
-                    className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Longitude{parentSelected ? ' (optional)' : ''}
-                  </label>
-                  <input
-                    id="onboard-lon"
-                    value={lon}
-                    onChange={(event) => setLon(event.target.value)}
-                    placeholder="-2.8821"
-                    inputMode="decimal"
-                    className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
-                  />
-                </div>
+                {/* Hidden entirely (not just marked optional) once a
+                    parent is selected - nothing to fill in or look at
+                    at that point, per spec. Reappear, required again,
+                    the instant the selection reverts to "— None —" -
+                    parentSelected is a plain per-render derivation, so
+                    this needs no extra show/hide state of its own. */}
+                {!parentSelected && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                        Latitude
+                      </label>
+                      <input
+                        id="onboard-lat"
+                        value={lat}
+                        onChange={(event) => setLat(event.target.value)}
+                        placeholder="52.2416"
+                        inputMode="decimal"
+                        className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                        Longitude
+                      </label>
+                      <input
+                        id="onboard-lon"
+                        value={lon}
+                        onChange={(event) => setLon(event.target.value)}
+                        placeholder="-2.8821"
+                        inputMode="decimal"
+                        className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                      />
+                    </div>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={handleOnboardTenant}
