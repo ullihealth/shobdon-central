@@ -164,11 +164,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const existingUser = await env.DB.prepare("SELECT id FROM user WHERE email = ?").bind(email).first<{ id: string }>();
   if (existingUser) return jsonResponse({ error: "An account already exists with this email" }, 409);
 
-  if (!isValidLat(body?.lat)) return jsonResponse({ error: "lat is required and must be a number between -90 and 90" }, 400);
-  if (!isValidLon(body?.lon)) return jsonResponse({ error: "lon is required and must be a number between -180 and 180" }, 400);
-  const lat = body!.lat as number;
-  const lon = body!.lon as number;
-
   // Subdomain round: required, no more random tenant-XXXXXXXX fallback -
   // that made sense for quick throwaway test-tenant creation, but this
   // form now also captures a real name/email for genuine prospects
@@ -203,10 +198,54 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // tenantProvisioning.ts's own comment on the same tradeoff).
   const parentTenantSlugRaw = typeof body?.parentTenantSlug === "string" ? body.parentTenantSlug.trim() : "";
   let parentTenantId: number | null = null;
+  let parentLat: number | null = null;
+  let parentLon: number | null = null;
   if (parentTenantSlugRaw) {
-    const parentTenant = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(parentTenantSlugRaw).first<{ id: number }>();
+    const parentTenant = await env.DB
+      .prepare("SELECT id, lat, lon FROM tenants WHERE slug = ?")
+      .bind(parentTenantSlugRaw)
+      .first<{ id: number; lat: number | null; lon: number | null }>();
     if (!parentTenant) return jsonResponse({ error: "No tenant found with that Parent Airfield slug" }, 404);
     parentTenantId = parentTenant.id;
+    parentLat = parentTenant.lat;
+    parentLon = parentTenant.lon;
+  }
+
+  // Conditional lat/lon requirement round - required exactly as before
+  // UNLESS a Parent Airfield was selected, in which case a blank value
+  // (PlatformTenantsPage.tsx sends null, never 0/NaN, for "left blank" -
+  // see that file's own comment on why Number('') can't be trusted for
+  // this) falls back to the parent's own stored coordinates instead of
+  // failing. A value that WAS provided (including from a tenant with a
+  // parent selected) is still validated and used as-is, never silently
+  // overridden by the parent's own value - "manually entered wins" per
+  // spec. If a parent is selected but has no lat/lon on file itself (a
+  // pre-parent-tenant-round tenant, or one somehow missing it) and none
+  // was typed here either, this fails the same as the no-parent case -
+  // never silently creates a NULL-coordinate tenant, matching this
+  // file's own long-standing "lat/lon always required at creation"
+  // invariant (see the Gyroplane Train incident referenced above).
+  const latProvided = body?.lat !== null && body?.lat !== undefined;
+  const lonProvided = body?.lon !== null && body?.lon !== undefined;
+
+  let lat: number;
+  if (latProvided) {
+    if (!isValidLat(body?.lat)) return jsonResponse({ error: "lat must be a number between -90 and 90" }, 400);
+    lat = body!.lat as number;
+  } else if (parentTenantId !== null && isValidLat(parentLat)) {
+    lat = parentLat;
+  } else {
+    return jsonResponse({ error: "lat is required and must be a number between -90 and 90" }, 400);
+  }
+
+  let lon: number;
+  if (lonProvided) {
+    if (!isValidLon(body?.lon)) return jsonResponse({ error: "lon must be a number between -180 and 180" }, 400);
+    lon = body!.lon as number;
+  } else if (parentTenantId !== null && isValidLon(parentLon)) {
+    lon = parentLon;
+  } else {
+    return jsonResponse({ error: "lon is required and must be a number between -180 and 180" }, 400);
   }
 
   // Pre-check so a taken/reserved subdomain surfaces as a clear error

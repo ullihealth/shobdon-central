@@ -1692,21 +1692,37 @@ export default function PlatformTenantsPage(): JSX.Element {
   const [lon, setLon] = useState('')
   const parsedLat = Number(lat)
   const parsedLon = Number(lon)
-  const latValid = lat.trim() !== '' && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
-  const lonValid = lon.trim() !== '' && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
+  const latBlank = lat.trim() === ''
+  const lonBlank = lon.trim() === ''
+  const latValid = !latBlank && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
+  const lonValid = !lonBlank && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
 
   // Parent Airfield (onboard-tool venue/café fork round) - venue_cafe
-  // only, per the field list this branch replaces. Only ever surfaced
-  // once lat/lon are both valid (they stay required regardless of
-  // whether a parent is picked or later unlinked, so there's always a
-  // sane weather fallback - see AirfieldLocationSection.tsx's own
-  // reasoning for why lat/lon can never be optional). Sets
+  // only, per the field list this branch replaces. Always visible for
+  // that branch, right after Subdomain - no longer gated behind lat/lon
+  // being valid first (a real ask: Jeff wants to pick a parent BEFORE
+  // deciding whether to type coordinates at all, not after). Sets
   // tenants.parent_tenant_id directly at creation via onboard.ts's own
-  // new parentTenantSlug param - unlike ParentAirfieldEditor below
-  // (which PUTs against an already-existing tenant's own :id route),
-  // there's no tenant to PUT against yet here, so this is just local
-  // form state until submit.
+  // parentTenantSlug param - unlike ParentAirfieldEditor below (which
+  // PUTs against an already-existing tenant's own :id route), there's
+  // no tenant to PUT against yet here, so this is just local form state
+  // until submit.
   const [parentTenantSlug, setParentTenantSlug] = useState('')
+
+  // Conditional lat/lon requirement round - a parent link means the new
+  // tenant can inherit the parent's own stored coordinates server-side
+  // (onboard.ts's own fallback), so lat/lon become optional exactly
+  // while a parent is selected: blank is now acceptable, but a
+  // genuinely invalid TYPED value (out of range, non-numeric) still
+  // blocks submission regardless of parent state - latValid/lonValid
+  // above already encode "blank" as invalid, so "blank AND a parent is
+  // selected" is the only new case this adds. Clearing the parent
+  // selection naturally reverts to the strict latValid/lonValid
+  // requirement with no extra effect/reset needed, since this is a
+  // plain per-render derivation, not stored state of its own.
+  const parentSelected = onboardTenantType === 'venue_cafe' && !!parentTenantSlug
+  const latOk = latValid || (latBlank && parentSelected)
+  const lonOk = lonValid || (lonBlank && parentSelected)
 
   // Client-side pre-check only, same posture as latValid/lonValid above -
   // onboard.ts's own validation (name required/max length, EMAIL_PATTERN,
@@ -1757,7 +1773,7 @@ export default function PlatformTenantsPage(): JSX.Element {
   }, [trimmedSlug, slugFormatError, slugSuffixError, onboardTenantType])
 
   async function handleOnboardTenant() {
-    if (!onboardTenantType || !latValid || !lonValid || !nameValid || !emailValid || !trimmedSlug || slugSuffixError) return
+    if (!onboardTenantType || !latOk || !lonOk || !nameValid || !emailValid || !trimmedSlug || slugSuffixError) return
     setOnboarding(true)
     setOnboardError(null)
     setInviteResult(null)
@@ -1769,8 +1785,13 @@ export default function PlatformTenantsPage(): JSX.Element {
           name: trimmedName,
           email: trimmedEmail,
           slug: trimmedSlug,
-          lat: parsedLat,
-          lon: parsedLon,
+          // null (not 0/NaN from an empty-string Number() conversion)
+          // when left blank - onboard.ts distinguishes "not provided,
+          // fall back to the parent's own coordinates" from "provided
+          // exactly 0,0", which Number('') would otherwise collapse
+          // into the same value.
+          lat: latBlank ? null : parsedLat,
+          lon: lonBlank ? null : parsedLon,
           tenantType: onboardTenantType,
           parentTenantSlug: onboardTenantType === 'venue_cafe' && parentTenantSlug ? parentTenantSlug : null,
         }),
@@ -1978,33 +1999,13 @@ export default function PlatformTenantsPage(): JSX.Element {
                     )}
                   </p>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Latitude
-                  </label>
-                  <input
-                    id="onboard-lat"
-                    value={lat}
-                    onChange={(event) => setLat(event.target.value)}
-                    placeholder="52.2416"
-                    inputMode="decimal"
-                    className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                    Longitude
-                  </label>
-                  <input
-                    id="onboard-lon"
-                    value={lon}
-                    onChange={(event) => setLon(event.target.value)}
-                    placeholder="-2.8821"
-                    inputMode="decimal"
-                    className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
-                  />
-                </div>
-                {onboardTenantType === 'venue_cafe' && latValid && lonValid && (
+                {/* Parent Airfield round - always visible on the café
+                    branch now, right after Subdomain, no longer gated
+                    behind lat/lon being filled first: Jeff wants to pick
+                    a parent BEFORE deciding whether to type coordinates
+                    at all, since a parent link makes them optional (see
+                    latOk/lonOk's own comment above). */}
+                {onboardTenantType === 'venue_cafe' && (
                   <div className="flex flex-col gap-1.5">
                     <label htmlFor="onboard-parent" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
                       Parent Airfield (optional)
@@ -2024,6 +2025,32 @@ export default function PlatformTenantsPage(): JSX.Element {
                     </select>
                   </div>
                 )}
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Latitude{parentSelected ? ' (optional)' : ''}
+                  </label>
+                  <input
+                    id="onboard-lat"
+                    value={lat}
+                    onChange={(event) => setLat(event.target.value)}
+                    placeholder="52.2416"
+                    inputMode="decimal"
+                    className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                    Longitude{parentSelected ? ' (optional)' : ''}
+                  </label>
+                  <input
+                    id="onboard-lon"
+                    value={lon}
+                    onChange={(event) => setLon(event.target.value)}
+                    placeholder="-2.8821"
+                    inputMode="decimal"
+                    className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={handleOnboardTenant}
@@ -2034,8 +2061,8 @@ export default function PlatformTenantsPage(): JSX.Element {
                     !!slugSuffixError ||
                     slugCheck.status === 'checking' ||
                     slugCheck.status === 'unavailable' ||
-                    !latValid ||
-                    !lonValid ||
+                    !latOk ||
+                    !lonOk ||
                     !nameValid ||
                     !emailValid
                   }
@@ -2046,6 +2073,10 @@ export default function PlatformTenantsPage(): JSX.Element {
               </div>
               {(lat.trim() !== '' && !latValid) || (lon.trim() !== '' && !lonValid) ? (
                 <p className="mt-2 text-[11px] text-status-bad">Latitude must be -90 to 90, longitude -180 to 180.</p>
+              ) : parentSelected && latBlank && lonBlank ? (
+                <p className="mt-2 text-[11px] text-muted-500">
+                  Left blank - will use the selected Parent Airfield's own coordinates.
+                </p>
               ) : null}
             </>
           )}
