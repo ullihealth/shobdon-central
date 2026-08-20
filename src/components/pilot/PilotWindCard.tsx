@@ -1,4 +1,18 @@
+import { useEffect, useRef, useState } from 'react'
 import { useWeather } from '../../context/WeatherContext'
+
+const TOAST_DURATION_MS = 4000
+
+interface PilotWindCardProps {
+  // Resolved primary-camera embed URL (functions/api/_utils/
+  // publicConfig.ts's own primaryCameraUrl, threaded down from
+  // PilotViewPage) - null covers both "no primary camera configured"
+  // and "configured but mode='local'-only, unusable off-site" per
+  // spec; this component can't and doesn't need to tell those two
+  // apart, since the resulting tap behaviour is identical either way.
+  primaryCameraUrl: string | null
+  onOpenCamera: () => void
+}
 
 // Reorder round: the "WIND 260° / 9 kt" readout used to live inline
 // inside PilotRunwayWindPanel, directly above the crosswind/headwind
@@ -16,26 +30,41 @@ import { useWeather } from '../../context/WeatherContext'
 // versus 2 in the same row does this automatically). Placed here
 // (top of the page, one-handed reach, no scrolling) per spec. Plain
 // inline SVG, not an icon library - matches PilotHeader.tsx's own
-// "no icon library" glyph convention. onClick is a deliberate no-op
-// placeholder for now, same posture as PilotHeader's own logo/future-
-// login button - the real camera-view takeover isn't wired up yet
-// (pending the primary-camera schema + live-embed work), but the
-// tappable target/position is real so that wiring has one obvious
-// place to attach without a layout change later.
-export default function PilotWindCard(): JSX.Element {
+// "no icon library" glyph convention.
+//
+// Tap behaviour forks on primaryCameraUrl: non-null bubbles up via
+// onOpenCamera (PilotViewPage owns the full-viewport takeover's own
+// open/closed state, since PilotCameraView needs to render above
+// everything, not just within this card); null shows a local,
+// self-dismissing toast instead of hiding the button - the button
+// stays a permanent, always-tappable feature-discovery point for a
+// tenant who hasn't configured a camera yet, per spec, not just an
+// error state for one who has.
+export default function PilotWindCard({ primaryCameraUrl, onOpenCamera }: PilotWindCardProps): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   const hasWind = !!weather && !liveDataUnavailable
 
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(toastTimerRef.current), [])
+
+  function handleTapCamera() {
+    if (primaryCameraUrl) {
+      onOpenCamera()
+      return
+    }
+    setToast('Please connect an airfield camera to enable this feature')
+    window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => setToast(null), TOAST_DURATION_MS)
+  }
+
   return (
-    <section className="flex w-full items-baseline justify-center gap-3 rounded-2xl border border-border bg-panel p-4">
+    <section className="relative flex w-full items-baseline justify-center gap-3 rounded-2xl border border-border bg-panel p-4">
       <span className="text-2xl font-bold uppercase tracking-wide text-muted-400">Wind</span>
       <span className="text-5xl font-black text-primary">{hasWind && weather ? `${weather.windDirection}° / ${weather.windSpeed} kt` : 'N/A'}</span>
       <button
         type="button"
-        onClick={() => {
-          // Camera view takeover - not wired up yet, see this file's
-          // own top comment.
-        }}
+        onClick={handleTapCamera}
         aria-label="Airfield camera"
         className="flex shrink-0 items-center justify-center self-center rounded-full p-2 text-muted-400 transition hover:bg-slate-800/60 hover:text-primary"
       >
@@ -44,6 +73,20 @@ export default function PilotWindCard(): JSX.Element {
           <circle cx="12" cy="12.5" r="3.25" />
         </svg>
       </button>
+      {/* Self-dismissing, non-blocking - same SelectionToast pattern
+          SlideEditor.tsx already established (absolute overlay, no
+          toast/popover library), positioned below this card rather
+          than that component's own top-right (this card sits at the
+          very top of the page, so above would risk clipping under the
+          sticky header). */}
+      {toast && (
+        <div
+          role="status"
+          className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 w-max max-w-[90%] -translate-x-1/2 rounded-lg border border-accent-sky-500/50 bg-slate-950/95 px-4 py-2.5 text-center text-sm text-slate-200 shadow-xl"
+        >
+          {toast}
+        </div>
+      )}
     </section>
   )
 }

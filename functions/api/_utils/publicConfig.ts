@@ -267,7 +267,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -304,6 +304,12 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         qrTargetUrl: string;
         qrCaptionText: string;
         qrMockupR2Key: string | null;
+        // Pilot camera view round (migration 0091) - exactly one of
+        // these two is set, or both NULL for "no primary camera chosen"
+        // (see that migration's own comment for why this lives here,
+        // not inferred from either camera table's own contents).
+        primaryCameraSlotNumber: number | null;
+        primaryCameraId: string | null;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
     // Shobdon's own station (its QFE datum vs QNH sea-level datum), not a
@@ -783,6 +789,30 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     url: resolveCameraUrl(row.mode, row.youtubeVideoId, row.localBaseUrl, row.id),
   }));
 
+  // Pilot camera view round - the tenant's designated primary camera
+  // (tenants.primary_camera_slot_number/primary_camera_id, migration
+  // 0091), resolved to a single embeddable URL or null. Every /pilot
+  // client here is a webapp/PWA (and, per spec, future iOS/Android
+  // apps) - never on-site LAN access - so a cameras-table primary is
+  // ALWAYS resolved via resolveCameraUrl("stream", ...) regardless of
+  // that camera's own stored mode, deliberately never passing through
+  // localBaseUrl. A mode='local'-only camera (no youtubeVideoId) then
+  // correctly resolves to null here - "no usable camera for /pilot",
+  // per spec, even though the exact same camera IS usable on the
+  // on-site TV dashboard (which reads `cameras` above, honouring the
+  // real stored mode, completely unaffected by this). The legacy
+  // camera_slots mechanism has no mode concept at all - its url is
+  // already whatever arbitrary embeddable page was configured (e.g.
+  // Shobdon's rtsp.me relay), used as-is.
+  let primaryCameraUrl: string | null = null;
+  if (tenantRow?.primaryCameraSlotNumber != null) {
+    const slotMatch = cameraRows.results.find((row) => row.slotNumber === tenantRow.primaryCameraSlotNumber);
+    primaryCameraUrl = slotMatch?.url ? slotMatch.url : null;
+  } else if (tenantRow?.primaryCameraId) {
+    const cameraMatch = newCameraRows.results.find((row) => row.id === tenantRow.primaryCameraId);
+    primaryCameraUrl = cameraMatch ? resolveCameraUrl("stream", cameraMatch.youtubeVideoId, null, cameraMatch.id) : null;
+  }
+
   const mediaBaseUrl = env.MEDIA_PUBLIC_BASE_URL;
   const carouselSlots: CarouselSlotResolvedRow[] = carouselRows.results.map((row) => ({
     slotNumber: row.slotNumber,
@@ -1047,6 +1077,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     brandDisplay,
     cameraSlots,
     cameras,
+    primaryCameraUrl,
     carouselSlots,
     cafeCarouselSlots,
     opsPanel,
