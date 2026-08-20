@@ -10,8 +10,16 @@
 // 0022_tenant_schema.sql) as the actual atomic guarantee, since a
 // check-then-create sequence here can never fully close a race between
 // two concurrent requests on its own.
+//
+// Onboard-tool venue/café fork round - ?tenantType=venue_cafe makes this
+// live-typing check enforce the same -media suffix rule onboard.ts's own
+// real submission enforces below, via the same shared
+// validateSlugCandidate() call, mirroring functions/api/public/
+// check-slug.ts's identical ?signupType=venue_cafe handling - so this can
+// never show "available" for a slug the real submission would then
+// reject.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
-import { validateSlugCandidate } from "../../_utils/tenantSlug";
+import { validateSlugCandidate, CAFE_SLUG_SUFFIX } from "../../_utils/tenantSlug";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -26,10 +34,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
   if ("error" in result) return result.error;
 
-  const slug = (new URL(request.url).searchParams.get("slug") ?? "").trim().toLowerCase();
+  const url = new URL(request.url);
+  const slug = (url.searchParams.get("slug") ?? "").trim().toLowerCase();
   if (!slug) return jsonResponse({ error: "slug query param is required" }, 400);
 
-  const validation = validateSlugCandidate(slug);
+  const tenantType = url.searchParams.get("tenantType");
+  const requiredSuffix = tenantType === "venue_cafe" ? CAFE_SLUG_SUFFIX : undefined;
+
+  const validation = validateSlugCandidate(slug, requiredSuffix);
   if (!validation.valid) {
     return jsonResponse({ available: false, reason: validation.error });
   }

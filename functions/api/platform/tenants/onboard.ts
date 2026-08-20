@@ -15,8 +15,29 @@
 // onboard/[token]/accept.ts now reads it from the invite row rather
 // than trusting whatever email the person opening the link types in.
 //
+// Onboard-tool venue/café fork round - this developer-only quick-create
+// tool previously always produced tenant_type='airfield' with cafe-tv
+// off (entitled=0/active=0), correct for its normal airfield-onboarding
+// use but wrong for deliberately creating a café-only tenant (e.g. Meg's
+// Cafe). Mirrors trial-signup.ts's own public airfield/venue_cafe fork,
+// adapted for trusted developer use: tenantType (optional, defaults to
+// 'airfield' so this stays a no-op for any other caller), and for
+// venue_cafe specifically - the -media slug suffix (same
+// validateSlugCandidate() requiredSuffix mechanism trial-signup.ts
+// already uses, not a second copy of that rule), cafe-tv created
+// entitled=1/active=1 with NO trial expiry (immediate, indefinite access
+// - a developer deliberately onboarding a café tenant isn't starting a
+// self-serve trial), main created entitled=0/active=0, and an optional
+// parentTenantSlug that sets tenants.parent_tenant_id directly at
+// creation time (no pending/manual-follow-up state needed here, unlike
+// trial-signup.ts's own interested_parent_airfield free-text field -
+// this is a trusted developer action, not public self-serve). The
+// airfield branch (this file's pre-existing behaviour) is entirely
+// unchanged.
+//
 // Required JSON body { name: string, email: string, slug: string,
-// lat: number, lon: number } - slug is a human-chosen subdomain
+// lat: number, lon: number, tenantType?: 'airfield' | 'venue_cafe',
+// parentTenantSlug?: string | null } - slug is a human-chosen subdomain
 // (wildcard DNS/Worker migration round: any valid subdomain now
 // resolves automatically the instant the tenant row exists, no
 // Cloudflare API call needed, so this is now a pure data-validation
@@ -39,7 +60,7 @@
 // with the same slug, only ever one plus a clear error on the other.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { cloneTenantTemplate } from "../../_utils/cloneTenant";
-import { validateSlugCandidate } from "../../_utils/tenantSlug";
+import { validateSlugCandidate, CAFE_SLUG_SUFFIX } from "../../_utils/tenantSlug";
 import { createTenantOrganization } from "../../_utils/tenantProvisioning";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -98,12 +119,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const body = (await request.json().catch(() => null)) as
-    | { name?: unknown; email?: unknown; slug?: unknown; lat?: unknown; lon?: unknown }
+    | {
+        name?: unknown;
+        email?: unknown;
+        slug?: unknown;
+        lat?: unknown;
+        lon?: unknown;
+        tenantType?: unknown;
+        parentTenantSlug?: unknown;
+      }
     | null;
   const requestedSlug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
 
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  // Defaults to 'airfield' when absent - same posture as
+  // trial-signup.ts's own signupType coercion, keeps every existing
+  // caller of this endpoint (none exist outside PlatformTenantsPage.tsx,
+  // but this costs nothing) producing exactly today's behaviour.
+  const tenantType = body?.tenantType === "venue_cafe" ? "venue_cafe" : "airfield";
 
   // Fail before creating anything, same posture as the template-tenant
   // check above - a missing/invalid coordinate must never produce a
@@ -115,7 +149,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // permanent login) - checked before anything is created, not
   // discovered later when the invite is opened.
   if (!name || name.length > NAME_MAX_LENGTH) {
-    return jsonResponse({ error: `Airfield name is required (max ${NAME_MAX_LENGTH} characters)` }, 400);
+    return jsonResponse(
+      { error: `${tenantType === "venue_cafe" ? "Venue" : "Airfield"} name is required (max ${NAME_MAX_LENGTH} characters)` },
+      400
+    );
   }
   if (!email || email.length > EMAIL_MAX_LENGTH || !EMAIL_PATTERN.test(email)) {
     return jsonResponse({ error: "A valid email is required" }, 400);
@@ -145,8 +182,32 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // via this path anymore either.
   if (!requestedSlug) return jsonResponse({ error: "Please choose a subdomain" }, 400);
 
-  const validation = validateSlugCandidate(requestedSlug);
+  // venue_cafe requires the same -media suffix trial-signup.ts's public
+  // form enforces, via the same shared validateSlugCandidate()
+  // requiredSuffix param - never a second copy of this rule.
+  const requiredSuffix = tenantType === "venue_cafe" ? CAFE_SLUG_SUFFIX : undefined;
+  const validation = validateSlugCandidate(requestedSlug, requiredSuffix);
   if (!validation.valid) return jsonResponse({ error: validation.error }, 400);
+
+  // Parent Airfield linking (optional) - resolved and validated BEFORE
+  // anything is created, same fail-fast posture as every other field on
+  // this endpoint. A trusted developer action, so this sets
+  // parent_tenant_id directly rather than the public form's own
+  // interested_parent_airfield free-text "record intent for manual
+  // follow-up" field - see trial-signup.ts's own comment on why that one
+  // stays manual. Mirrors functions/api/platform/tenants/[id]/
+  // parent-tenant.ts's own lookup-by-slug + validation exactly (that
+  // endpoint operates on an already-existing tenant via PUT, so its
+  // logic can't be called directly here - duplicated per this codebase's
+  // established functions/-file-local-helper convention, see
+  // tenantProvisioning.ts's own comment on the same tradeoff).
+  const parentTenantSlugRaw = typeof body?.parentTenantSlug === "string" ? body.parentTenantSlug.trim() : "";
+  let parentTenantId: number | null = null;
+  if (parentTenantSlugRaw) {
+    const parentTenant = await env.DB.prepare("SELECT id FROM tenants WHERE slug = ?").bind(parentTenantSlugRaw).first<{ id: number }>();
+    if (!parentTenant) return jsonResponse({ error: "No tenant found with that Parent Airfield slug" }, 404);
+    parentTenantId = parentTenant.id;
+  }
 
   // Pre-check so a taken/reserved subdomain surfaces as a clear error
   // BEFORE anything is created, not as a confusing failure partway
@@ -166,7 +227,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // inline here now lives inside that shared function - same behaviour,
   // same "That subdomain was just taken" outcome on a genuine race,
   // just one implementation instead of two.
-  const created = await createTenantOrganization(env.DB, { slug, name, lat, lon, subdomainConfirmed });
+  const created = await createTenantOrganization(env.DB, { slug, name, lat, lon, subdomainConfirmed, tenantType });
   if (!created.ok) {
     return jsonResponse({ error: "That subdomain was just taken - please try a different one" }, 409);
   }
@@ -174,39 +235,67 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   await cloneTenantTemplate(env.DB, template.organizationId, organizationId, slug);
 
-  // tenant_displays (migration 0027) was never actually auto-created by
-  // any onboarding path before this - confirmed by inspection, not
-  // assumed (publicConfig.ts/DashboardPage.tsx's "missing row defaults
-  // to classic" fallback just made that gap invisible). Both rows are
-  // explicit here now: 'main' with the same panel_config shape migration
-  // 0027's own one-time seed used, and 'cafe-tv' pointed at the new
-  // CafeTemplate ('cafe-1', migration 0034) but starting entitled=0 -
-  // a brand-new signup must never get free café access. created_at/
-  // updated_at are left to the table's own DEFAULT (datetime('now')).
-  await env.DB
-    .prepare(
-      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config)
-       VALUES (?, 'main', 'Main Dashboard', 'classic', ?)`
-    )
-    .bind(tenantId, JSON.stringify({ weather: true, compass: true, media: true, ops: true }))
-    .run();
+  if (tenantType === "venue_cafe") {
+    // Mirrors trial-signup.ts's own venue_cafe branch exactly (main OFF,
+    // cafe-tv ON) with one deliberate difference: cafe-tv here gets
+    // entitled=1/active=1 with NO entitlement_trial_expires_at (both
+    // columns default to 1/NULL already - see tenant_displays' own
+    // schema - so this is the same "immediate, indefinite access" shape
+    // the airfield branch's own 'main' row below already relies on via
+    // those same defaults, just spelled out explicitly here for the
+    // reader). A developer deliberately onboarding a café tenant through
+    // this trusted tool isn't starting a metered self-serve trial - see
+    // trial-signup.ts's own CAFE_TRIAL_DAYS comment for why the public
+    // path is different.
+    await env.DB
+      .prepare(`INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled, active) VALUES (?, 'main', 'Main Dashboard', 'classic', 0, 0)`)
+      .bind(tenantId)
+      .run();
+    await env.DB
+      .prepare(
+        `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled, active) VALUES (?, 'cafe-tv', 'Media Screen', 'cafe-1', 1, 1)`
+      )
+      .bind(tenantId)
+      .run();
+  } else {
+    // tenant_displays (migration 0027) was never actually auto-created by
+    // any onboarding path before this - confirmed by inspection, not
+    // assumed (publicConfig.ts/DashboardPage.tsx's "missing row defaults
+    // to classic" fallback just made that gap invisible). Both rows are
+    // explicit here now: 'main' with the same panel_config shape migration
+    // 0027's own one-time seed used, and 'cafe-tv' pointed at the new
+    // CafeTemplate ('cafe-1', migration 0034) but starting entitled=0 -
+    // a brand-new signup must never get free café access. created_at/
+    // updated_at are left to the table's own DEFAULT (datetime('now')).
+    await env.DB
+      .prepare(
+        `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, panel_config)
+         VALUES (?, 'main', 'Main Dashboard', 'classic', ?)`
+      )
+      .bind(tenantId, JSON.stringify({ weather: true, compass: true, media: true, ops: true }))
+      .run();
 
-  // active=0 alongside entitled=0 (Tom Galloway/Gyroplane Train round) -
-  // entitled alone already keeps the public /d/cafe-tv route 404ing
-  // (functions/api/public/display.ts's isCurrentlyEntitled check), but
-  // Jeff wants café fully off, not merely unentitled, until he
-  // deliberately turns it on via Platform Tenants - active is migration
-  // 0034's own independent developer force-off flag (Part D), completely
-  // separate from entitled (Part C), and defaults to 1 on the table
-  // itself (grandfathering pre-existing rows), so it must be forced
-  // here explicitly, same reasoning as entitled just above.
-  await env.DB
-    .prepare(
-      `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled, active)
-       VALUES (?, 'cafe-tv', 'Clubhouse Cafe TV', 'cafe-1', 0, 0)`
-    )
-    .bind(tenantId)
-    .run();
+    // active=0 alongside entitled=0 (Tom Galloway/Gyroplane Train round) -
+    // entitled alone already keeps the public /d/cafe-tv route 404ing
+    // (functions/api/public/display.ts's isCurrentlyEntitled check), but
+    // Jeff wants café fully off, not merely unentitled, until he
+    // deliberately turns it on via Platform Tenants - active is migration
+    // 0034's own independent developer force-off flag (Part D), completely
+    // separate from entitled (Part C), and defaults to 1 on the table
+    // itself (grandfathering pre-existing rows), so it must be forced
+    // here explicitly, same reasoning as entitled just above.
+    await env.DB
+      .prepare(
+        `INSERT INTO tenant_displays (tenant_id, slug, name, template_id, entitled, active)
+         VALUES (?, 'cafe-tv', 'Clubhouse Cafe TV', 'cafe-1', 0, 0)`
+      )
+      .bind(tenantId)
+      .run();
+  }
+
+  if (parentTenantId !== null) {
+    await env.DB.prepare("UPDATE tenants SET parent_tenant_id = ? WHERE id = ?").bind(parentTenantId, tenantId).run();
+  }
 
   const token = randomToken();
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();

@@ -33,10 +33,10 @@ export interface CreateTenantOrganizationParams {
   // human-chosen, so it always passes true.
   subdomainConfirmed: boolean;
   // Venue/café onboarding round (migration 0090) - optional and
-  // defaults to 'airfield' below, so onboard.ts's own call site (which
-  // has no venue_cafe creation path in this round's scope) needs zero
-  // changes to keep creating airfield tenants exactly as it always has.
-  // Only trial-signup.ts's venue_cafe branch ever passes 'venue_cafe'.
+  // defaults to 'airfield' below. Both callers can pass 'venue_cafe':
+  // trial-signup.ts's own public venue_cafe branch, and (onboard-tool
+  // fork round) onboard.ts's own tenantType-driven branch for a
+  // developer deliberately creating a café-only tenant.
   tenantType?: "airfield" | "venue_cafe";
 }
 
