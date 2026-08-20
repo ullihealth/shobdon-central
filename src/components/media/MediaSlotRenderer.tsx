@@ -67,7 +67,7 @@ const IDENTITY_CROP: CropRect = { x: 0, y: 0, width: 100, height: 100 }
 // to how much scale "room" exists - so pan has zero effect at 100%
 // zoom (scale=1) and smoothly gains effect as zoom increases, matching
 // the same "no discontinuity" requirement.
-function zoomPanTransformStyle(crop: CropRect): React.CSSProperties {
+export function zoomPanTransformStyle(crop: CropRect): React.CSSProperties {
   const width = crop.width > 0 ? crop.width : 100
   const height = crop.height > 0 ? crop.height : 100
   const scale = 100 / Math.max(1, Math.min(width, height))

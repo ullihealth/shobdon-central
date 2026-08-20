@@ -370,7 +370,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            nc.mode AS newCameraMode,
            nc.youtube_video_id AS newCameraYoutubeVideoId,
            nsr.local_base_url AS newCameraLocalBaseUrl,
-           cs.cameraId AS newCameraId
+           cs.cameraId AS newCameraId,
+           cs.cameraSlotNumber AS cameraSlotNumber
          FROM carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
@@ -404,6 +405,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         newCameraYoutubeVideoId: string | null;
         newCameraLocalBaseUrl: string | null;
         newCameraId: string | null;
+        cameraSlotNumber: number | null;
       }>(),
     // Café's own slot set (migration 0037, cafe_carousel_slots) - same
     // query shape as the dashboard's carouselRows above, pointed at the
@@ -813,6 +815,29 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     primaryCameraUrl = cameraMatch ? resolveCameraUrl("stream", cameraMatch.youtubeVideoId, null, cameraMatch.id) : null;
   }
 
+  // Crop consistency round - a camera shouldn't look zoomed on the TV
+  // dashboard but raw on /pilot. The crop itself isn't a property of
+  // the camera/URL source (camera_slots/cameras have none) - it's a
+  // property of whichever carousel_slots ROW displays that camera, so
+  // this finds that row (matched by the SAME cameraSlotNumber/cameraId
+  // identity tenants.primary_camera_slot_number/primary_camera_id
+  // already points at, on the dashboard carousel specifically, not
+  // cafe_carousel_slots) and reuses its crop verbatim. No match (camera
+  // not currently on an enabled dashboard slide, or no crop set) falls
+  // through to the identity crop below - same "IDENTITY_CROP when
+  // absent" default MediaSlotRenderer.tsx's own crop already uses, so
+  // /pilot's zoomPanTransformStyle() call resolves to a no-op exactly
+  // like an un-zoomed slide does today, satisfying "no crop configured
+  // -> stays raw" without a separate null-vs-identity branch.
+  let primaryCameraCropRect = { x: 0, y: 0, width: 100, height: 100 };
+  if (tenantRow?.primaryCameraSlotNumber != null) {
+    const cropMatch = carouselRows.results.find((row) => row.cameraSlotNumber === tenantRow.primaryCameraSlotNumber);
+    if (cropMatch) primaryCameraCropRect = { x: cropMatch.cropX, y: cropMatch.cropY, width: cropMatch.cropWidth, height: cropMatch.cropHeight };
+  } else if (tenantRow?.primaryCameraId) {
+    const cropMatch = carouselRows.results.find((row) => row.newCameraId === tenantRow.primaryCameraId);
+    if (cropMatch) primaryCameraCropRect = { x: cropMatch.cropX, y: cropMatch.cropY, width: cropMatch.cropWidth, height: cropMatch.cropHeight };
+  }
+
   const mediaBaseUrl = env.MEDIA_PUBLIC_BASE_URL;
   const carouselSlots: CarouselSlotResolvedRow[] = carouselRows.results.map((row) => ({
     slotNumber: row.slotNumber,
@@ -1078,6 +1103,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     cameraSlots,
     cameras,
     primaryCameraUrl,
+    primaryCameraCropRect,
     carouselSlots,
     cafeCarouselSlots,
     opsPanel,
