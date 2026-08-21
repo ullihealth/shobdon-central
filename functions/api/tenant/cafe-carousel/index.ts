@@ -49,7 +49,16 @@ interface CafeCarouselSlotRow {
   bannerFontSize: string;
   zone: string;
   autoFullscreen: number;
+  ownerSlotUnlocked: number;
 }
+
+// Café Reserved Owner Slots round (migration 0092) - same fixed
+// slotNumber list as the dashboard's own RESERVED_SLOT_NUMBERS
+// (functions/api/tenant/carousel/index.ts), unconditional here (no
+// carousel_budget_enabled equivalent for café - this is pure slot
+// reservation, not that feature's Time Budget concept, so isReserved
+// below has no separate toggle to check).
+const RESERVED_SLOT_NUMBERS = [5, 8, 12];
 
 interface CafeCarouselSlotInput {
   slotNumber: number;
@@ -96,10 +105,18 @@ function defaultSlots(): CafeCarouselSlotRow[] {
     bannerFontSize: "md",
     zone: "both",
     autoFullscreen: 0,
+    ownerSlotUnlocked: 0,
   }));
 }
 
+// isReserved: true means this slot is currently developer-controlled -
+// CarouselSlotEditor.tsx (shared with the dashboard's own carousel
+// editor) already knows how to grey this out/show "Reserved by
+// AirfieldCentral" for any slot with isReserved true, so no frontend
+// change is needed here at all - this is the only wiring CafeMediaPage's
+// editor needs.
 function rowToApi(row: CafeCarouselSlotRow) {
+  const isReserved = RESERVED_SLOT_NUMBERS.includes(row.slotNumber) && !row.ownerSlotUnlocked;
   return {
     slotNumber: row.slotNumber,
     enabled: !!row.enabled,
@@ -117,6 +134,7 @@ function rowToApi(row: CafeCarouselSlotRow) {
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
+    isReserved,
   };
 }
 
@@ -129,7 +147,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen
+              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked
        FROM cafe_carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -204,6 +222,32 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         .bind(slot.mediaLibraryId, organizationId)
         .first<{ id: string }>();
       if (!file) return jsonResponse({ error: `mediaLibraryId ${slot.mediaLibraryId} not found in your media library` }, 400);
+    }
+  }
+
+  // Café Reserved Owner Slots round. Backend enforcement of what the
+  // tenant's own editor UI already prevents by construction (a reserved
+  // slot has no editing controls at all - see CarouselSlotEditor.tsx's
+  // isReserved branch) - this is the "can't bypass via a direct API
+  // call" half of that pair, matching the dashboard carousel route's own
+  // isReservedSlot check. Absence of a row (never configured) reads as
+  // still-locked, same as RESERVED_SLOT_NUMBERS.map's own ownerSlotUnlocked:
+  // 0 fallback in defaultSlots() above - a slot is reserved from the
+  // moment this feature ships, not opt-in per row.
+  const { results: currentRows } = await env.DB
+    .prepare(`SELECT slotNumber, ownerSlotUnlocked FROM cafe_carousel_slots WHERE organizationId = ?`)
+    .bind(organizationId)
+    .all<{ slotNumber: number; ownerSlotUnlocked: number }>();
+  const currentBySlot = new Map(currentRows.map((row) => [row.slotNumber, row]));
+
+  function isReservedSlot(slotNumber: number): boolean {
+    if (!RESERVED_SLOT_NUMBERS.includes(slotNumber)) return false;
+    return !currentBySlot.get(slotNumber)?.ownerSlotUnlocked;
+  }
+
+  for (const slot of body.slots) {
+    if (isReservedSlot(slot.slotNumber)) {
+      return jsonResponse({ error: `Slot ${slot.slotNumber} is reserved by AirfieldCentral and cannot be edited.` }, 400);
     }
   }
 

@@ -50,4 +50,10 @@ export async function cloneTenantTemplate(db: D1Database, sourceOrgId: string, t
   await cloneTable(db, "camera_slots", sourceOrgId, targetOrgId, newSlug, null);
   await cloneTable(db, "ops_panel_state", sourceOrgId, targetOrgId, newSlug, null);
   await cloneTable(db, "carousel_slots", sourceOrgId, targetOrgId, newSlug, null);
+  // Café Reserved Owner Slots round - the template's own slots 5/8/12
+  // (ownerSlotUnlocked=0, empty) carry over the same way carousel_slots'
+  // reserved rows already do above, so every future tenant's café screen
+  // starts with the same 3 reserved-but-empty positions with zero
+  // onboarding code changes beyond this one line.
+  await cloneTable(db, "cafe_carousel_slots", sourceOrgId, targetOrgId, newSlug, null);
 }
