@@ -22,6 +22,7 @@ import OnboardInvitePage from './pages/OnboardInvitePage'
 import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformCamerasPage from './pages/PlatformCamerasPage'
 import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPage'
+import PlatformCafeCarouselOwnerSlotsPage from './pages/PlatformCafeCarouselOwnerSlotsPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import PlatformPreviewPage from './pages/PlatformPreviewPage'
@@ -134,6 +135,11 @@ export default function App(): JSX.Element {
               content to one specific tenant's slots 5/8/12, linked from
               PlatformTenantsPage.tsx's own tenant detail pane. */}
           <Route path="/platform/tenants/:id/carousel-owner-slots" element={<PlatformCarouselOwnerSlotsPage />} />
+          {/* Café Reserved Owner Slots round (migration 0092) - unlike the
+              route above, no :id here - this page owns its own venue_cafe
+              tenant selector instead, reached directly from the Developer
+              sidebar rather than a per-tenant Link. */}
+          <Route path="/platform/cafe-carousel-owner-slots" element={<PlatformCafeCarouselOwnerSlotsPage />} />
           {/* Dev-tenant-preview feature: a single tenant picker that
               drives /config, /media-manager, /runways, /members, and
               Screens Design's own live dashboard preview together, via

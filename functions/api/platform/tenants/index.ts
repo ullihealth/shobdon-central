@@ -38,6 +38,7 @@ interface TenantRow {
   name: string;
   subdomain: string;
   active: number;
+  tenantType: string;
   weatherPublic: number;
   opsPublic: number;
   isInternal: number;
@@ -113,7 +114,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     await Promise.all([
     env.DB
       .prepare(
-        `SELECT id, slug, name, subdomain, active,
+        `SELECT id, slug, name, subdomain, active, tenant_type AS tenantType,
                 weather_public AS weatherPublic, ops_public AS opsPublic,
                 is_internal AS isInternal, has_physical_atc AS hasPhysicalAtc,
                 storage_quota_bytes AS storageQuotaBytes,
@@ -210,6 +211,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       name: tenant.name,
       subdomain: tenant.subdomain,
       active: !!tenant.active,
+      // migration 0090. Exposed here so PlatformCafeCarouselOwnerSlotsPage
+      // can filter its own tenant selector down to venue_cafe tenants
+      // client-side, same "no dedicated list endpoint needed" posture as
+      // every other platform-admin page reusing this one tenants list.
+      tenantType: tenant.tenantType,
       weatherPublic: !!tenant.weatherPublic,
       opsPublic: !!tenant.opsPublic,
       isInternal: !!tenant.isInternal,

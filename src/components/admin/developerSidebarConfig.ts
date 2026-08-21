@@ -19,6 +19,7 @@ export const DEVELOPER_SIDEBAR_GROUPS: SidebarGroupConfig[] = [
     label: 'Tenants & Business',
     items: [
       { to: '/platform/tenants', label: 'Platform Tenants' },
+      { to: '/platform/cafe-carousel-owner-slots', label: 'Café Reserved Slots' },
       { to: '/platform/preview', label: 'Tenant Preview' },
       { to: '/platform/onboarding-content', label: 'Onboarding Content' },
       { to: '/platform/cameras', label: 'Cameras' },
