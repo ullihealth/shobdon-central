@@ -4,6 +4,7 @@ import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Templat
 import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
 import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
+import DashboardLoading from '../components/DashboardLoading'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -64,6 +65,16 @@ export default function DashboardPage(): JSX.Element {
   // mainDisplayActive is false; an airfield tenant with main on is
   // completely unaffected regardless of this value.
   const [cafeFallbackActive, setCafeFallbackActive] = useState(false)
+  // Gates rendering any real template until the config fetch settles
+  // (success, failure, or network error - all three via .finally below)
+  // - without this, the brief pre-fetch window rendered Clubhouse1Template
+  // with its own unresolved defaults (null airfieldName, mock weather),
+  // which reads as a real, wrong dashboard rather than a loading state.
+  // Applies to every tenant type identically, not just venue_cafe - an
+  // airfield tenant never visibly notices since Clubhouse1Template is
+  // also its correct final template, but the flash was happening for it
+  // too the whole time.
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -111,6 +122,9 @@ export default function DashboardPage(): JSX.Element {
         // the committed :root defaults rather than showing "unavailable"
         // for what might just be a dropped request.
       })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
 
     return () => {
       cancelled = true
@@ -118,6 +132,7 @@ export default function DashboardPage(): JSX.Element {
   }, [])
 
   if (unavailable) return <TenantUnavailable />
+  if (!loaded) return <DashboardLoading />
 
   return (
     <WeatherProvider>
