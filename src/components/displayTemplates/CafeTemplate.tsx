@@ -256,7 +256,7 @@ export default function CafeTemplate({
             all as of this round - see its own comment - so this is now
             the only remaining min-w-0 in this file.) */}
         <div className="relative min-h-0 min-w-0">
-          <div className="absolute left-0 top-0 z-10">
+          <div className="absolute left-2 top-2 z-10">
             <VenueCornerBadge
               airfieldName={airfieldName}
               logoUrl={logoUrl}

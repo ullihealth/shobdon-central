@@ -383,7 +383,7 @@ function CafePreview({ airfieldName, logoUrl, gradientMode, brandCafe, mediaData
             not 0. (The ticker below is no longer a grid item at all as
             of this round - see CafeTemplate.tsx's own comment.) */}
         <div className="relative min-h-0 min-w-0">
-          <div className="absolute left-0 top-0 z-10">
+          <div className="absolute left-2 top-2 z-10">
             <VenueCornerBadge
               airfieldName={airfieldName}
               logoUrl={logoUrl}
