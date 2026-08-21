@@ -694,12 +694,26 @@ export default function DesignPage(): JSX.Element {
   // the Dashboard/Cafe toggle below and the café template cards in the
   // Layout footer - never a second/different entitlement check.
   const [cafeEntitled, setCafeEntitled] = useState(false)
+  // venue_cafe simplification round - same /api/tenant/me field
+  // AdminSidebar.tsx already reads for its own hideForTenantType
+  // gating, fetched here alongside cafeEntitled rather than a second
+  // request. A venue_cafe tenant has Main Dashboard switched off
+  // entirely (tenant_displays.main entitled=0/active=0, see onboard.ts/
+  // trial-signup.ts's own venue_cafe branches) - café is structurally
+  // their only screen, not a second option alongside one they'll never
+  // use, so the Dashboard/Café toggle and the Main Dashboard branding
+  // block below both drop out for them, same "nothing to toggle
+  // between" reasoning cafeEntitled already uses for an unentitled
+  // airfield tenant.
+  const [isVenueCafe, setIsVenueCafe] = useState(false)
   useEffect(() => {
     let cancelled = false
     fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled) setCafeEntitled(!!data?.cafeEntitled)
+        if (cancelled) return
+        setCafeEntitled(!!data?.cafeEntitled)
+        setIsVenueCafe(data?.tenantType === 'venue_cafe')
       })
       .catch(() => {})
     return () => {
@@ -711,10 +725,22 @@ export default function DesignPage(): JSX.Element {
   // fetch above simply hasn't resolved 'true' yet by the time this
   // runs), force back to 'dashboard' - the toggle itself is about to
   // disappear below, so nothing should be left pointing at a screen the
-  // tenant can no longer reach.
+  // tenant can no longer reach. Excludes venue_cafe explicitly - that
+  // tenant type's own force-to-'cafe' effect below takes precedence,
+  // and forcing 'dashboard' here first (even transiently) would fight
+  // it for a screen that isn't real for them at all.
   useEffect(() => {
-    if (!cafeEntitled && activeScreen === 'cafe') setActiveScreen('dashboard')
-  }, [cafeEntitled, activeScreen])
+    if (!isVenueCafe && !cafeEntitled && activeScreen === 'cafe') setActiveScreen('dashboard')
+  }, [isVenueCafe, cafeEntitled, activeScreen])
+
+  // venue_cafe tenants: café is the only real screen, so this is always
+  // forced to 'cafe' regardless of whatever activeScreen's own default/
+  // prior value was - never left pointing at 'dashboard', which isn't
+  // reachable for this tenant type at all (mirrors the effect above's
+  // own "force to the one real screen" shape, opposite direction).
+  useEffect(() => {
+    if (isVenueCafe && activeScreen !== 'cafe') setActiveScreen('cafe')
+  }, [isVenueCafe, activeScreen])
 
   // Which of the 5 left-rail items is currently selected. Branding by
   // default, per an earlier round's instruction (still true after
@@ -877,6 +903,26 @@ export default function DesignPage(): JSX.Element {
   const pendingMainId = pendingMainTemplateId ?? activeTemplateId
   const pendingCafeId = pendingCafeTemplateId ?? cafeActiveTemplateId ?? 'cafe-1'
   const pendingIdForToggledScreen = activeScreen === 'dashboard' ? pendingMainId : pendingCafeId
+
+  // Layout section visibility round - a picker with only one real (non-
+  // "coming soon") option to choose adds nothing over the live preview
+  // already showing what's active, so the whole footer block (heading
+  // AND grid together, never just one) drops out below that count. A
+  // live count against TEMPLATE_SLOTS, not a hardcoded tenant-type
+  // check - self-resolves the moment a second real template in the
+  // CURRENTLY toggled screen's own category ships, for either tenant
+  // type, with no code change needed here again. Scoped to whichever
+  // category activeScreen currently means (clubhouse for 'dashboard',
+  // cafe for 'cafe') - today that's 2 available Clubhouse templates
+  // (true for every tenant that reaches the Dashboard screen at all)
+  // vs 1 available Café template (true for every tenant on the Café
+  // screen, airfield or venue_cafe alike - this is a generic rule, not
+  // a venue_cafe-specific one).
+  const relevantTemplateCategory = activeScreen === 'dashboard' ? 'clubhouse' : 'cafe'
+  const availableTemplateCount = TEMPLATE_SLOTS.filter(
+    (slot) => slot.category === relevantTemplateCategory && slot.status === 'available'
+  ).length
+  const showLayoutSection = availableTemplateCount >= 2
 
   // Selecting a card only updates the pending selection for whichever
   // screen is currently toggled - no confirm(), no network write.
@@ -1296,8 +1342,10 @@ export default function DesignPage(): JSX.Element {
               back to 'dashboard' by the effect above whenever this is
               false, so the rest of the page (preview, Layout footer
               heading/grid) never has to account for 'cafe' being active
-              with no way to have gotten there. */}
-          {cafeEntitled && (
+              with no way to have gotten there. Same reasoning excludes
+              venue_cafe tenants too - only Café exists for them, forced
+              to activeScreen='cafe' by its own effect above. */}
+          {cafeEntitled && !isVenueCafe && (
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-slate-900/80 p-1">
               {(['dashboard', 'cafe'] as const).map((screen) => (
                 <button
@@ -1465,6 +1513,12 @@ export default function DesignPage(): JSX.Element {
                       { key: 'main' as const, label: 'Main Dashboard', value: brandMain, setValue: setBrandMain },
                       { key: 'cafe' as const, label: 'Café Display', value: brandCafe, setValue: setBrandCafe },
                     ]
+                      // venue_cafe simplification round - Main Dashboard
+                      // isn't a real screen for this tenant type (see
+                      // isVenueCafe's own comment above), so its branding
+                      // block is dropped entirely rather than configuring
+                      // display options for a screen that's permanently off.
+                      .filter((group) => !isVenueCafe || group.key === 'cafe')
                   ).map(({ key, label, value, setValue }) => (
                     <div key={key}>
                       <label className="mb-2 block text-xs uppercase tracking-wide text-muted-400">{label}</label>
@@ -1948,7 +2002,13 @@ export default function DesignPage(): JSX.Element {
           live here either - it's pinned in the header row next to that
           same toggle now (reachable from every tab, not just one) - this
           card's own layout-slot cards already apply their own selection
-          instantly on click regardless, so nothing here depended on it. */}
+          instantly on click regardless, so nothing here depended on it.
+
+          showLayoutSection wraps this ENTIRE block (heading, blurb, and
+          grid together) - never just the grid - so there's no edge case
+          where the "Layout - X screen" heading is left orphaned above
+          an empty/missing grid; both appear or both don't. */}
+      {showLayoutSection && (
       <div className="mt-6 rounded-2xl border border-border bg-panel p-6">
         <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
           Layout - {activeScreen === 'dashboard' ? 'Dashboard' : 'Café'} screen
@@ -2002,6 +2062,7 @@ export default function DesignPage(): JSX.Element {
           })}
         </div>
       </div>
+      )}
     </div>
     </>
   )
