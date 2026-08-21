@@ -294,9 +294,13 @@ async function extractFieldsById(html: string): Promise<Record<string, string>> 
   return fields
 }
 
-// "RWY 26 LH" -> { runway: "26", hand: "LH" }
+// "RWY 26 LH" -> { runway: "26", hand: "LH" }. Also "RWY 08RH" (no space
+// at all between the digits and hand letters) - confirmed via a live
+// capture (2026-08-21) that the source station's own delimiter isn't
+// guaranteed for every runway/hand combination, so both gaps are \s*
+// rather than \s+.
 function parseRunway(raw: string): { runway: string | null; hand: string | null } {
-  const match = raw.match(/RWY\s+(\d+)\s+([A-Z]+)/i)
+  const match = raw.match(/RWY\s*(\d+)\s*([A-Z]+)/i)
   return match ? { runway: match[1], hand: match[2] } : { runway: null, hand: null }
 }
 
