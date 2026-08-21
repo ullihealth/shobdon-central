@@ -242,7 +242,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // own `organizationId`.
   const effective = await resolveEffectiveTenantByOrganizationId(env.DB, organizationId);
 
-  const [runwayRows, themeRow, tenantRow, effectiveOffsetRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, effectiveOffsetRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(effective.organizationId)
@@ -497,6 +497,19 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       )
       .bind(organizationId)
       .first<{ templateId: string; active: number }>(),
+    // The named 'cafe-tv' display's own active+entitled state - the
+    // fallback DashboardPage.tsx needs at "/" for a venue_cafe tenant
+    // (main deliberately inactive, café is their only real screen).
+    // Missing row (no cafe-tv display at all) must never be treated as
+    // available - unlike mainDisplayRow's "missing = active" default,
+    // there's no safe assumption to make about a display that was never
+    // created, so both flags default to false via the ?? below.
+    env.DB
+      .prepare(
+        "SELECT td.active AS active, td.entitled AS entitled FROM tenant_displays td JOIN tenants t ON t.id = td.tenant_id WHERE t.organization_id = ? AND td.slug = 'cafe-tv'"
+      )
+      .bind(organizationId)
+      .first<{ active: number; entitled: number }>(),
     // Café template's own settings (migration 0033, style columns added
     // in 0035) - missing row (a tenant that's never visited /cafe-media)
     // must never 404 here, same "/" resilience posture as mainTemplateId
@@ -1019,6 +1032,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // No row = never explicitly disabled -> active, same "missing row is
   // never a block" posture as mainTemplateId's own default above.
   const mainDisplayActive = mainDisplayRow ? !!mainDisplayRow.active : true;
+  // Root-path café fallback: only meaningful when main is actually off -
+  // consumed by DashboardPage.tsx to decide whether "/" renders the
+  // café screen instead of TenantUnavailable for a venue_cafe tenant.
+  const cafeDisplayActive = !!cafeDisplayRow?.active && !!cafeDisplayRow?.entitled;
 
   const cafeSettings = {
     layoutMode: cafeSettingsRow?.layoutMode ?? "full",
@@ -1110,6 +1127,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     gasPrices,
     mainTemplateId,
     mainDisplayActive,
+    cafeDisplayActive,
     cafeSettings,
     afiso,
     pilotTicker,

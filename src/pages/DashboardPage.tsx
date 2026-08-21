@@ -57,6 +57,13 @@ export default function DashboardPage(): JSX.Element {
   // on mount, not on an interval, so "unavailable" reflects the actual
   // resolution outcome, not a one-off blip.
   const [unavailable, setUnavailable] = useState(false)
+  // Root-path café fallback (publicConfig.ts's cafeDisplayActive) - a
+  // venue_cafe tenant has main deliberately inactive (café is their only
+  // real screen), so "/" showing TenantUnavailable for them would be
+  // wrong, not correct-but-unfortunate. Only ever consulted when
+  // mainDisplayActive is false; an airfield tenant with main on is
+  // completely unaffected regardless of this value.
+  const [cafeFallbackActive, setCafeFallbackActive] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -91,7 +98,13 @@ export default function DashboardPage(): JSX.Element {
         // /d/cafe-tv, not this main dashboard). Same clean-unavailable
         // outcome either way - see TenantUnavailable's own comment on
         // deliberately not distinguishing the reason.
-        if (data?.mainDisplayActive === false) setUnavailable(true)
+        if (data?.mainDisplayActive === false) {
+          if (data?.cafeDisplayActive) {
+            setCafeFallbackActive(true)
+          } else {
+            setUnavailable(true)
+          }
+        }
       })
       .catch(() => {
         // Network failure, not a resolution failure - fall through to
@@ -108,7 +121,16 @@ export default function DashboardPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      {mainTemplateId === 'clubhouse-2' ? (
+      {cafeFallbackActive ? (
+        <CafeTemplate
+          themeOverride={themeOverride}
+          airfieldName={airfieldName}
+          logoUrl={logoUrl}
+          showLogo={brandDisplay?.cafe.showLogo}
+          showName={brandDisplay?.cafe.showName}
+          nameFontSize={brandDisplay?.cafe.nameFontSize}
+        />
+      ) : mainTemplateId === 'clubhouse-2' ? (
         <Clubhouse2Template
           themeOverride={themeOverride}
           airfieldName={airfieldName}
