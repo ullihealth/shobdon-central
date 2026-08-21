@@ -1432,7 +1432,17 @@ export default function PlatformTenantsPage(): JSX.Element {
       .then((data) => {
         if (cancelled) return
         const role = data?.role
-        setDashboardLandingPage(role === 'atc' ? '/atc-control' : role === 'media' ? '/media-manager' : role === 'cafe' ? '/cafe-media' : '/config')
+        setDashboardLandingPage(
+          role === 'atc'
+            ? '/atc-control'
+            : role === 'media'
+              ? '/media-manager'
+              : role === 'cafe'
+                ? '/cafe-media'
+                : data?.tenantType === 'venue_cafe'
+                  ? '/media-library'
+                  : '/config'
+        )
       })
       .catch(() => {})
     return () => {

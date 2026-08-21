@@ -86,7 +86,17 @@ export default function VenueCornerBadge({
         if (cancelled) return
         const role = data?.role
         setDashboardLandingPage(
-          role === 'atc' ? '/atc-control' : role === 'media' ? '/media-manager' : role === 'cafe' ? '/cafe-media' : role ? '/config' : '/login'
+          role === 'atc'
+            ? '/atc-control'
+            : role === 'media'
+              ? '/media-manager'
+              : role === 'cafe'
+                ? '/cafe-media'
+                : role
+                  ? data?.tenantType === 'venue_cafe'
+                    ? '/media-library'
+                    : '/config'
+                  : '/login'
         )
       })
       .catch(() => {

@@ -53,7 +53,15 @@ export default function OnboardingTermsPage(): JSX.Element {
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
     const landingPage =
-      me?.role === 'media' ? '/media-manager' : me?.role === 'atc' ? '/atc-control' : me?.role === 'cafe' ? '/cafe-media' : '/config'
+      me?.role === 'media'
+        ? '/media-manager'
+        : me?.role === 'atc'
+          ? '/atc-control'
+          : me?.role === 'cafe'
+            ? '/cafe-media'
+            : me?.tenantType === 'venue_cafe'
+              ? '/media-library'
+              : '/config'
     navigate(landingPage)
   }
 
