@@ -582,6 +582,13 @@ export default function CafeMediaPage(): JSX.Element {
       saveCafeSlot({ ...slot, mediaType: 'gyropedia', mediaLibraryId: null, cameraSlotNumber: null, cameraId: null })
       return
     }
+    if (value === 'website') {
+      // externalUrl deliberately preserved (not nulled) - switching the
+      // dropdown to Website with an already-typed URL still present (e.g.
+      // switching away and back) shouldn't discard it.
+      saveCafeSlot({ ...slot, mediaType: 'website', mediaLibraryId: null, cameraSlotNumber: null, cameraId: null })
+      return
+    }
     if (value.startsWith('webcam:cam:')) {
       const cameraId = value.slice('webcam:cam:'.length)
       saveCafeSlot({ ...slot, mediaType: 'webcam', cameraId, cameraSlotNumber: null, mediaLibraryId: null })
@@ -725,6 +732,7 @@ export default function CafeMediaPage(): JSX.Element {
               onToggleAppearance={() => setCafeAppearanceEditorOpen((prev) => !prev)}
               onSourceChange={(value) => handleCafeSourceChange(selectedCafeSlot, value)}
               onChange={(patch) => saveCafeSlot({ ...selectedCafeSlot, ...patch })}
+              allowWebsite
             />
           )}
         </div>

@@ -441,7 +441,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            nc.mode AS newCameraMode,
            nc.youtube_video_id AS newCameraYoutubeVideoId,
            nsr.local_base_url AS newCameraLocalBaseUrl,
-           cs.cameraId AS newCameraId
+           cs.cameraId AS newCameraId,
+           cs.externalUrl AS externalUrl
          FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
@@ -475,6 +476,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         newCameraYoutubeVideoId: string | null;
         newCameraLocalBaseUrl: string | null;
         newCameraId: string | null;
+        externalUrl: string | null;
       }>(),
     env.DB
       .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
@@ -979,9 +981,11 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         ? row.newCameraId
           ? resolveCameraUrl(row.newCameraMode ?? "local", row.newCameraYoutubeVideoId, row.newCameraLocalBaseUrl, row.newCameraId)
           : row.cameraUrl
-        : row.r2Key && mediaBaseUrl
-          ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
-          : null,
+        : row.mediaType === "website"
+          ? row.externalUrl
+          : row.r2Key && mediaBaseUrl
+            ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
+            : null,
   }));
 
   const opsPanel = opsPanelRow

@@ -1,0 +1,11 @@
+-- Café "Website" carousel slot type round. Generic embedded-webpage slot
+-- for cafe_carousel_slots only (not the dashboard's carousel_slots) -
+-- mediaType gains a new accepted value ('website', enforced in
+-- functions/api/tenant/cafe-carousel/index.ts's own VALID_MEDIA_TYPES,
+-- not a CHECK constraint here, matching this table's existing convention
+-- of validating mediaType at the application layer). The URL itself
+-- needs its own column - unlike every other content type, it isn't a
+-- reference into media_library (mediaLibraryId) or camera_slots/cameras
+-- (cameraSlotNumber/cameraId), it's an arbitrary tenant-supplied
+-- external address with nothing to look up.
+ALTER TABLE cafe_carousel_slots ADD COLUMN externalUrl TEXT;

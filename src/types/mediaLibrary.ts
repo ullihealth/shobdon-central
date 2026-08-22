@@ -54,7 +54,7 @@ export interface CropRect {
 export interface CarouselSlot {
   slotNumber: number
   enabled: boolean
-  mediaType: 'image' | 'mp4' | 'pdf' | 'webcam' | 'gyropedia'
+  mediaType: 'image' | 'mp4' | 'pdf' | 'webcam' | 'gyropedia' | 'website'
   durationSeconds: number
   mediaLibraryId: string | null
   cameraSlotNumber: number | null
@@ -62,6 +62,14 @@ export interface CarouselSlot {
   // legacy camera_slots alternative to cameraSlotNumber above. A slot
   // has at most one of the two set.
   cameraId: string | null
+  // Café "Website" slot type (migration 0093, cafe_carousel_slots only -
+  // the dashboard's own carousel_slots has no equivalent column, and its
+  // own VALID_MEDIA_TYPES never accepts 'website'). Arbitrary tenant-
+  // supplied http(s) address, embedded via an <iframe> at render time
+  // (MediaSlotRenderer.tsx) - null/empty means "type selected, no URL
+  // set yet", same "not configured" posture mediaLibraryId already has
+  // for image/mp4/pdf.
+  externalUrl: string | null
   // 'fill' = object-fit: cover (crops to fill the box); 'contain' =
   // object-fit: contain (always shows the whole image/video, letterboxed
   // if the aspect ratio doesn't match). Only meaningful for image/mp4 -

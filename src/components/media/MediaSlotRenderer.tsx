@@ -379,6 +379,31 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
         />
       )
       break
+    case 'website':
+      // Generic embedded external webpage (café "Website" slot type,
+      // migration 0093) - resolvedUrl IS the tenant-supplied URL
+      // directly (publicConfig.ts/resolveSlotVisual both map externalUrl
+      // straight through, no lookup needed the way a file/camera source
+      // would require). sandbox intentionally still allows scripts and
+      // same-origin - a plain read-only embed (no allow-popups, no allow-
+      // forms, no allow-top-navigation) for arbitrary tenant-supplied
+      // URLs, sensible default for something nobody but the tenant
+      // themselves configured. Many real sites set X-Frame-Options/
+      // frame-ancestors and simply refuse to render here at all - that's
+      // the site's own choice, not something sandboxing can work around,
+      // and failing to blank/broken (never a crash) is the correct,
+      // expected outcome for those - see this slot type's own inline UI
+      // hint (CarouselSlotEditor.tsx).
+      content = (
+        <iframe
+          src={slot.resolvedUrl ?? undefined}
+          className="h-full w-full"
+          style={{ border: 0 }}
+          sandbox="allow-scripts allow-same-origin"
+          title="Embedded website"
+        />
+      )
+      break
     case 'gyropedia':
       content = <GyropediaPanel />
       break

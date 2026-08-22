@@ -1,5 +1,19 @@
+import { useEffect, useState } from 'react'
 import type { CarouselSlot, CropRect, MediaLibraryFile } from '../../types/mediaLibrary'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
+
+// Same client-side check the backend (functions/api/tenant/cafe-carousel/
+// index.ts) enforces authoritatively - this copy is UX only (inline error
+// before a save round-trip), not the real boundary, same posture as every
+// other client-side validation already in this codebase.
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 // Shared by both Dashboard Manager (/media-manager) and Cafe Media
 // (/cafe-media) - originally a single implementation living only in
@@ -53,6 +67,7 @@ function sourceValueFor(slot: CarouselSlot): string {
   if (slot.mediaType === 'webcam' && slot.cameraId) return `webcam:cam:${slot.cameraId}`
   if (slot.mediaType === 'webcam' && slot.cameraSlotNumber) return `webcam:${slot.cameraSlotNumber}`
   if (slot.mediaType === 'gyropedia') return 'gyropedia'
+  if (slot.mediaType === 'website') return 'website'
   if (slot.mediaLibraryId) return `file:${slot.mediaLibraryId}`
   return ''
 }
@@ -73,7 +88,9 @@ function resolveSlotVisual(
       ? slot.cameraId
         ? cameraOptions.find((c) => c.cameraId === slot.cameraId)?.url ?? null
         : cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.url ?? null
-      : files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null
+      : slot.mediaType === 'website'
+        ? slot.externalUrl
+        : files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null
   return {
     mediaType: slot.mediaType,
     resolvedUrl,
@@ -366,6 +383,7 @@ function slotSourceLabel(slot: CarouselSlot, files: MediaLibraryFile[], cameraOp
     return cameraOptions.find((c) => c.slot === slot.cameraSlotNumber)?.label ?? `Webcam ${slot.cameraSlotNumber ?? '?'}`
   }
   if (slot.mediaType === 'gyropedia') return 'Gyropedia Departures/Arrivals'
+  if (slot.mediaType === 'website') return slot.externalUrl || 'Website (no URL set)'
   return files.find((f) => f.id === slot.mediaLibraryId)?.filename ?? '— none —'
 }
 
@@ -487,6 +505,7 @@ function CarouselSlotEditor({
   onToggleAppearance,
   onSourceChange,
   onChange,
+  allowWebsite = false,
 }: {
   slot: CarouselSlot
   files: MediaLibraryFile[]
@@ -495,9 +514,33 @@ function CarouselSlotEditor({
   onToggleAppearance: () => void
   onSourceChange: (value: string) => void
   onChange: (patch: Partial<CarouselSlot>) => void
+  // Café "Website" slot type (migration 0093) - café-only per the
+  // investigation's own scope (Meg's ask was specifically about her café
+  // carousel, not the dashboard's). Defaults false so Dashboard Manager
+  // (MediaManagerPage.tsx, which never passes this prop) never shows the
+  // option at all - the dashboard's own carousel/index.ts backend would
+  // reject mediaType 'website' anyway, but there's no reason to show a
+  // control that can't actually be saved there.
+  allowWebsite?: boolean
 }): JSX.Element {
   const file = files.find((f) => f.id === slot.mediaLibraryId)
   const isMp4 = slot.mediaType === 'mp4'
+  const isWebsite = slot.mediaType === 'website'
+
+  // Local draft + validate-on-blur, not a straight onChange-per-keystroke
+  // like every other control here - a URL is invalid for most of the
+  // time a user is actively typing it ("https://exa" is not yet a valid
+  // URL), so committing (and thus saving/PUTting) on every keystroke
+  // would flash a spurious error and hammer the network for no reason.
+  // Resyncs from the slot prop on slot switch or after a real commit,
+  // never while actively typing (slot.externalUrl only changes via one
+  // of those two paths).
+  const [urlDraft, setUrlDraft] = useState(slot.externalUrl ?? '')
+  const [urlError, setUrlError] = useState(false)
+  useEffect(() => {
+    setUrlDraft(slot.externalUrl ?? '')
+    setUrlError(false)
+  }, [slot.slotNumber, slot.externalUrl])
   // webcam included alongside image/mp4 now that MediaSlotRenderer
   // applies the same zoom/pan/rotate transform to it (see that file's
   // supportsCropRotate comment) - lets an admin reposition/zoom the
@@ -549,6 +592,11 @@ function CarouselSlotEditor({
           <optgroup label="Data Feeds">
             <option value="gyropedia">Gyropedia Departures/Arrivals</option>
           </optgroup>
+          {allowWebsite && (
+            <optgroup label="Website">
+              <option value="website">External Webpage (URL)</option>
+            </optgroup>
+          )}
           {cameraOptions.length > 0 && (
             <optgroup label="Webcams">
               {cameraOptions.map((cam) => (
@@ -569,6 +617,43 @@ function CarouselSlotEditor({
           )}
         </select>
       </label>
+
+      {isWebsite && (
+        <div className="mb-3 flex flex-col gap-1.5">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Website URL</span>
+            <input
+              type="url"
+              value={urlDraft}
+              onChange={(event) => {
+                setUrlDraft(event.target.value)
+                if (urlError) setUrlError(false)
+              }}
+              onBlur={() => {
+                const trimmed = urlDraft.trim()
+                if (trimmed === '') {
+                  setUrlError(false)
+                  onChange({ externalUrl: null })
+                  return
+                }
+                if (!isValidHttpUrl(trimmed)) {
+                  setUrlError(true)
+                  return
+                }
+                setUrlError(false)
+                onChange({ externalUrl: trimmed })
+              }}
+              placeholder="https://example.com"
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </label>
+          {urlError && <p className="text-xs font-semibold text-status-bad">Enter a valid http(s) URL.</p>}
+          <p className="text-xs text-muted-500">
+            Works reliably for AirfieldCentral tenant dashboards. Some external websites block themselves from being
+            embedded and may not display.
+          </p>
+        </div>
+      )}
 
       <label className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Duration (seconds)</span>

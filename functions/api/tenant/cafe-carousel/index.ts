@@ -50,6 +50,7 @@ interface CafeCarouselSlotRow {
   zone: string;
   autoFullscreen: number;
   ownerSlotUnlocked: number;
+  externalUrl: string | null;
 }
 
 // Café Reserved Owner Slots round (migration 0092) - same fixed
@@ -63,7 +64,7 @@ const RESERVED_SLOT_NUMBERS = [5, 8, 12];
 interface CafeCarouselSlotInput {
   slotNumber: number;
   enabled: boolean;
-  mediaType: "image" | "mp4" | "pdf" | "webcam" | "gyropedia";
+  mediaType: "image" | "mp4" | "pdf" | "webcam" | "gyropedia" | "website";
   durationSeconds: number;
   mediaLibraryId?: string | null;
   cameraSlotNumber?: number | null;
@@ -77,12 +78,27 @@ interface CafeCarouselSlotInput {
   bannerFontSize?: "sm" | "md" | "lg" | "xl" | "xxl";
   zone?: "both" | "left" | "right";
   autoFullscreen?: boolean;
+  // Café "Website" slot type (migration 0093) - café-only, deliberately
+  // never added to the dashboard's own carousel/index.ts equivalent.
+  externalUrl?: string | null;
 }
 
-const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia"];
+const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia", "website"];
 const VALID_FIT_MODES = ["fill", "contain"];
 const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
 const VALID_ZONES = ["both", "left", "right"];
+
+// Empty/undefined is valid (mediaType 'website' selected, no URL entered
+// yet - same "not configured" posture as an image slot with no
+// mediaLibraryId) - only a NON-EMPTY, malformed value is rejected.
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function defaultSlots(): CafeCarouselSlotRow[] {
   return Array.from({ length: 12 }, (_, i) => ({
@@ -106,6 +122,7 @@ function defaultSlots(): CafeCarouselSlotRow[] {
     zone: "both",
     autoFullscreen: 0,
     ownerSlotUnlocked: 0,
+    externalUrl: null,
   }));
 }
 
@@ -134,6 +151,7 @@ function rowToApi(row: CafeCarouselSlotRow) {
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
+    externalUrl: row.externalUrl,
     isReserved,
   };
 }
@@ -147,7 +165,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked
+              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked, externalUrl
        FROM cafe_carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -216,6 +234,10 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
           .first<{ id: string }>();
         if (!camera) return jsonResponse({ error: `cameraId ${slot.cameraId} not found for your tenant` }, 400);
       }
+    } else if (slot.mediaType === "website") {
+      if (slot.externalUrl && !isValidHttpUrl(slot.externalUrl)) {
+        return jsonResponse({ error: "externalUrl must be a valid http(s) URL" }, 400);
+      }
     } else if (slot.mediaLibraryId) {
       const file = await env.DB
         .prepare("SELECT id FROM media_library WHERE id = ? AND organizationId = ?")
@@ -269,15 +291,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const bannerFontSize = slot.bannerFontSize ?? "md";
     const zone = slot.zone ?? "both";
     const autoFullscreen = slot.autoFullscreen ? 1 : 0;
+    const externalUrl = slot.mediaType === "website" ? slot.externalUrl?.trim() || null : null;
 
     await env.DB
       .prepare(
         `INSERT INTO cafe_carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, updatedAt
+           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, externalUrl, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -297,6 +320,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
            bannerFontSize = excluded.bannerFontSize,
            zone = excluded.zone,
            autoFullscreen = excluded.autoFullscreen,
+           externalUrl = excluded.externalUrl,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -320,6 +344,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         bannerFontSize,
         zone,
         autoFullscreen,
+        externalUrl,
         now
       )
       .run();
