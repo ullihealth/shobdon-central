@@ -66,7 +66,7 @@ export default function OnboardingTermsPage(): JSX.Element {
           : me?.role === 'cafe'
             ? '/cafe-media'
             : me?.tenantType === 'venue_cafe'
-              ? '/media-library'
+              ? '/cafe-media'
               : '/config'
     navigate(landingPage)
   }

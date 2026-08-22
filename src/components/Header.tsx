@@ -142,7 +142,7 @@ export default function Header({
                 ? '/cafe-media'
                 : role
                   ? data?.tenantType === 'venue_cafe'
-                    ? '/media-library'
+                    ? '/cafe-media'
                     : '/config'
                   : '/login'
         )

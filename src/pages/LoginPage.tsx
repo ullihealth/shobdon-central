@@ -112,7 +112,7 @@ export default function LoginPage(): JSX.Element {
           : me?.role === 'cafe'
             ? '/cafe-media'
             : me?.tenantType === 'venue_cafe'
-              ? '/media-library'
+              ? '/cafe-media'
               : '/config'
     navigate(landingPage)
   }

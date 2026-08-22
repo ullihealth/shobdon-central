@@ -1450,7 +1450,7 @@ export default function PlatformTenantsPage(): JSX.Element {
               : role === 'cafe'
                 ? '/cafe-media'
                 : data?.tenantType === 'venue_cafe'
-                  ? '/media-library'
+                  ? '/cafe-media'
                   : '/config'
         )
       })
