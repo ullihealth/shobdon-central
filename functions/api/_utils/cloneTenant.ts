@@ -56,4 +56,19 @@ export async function cloneTenantTemplate(db: D1Database, sourceOrgId: string, t
   // starts with the same 3 reserved-but-empty positions with zero
   // onboarding code changes beyond this one line.
   await cloneTable(db, "cafe_carousel_slots", sourceOrgId, targetOrgId, newSlug, null);
+  // Café ticker round - previously NOT cloned at all, meaning every new
+  // venue_cafe tenant started with zero rows in this table rather than
+  // org_newcustomer's own generic defaults (tickerEnabled=0, its own
+  // style/slot config). publicConfig.ts's cafeSettings resolution
+  // already treats a missing row as "tickerEnabled: false" as a safe
+  // fallback, so this gap never broke anything visibly - but it also
+  // meant a tenant had no row for cafe-settings/index.ts's own
+  // ON CONFLICT(organizationId) upsert to ever land on until the first
+  // time someone actually saved that page, and any admin-side read of
+  // "what is this tenant's current ticker config" saw nothing at all
+  // instead of the template's real generic defaults. Confirmed a real
+  // production tenant (Meg's café) hit exactly this gap. Cloning here
+  // doesn't change default behaviour (still starts disabled, same as
+  // org_newcustomer's own row) - it just ensures the row exists.
+  await cloneTable(db, "cafe_template_settings", sourceOrgId, targetOrgId, newSlug, null);
 }

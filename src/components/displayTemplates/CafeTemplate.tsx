@@ -10,6 +10,8 @@ import { useWeather } from '../../context/WeatherContext'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 import { useElementHeight } from '../../hooks/useElementHeight'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
+import { fetchIngestedWeather } from '../../services/weatherProviders/ingestedProvider'
+import type { WeatherData } from '../../types/weather'
 
 interface CafeTemplateProps {
   themeOverride: CSSProperties
@@ -159,6 +161,11 @@ export default function CafeTemplate({
   const [cafeSettings, setCafeSettings] = useState<CafeSettings | null>(null)
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>(safetyNoticesData ?? [])
   const [gasPrices, setGasPrices] = useState<TickerGasPrices>(gasPricesData ?? DEFAULT_GAS_PRICES)
+  // Ticker weather-mirroring round - publicConfig.ts's own new
+  // hasParentTenant field (effective.isInherited, the same boolean ops-
+  // panel/gas-prices/runway-groups already branch on). Sourced from this
+  // same self-fetch rather than a second request.
+  const [hasParentTenant, setHasParentTenant] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -188,6 +195,7 @@ export default function CafeTemplate({
         // always self-fetched here, out of this round's scope.
         if (safetyNoticesData === undefined && data?.opsPanel?.safetyNotices) setSafetyNotices(data.opsPanel.safetyNotices)
         if (gasPricesData === undefined && data?.gasPrices) setGasPrices(data.gasPrices)
+        setHasParentTenant(!!data?.hasParentTenant)
       })
       .catch(() => {
         if (!cancelled) setCafeSettings(DEFAULT_CAFE_SETTINGS)
@@ -196,6 +204,47 @@ export default function CafeTemplate({
       cancelled = true
     }
   }, [safetyNoticesData, gasPricesData])
+
+  // Ticker weather-mirroring round - when this tenant is parent-linked,
+  // the ticker's "conditions"/"forecast" segments read the PARENT's live
+  // weather instead of this tenant's own useWeather() value below,
+  // reusing fetchIngestedWeather() (src/services/weatherProviders/
+  // ingestedProvider.ts) completely as-is - that fetcher already calls
+  // /api/public/weather-latest, which already resolves the effective
+  // (parent, when linked) tenant via resolveEffectiveTenantById, the
+  // exact same mirroring lookup ops-panel/gas-prices/runway-groups use
+  // server-side. No new fetch/mapping logic written here at all - this
+  // is that same existing provider fetcher, called directly, polled on
+  // a plain interval the same way WeatherContext polls its own
+  // providers. Non-parent-linked tenants (hasParentTenant false, the
+  // ordinary case) never run this effect at all - their ticker keeps
+  // reading useWeather() exactly as before, unchanged.
+  const [inheritedWeather, setInheritedWeather] = useState<{ weather: WeatherData | null; liveDataUnavailable: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!hasParentTenant) return
+    let cancelled = false
+
+    async function load() {
+      try {
+        const result = await fetchIngestedWeather()
+        if (!cancelled) setInheritedWeather({ weather: result.data, liveDataUnavailable: false })
+      } catch {
+        // Parent has no ingested reading (or it's stale/missing fields) -
+        // same "N/A" outcome CafeTicker.tsx's own conditionsSegmentText
+        // already shows for a null/unavailable weather value, never a
+        // crash or a fall-through to this tenant's own unrelated data.
+        if (!cancelled) setInheritedWeather({ weather: null, liveDataUnavailable: true })
+      }
+    }
+
+    load()
+    const interval = window.setInterval(load, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [hasParentTenant])
 
   // Keeps safetyNotices in sync if a parent's own already-fetched data
   // changes after this component's initial mount (e.g. DesignPage.tsx's
@@ -223,6 +272,14 @@ export default function CafeTemplate({
   }
 
   const { layoutMode, adLabelEnabled, tickerEnabled, tickerSlots, tickerStyle } = cafeSettings
+
+  // Parent-linked: use the mirrored reading (inheritedWeather starts
+  // null for the brief moment before its own first fetch resolves -
+  // treated as unavailable rather than blocking on it, consistent with
+  // every other "N/A until data arrives" ticker segment). Not linked:
+  // exactly today's own useWeather() value, untouched.
+  const tickerWeather = hasParentTenant ? (inheritedWeather?.weather ?? null) : weather
+  const tickerLiveDataUnavailable = hasParentTenant ? (inheritedWeather?.liveDataUnavailable ?? true) : liveDataUnavailable
 
   return (
     <div
@@ -372,8 +429,8 @@ export default function CafeTemplate({
         <div ref={tickerRef} className="absolute inset-x-0 bottom-0 z-10 overflow-x-hidden">
           <CafeTicker
             slots={tickerSlots}
-            weather={weather}
-            liveDataUnavailable={liveDataUnavailable}
+            weather={tickerWeather}
+            liveDataUnavailable={tickerLiveDataUnavailable}
             visibilityHours={visibilityHours}
             safetyNotices={safetyNotices}
             gasPrices={gasPrices}

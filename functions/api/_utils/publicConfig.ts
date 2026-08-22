@@ -1133,6 +1133,23 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     mainDisplayActive,
     cafeDisplayActive,
     cafeSettings,
+    // Café ticker weather-mirroring round - lets CafeTemplate.tsx know
+    // (without a second D1 round-trip of its own) whether THIS tenant is
+    // parent-linked, same effective.isInherited boolean the runway/gas-
+    // price fallback logic above already computed for this exact
+    // request. Café ticker's own "conditions"/"forecast" segments
+    // currently source weather via useWeather() - a fully independent
+    // client-side poll of the CURRENT tenant's own configured provider,
+    // never routed through this function's parent-mirroring at all
+    // (confirmed by inspection: ops-panel/gas-prices/runway-groups all
+    // check effective.isInherited already, weather never did). Exposing
+    // this flag lets CafeTemplate.tsx switch its OWN ticker-only weather
+    // source to the already-existing ingested/weather-latest.ts path
+    // (which already resolves the parent's data via
+    // resolveEffectiveTenantById - see that file's own comment) when
+    // true, while every non-linked tenant's ticker keeps reading
+    // useWeather() exactly as before.
+    hasParentTenant: effective.isInherited,
     afiso,
     pilotTicker,
     qrSlide,
