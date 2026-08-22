@@ -165,6 +165,12 @@ function matchesTab(entry: DevFeatureEntry, tab: Tab): boolean {
 // replace what "marking an entry Built" used to mean, and there's no
 // equivalent of idea/planned/parked in this model at all.
 export default function PlatformDevFeaturesPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Developer Features — Airfield Central'
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [entries, setEntries] = useState<DevFeatureEntry[]>([])

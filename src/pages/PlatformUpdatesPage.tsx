@@ -14,6 +14,12 @@ import ReleasedVersionsList, { type ReleasedVersionEntry } from '../components/R
 // renders identically to the public /versions page (VersionsPage.tsx),
 // which serves the same data unauthenticated.
 export default function PlatformUpdatesPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Developer Updates — Airfield Central'
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [updates, setUpdates] = useState<ReleasedVersionEntry[]>([])

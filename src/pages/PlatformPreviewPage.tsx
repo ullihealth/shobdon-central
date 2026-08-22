@@ -35,6 +35,12 @@ const ADMIN_LINKS = [
 // resolveDeveloperPreviewTenant's own comment in tenantAuth.ts for why
 // mixing the two would be a real bug, not just an implementation detail.
 export default function PlatformPreviewPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Tenant Preview — Airfield Central'
+  }, [])
+
   const [tenants, setTenants] = useState<PlatformTenant[]>([])
   const [currentSlug, setCurrentSlug] = useState<string | null>(null)
   const [currentName, setCurrentName] = useState<string | null>(null)

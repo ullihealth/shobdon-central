@@ -34,6 +34,12 @@ const MEDIA_TYPE_OPTIONS: OwnerSlot['mediaType'][] = ['image', 'mp4', 'pdf']
 // tenant's 3 reserved slots is enough surface area to not want to
 // squeeze it into the main tenant detail pane).
 export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Reserved Owner Slots — Airfield Central'
+  }, [])
+
   const { id } = useParams<{ id: string }>()
   const [tenantName, setTenantName] = useState<string | null>(null)
   const [slots, setSlots] = useState<OwnerSlot[]>([])

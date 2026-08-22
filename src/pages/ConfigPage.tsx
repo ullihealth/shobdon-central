@@ -13,6 +13,12 @@ import { loadWeatherConfig, resolveWeatherConfig, saveWeatherConfig } from '../s
 import type { WeatherConfig, WeatherProviderId } from '../types/weatherConfig'
 
 export default function ConfigPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Weather Config — Airfield Central'
+  }, [])
+
   // Starts with the synchronous local value (unchanged, no blank flash),
   // then - only if nothing was actually stored yet - resolves to this
   // tenant's own server-side default instead of staying on the

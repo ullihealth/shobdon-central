@@ -33,6 +33,12 @@ function formatDate(iso: string): string {
 // pre-labeling an IP before it's even shown up in the log yet, or
 // removing a label entirely.
 export default function IpDirectoryPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'IP Directory — Airfield Central'
+  }, [])
+
   const [labels, setLabels] = useState<IpLabel[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)

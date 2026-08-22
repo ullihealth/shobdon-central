@@ -59,6 +59,12 @@ function formatDuration(minutes: number): string {
 // interval it assumed) rather than just a bare percentage - a number
 // with no visible basis isn't something you can defend in a dispute.
 export default function UptimeReportPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Uptime Report — Airfield Central'
+  }, [])
+
   const [knownDevices, setKnownDevices] = useState<KnownDevice[]>([])
   const [tenantSlug, setTenantSlug] = useState('')
   const [displaySlug, setDisplaySlug] = useState('')

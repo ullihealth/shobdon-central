@@ -97,6 +97,12 @@ function toVisual(slot: CafeOwnerSlot): MediaSlotVisual {
 // SlotAppearanceEditor directly - same underlying cafe_carousel_slots
 // row shape, no reason to hand-duplicate that genuinely complex piece.
 export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Café Reserved Slots — Airfield Central'
+  }, [])
+
   const [searchParams] = useSearchParams()
   const preselectTenantId = searchParams.get('tenantId')
 

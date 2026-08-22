@@ -556,6 +556,12 @@ function DisplayWidthField(): JSX.Element {
 }
 
 export default function DeveloperToolsPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Developer Tools — Airfield Central'
+  }, [])
+
   return (
     <div className="mx-auto max-w-3xl px-6 pb-10 pt-10">
       <div className="rounded-3xl border border-slate-700 bg-slate-950/85 p-10 shadow-xl shadow-slate-950/20">

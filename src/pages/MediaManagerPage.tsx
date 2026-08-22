@@ -89,6 +89,12 @@ function inputValueToPrice(value: string): number | null {
 // own new Carousel Slots section. `files` is still fetched here (read-
 // only, for the Source dropdown), just no longer edited from this page.
 export default function MediaManagerPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Dashboard Manager — Airfield Central'
+  }, [])
+
   const [files, setFiles] = useState<MediaLibraryFile[]>([])
   const [slots, setSlots] = useState<CarouselSlot[]>([])
   const [cameraOptions, setCameraOptions] = useState<CameraOption[]>([])

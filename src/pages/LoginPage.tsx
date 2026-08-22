@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authClient } from '../lib/auth/authClient'
 
@@ -60,6 +60,16 @@ export default function LoginPage(): JSX.Element {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Was left at index.html's own generic default (never a real bug per
+  // se - the shared shell has no way to bake in a per-route title of its
+  // own - but every other route either sets its own or, like this one,
+  // was simply missed) - static since this page has no tenant/session
+  // data of its own to include, unlike DashboardPage.tsx's dynamic
+  // per-tenant title.
+  useEffect(() => {
+    document.title = 'Sign In — Airfield Central'
+  }, [])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()

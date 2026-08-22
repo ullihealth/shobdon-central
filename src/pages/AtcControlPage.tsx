@@ -160,6 +160,12 @@ function SegmentedToggle<T extends string>({
 }
 
 export default function AtcControlPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'ATC Control — Airfield Central'
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [runwayEnds, setRunwayEnds] = useState<[string, string]>(['08', '26'])
   const [activeRunwayEnd, setActiveRunwayEnd] = useState('08')

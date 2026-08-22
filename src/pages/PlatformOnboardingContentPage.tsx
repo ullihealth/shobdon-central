@@ -14,6 +14,12 @@ interface VideoSlot {
 // A simple form over a single row, not a new subsystem - matches the
 // "simple admin-only config" scope this was built to.
 export default function PlatformOnboardingContentPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Onboarding Content — Airfield Central'
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [videos, setVideos] = useState<VideoSlot[]>([])

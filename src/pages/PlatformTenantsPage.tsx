@@ -1412,6 +1412,12 @@ function HistoryEntryRow({ entry }: { entry: SubscriptionHistoryEntry }): JSX.El
 }
 
 export default function PlatformTenantsPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Platform Tenants — Airfield Central'
+  }, [])
+
   const [tenants, setTenants] = useState<PlatformTenant[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)

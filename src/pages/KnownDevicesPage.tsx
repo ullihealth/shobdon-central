@@ -62,6 +62,12 @@ function formatDate(iso: string): string {
 // dismissed - confirmed ones are what Phase C's uptime math will
 // filter on).
 export default function KnownDevicesPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Known Devices — Airfield Central'
+  }, [])
+
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [knownDevices, setKnownDevices] = useState<KnownDevice[]>([])
   const [loading, setLoading] = useState(true)

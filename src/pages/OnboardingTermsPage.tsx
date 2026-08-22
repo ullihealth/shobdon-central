@@ -21,6 +21,12 @@ interface OnboardingContent {
 // invite-accept flow's branding step, and on any future login for an
 // account that still hasn't accepted.
 export default function OnboardingTermsPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Before You Continue — Airfield Central'
+  }, [])
+
   const navigate = useNavigate()
   const [content, setContent] = useState<OnboardingContent | null>(null)
   const [termsRead, setTermsRead] = useState(false)

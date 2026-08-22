@@ -54,6 +54,12 @@ function createBlankGroup(): RunwayGroup {
 }
 
 export default function RunwaysPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Runways — Airfield Central'
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [groups, setGroups] = useState<RunwayGroup[]>([])
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')

@@ -414,6 +414,12 @@ function CameraForm({
 }
 
 export default function PlatformCamerasPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Cameras — Airfield Central'
+  }, [])
+
   const [tenants, setTenants] = useState<TenantOption[]>([])
   const [siteRelays, setSiteRelays] = useState<SiteRelay[]>([])
   const [cameras, setCameras] = useState<Camera[]>([])

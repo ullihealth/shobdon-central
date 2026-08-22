@@ -225,6 +225,12 @@ function PreviewContent({
 const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
 
 export default function CafeMediaPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Media Screen — Airfield Central'
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [layoutMode, setLayoutMode] = useState<'split' | 'full'>('full')
   const [adLabelEnabled, setAdLabelEnabled] = useState(false)

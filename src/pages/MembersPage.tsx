@@ -36,6 +36,12 @@ function CopyButton({ text }: { text: string }): JSX.Element {
 }
 
 export default function MembersPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Members — Airfield Central'
+  }, [])
+
   const [members, setMembers] = useState<TenantMember[]>([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')

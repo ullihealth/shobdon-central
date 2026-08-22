@@ -135,6 +135,12 @@ function EyeOffIcon(): JSX.Element {
 // have hit this URL lately") are both answered directly by scanning
 // rows, not by a summary view.
 export default function PlatformVisitsPage(): JSX.Element {
+  // Static title - this page had no document.title of its own, so its
+  // tab was permanently stuck on index.html's generic default.
+  useEffect(() => {
+    document.title = 'Visit Log — Airfield Central'
+  }, [])
+
   const [visits, setVisits] = useState<Visit[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
