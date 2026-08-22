@@ -224,7 +224,16 @@ function SteppedRangeField({
 // preview instantly - every control writes through the parent's saveSlot
 // (synchronous local state update, debounced network write), so there's
 // no separate "draft" state to reconcile before saving.
-function SlotAppearanceEditor({
+// Exported (Café Reserved Owner Slots round) so
+// PlatformCafeCarouselOwnerSlotsPage.tsx can reuse the exact same zoom/
+// pan/rotate/brightness/banner editor for owner-assigned reserved slots,
+// rather than a second hand-built copy - same underlying cafe_carousel_
+// slots row shape (CarouselSlot), same MediaSlotRenderer preview. That
+// page hand-builds its own Source/Duration/Fit Mode/Zone controls
+// instead (a different enough shape - no camera/gyropedia options, an
+// upload button alongside the library picker) - only this genuinely
+// complex piece is worth sharing.
+export function SlotAppearanceEditor({
   slot,
   visual,
   onChange,

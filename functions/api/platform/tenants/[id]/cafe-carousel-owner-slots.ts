@@ -19,6 +19,16 @@
 // only thing controlling public visibility. Leaving a reserved slot
 // disabled keeps it genuinely invisible on the live café screen until a
 // developer both unlocks-or-assigns AND explicitly enables it.
+//
+// Appearance/Duration/Fit Mode/Zone round: this endpoint originally only
+// wrote enabled/mediaType/mediaLibraryId/ownerSlotUnlocked (duration
+// hardcoded to 10) - every other cafe_carousel_slots column a tenant's
+// own editor can set (fitMode, cropRect, rotationDegrees,
+// brightnessPercent, bannerText/Opacity/FontSize, zone) was left at its
+// schema default with no way to change it here. Validation below
+// mirrors functions/api/tenant/cafe-carousel/index.ts's own PUT checks
+// for these same fields exactly, since it's the same column set on the
+// same table.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -34,14 +44,36 @@ interface Env {
 
 const RESERVED_SLOT_NUMBERS = [5, 8, 12];
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf"];
+const VALID_FIT_MODES = ["fill", "contain"];
+const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
+const VALID_ZONES = ["both", "left", "right"];
+
+interface CropRectInput {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 interface OwnerSlotRow {
   slotNumber: number;
   enabled: number;
   mediaType: string;
+  durationSeconds: number;
   mediaLibraryId: string | null;
   ownerSlotUnlocked: number;
   ownerContentAssigned: number;
+  fitMode: string;
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+  rotationDegrees: number;
+  brightnessPercent: number;
+  bannerText: string;
+  bannerOpacity: number;
+  bannerFontSize: string;
+  zone: string;
   r2Key: string | null;
   filename: string | null;
   mp4DurationSeconds: number | null;
@@ -51,8 +83,17 @@ interface OwnerSlotInput {
   slotNumber: number;
   enabled: boolean;
   mediaType: "image" | "mp4" | "pdf";
+  durationSeconds: number;
   mediaLibraryId: string | null;
   ownerSlotUnlocked: boolean;
+  fitMode?: "fill" | "contain";
+  cropRect?: CropRectInput;
+  rotationDegrees?: number;
+  brightnessPercent?: number;
+  bannerText?: string;
+  bannerOpacity?: number;
+  bannerFontSize?: "sm" | "md" | "lg" | "xl" | "xxl";
+  zone?: "both" | "left" | "right";
 }
 
 interface MediaFileRow {
@@ -73,8 +114,11 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
   const [{ results: slotRows }, { results: fileRows }] = await Promise.all([
     db
       .prepare(
-        `SELECT cs.slotNumber AS slotNumber, cs.enabled AS enabled, cs.mediaType AS mediaType, cs.mediaLibraryId AS mediaLibraryId,
-                cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerContentAssigned AS ownerContentAssigned,
+        `SELECT cs.slotNumber AS slotNumber, cs.enabled AS enabled, cs.mediaType AS mediaType, cs.durationSeconds AS durationSeconds,
+                cs.mediaLibraryId AS mediaLibraryId, cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerContentAssigned AS ownerContentAssigned,
+                cs.fitMode AS fitMode, cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
+                cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
+                cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize, cs.zone AS zone,
                 ml.r2Key AS r2Key, ml.filename AS filename, ml.mp4DurationSeconds AS mp4DurationSeconds
          FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
@@ -95,9 +139,18 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
       slotNumber,
       enabled: !!row?.enabled,
       mediaType: row?.mediaType ?? "image",
+      durationSeconds: row?.durationSeconds ?? 10,
       mediaLibraryId: row?.mediaLibraryId ?? null,
       ownerSlotUnlocked: !!row?.ownerSlotUnlocked,
       ownerContentAssigned: !!row?.ownerContentAssigned,
+      fitMode: row?.fitMode ?? "contain",
+      cropRect: { x: row?.cropX ?? 0, y: row?.cropY ?? 0, width: row?.cropWidth ?? 100, height: row?.cropHeight ?? 100 },
+      rotationDegrees: row?.rotationDegrees ?? 0,
+      brightnessPercent: row?.brightnessPercent ?? 100,
+      bannerText: row?.bannerText ?? "",
+      bannerOpacity: row?.bannerOpacity ?? 70,
+      bannerFontSize: row?.bannerFontSize ?? "md",
+      zone: row?.zone ?? "both",
       filename: row?.filename ?? null,
       resolvedUrl: row?.r2Key && mediaPublicBaseUrl ? `${mediaPublicBaseUrl}/${row.r2Key}` : null,
       mp4DurationSeconds: row?.mp4DurationSeconds ?? null,
@@ -147,6 +200,34 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     if (typeof slot.ownerSlotUnlocked !== "boolean") {
       return jsonResponse({ error: "ownerSlotUnlocked must be a boolean" }, 400);
     }
+    if (!Number.isFinite(slot.durationSeconds) || slot.durationSeconds <= 0) {
+      return jsonResponse({ error: "durationSeconds must be a positive number" }, 400);
+    }
+    if (slot.fitMode !== undefined && !VALID_FIT_MODES.includes(slot.fitMode)) {
+      return jsonResponse({ error: `fitMode must be one of: ${VALID_FIT_MODES.join(", ")}` }, 400);
+    }
+    if (slot.cropRect !== undefined) {
+      const { x, y, width, height } = slot.cropRect;
+      const inRange = (n: number) => Number.isFinite(n) && n >= 0 && n <= 100;
+      if (!inRange(x) || !inRange(y) || !inRange(width) || !inRange(height) || width <= 0 || height <= 0) {
+        return jsonResponse({ error: "cropRect x/y/width/height must be numbers between 0 and 100, width/height > 0" }, 400);
+      }
+    }
+    if (slot.rotationDegrees !== undefined && (!Number.isFinite(slot.rotationDegrees) || Math.abs(slot.rotationDegrees) > 180)) {
+      return jsonResponse({ error: "rotationDegrees must be a number between -180 and 180" }, 400);
+    }
+    if (slot.brightnessPercent !== undefined && (!Number.isFinite(slot.brightnessPercent) || slot.brightnessPercent < 20 || slot.brightnessPercent > 200)) {
+      return jsonResponse({ error: "brightnessPercent must be a number between 20 and 200" }, 400);
+    }
+    if (slot.bannerOpacity !== undefined && (!Number.isFinite(slot.bannerOpacity) || slot.bannerOpacity < 0 || slot.bannerOpacity > 100)) {
+      return jsonResponse({ error: "bannerOpacity must be a number between 0 and 100" }, 400);
+    }
+    if (slot.bannerFontSize !== undefined && !VALID_BANNER_SIZES.includes(slot.bannerFontSize)) {
+      return jsonResponse({ error: `bannerFontSize must be one of: ${VALID_BANNER_SIZES.join(", ")}` }, 400);
+    }
+    if (slot.zone !== undefined && !VALID_ZONES.includes(slot.zone)) {
+      return jsonResponse({ error: `zone must be one of: ${VALID_ZONES.join(", ")}` }, 400);
+    }
     if (slot.mediaLibraryId) {
       const file = await env.DB
         .prepare("SELECT id FROM media_library WHERE id = ? AND organizationId = ?")
@@ -160,21 +241,68 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   for (const slot of body.slots) {
     const mediaLibraryId = slot.mediaLibraryId ?? null;
     const ownerContentAssigned = mediaLibraryId ? 1 : 0;
+    const fitMode = slot.fitMode ?? "contain";
+    const cropX = slot.cropRect?.x ?? 0;
+    const cropY = slot.cropRect?.y ?? 0;
+    const cropWidth = slot.cropRect?.width ?? 100;
+    const cropHeight = slot.cropRect?.height ?? 100;
+    const rotationDegrees = slot.rotationDegrees ?? 0;
+    const brightnessPercent = slot.brightnessPercent ?? 100;
+    const bannerText = slot.bannerText ?? "";
+    const bannerOpacity = slot.bannerOpacity ?? 70;
+    const bannerFontSize = slot.bannerFontSize ?? "md";
+    const zone = slot.zone ?? "both";
 
     await env.DB
       .prepare(
-        `INSERT INTO cafe_carousel_slots (organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerContentAssigned, updatedAt)
-         VALUES (?, ?, ?, ?, 10, ?, ?, ?, ?)
+        `INSERT INTO cafe_carousel_slots (
+           organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerContentAssigned,
+           fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
+           bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
-           durationSeconds = 10,
+           durationSeconds = excluded.durationSeconds,
            mediaLibraryId = excluded.mediaLibraryId,
            ownerSlotUnlocked = excluded.ownerSlotUnlocked,
            ownerContentAssigned = excluded.ownerContentAssigned,
+           fitMode = excluded.fitMode,
+           cropX = excluded.cropX,
+           cropY = excluded.cropY,
+           cropWidth = excluded.cropWidth,
+           cropHeight = excluded.cropHeight,
+           rotationDegrees = excluded.rotationDegrees,
+           brightnessPercent = excluded.brightnessPercent,
+           bannerText = excluded.bannerText,
+           bannerOpacity = excluded.bannerOpacity,
+           bannerFontSize = excluded.bannerFontSize,
+           zone = excluded.zone,
            updatedAt = excluded.updatedAt`
       )
-      .bind(organizationId, slot.slotNumber, slot.enabled ? 1 : 0, slot.mediaType, mediaLibraryId, slot.ownerSlotUnlocked ? 1 : 0, ownerContentAssigned, now)
+      .bind(
+        organizationId,
+        slot.slotNumber,
+        slot.enabled ? 1 : 0,
+        slot.mediaType,
+        slot.durationSeconds,
+        mediaLibraryId,
+        slot.ownerSlotUnlocked ? 1 : 0,
+        ownerContentAssigned,
+        fitMode,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        rotationDegrees,
+        brightnessPercent,
+        bannerText,
+        bannerOpacity,
+        bannerFontSize,
+        zone,
+        now
+      )
       .run();
   }
 

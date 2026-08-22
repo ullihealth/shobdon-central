@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { SlotAppearanceEditor } from '../components/media/CarouselSlotEditor'
+import type { MediaSlotVisual } from '../components/media/MediaSlotRenderer'
+import type { CropRect } from '../types/mediaLibrary'
 
 const TENANTS_URL = '/api/platform/tenants'
 
@@ -6,7 +10,25 @@ interface CafeOwnerSlot {
   slotNumber: number
   enabled: boolean
   mediaType: 'image' | 'mp4' | 'pdf'
+  durationSeconds: number
   mediaLibraryId: string | null
+  // Always null for an owner-assigned slot (no webcam/gyropedia option
+  // here) - present only so this shape structurally satisfies
+  // CarouselSlot for SlotAppearanceEditor's own prop type.
+  cameraSlotNumber: number | null
+  cameraId: string | null
+  fitMode: 'fill' | 'contain'
+  cropRect: CropRect
+  rotationDegrees: number
+  brightnessPercent: number
+  bannerText: string
+  bannerOpacity: number
+  bannerFontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
+  zone: 'both' | 'left' | 'right'
+  // Not exposed as a control on this page (not part of this round's
+  // scope) - always false, present only for the same structural-typing
+  // reason as cameraSlotNumber/cameraId above.
+  autoFullscreen: boolean
   ownerSlotUnlocked: boolean
   ownerContentAssigned: boolean
   filename: string | null
@@ -31,6 +53,20 @@ type SaveStatus = 'idle' | 'working' | 'success' | 'error'
 
 const MEDIA_TYPE_OPTIONS: CafeOwnerSlot['mediaType'][] = ['image', 'mp4', 'pdf']
 
+function toVisual(slot: CafeOwnerSlot): MediaSlotVisual {
+  return {
+    mediaType: slot.mediaType,
+    resolvedUrl: slot.resolvedUrl,
+    fitMode: slot.fitMode,
+    cropRect: slot.cropRect,
+    rotationDegrees: slot.rotationDegrees,
+    brightnessPercent: slot.brightnessPercent,
+    bannerText: slot.bannerText,
+    bannerOpacity: slot.bannerOpacity,
+    bannerFontSize: slot.bannerFontSize,
+  }
+}
+
 // Platform-admin-only: assign owner-sold/leased ad content to a
 // venue_cafe tenant's reserved café carousel slots (5/8/12) - Café
 // Reserved Owner Slots round (migration 0092). A near-duplicate of the
@@ -44,13 +80,26 @@ const MEDIA_TYPE_OPTIONS: CafeOwnerSlot['mediaType'][] = ['image', 'mp4', 'pdf']
 // there's no equivalent "café tenants" detail pane to link from yet,
 // and browsing straight to a dropdown of venue_cafe tenants is a
 // shorter path to the one thing this page is ever used for. No :id
-// route param; the selected tenant is component state.
+// route param; the selected tenant is component state, optionally
+// pre-seeded from a ?tenantId= query param (PlatformTenantsPage.tsx's
+// own "Manage reserved slots" link for a venue_cafe tenant sets this).
 //
 // No "Unlocked" text about a separate time-budget toggle (unlike the
 // dashboard page's own copy) - café's isReserved is unconditional
 // (functions/api/tenant/cafe-carousel/index.ts), there's no
 // carousel_budget_enabled equivalent to explain here.
+//
+// Appearance/Duration/Fit Mode/Zone round: Source/Duration/Fit Mode/
+// Zone are hand-built below (a different enough shape from the standard
+// tenant-facing editor - an upload button alongside the library picker,
+// no camera/gyropedia options) but the zoom/pan/rotate/brightness/
+// banner editor reuses CarouselSlotEditor.tsx's own exported
+// SlotAppearanceEditor directly - same underlying cafe_carousel_slots
+// row shape, no reason to hand-duplicate that genuinely complex piece.
 export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
+  const [searchParams] = useSearchParams()
+  const preselectTenantId = searchParams.get('tenantId')
+
   const [tenants, setTenants] = useState<CafeTenant[]>([])
   const [tenantsLoading, setTenantsLoading] = useState(true)
   const [selectedTenantId, setSelectedTenantId] = useState<number | null>(null)
@@ -59,6 +108,7 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
   const [files, setFiles] = useState<MediaFile[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({})
+  const [appearanceOpen, setAppearanceOpen] = useState<Record<number, boolean>>({})
   const [uploadingSlot, setUploadingSlot] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({})
@@ -73,7 +123,12 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
           .filter((t: { tenantType?: string }) => t.tenantType === 'venue_cafe')
           .map((t: { id: number; name: string; slug: string }) => ({ id: t.id, name: t.name, slug: t.slug }))
         setTenants(cafeTenants)
-        if (cafeTenants.length > 0) setSelectedTenantId(cafeTenants[0].id)
+        // Pre-select from ?tenantId= (PlatformTenantsPage.tsx's own link)
+        // when it names a real venue_cafe tenant; otherwise fall back to
+        // the first one, same as before this query param existed.
+        const preselected = preselectTenantId ? cafeTenants.find((t) => String(t.id) === preselectTenantId) : undefined
+        if (preselected) setSelectedTenantId(preselected.id)
+        else if (cafeTenants.length > 0) setSelectedTenantId(cafeTenants[0].id)
       })
       .finally(() => {
         if (!cancelled) setTenantsLoading(false)
@@ -81,7 +136,7 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [preselectTenantId])
 
   useEffect(() => {
     if (selectedTenantId === null) return
@@ -120,8 +175,17 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
               slotNumber,
               enabled: updated.enabled,
               mediaType: updated.mediaType,
+              durationSeconds: updated.durationSeconds,
               mediaLibraryId: updated.mediaLibraryId,
               ownerSlotUnlocked: updated.ownerSlotUnlocked,
+              fitMode: updated.fitMode,
+              cropRect: updated.cropRect,
+              rotationDegrees: updated.rotationDegrees,
+              brightnessPercent: updated.brightnessPercent,
+              bannerText: updated.bannerText,
+              bannerOpacity: updated.bannerOpacity,
+              bannerFontSize: updated.bannerFontSize,
+              zone: updated.zone,
             },
           ],
         }),
@@ -212,6 +276,10 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {slots.map((slot) => {
             const status = saveStatus[slot.slotNumber] ?? 'idle'
+            const isMp4 = slot.mediaType === 'mp4'
+            const file = files.find((f) => f.id === slot.mediaLibraryId)
+            const showAppearanceControls = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+            const isAppearanceOpen = !!appearanceOpen[slot.slotNumber]
             return (
               <section key={slot.slotNumber} className="rounded-2xl border border-border bg-panel p-5">
                 <div className="mb-3 flex items-center justify-between">
@@ -301,7 +369,7 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
                       type="button"
                       onClick={() => fileInputRefs.current[slot.slotNumber]?.click()}
                       disabled={uploadingSlot === slot.slotNumber}
-                      className="w-full rounded-lg border border-border bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500 disabled:opacity-50"
+                      className="mb-3 w-full rounded-lg border border-border bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500 disabled:opacity-50"
                     >
                       {uploadingSlot === slot.slotNumber ? 'Uploading…' : 'Upload new file for this slot'}
                     </button>
@@ -318,6 +386,71 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
                         event.target.value = ''
                       }}
                     />
+
+                    <label className="mb-2 flex flex-col gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Duration (seconds)</span>
+                      {isMp4 ? (
+                        <input
+                          type="text"
+                          readOnly
+                          value={file?.mp4DurationSeconds ? `Detected: ${file.mp4DurationSeconds.toFixed(1)}s` : 'Detected on upload'}
+                          className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm text-muted-400"
+                        />
+                      ) : (
+                        <input
+                          type="number"
+                          min={1}
+                          value={slot.durationSeconds}
+                          onChange={(event) => saveSlot(slot.slotNumber, { durationSeconds: Number(event.target.value) || 10 })}
+                          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        />
+                      )}
+                    </label>
+
+                    {(slot.mediaType === 'image' || slot.mediaType === 'mp4') && (
+                      <label className="mb-2 flex flex-col gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Fit mode</span>
+                        <select
+                          value={slot.fitMode}
+                          onChange={(event) => saveSlot(slot.slotNumber, { fitMode: event.target.value as CafeOwnerSlot['fitMode'] })}
+                          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                        >
+                          <option value="contain">Fit (show whole image, letterboxed if needed)</option>
+                          <option value="fill">Fill (crop to fill the box)</option>
+                        </select>
+                      </label>
+                    )}
+
+                    <label className="mb-2 flex flex-col gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Zone (Café split-pane)</span>
+                      <select
+                        value={slot.zone}
+                        onChange={(event) => saveSlot(slot.slotNumber, { zone: event.target.value as CafeOwnerSlot['zone'] })}
+                        className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                      >
+                        <option value="both">Both</option>
+                        <option value="left">Left only</option>
+                        <option value="right">Right only</option>
+                      </select>
+                    </label>
+
+                    {showAppearanceControls && (
+                      <button
+                        type="button"
+                        onClick={() => setAppearanceOpen((prev) => ({ ...prev, [slot.slotNumber]: !prev[slot.slotNumber] }))}
+                        className="w-full rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-accent-sky-400 transition hover:border-sky-500"
+                      >
+                        {isAppearanceOpen ? '▾ Close appearance editor' : '🎨 Edit appearance'}
+                      </button>
+                    )}
+
+                    {isAppearanceOpen && showAppearanceControls && (
+                      <SlotAppearanceEditor
+                        slot={slot}
+                        visual={toVisual(slot)}
+                        onChange={(patch) => saveSlot(slot.slotNumber, patch)}
+                      />
+                    )}
 
                     {status === 'success' && <p className="mt-2 text-xs font-semibold text-status-good">Saved.</p>}
                     {status === 'error' && <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save.</p>}

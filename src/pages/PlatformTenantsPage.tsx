@@ -97,6 +97,10 @@ interface PlatformTenant {
   name: string
   subdomain: string
   active: boolean
+  // migration 0090 - Café Reserved Owner Slots round added this to the
+  // list endpoint's response so the "Manage reserved slots" link below
+  // can pick the right destination page per tenant.
+  tenantType: 'airfield' | 'venue_cafe'
   weatherPublic: boolean
   opsPublic: boolean
   isInternal: boolean
@@ -2292,7 +2296,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                     <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
                     <PrimaryCameraEditor tenant={selectedTenant} />
                     <Link
-                      to={`/platform/tenants/${selectedTenant.id}/carousel-owner-slots`}
+                      to={
+                        selectedTenant.tenantType === 'venue_cafe'
+                          ? `/platform/cafe-carousel-owner-slots?tenantId=${selectedTenant.id}`
+                          : `/platform/tenants/${selectedTenant.id}/carousel-owner-slots`
+                      }
                       className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10"
                     >
                       Manage reserved slots (5/8/12) →
