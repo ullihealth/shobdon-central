@@ -281,20 +281,33 @@ export default function MediaSlotRenderer({ slot, isActive = true }: { slot: Med
   // actually active. Driving play()/pause() off isActive instead means
   // exactly one video plays at a time (whichever slot is current),
   // deterministically, on every activeIndex change - not just on mount.
-  // No explicit "restart from 0" on reactivation: pause() leaves
-  // currentTime where it was, so play() simply resumes from there, the
-  // same behaviour every native <video> gives you for free - resetting
-  // to 0 would need an extra currentTime assignment for no clear benefit
-  // (loop is already on, so a slide left mid-loop resuming mid-loop
-  // reads the same as a fresh loop to a viewer). Declared before the
-  // early return below (not after) so hook call order stays unconditional
-  // across renders, per React's own rules - harmless no-op on the
-  // non-mp4/no-videoRef branches, since the effect just no-ops when
-  // videoRef.current is null.
+  //
+  // Explicit "restart from 0" on reactivation (currentTime = 0 right
+  // before play()) - a prior version of this comment argued this was
+  // unnecessary since "loop is already on, so resuming mid-loop reads
+  // the same as a fresh loop." That reasoning was wrong: the carousel's
+  // own away-timer (MediaPanel.tsx's scheduleNext, using
+  // mp4DurationSeconds - deliberately auto-detected from the file's own
+  // real length on upload, see MediaLibraryPage.tsx) switches away at
+  // very close to the video's own natural end, so pause() very often
+  // freezes currentTime within a fraction of a second of the clip's
+  // true duration - confirmed live on both Shobdon's dashboard carousel
+  // and a café tenant's carousel via direct instrumentation, e.g. one
+  // capture paused at 7.509s of a 7.567s clip (99.2% through). On the
+  // NEXT activation, play() then resumed from that frozen near-end
+  // point for a brief instant before the native loop wraparound fired -
+  // exactly the reported "flashes a frame near the end, then restarts"
+  // symptom. Resetting currentTime to 0 here means every reactivation
+  // starts from frame 0 with no stale prior position to flash.
+  // Declared before the early return below (not after) so hook call
+  // order stays unconditional across renders, per React's own rules -
+  // harmless no-op on the non-mp4/no-videoRef branches, since the
+  // effect just no-ops when videoRef.current is null.
   useEffect(() => {
     const videoEl = videoRef.current
     if (!videoEl) return
     if (isActive) {
+      videoEl.currentTime = 0
       videoEl.play().catch(() => {})
     } else {
       videoEl.pause()
