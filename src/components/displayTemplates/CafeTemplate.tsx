@@ -366,11 +366,11 @@ export default function CafeTemplate({
                   real width) width instead, sidestepping the percentage-
                   height chain entirely. */}
               <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
-                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" data={mediaData} />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" data={mediaData} isPreview={isPreview} />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className={`relative overflow-hidden ${isDesktop ? 'h-full' : 'aspect-video'}`}>
-                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" data={mediaData} />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" data={mediaData} isPreview={isPreview} />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
@@ -397,7 +397,7 @@ export default function CafeTemplate({
             // earned one. Split-pane above is untouched and still uses
             // `fill` - explicitly out of scope this round.
             <div className="relative flex items-center justify-center overflow-hidden" style={isDesktop ? { height: '100%' } : undefined}>
-              <MediaPanel item={currentMedia} slotSource="cafe" data={mediaData} />
+              <MediaPanel item={currentMedia} slotSource="cafe" data={mediaData} isPreview={isPreview} />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}

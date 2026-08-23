@@ -175,7 +175,7 @@ export default function Clubhouse1Template({
           </div>
 
           <div className={isDesktop ? 'h-full' : ''}>
-            <CentreDisplayPanel mediaData={mediaData} />
+            <CentreDisplayPanel mediaData={mediaData} isPreview={isPreview} />
           </div>
 
           {/* Ops Panel sits above Gas Prices, both sharing this one

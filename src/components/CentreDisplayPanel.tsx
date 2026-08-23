@@ -11,9 +11,17 @@ interface CentreDisplayPanelProps {
   // resolves by). Every existing caller (the real public dashboard, via
   // Clubhouse1Template) omits this and is unaffected.
   mediaData?: MediaPanelSourceData
+  // Buffering-gate round - straight through to MediaPanel's own
+  // isPreview, from Clubhouse1Template's own existing isPreview prop.
+  // Was missing entirely until a real test caught it: Screens Design's
+  // own dashboard-template preview briefly showed the "Buffering Media"
+  // overlay, since this panel's <MediaPanel> had no way to tell it
+  // wasn't the real public screen. Every existing caller (the real
+  // public dashboard) omits this and is unaffected.
+  isPreview?: boolean
 }
 
-export default function CentreDisplayPanel({ mediaData }: CentreDisplayPanelProps = {}): JSX.Element {
+export default function CentreDisplayPanel({ mediaData, isPreview }: CentreDisplayPanelProps = {}): JSX.Element {
   const isDesktop = useIsDesktopLayout()
 
   return (
@@ -35,7 +43,7 @@ export default function CentreDisplayPanel({ mediaData }: CentreDisplayPanelProp
         className="flex items-center justify-center overflow-hidden"
         style={isDesktop ? { flex: 3, minHeight: 0 } : undefined}
       >
-        <MediaPanel item={currentMedia} data={mediaData} />
+        <MediaPanel item={currentMedia} data={mediaData} isPreview={isPreview} />
       </div>
 
       <div className="rounded-xl" style={isDesktop ? { flex: 2, minHeight: 0, overflow: 'hidden' } : undefined}>

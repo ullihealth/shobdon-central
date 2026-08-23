@@ -156,7 +156,7 @@ export default function Clubhouse2Template({
             </div>
 
             <div className={`flex items-center justify-center overflow-hidden ${isDesktop ? 'h-full' : ''}`}>
-              <MediaPanel item={currentMedia} preferVideo data={mediaData} />
+              <MediaPanel item={currentMedia} preferVideo data={mediaData} isPreview={isPreview} />
             </div>
 
             <div className={isDesktop ? 'h-full' : ''}>
