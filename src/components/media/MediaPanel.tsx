@@ -320,22 +320,38 @@ export default function MediaPanel({ item, preferVideo, zone, fill, slotSource =
           visually on top, z-50) - not a new cost introduced here, the
           original code already had exactly the same overlap whenever a
           slide WAS active, just followed by a destroy/recreate cycle
-          this fix removes. */}
-      {createPortal(
-        <>
-          {effectiveSlots
-            .filter((slot) => slot.autoFullscreen)
-            .map((slot) => {
-              const isActive = activeSlot?.slotNumber === slot.slotNumber
-              return (
-                <div key={slot.slotNumber} className={`fixed inset-0 z-50 bg-black ${isActive ? '' : 'invisible'}`}>
-                  <MediaSlotRenderer slot={slot} isActive={isActive} />
-                </div>
-              )
-            })}
-        </>,
-        document.body
-      )}
+          this fix removes.
+
+          Gated on `!data`: `data` is only ever passed by an admin
+          preview (DesignPage.tsx, CafeMediaPage.tsx - see this file's
+          own comment on the `data` prop above), never by the real
+          public kiosk templates. Confirmed live: a café slot with
+          autoFullscreen on (the newer Website content type, but this
+          applies to any mediaType) took over Jeff's entire browser tab
+          while editing CafeMediaPage.tsx, not just its small preview
+          box - document.body is the real page in an admin preview, so
+          the portal had nowhere smaller to escape to. Skipping it
+          entirely whenever `data` is present fixes every admin preview
+          call site at once (both hand-mirrored café previews AND any
+          other template rendered in preview mode that happens to reach
+          this same MediaPanel), with zero effect on the real screen,
+          which never sets `data` and keeps this exact behaviour. */}
+      {!data &&
+        createPortal(
+          <>
+            {effectiveSlots
+              .filter((slot) => slot.autoFullscreen)
+              .map((slot) => {
+                const isActive = activeSlot?.slotNumber === slot.slotNumber
+                return (
+                  <div key={slot.slotNumber} className={`fixed inset-0 z-50 bg-black ${isActive ? '' : 'invisible'}`}>
+                    <MediaSlotRenderer slot={slot} isActive={isActive} />
+                  </div>
+                )
+              })}
+          </>,
+          document.body
+        )}
     </div>
   )
 }

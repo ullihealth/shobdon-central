@@ -661,7 +661,29 @@ export default function MediaLibraryPage(): JSX.Element {
   // only - one shared storage pool, one shared quota (the storage bar
   // below always reflects the true combined totalBytes regardless of
   // this value), never a separate library per screen.
+  //
+  // Defaults to 'dashboard' until /api/tenant/me resolves, then flips to
+  // 'cafe' for a venue_cafe tenant (below) - a plain 'dashboard' default
+  // for every tenant meant a venue_cafe tenant's uploads silently landed
+  // tagged usableOn:'dashboard' unless someone remembered to click
+  // "Café" first, on a tenant that has no dashboard screen to ever read
+  // that tag back - confirmed causing a real upload to go invisible in
+  // Cafe Media's own file picker. An airfield tenant's own default is
+  // unchanged.
   const [activeScreen, setActiveScreen] = useState<ScreenId>('dashboard')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/tenant/me')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.tenantType === 'venue_cafe') setActiveScreen('cafe')
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
 
