@@ -5,6 +5,7 @@ import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } f
 import VenueCornerBadge from '../components/VenueCornerBadge'
 import FeatureUpsellPanel from '../components/FeatureUpsellPanel'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
+import TickerSettingsCards from '../components/media/TickerSettingsCards'
 import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 import { currentMedia } from '../config/media'
 import { CAFE_CAROUSEL_SLOTS_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, TENANT_CONFIG_URL } from '../config/publicApi'
@@ -821,6 +822,23 @@ export default function CafeMediaPage(): JSX.Element {
           {noticeStatus === 'error' && <span className="text-sm font-semibold text-status-bad">Couldn't save - please try again.</span>}
         </div>
       </section>
+
+      {/* TICKER STYLE + FOOTER TICKER - this is the same TickerSettingsCards
+          also rendered on MediaManagerPage.tsx (Dashboard Manager), not a
+          copy - it's a self-contained, tenant-agnostic component that
+          fetches/saves cafe_template_settings via /api/tenant/cafe-settings
+          on its own, no props needed. Used to live inline on this page
+          before being extracted; re-added here because Dashboard Manager
+          is deliberately hidden from venue_cafe tenants in the sidebar
+          (sidebarConfig.ts's own hideForTenantType) for an unrelated
+          reason (its OTHER sections manage the main airfield dashboard,
+          which a café tenant has no product for) - that gate had the
+          unintended side effect of leaving café tenants with no surface
+          at all to edit their own ticker once it moved there. Airfield
+          tenants keep their one existing editing surface unchanged
+          (MediaManagerPage.tsx, not touched by this) - this is additive
+          for café only, not a second copy for anyone who already had one. */}
+      <TickerSettingsCards />
 
       {/* LAYOUT + AD LABEL + SAVE - condensed onto one row (was three
           separate full-width sections) to cut vertical space. Same
