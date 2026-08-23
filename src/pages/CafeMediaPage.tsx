@@ -169,17 +169,17 @@ function PreviewContent({
           {layoutMode === 'split' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '16px', height: '100%' }}>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} />
+                <MediaPanel item={currentMedia} zone="left" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} isPreview />
                 {adLabelEnabled && <AdLabel />}
               </div>
               <div className="relative h-full overflow-hidden">
-                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} />
+                <MediaPanel item={currentMedia} zone="right" fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} isPreview />
                 {adLabelEnabled && <AdLabel />}
               </div>
             </div>
           ) : (
             <div className="relative h-full overflow-hidden">
-              <MediaPanel item={currentMedia} fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} />
+              <MediaPanel item={currentMedia} fill slotSource="cafe" refreshSignal={cafeSlotsRefreshSignal} data={mediaData} isPreview />
               {adLabelEnabled && <AdLabel />}
             </div>
           )}
