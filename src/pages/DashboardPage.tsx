@@ -5,6 +5,7 @@ import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Templat
 import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
 import DashboardLoading from '../components/DashboardLoading'
+import FullBufferGate from '../components/FullBufferGate'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -65,6 +66,17 @@ export default function DashboardPage(): JSX.Element {
   // mainDisplayActive is false; an airfield tenant with main on is
   // completely unaffected regardless of this value.
   const [cafeFallbackActive, setCafeFallbackActive] = useState(false)
+  // Byte-verified buffering gate round (migration 0094) - per-tenant
+  // opt-in whole-page gate flag, and the mp4 slot urls (in rotation
+  // order) belonging to whichever carousel this page will actually
+  // render (café's, if this tenant falls back to or is configured for
+  // it; the main carousel otherwise) - see the computation below for why
+  // this has to be derived at fetch time rather than read from
+  // carouselSlots/cafeCarouselSlots directly, since which one applies
+  // depends on cafeFallbackActive/mainTemplateId, both resolved in the
+  // very same fetch.
+  const [fullBufferGateEnabled, setFullBufferGateEnabled] = useState(false)
+  const [gateVideoUrls, setGateVideoUrls] = useState<string[]>([])
   // Gates rendering any real template until the config fetch settles
   // (success, failure, or network error - all three via .finally below)
   // - without this, the brief pre-fetch window rendered Clubhouse1Template
@@ -109,13 +121,25 @@ export default function DashboardPage(): JSX.Element {
         // /d/cafe-tv, not this main dashboard). Same clean-unavailable
         // outcome either way - see TenantUnavailable's own comment on
         // deliberately not distinguishing the reason.
+        let willUseCafeCarousel = false
         if (data?.mainDisplayActive === false) {
           if (data?.cafeDisplayActive) {
             setCafeFallbackActive(true)
+            willUseCafeCarousel = true
           } else {
             setUnavailable(true)
           }
         }
+        if (data?.mainTemplateId === 'cafe-1') willUseCafeCarousel = true
+        setFullBufferGateEnabled(!!data?.fullBufferGateEnabled)
+        const rawGateSlots = willUseCafeCarousel ? data?.cafeCarouselSlots : data?.carouselSlots
+        setGateVideoUrls(
+          Array.isArray(rawGateSlots)
+            ? rawGateSlots
+                .filter((slot: { mediaType?: string; resolvedUrl?: string | null }) => slot?.mediaType === 'mp4' && slot?.resolvedUrl)
+                .map((slot: { resolvedUrl: string }) => slot.resolvedUrl)
+            : []
+        )
       })
       .catch(() => {
         // Network failure, not a resolution failure - fall through to
@@ -136,43 +160,45 @@ export default function DashboardPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      {cafeFallbackActive ? (
-        <CafeTemplate
-          themeOverride={themeOverride}
-          airfieldName={airfieldName}
-          logoUrl={logoUrl}
-          showLogo={brandDisplay?.cafe.showLogo}
-          showName={brandDisplay?.cafe.showName}
-          nameFontSize={brandDisplay?.cafe.nameFontSize}
-        />
-      ) : mainTemplateId === 'clubhouse-2' ? (
-        <Clubhouse2Template
-          themeOverride={themeOverride}
-          airfieldName={airfieldName}
-          logoUrl={logoUrl}
-          showLogo={brandDisplay?.main.showLogo}
-          showName={brandDisplay?.main.showName}
-          nameFontSize={brandDisplay?.main.nameFontSize}
-        />
-      ) : mainTemplateId === 'cafe-1' ? (
-        <CafeTemplate
-          themeOverride={themeOverride}
-          airfieldName={airfieldName}
-          logoUrl={logoUrl}
-          showLogo={brandDisplay?.cafe.showLogo}
-          showName={brandDisplay?.cafe.showName}
-          nameFontSize={brandDisplay?.cafe.nameFontSize}
-        />
-      ) : (
-        <Clubhouse1Template
-          themeOverride={themeOverride}
-          airfieldName={airfieldName}
-          logoUrl={logoUrl}
-          showLogo={brandDisplay?.main.showLogo}
-          showName={brandDisplay?.main.showName}
-          nameFontSize={brandDisplay?.main.nameFontSize}
-        />
-      )}
+      <FullBufferGate enabled={fullBufferGateEnabled} videoUrls={gateVideoUrls} airfieldName={airfieldName} logoUrl={logoUrl}>
+        {cafeFallbackActive ? (
+          <CafeTemplate
+            themeOverride={themeOverride}
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={brandDisplay?.cafe.showLogo}
+            showName={brandDisplay?.cafe.showName}
+            nameFontSize={brandDisplay?.cafe.nameFontSize}
+          />
+        ) : mainTemplateId === 'clubhouse-2' ? (
+          <Clubhouse2Template
+            themeOverride={themeOverride}
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={brandDisplay?.main.showLogo}
+            showName={brandDisplay?.main.showName}
+            nameFontSize={brandDisplay?.main.nameFontSize}
+          />
+        ) : mainTemplateId === 'cafe-1' ? (
+          <CafeTemplate
+            themeOverride={themeOverride}
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={brandDisplay?.cafe.showLogo}
+            showName={brandDisplay?.cafe.showName}
+            nameFontSize={brandDisplay?.cafe.nameFontSize}
+          />
+        ) : (
+          <Clubhouse1Template
+            themeOverride={themeOverride}
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={brandDisplay?.main.showLogo}
+            showName={brandDisplay?.main.showName}
+            nameFontSize={brandDisplay?.main.nameFontSize}
+          />
+        )}
+      </FullBufferGate>
     </WeatherProvider>
   )
 }

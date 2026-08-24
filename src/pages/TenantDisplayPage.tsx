@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useParams } from 'react-router-dom'
 import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
 import TenantUnavailable from '../components/TenantUnavailable'
+import FullBufferGate from '../components/FullBufferGate'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
+
+interface GateCarouselSlot {
+  mediaType?: string
+  resolvedUrl?: string | null
+}
 
 interface DisplayMeta {
   templateId: string
@@ -44,6 +50,17 @@ export default function TenantDisplayPage(): JSX.Element {
     main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
     cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
   } | null>(null)
+  // Byte-verified buffering gate round (migration 0094) - raw slot
+  // arrays kept as fetched (not yet filtered to mp4/resolvedUrl-only),
+  // since which one actually applies depends on display.templateId,
+  // resolved by a SEPARATE fetch below (/api/public/display) that can
+  // settle before or after this one - gateVideoUrls (further down)
+  // derives the final answer once both are available, rather than
+  // trying to pick the right array eagerly inside just one of the two
+  // fetch callbacks.
+  const [fullBufferGateEnabled, setFullBufferGateEnabled] = useState(false)
+  const [carouselSlotsRaw, setCarouselSlotsRaw] = useState<GateCarouselSlot[]>([])
+  const [cafeCarouselSlotsRaw, setCafeCarouselSlotsRaw] = useState<GateCarouselSlot[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -58,12 +75,22 @@ export default function TenantDisplayPage(): JSX.Element {
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
+        setFullBufferGateEnabled(!!data?.fullBufferGateEnabled)
+        setCarouselSlotsRaw(Array.isArray(data?.carouselSlots) ? data.carouselSlots : [])
+        setCafeCarouselSlotsRaw(Array.isArray(data?.cafeCarouselSlots) ? data.cafeCarouselSlots : [])
       })
       .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [])
+
+  const gateVideoUrls = useMemo(() => {
+    const rawSlots = display.templateId === 'cafe-1' ? cafeCarouselSlotsRaw : carouselSlotsRaw
+    return rawSlots
+      .filter((slot) => slot?.mediaType === 'mp4' && !!slot?.resolvedUrl)
+      .map((slot) => slot.resolvedUrl as string)
+  }, [display.templateId, carouselSlotsRaw, cafeCarouselSlotsRaw])
 
   useEffect(() => {
     let cancelled = false
@@ -95,26 +122,28 @@ export default function TenantDisplayPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      {display.templateId === 'cafe-1' ? (
-        <CafeTemplate
-          themeOverride={themeOverride}
-          airfieldName={airfieldName}
-          logoUrl={logoUrl}
-          showLogo={brandDisplay?.cafe.showLogo}
-          showName={brandDisplay?.cafe.showName}
-          nameFontSize={brandDisplay?.cafe.nameFontSize}
-        />
-      ) : (
-        <ClassicTemplate
-          panelConfig={display.panelConfig}
-          themeOverride={themeOverride}
-          airfieldName={airfieldName}
-          logoUrl={logoUrl}
-          showLogo={brandDisplay?.main.showLogo}
-          showName={brandDisplay?.main.showName}
-          nameFontSize={brandDisplay?.main.nameFontSize}
-        />
-      )}
+      <FullBufferGate enabled={fullBufferGateEnabled} videoUrls={gateVideoUrls} airfieldName={airfieldName} logoUrl={logoUrl}>
+        {display.templateId === 'cafe-1' ? (
+          <CafeTemplate
+            themeOverride={themeOverride}
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={brandDisplay?.cafe.showLogo}
+            showName={brandDisplay?.cafe.showName}
+            nameFontSize={brandDisplay?.cafe.nameFontSize}
+          />
+        ) : (
+          <ClassicTemplate
+            panelConfig={display.panelConfig}
+            themeOverride={themeOverride}
+            airfieldName={airfieldName}
+            logoUrl={logoUrl}
+            showLogo={brandDisplay?.main.showLogo}
+            showName={brandDisplay?.main.showName}
+            nameFontSize={brandDisplay?.main.nameFontSize}
+          />
+        )}
+      </FullBufferGate>
     </WeatherProvider>
   )
 }
