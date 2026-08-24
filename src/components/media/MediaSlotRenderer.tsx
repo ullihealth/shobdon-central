@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CropRect } from '../../types/mediaLibrary'
 import { AIRFIELD_TIMEZONE, GYROPEDIA_DEPARTURES_URL } from '../../config/publicApi'
+import { useVideoDownloadStates } from '../../hooks/useVideoDownloadStates'
 
 export interface MediaSlotVisual {
   mediaType: string
@@ -272,38 +273,28 @@ function GyropediaPanel(): JSX.Element {
 // visible so its own video element can pause while hidden instead of
 // playing/decoding off-screen indefinitely.
 //
-// shouldLoad (staged-preload round) - defaults true for the same reason
-// isActive does (MediaManagerPage.tsx's single-slot preview has nothing
-// else to gate against). MediaPanel.tsx's carousel is again the one real
-// caller that passes it explicitly, false for every mp4 slot except the
-// currently-active one (and the next one due up, for a smooth
-// transition) - see that file's own comment for why. Only the mp4 case
-// below actually reads it: gates the <video>'s own `src` so a dormant
-// slot has genuinely nothing to fetch, rather than trying to express
-// "don't load yet" via the `preload` attribute, whose semantics on an
-// already-mounted element are inconsistent across browsers once `src`
-// is already set. Every other content type ignores this prop entirely -
-// images/webcam/gyropedia were never the source of the bandwidth
-// problem this exists to fix.
-//
-// onReadyStateChange (same round) - fires once when this slot's video
-// becomes playable-through (canplaythrough) or fails to load (error),
-// for MediaPanel.tsx's own buffering-gate orchestration to advance past
-// it. undefined for every caller except the one specific slot MediaPanel
-// is currently waiting on during that gate - harmless no-op the rest of
-// the time (the effect below just no-ops when this prop is undefined).
 export default function MediaSlotRenderer({
   slot,
   isActive = true,
-  shouldLoad = true,
-  onReadyStateChange,
 }: {
   slot: MediaSlotVisual
   isActive?: boolean
-  shouldLoad?: boolean
-  onReadyStateChange?: (state: 'ready' | 'error') => void
 }): JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  // Byte-verified readiness round - registering this slot's own url
+  // here (a single-element array) is enough to make it eligible for
+  // download via the shared queue (see videoDownloadManager.ts's own
+  // comment on why registration IS enqueueing); actual download
+  // ORDERING across a whole carousel is determined by MediaPanel.tsx's
+  // own equivalent call registering every slot's url up front, in
+  // rotation order, which runs first in the same render pass (a parent
+  // component's hooks always run before its children's) - this call
+  // becoming a no-op re-registration for an already-tracked url. mp4
+  // only; every other content type never looks at videoDownloadUrl.
+  const videoDownloadUrl = slot.mediaType === 'mp4' ? slot.resolvedUrl : null
+  const videoDownloadStates = useVideoDownloadStates(videoDownloadUrl ? [videoDownloadUrl] : [])
+  const videoDownload = videoDownloadUrl ? videoDownloadStates[videoDownloadUrl] : undefined
 
   // Ref-based play/pause, not the autoPlay attribute - autoPlay only
   // fires once on mount, which is exactly wrong now that mp4 slots stay
@@ -344,34 +335,6 @@ export default function MediaSlotRenderer({
       videoEl.pause()
     }
   }, [isActive])
-
-  // Staged-preload round - reports this slot's own load outcome back to
-  // MediaPanel.tsx's buffering gate. canplaythrough (enough buffered,
-  // relative to the browser's own download-rate estimate, to expect
-  // playback through to the end without stalling) is the standard
-  // "ready" signal for exactly this purpose - it does NOT require the
-  // video to actually be playing, only for `src` to be set, which is
-  // exactly what shouldLoad drives below. error covers an unreachable/
-  // corrupt file. Both are terminal for this slot's own gate wait - no
-  // guard needed against firing after the slot's already been resolved,
-  // since MediaPanel stops passing a callback once it moves on (this
-  // effect's own cleanup then removes these listeners).
-  useEffect(() => {
-    const videoEl = videoRef.current
-    if (!videoEl || !onReadyStateChange) return
-    function handleReady() {
-      onReadyStateChange?.('ready')
-    }
-    function handleError() {
-      onReadyStateChange?.('error')
-    }
-    videoEl.addEventListener('canplaythrough', handleReady)
-    videoEl.addEventListener('error', handleError)
-    return () => {
-      videoEl.removeEventListener('canplaythrough', handleReady)
-      videoEl.removeEventListener('error', handleError)
-    }
-  }, [onReadyStateChange])
 
   // gyropedia/reserved have no resolvedUrl at all - gyropedia's content
   // comes from GyropediaPanel's own fetch of the shared public endpoint
@@ -427,18 +390,19 @@ export default function MediaSlotRenderer({
       )
       break
     case 'mp4':
-      // src itself (not the `preload` attribute) is the actual staged-
-      // preload gate - see this component's own shouldLoad comment
-      // above for why. key stays keyed on resolvedUrl, not shouldLoad,
-      // so the same DOM node/videoRef persists across a false->true
-      // transition (a normal src-attribute update, not a remount) -
-      // exactly what lets the browser start a fresh, uninterrupted load
-      // the moment shouldLoad flips true.
+      // Byte-verified readiness round - src is ONLY ever the Blob object
+      // url produced once videoDownloadManager confirms the whole file
+      // downloaded (never the network url directly, even mid-download),
+      // so there's nothing to point at until status === 'ready'. key
+      // stays keyed on resolvedUrl (the stable network identity, not the
+      // objectUrl, which is freshly minted per download attempt) so the
+      // same DOM node/videoRef persists across the queued -> downloading
+      // -> ready transition and any stall/retry cycle in between.
       content = (
         <video
           ref={videoRef}
           key={slot.resolvedUrl}
-          src={shouldLoad ? slot.resolvedUrl ?? undefined : undefined}
+          src={videoDownload?.status === 'ready' ? videoDownload.objectUrl ?? undefined : undefined}
           className={`h-full w-full ${objectFitClass}`}
           style={mediaStyle}
           muted
