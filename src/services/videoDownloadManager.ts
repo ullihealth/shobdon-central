@@ -62,6 +62,23 @@ const STALL_THRESHOLD_MS = 2 * 60 * 1000
 // it happening, not be tight/real-time.
 const STALL_CHECK_INTERVAL_MS = 5_000
 
+// Minimum delay before a GENUINE-FAILURE url (startDownload's own catch
+// block - a fetch() that rejects/throws outright, e.g. CORS, a 404, a
+// short read) is allowed to rejoin the queue and retry itself. Confirmed
+// by direct reproduction (a standalone probe running this exact retry
+// shape against an always-rejecting fetch) that without this, a hard
+// failure that rejects near-instantly creates an unbounded, zero-delay
+// retry loop - each attempt fails and requeues itself in well under a
+// millisecond, chaining through pure promise microtasks with no real
+// I/O to force a yield, which starves the event loop entirely (observed:
+// 100%+ CPU, multiple GB of memory growth, not even a 3-second
+// setTimeout ever got a turn). The existing watchdog-driven slow-stall
+// path (stallActiveDownload below) never needed this: a retry there
+// can't fail again in under ~2 minutes, since it has to hang that long
+// again before the SAME watchdog re-fires, so it's already naturally
+// throttled and is deliberately left untouched.
+const RETRY_BACKOFF_MS = 5_000
+
 interface TrackedDownload {
   state: VideoDownloadState
   lastByteAt: number
@@ -186,7 +203,17 @@ async function startDownload(url: string): Promise<void> {
     d.controller = null
     d.state = { status: 'stalled', bytesReceived: 0, totalBytes: d.state.totalBytes, progress: 0, objectUrl: null }
     notify(url)
-    queue.push(url)
+    // Delayed re-enqueue (RETRY_BACKOFF_MS, see that constant's own
+    // comment) - NOT queue.push(url) here directly. This url's own
+    // retry is what needed throttling, not queue advancement in
+    // general, so this stays entirely separate from the finally
+    // block's own immediate processQueue() call below, which still
+    // advances to whichever OTHER url is next in queue (if any)
+    // without waiting on this url's backoff at all.
+    setTimeout(() => {
+      queue.push(url)
+      processQueue()
+    }, RETRY_BACKOFF_MS)
   } finally {
     if (activeUrl === url) {
       activeUrl = null
