@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
+import { useBufferingGate } from '../../hooks/useVideoDownloadStates'
 
 interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
@@ -122,14 +123,6 @@ interface MediaPanelProps {
   isPreview?: boolean
 }
 
-// How long a single video slot gets to reach canplaythrough during the
-// buffering gate before this component gives up on it and moves on -
-// generous enough for a large-but-legitimate file on a slow connection,
-// bounded enough that one broken/unreachable upload can't hang the
-// whole screen indefinitely (requirement: skip and continue, never
-// block forever).
-const GATE_SLOT_TIMEOUT_MS = 20_000
-
 export default function MediaPanel({
   item,
   preferVideo,
@@ -149,7 +142,6 @@ export default function MediaPanel({
   // falls straight through to this, not a broken empty screen.
   const [webcamUrl, setWebcamUrl] = useState('')
   const [carouselSlots, setCarouselSlots] = useState<CarouselSlotResolved[]>([])
-  const [activeIndex, setActiveIndex] = useState(0)
   const timerRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
@@ -223,139 +215,93 @@ export default function MediaPanel({
     [preferVideo, videoSlots, zoneFilteredSlots]
   )
 
-  // Buffering-gate round - the actual video slots THIS panel's own
-  // rotation will show (post zone/preferVideo filtering), in rotation
-  // order. This is what the gate below waits on, and what the "N of M
-  // ready" progress readout counts against - deliberately re-derived
-  // from effectiveSlots rather than the earlier, pre-preferVideo
-  // `videoSlots` above, so a preferVideo panel (Clubhouse2Template)
-  // waits on exactly what it will actually show, no more/less.
+  // Buffering-gate round - every mp4 slot THIS panel's own rotation
+  // will show (post zone/preferVideo filtering), in rotation order.
+  // Registering these urls via useVideoDownloadStates is also what
+  // enqueues them with the shared, module-wide download manager (see
+  // that hook's own comment) - the manager's own strict one-at-a-time
+  // queue is what now enforces sequential loading, replacing the old
+  // shouldSlotLoad cursor this file used to maintain by hand.
   const videoSlotsToLoad = useMemo(() => effectiveSlots.filter((slot) => slot.mediaType === 'mp4'), [effectiveSlots])
-
-  // How many of videoSlotsToLoad, in order, have been resolved so far
-  // (ready or given up on - both count as "resolved", see
-  // handleGateSlotReady below) - doubles as the index of whichever one
-  // is currently being waited on, since resolution is strictly
-  // sequential: only ONE slot loads at a time during the gate, never
-  // the whole set at once, which is the entire point (see this file's
-  // own investigation round on why "every slot downloads simultaneously"
-  // caused real stalling on production screens). Reset to 0 whenever
-  // the actual set of videos to wait on changes - in practice this
-  // means "once, whenever this panel first mounts with real data",
-  // since there is no live resync mechanism for this app's public
-  // screens today (confirmed by investigation) - a change only ever
-  // reaches a running screen via a fresh page load, which re-mounts
-  // this component and re-derives videoSlotsToLoad from scratch anyway.
-  const [readyCount, setReadyCount] = useState(0)
-  // Guards handleGateSlotReady against a duplicate advance if
-  // canplaythrough (or the safety timeout) fires more than once for the
-  // same slot before the cursor moves on - stores the readyCount value
-  // this callback has already resolved past.
-  const resolvedForRef = useRef(-1)
-
-  useEffect(() => {
-    setReadyCount(0)
-    resolvedForRef.current = -1
-  }, [videoSlotsToLoad])
-
-  const handleGateSlotReady = useCallback(() => {
-    setReadyCount((prev) => {
-      if (resolvedForRef.current === prev) return prev
-      resolvedForRef.current = prev
-      return prev + 1
-    })
-  }, [])
-
+  const videoUrlsToLoad = useMemo(
+    () => videoSlotsToLoad.map((slot) => slot.resolvedUrl).filter((url): url is string => !!url),
+    [videoSlotsToLoad]
+  )
   // Preview pages get none of this (see isPreview's own comment on the
   // prop) - "fast, no buffering wait" is the explicit ask for admin
   // pages, and a preview re-checking its own already-loaded slots on
   // every edit would actively work against "quick feedback while
-  // configuring". A carousel with no video slots at all has nothing to
-  // gate on either, same as always having "finished" instantly.
-  const currentlyGating = !isPreview && videoSlotsToLoad.length > 0 && readyCount < videoSlotsToLoad.length
+  // configuring".
+  const { resolvedCount, total, gateCleared, stalledUrls } = useBufferingGate(videoUrlsToLoad, !isPreview)
+
+  const currentlyGating = !isPreview && !gateCleared && total > 0
   const bufferingDone = !currentlyGating
-  const gatingTargetSlotNumber = currentlyGating ? videoSlotsToLoad[readyCount]?.slotNumber : undefined
 
-  // Safety timeout (requirement: one broken/unreachable upload must
-  // never block the rest of the carousel indefinitely) - re-armed every
-  // time the gate moves on to a new slot (readyCount changes) or starts
-  // gating at all; cleared if that slot resolves on its own first via
-  // canplaythrough/error. Calls the exact same handler a real
-  // ready/error event would, so a timed-out slot is treated identically
-  // to a skipped one - the gate just moves on.
-  useEffect(() => {
-    if (!currentlyGating) return
-    const timeoutId = window.setTimeout(handleGateSlotReady, GATE_SLOT_TIMEOUT_MS)
-    return () => window.clearTimeout(timeoutId)
-  }, [currentlyGating, readyCount, handleGateSlotReady])
+  // Stalled slots (requirement: excluded from rotation entirely, as if
+  // manually unticked, until their background retry - via the same
+  // shared queue - completes) - every non-mp4 slot is unaffected, and
+  // an mp4 slot rejoins the moment its retry succeeds and stalledUrls no
+  // longer contains its url.
+  const rotationSlots = useMemo(
+    () => effectiveSlots.filter((slot) => slot.mediaType !== 'mp4' || !slot.resolvedUrl || !stalledUrls.has(slot.resolvedUrl)),
+    [effectiveSlots, stalledUrls]
+  )
 
-  // Cycles through enabled carousel slots in order, each for its own
-  // duration (mp4DurationSeconds overrides durationSeconds for mp4),
-  // looping back to the first after the last - plain cut, no fade/swipe
-  // transition (explicitly out of phase-1 scope).
+  // Tracks the current slide by slotNumber, not array index - rotationSlots
+  // can change shape (a stalled slot leaving/rejoining) independently of
+  // effectiveSlots, which stays the stable, always-mounted render list
+  // below (see that map's own comment on why every slot - including a
+  // currently-excluded one - stays mounted rather than being torn down).
+  const [activeSlotNumber, setActiveSlotNumber] = useState<number | null>(null)
+
+  // Cycles through the currently-included (non-excluded) slots in
+  // order, each for its own duration (mp4DurationSeconds overrides
+  // durationSeconds for mp4), looping back to the first after the last -
+  // plain cut, no fade/swipe transition (explicitly out of phase-1
+  // scope).
   //
   // Gated on bufferingDone (buffering-gate round) - the carousel must
-  // not start advancing/playing at all until every currently-enabled
-  // video has either loaded or been given up on, so a viewer never sees
-  // a slide start then stall mid-playback. Preview pages have
-  // bufferingDone true from the very first render (see isPreview above)
-  // and are completely unaffected.
+  // not start advancing/playing at all until every currently-included
+  // video has either fully downloaded or been excluded as stalled, so a
+  // viewer never sees a slide start then stall mid-playback. Preview
+  // pages have bufferingDone true from the very first render (see
+  // isPreview above) and are completely unaffected. Re-runs (restarting
+  // from the first currently-included slot) whenever rotationSlots
+  // itself changes - a stalled slot leaving or rejoining rotation - the
+  // same "just resets to the top" behaviour this cycling effect already
+  // had for any other slot-list change.
   useEffect(() => {
     window.clearTimeout(timerRef.current)
-    if (!bufferingDone || effectiveSlots.length === 0) return
+    if (!bufferingDone || rotationSlots.length === 0) {
+      setActiveSlotNumber(null)
+      return
+    }
 
-    setActiveIndex(0)
     let index = 0
+    setActiveSlotNumber(rotationSlots[0].slotNumber)
 
     const scheduleNext = () => {
-      const slot = effectiveSlots[index]
+      const slot = rotationSlots[index]
       const seconds =
         slot.mediaType === 'mp4' && slot.mp4DurationSeconds ? slot.mp4DurationSeconds : slot.durationSeconds
       timerRef.current = window.setTimeout(() => {
-        index = (index + 1) % effectiveSlots.length
-        setActiveIndex(index)
+        index = (index + 1) % rotationSlots.length
+        setActiveSlotNumber(rotationSlots[index].slotNumber)
         scheduleNext()
       }, Math.max(1, seconds) * 1000)
     }
     scheduleNext()
 
     return () => window.clearTimeout(timerRef.current)
-  }, [effectiveSlots, bufferingDone])
+  }, [rotationSlots, bufferingDone])
 
   const hasCarousel = effectiveSlots.length > 0
-  const activeSlot = hasCarousel ? effectiveSlots[activeIndex] : null
+  const activeSlot = activeSlotNumber != null ? effectiveSlots.find((slot) => slot.slotNumber === activeSlotNumber) ?? null : null
 
   // Actual media content (image/mp4/webcam/pdf) fills the panel
   // edge-to-edge. Only the empty-state placeholder text keeps its
   // padding, since it's centred text, not a media element.
   const isEdgeToEdgeContent = hasCarousel ? !!activeSlot : !!webcamUrl || item.type === 'image'
-
-  // Staged-preload round - one shared eligibility rule, used identically
-  // by the main stack below and the autoFullscreen portal further down
-  // (the same slot can appear in both places as two separate
-  // <MediaSlotRenderer> instances/DOM nodes - see the portal's own
-  // comment - so both need to agree on when a given slot is allowed to
-  // fetch, not just the main stack's copy).
-  //
-  // During the buffering gate: ONLY the one slot currently being waited
-  // on (gatingTargetSlotNumber) may load - strictly one at a time, never
-  // the whole set, which is the entire point of this round. Nothing is
-  // "active" yet in the real sense (isActive is forced false for every
-  // slot below), so canplaythrough is reached purely from the fetch
-  // itself, not from actually playing.
-  //
-  // After the gate (or in a preview, which never gates): the active
-  // slot plus whichever slot is next in rotation order may load - a
-  // smooth-transition head start for the slot about to come up, while
-  // every other slot stays dormant. Once a slot has loaded once it
-  // simply stays loaded (browsers cache it) - this rule only controls
-  // when a slot is FIRST allowed to start fetching, never revokes an
-  // already-completed load.
-  function shouldSlotLoad(slot: CarouselSlotResolved, index: number): boolean {
-    if (currentlyGating) return slot.slotNumber === gatingTargetSlotNumber
-    const isNext = index === (activeIndex + 1) % effectiveSlots.length
-    return index === activeIndex || isNext
-  }
 
   return (
     <div
@@ -385,22 +331,20 @@ export default function MediaPanel({
           // the correct key regardless) so React keeps reusing the same
           // component instance/DOM node across every activeIndex change,
           // never remounting a slot just because a sibling did.
-          effectiveSlots.map((slot, index) => {
-            // Nothing is genuinely active while still gating - see
-            // shouldSlotLoad's own comment. The buffering overlay
-            // (below) covers the box in that case, so every slot
-            // renders invisible underneath it regardless of activeIndex's
-            // default value.
-            const isActive = bufferingDone && index === activeIndex
-            const isGatingTarget = currentlyGating && slot.slotNumber === gatingTargetSlotNumber
+          effectiveSlots.map((slot) => {
+            // Nothing is genuinely active while still gating - the
+            // buffering overlay (below) covers the box in that case, so
+            // every slot renders invisible underneath it regardless of
+            // activeSlotNumber's default (null) value. Every slot's own
+            // MediaSlotRenderer registers/downloads its mp4 unconditionally
+            // now (see that component's own videoDownloadUrl comment) -
+            // there's no more "only load if active/next" eligibility check
+            // here, since the shared download manager's own queue is what
+            // enforces one-at-a-time loading instead.
+            const isActive = bufferingDone && slot.slotNumber === activeSlotNumber
             return (
               <div key={slot.slotNumber} className={`absolute inset-0 ${isActive ? '' : 'invisible'}`}>
-                <MediaSlotRenderer
-                  slot={slot}
-                  isActive={isActive}
-                  shouldLoad={shouldSlotLoad(slot, index)}
-                  onReadyStateChange={isGatingTarget ? handleGateSlotReady : undefined}
-                />
+                <MediaSlotRenderer slot={slot} isActive={isActive} />
               </div>
             )
           })
@@ -429,12 +373,12 @@ export default function MediaPanel({
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-slate-950 text-center">
             <div className="text-xl font-bold uppercase tracking-widest text-primary">Buffering Media</div>
             <div className="text-sm font-semibold text-muted-300">
-              {readyCount} of {videoSlotsToLoad.length} ready
+              {resolvedCount} of {total} ready
             </div>
             <div className="h-1.5 w-48 overflow-hidden rounded-full bg-slate-800">
               <div
                 className="h-full bg-accent-sky-500 transition-all duration-300"
-                style={{ width: `${(readyCount / videoSlotsToLoad.length) * 100}%` }}
+                style={{ width: `${(resolvedCount / total) * 100}%` }}
               />
             </div>
           </div>
@@ -500,21 +444,20 @@ export default function MediaPanel({
           preview call site at once (both hand-mirrored café previews
           AND any other template rendered in preview mode that happens
           to reach this same MediaPanel), with zero effect on the real
-          screen. isActive also respects bufferingDone/shouldSlotLoad
-          (buffering-gate round) for the identical reason the main stack
-          above does - nothing is genuinely active, fullscreen or
-          otherwise, until every enabled video has loaded. */}
+          screen. isActive also respects bufferingDone (buffering-gate
+          round) for the identical reason the main stack above does -
+          nothing is genuinely active, fullscreen or otherwise, until
+          every currently-included video has resolved. */}
       {!isPreview &&
         createPortal(
           <>
             {effectiveSlots
               .filter((slot) => slot.autoFullscreen)
               .map((slot) => {
-                const index = effectiveSlots.indexOf(slot)
                 const isActive = bufferingDone && activeSlot?.slotNumber === slot.slotNumber
                 return (
                   <div key={slot.slotNumber} className={`fixed inset-0 z-50 bg-black ${isActive ? '' : 'invisible'}`}>
-                    <MediaSlotRenderer slot={slot} isActive={isActive} shouldLoad={shouldSlotLoad(slot, index)} />
+                    <MediaSlotRenderer slot={slot} isActive={isActive} />
                   </div>
                 )
               })}
