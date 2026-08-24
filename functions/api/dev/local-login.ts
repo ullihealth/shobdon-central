@@ -9,11 +9,22 @@
 // see functions/api/auth/[[path]].ts's own comment on that separate,
 // structural issue).
 //
-// Gated on Host starting with "localhost" - the same reasoning as that
-// file's own allowedHosts/trustedOrigins entries: no real production
-// request can ever legitimately present that Host value, so this route
-// is dead/404 in production with no environment flag or config needed to
-// keep it that way.
+// Gated on WRANGLER_PAGES_DEV_LOCAL_ONLY (.dev.vars, gitignored, never
+// deployed - read exclusively by `wrangler pages dev`/`wrangler dev`)
+// rather than a Host-header text check - round 3. The original Host-
+// starts-with-"localhost" gate broke the moment local testing needed a
+// spoofed tenant subdomain via /etc/hosts (resolveTenantHost.ts's own
+// Host-based tenant resolution otherwise has no way to reach a non-
+// Shobdon tenant's real public display locally) - a real request via
+// e.g. test-cafe-media.airfieldcentral.com:8788 legitimately has
+// nothing "localhost" about its Host header at all, so the route 404'd
+// exactly when it was needed most. An env var that structurally cannot
+// exist in a real deployed Function (Cloudflare never sees .dev.vars)
+// is the same "dead in production with no environment flag needed"
+// property the old check was going for, just independent of whatever
+// Host text a legitimate local request happens to present. See that
+// file's own comment for the (very low, deliberate-admin-action-only)
+// residual risk of a same-named var ever appearing in production.
 //
 // Round 2 - the first version wrote a bare, unsigned token straight into
 // the session table. That satisfies tenantAuth.ts's own lenient
@@ -39,6 +50,7 @@ type PagesFunction<Env = unknown> = (context: { request: Request; env: Env }) =>
 
 interface Env {
   DB: D1Database;
+  WRANGLER_PAGES_DEV_LOCAL_ONLY?: string;
 }
 
 // Fixed, well-known, LOCAL DEV ONLY password - never meaningful outside
@@ -47,8 +59,7 @@ interface Env {
 const LOCAL_DEV_PASSWORD = "local-dev-only-password-1";
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const host = request.headers.get("host") ?? "";
-  if (!host.toLowerCase().startsWith("localhost")) {
+  if (!env.WRANGLER_PAGES_DEV_LOCAL_ONLY) {
     return jsonResponse({ error: "Not found" }, 404);
   }
 

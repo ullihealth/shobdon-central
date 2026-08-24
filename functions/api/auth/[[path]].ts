@@ -31,6 +31,13 @@ type PagesFunction<Env = unknown> = (context: {
 interface Env {
   DB: D1Database;
   AUTH_SECRET: string;
+  // .dev.vars-only, gitignored, never deployed - see local-login.ts's
+  // own comment for the full reasoning. Used below to conditionally
+  // trust a spoofed tenant subdomain host (e.g. test-cafe-media.
+  // airfieldcentral.com via /etc/hosts) over plain HTTP for local
+  // testing only - never present in a real deployed Function, so this
+  // can never widen what a real production request is allowed to do.
+  WRANGLER_PAGES_DEV_LOCAL_ONLY?: string;
 }
 
 let cachedAuth: { handler: (request: Request) => Promise<Response> } | null = null;
@@ -43,6 +50,12 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         import("kysely-d1"),
         import("better-auth/plugins/organization"),
       ]);
+
+      // Computed once, memoized alongside cachedAuth for the isolate's
+      // whole lifetime (same caching this file already does) - safe,
+      // since a real deployed Function's env never has this var and
+      // never will mid-isolate-lifetime either.
+      const isLocalDev = !!env.WRANGLER_PAGES_DEV_LOCAL_ONLY;
 
       cachedAuth = betterAuth({
         secret: env.AUTH_SECRET,
@@ -97,6 +110,20 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
             // literal "localhost:" prefix, and no external request can
             // ever legitimately arrive with that Host value.
             "localhost:*",
+            // Local dev round 2 - spoofed-subdomain local testing (an
+            // /etc/hosts entry pointing a real tenant's own subdomain,
+            // e.g. test-cafe-media.airfieldcentral.com, at 127.0.0.1 -
+            // the only way to reach a non-Shobdon tenant's real public
+            // display locally, since resolveTenantHost.ts's own
+            // Host-based resolution has no other local override).
+            // "*.airfieldcentral.com" above is HTTPS-only in practice
+            // for a real request (see trustedOrigins below, which is
+            // scheme-specific) - allowedHosts itself isn't scheme-aware,
+            // so this entry is redundant for a real production request
+            // but was still missing the *:port* form local dev needs
+            // (wrangler pages dev's own port, not 443). Only added when
+            // isLocalDev - never present for a real deployed Function.
+            ...(isLocalDev ? ["*.airfieldcentral.com:*"] : []),
           ],
           fallback: "https://shobdon-central.pages.dev",
           // Local dev round - was hardcoded "https", which overrides
@@ -135,6 +162,24 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
           // scheme - a plain HTTP origin was never going to match any of
           // the https-only patterns above regardless of host.
           "http://localhost:*",
+          // Local dev round 2 - same spoofed-subdomain local testing
+          // case as allowedHosts above, but this one is the check that
+          // actually matters: better-auth's CSRF/origin-check rejects
+          // any sign-in whose Origin isn't a match here, and the
+          // existing "https://*.airfieldcentral.com" entry is scheme-
+          // specific (matchesOriginPattern matches the full origin
+          // string including scheme) - a plain http:// request via a
+          // spoofed subdomain host never matched it, 403ing exactly
+          // where local-login.ts's own self-fetch needs it to succeed.
+          // Only added when isLocalDev - a real production request
+          // over plain HTTP to a real tenant subdomain was never going
+          // to be a legitimate sign-in attempt anyway (real tenants are
+          // HTTPS-only), so this can't widen production's real CSRF
+          // protection even in principle, but it's still scoped to
+          // isLocalDev rather than added unconditionally on that
+          // reasoning alone - never present for a real deployed
+          // Function.
+          ...(isLocalDev ? ["http://*.airfieldcentral.com:*"] : []),
         ],
         basePath: "/api/auth",
         emailAndPassword: {
