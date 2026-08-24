@@ -57,6 +57,27 @@ export function useVideoRotationGate(urls: string[]): {
   return { states, readyCount, total: urls.length, allReady: urls.length === 0 || readyCount === urls.length }
 }
 
+// One asset the buffering gate cares about - either a tracked mp4 (url
+// set, byte progress comes from videoDownloadManager) or any other
+// slot with a real file behind it (url null, sizeBytes its actual
+// media_library.sizeBytes) - webcam/gyropedia/reserved/website slots
+// have neither a url worth tracking nor a real file size and should be
+// omitted from the assets list entirely, since there's nothing
+// meaningful to weight them by.
+export interface GateAsset {
+  url: string | null
+  // Real file size (media_library.sizeBytes, threaded through
+  // publicConfig.ts) - for a non-mp4 asset this IS its byte-weight
+  // (counted as fully "downloaded" the instant it's included, so a
+  // handful of images don't drag a mixed carousel's percentage down
+  // while a genuinely large video is still in flight). For an mp4
+  // asset, used only as a fallback denominator before the live
+  // fetch's own Content-Length has arrived (see byte-weighted
+  // computation below) - the real, live totalBytes always wins once
+  // known.
+  sizeBytes: number | null
+}
+
 // The shared "is the buffering gate clear yet" computation - the ONE
 // definition of gate-readiness used both by MediaPanel.tsx's own
 // existing box-scoped overlay and by the new whole-page FullBufferGate,
@@ -77,8 +98,19 @@ export function useVideoRotationGate(urls: string[]): {
 // only). `enabled` false skips the mechanism entirely and reports
 // already-cleared, with nothing registered/downloaded via this call -
 // the caller's own normal per-slot loading (if any) is unaffected.
+//
+// Byte-weighted percentage round - resolvedCount/total/gateCleared stay
+// exactly as they were (mp4-url-count-based, driving WHEN the gate
+// clears) - byteProgress is a purely additional, cosmetic figure for
+// WHAT the gate displays while waiting, computed as (bytes received
+// across every currently-included, non-excluded asset) / (bytes total
+// for that same set). A stalled mp4 is removed from BOTH sides of that
+// fraction entirely (not just "counted as done") - otherwise one
+// permanently-broken video would cap the displayed percentage below
+// 100% forever, even though the gate itself is designed to proceed
+// without it (requirement's own explicit "critical" callout).
 export function useBufferingGate(
-  urls: string[],
+  assets: GateAsset[],
   enabled: boolean
 ): {
   downloadStates: Record<string, VideoDownloadState>
@@ -86,8 +118,15 @@ export function useBufferingGate(
   total: number
   gateCleared: boolean
   stalledUrls: Set<string>
+  byteProgress: number
+  bytesReceived: number
+  bytesTotal: number
 } {
-  const trackedUrls = enabled ? urls : []
+  const trackedAssets = enabled ? assets : []
+  const trackedUrls = useMemo(
+    () => trackedAssets.map((asset) => asset.url).filter((url): url is string => !!url),
+    [trackedAssets]
+  )
   const downloadStates = useVideoDownloadStates(trackedUrls)
   const total = trackedUrls.length
 
@@ -106,11 +145,39 @@ export function useBufferingGate(
     .join('\n')
   const stalledUrls = useMemo(() => new Set(stalledUrlsKey ? stalledUrlsKey.split('\n') : []), [stalledUrlsKey])
 
+  let bytesReceived = 0
+  let bytesTotal = 0
+  for (const asset of trackedAssets) {
+    if (asset.url) {
+      // Tracked mp4 - a stalled one contributes NOTHING to either side
+      // (requirement's own "critical" point) rather than being counted
+      // as done or as a permanent shortfall. Not-yet-tracked/queued
+      // falls back to the real stored sizeBytes for the denominator
+      // (smoother start than an absent total jumping in once headers
+      // arrive), since videoDownloadManager's own totalBytes is null
+      // until the fetch's Content-Length response header is read.
+      const state = downloadStates[asset.url]
+      if (state?.status === 'stalled') continue
+      bytesReceived += state?.bytesReceived ?? 0
+      bytesTotal += state?.totalBytes ?? asset.sizeBytes ?? 0
+    } else if (asset.sizeBytes != null) {
+      // Non-mp4 asset with a real file (image slots, mainly) - counts
+      // as fully present the instant it's included, both sides of the
+      // fraction, so it never drags a mixed carousel's percentage down
+      // while a genuinely large video is still in flight.
+      bytesReceived += asset.sizeBytes
+      bytesTotal += asset.sizeBytes
+    }
+    // No url AND no sizeBytes (webcam/gyropedia/reserved/website) -
+    // nothing meaningful to weight by, contributes to neither side.
+  }
+  const byteProgress = bytesTotal > 0 ? Math.min(1, bytesReceived / bytesTotal) : 0
+
   const [gateCleared, setGateCleared] = useState(!enabled)
   useEffect(() => {
     if (!enabled || gateCleared) return
     if (total === 0 || resolvedCount === total) setGateCleared(true)
   }, [enabled, gateCleared, resolvedCount, total])
 
-  return { downloadStates, resolvedCount, total, gateCleared, stalledUrls }
+  return { downloadStates, resolvedCount, total, gateCleared, stalledUrls, byteProgress, bytesReceived, bytesTotal }
 }

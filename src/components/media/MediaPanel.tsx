@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
-import { useBufferingGate } from '../../hooks/useVideoDownloadStates'
+import { useBufferingGate, type GateAsset } from '../../hooks/useVideoDownloadStates'
 
 interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
@@ -11,6 +11,11 @@ interface CarouselSlotResolved extends MediaSlotVisual {
   mp4DurationSeconds: number | null
   zone: 'both' | 'left' | 'right'
   autoFullscreen: boolean
+  // Byte-weighted buffering gate round - real media_library.sizeBytes
+  // for this slot's file (null for mp4-in-progress-before-headers,
+  // webcam/gyropedia/reserved/website) - see GateAsset's own comment
+  // for how this feeds the aggregate percentage.
+  mediaSizeBytes: number | null
 }
 
 // Exported (not just the local MediaPanelProps['data'] shape) so the
@@ -215,24 +220,29 @@ export default function MediaPanel({
     [preferVideo, videoSlots, zoneFilteredSlots]
   )
 
-  // Buffering-gate round - every mp4 slot THIS panel's own rotation
-  // will show (post zone/preferVideo filtering), in rotation order.
-  // Registering these urls via useVideoDownloadStates is also what
-  // enqueues them with the shared, module-wide download manager (see
-  // that hook's own comment) - the manager's own strict one-at-a-time
-  // queue is what now enforces sequential loading, replacing the old
-  // shouldSlotLoad cursor this file used to maintain by hand.
-  const videoSlotsToLoad = useMemo(() => effectiveSlots.filter((slot) => slot.mediaType === 'mp4'), [effectiveSlots])
-  const videoUrlsToLoad = useMemo(
-    () => videoSlotsToLoad.map((slot) => slot.resolvedUrl).filter((url): url is string => !!url),
-    [videoSlotsToLoad]
+  // Buffering-gate round - every slot THIS panel's own rotation will
+  // show (post zone/preferVideo filtering), in rotation order, as
+  // GateAssets - mp4 slots carry their resolvedUrl (registering it via
+  // useVideoDownloadStates is also what enqueues it with the shared,
+  // module-wide download manager, see that hook's own comment - the
+  // manager's own strict one-at-a-time queue is what now enforces
+  // sequential loading, replacing the old shouldSlotLoad cursor this
+  // file used to maintain by hand); every other slot carries only its
+  // real sizeBytes (or null), feeding the byte-weighted percentage
+  // below without being tracked/downloaded at all. gateCleared/
+  // resolvedCount/total below stay driven purely by the mp4 urls
+  // among these (useBufferingGate's own url-only tracking), unaffected
+  // by including non-mp4 assets here.
+  const gateAssets: GateAsset[] = useMemo(
+    () => effectiveSlots.map((slot) => ({ url: slot.mediaType === 'mp4' ? slot.resolvedUrl : null, sizeBytes: slot.mediaSizeBytes })),
+    [effectiveSlots]
   )
   // Preview pages get none of this (see isPreview's own comment on the
   // prop) - "fast, no buffering wait" is the explicit ask for admin
   // pages, and a preview re-checking its own already-loaded slots on
   // every edit would actively work against "quick feedback while
   // configuring".
-  const { resolvedCount, total, gateCleared, stalledUrls } = useBufferingGate(videoUrlsToLoad, !isPreview)
+  const { resolvedCount, total, gateCleared, stalledUrls, byteProgress } = useBufferingGate(gateAssets, !isPreview)
 
   const currentlyGating = !isPreview && !gateCleared && total > 0
   const bufferingDone = !currentlyGating
@@ -372,13 +382,20 @@ export default function MediaPanel({
         {currentlyGating && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-slate-950 text-center">
             <div className="text-xl font-bold uppercase tracking-widest text-primary">Buffering Media</div>
+            {/* Byte-weighted percentage (primary) - same computation
+                FullBufferGate.tsx's whole-page gate uses, continuous
+                and driven by actual bytes received rather than
+                file-completion count, so a single large video doesn't
+                leave this looking frozen for a long stretch while
+                it's genuinely downloading fine. */}
+            <div className="text-3xl font-black tabular-nums text-primary">{Math.round(byteProgress * 100)}%</div>
             <div className="text-sm font-semibold text-muted-300">
-              {resolvedCount} of {total} ready
+              {resolvedCount} of {total} assets ready
             </div>
             <div className="h-1.5 w-48 overflow-hidden rounded-full bg-slate-800">
               <div
                 className="h-full bg-accent-sky-500 transition-all duration-300"
-                style={{ width: `${(resolvedCount / total) * 100}%` }}
+                style={{ width: `${byteProgress * 100}%` }}
               />
             </div>
           </div>

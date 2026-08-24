@@ -6,6 +6,7 @@ import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
 import TenantUnavailable from '../components/TenantUnavailable'
 import FullBufferGate from '../components/FullBufferGate'
+import type { GateAsset } from '../hooks/useVideoDownloadStates'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -13,6 +14,7 @@ import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 interface GateCarouselSlot {
   mediaType?: string
   resolvedUrl?: string | null
+  mediaSizeBytes?: number | null
 }
 
 interface DisplayMeta {
@@ -51,13 +53,12 @@ export default function TenantDisplayPage(): JSX.Element {
     cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
   } | null>(null)
   // Byte-verified buffering gate round (migration 0094) - raw slot
-  // arrays kept as fetched (not yet filtered to mp4/resolvedUrl-only),
-  // since which one actually applies depends on display.templateId,
-  // resolved by a SEPARATE fetch below (/api/public/display) that can
-  // settle before or after this one - gateVideoUrls (further down)
-  // derives the final answer once both are available, rather than
-  // trying to pick the right array eagerly inside just one of the two
-  // fetch callbacks.
+  // arrays kept as fetched (not yet mapped to GateAssets), since which
+  // one actually applies depends on display.templateId, resolved by a
+  // SEPARATE fetch below (/api/public/display) that can settle before
+  // or after this one - gateAssets (further down) derives the final
+  // answer once both are available, rather than trying to pick the
+  // right array eagerly inside just one of the two fetch callbacks.
   const [fullBufferGateEnabled, setFullBufferGateEnabled] = useState(false)
   const [carouselSlotsRaw, setCarouselSlotsRaw] = useState<GateCarouselSlot[]>([])
   const [cafeCarouselSlotsRaw, setCafeCarouselSlotsRaw] = useState<GateCarouselSlot[]>([])
@@ -85,11 +86,12 @@ export default function TenantDisplayPage(): JSX.Element {
     }
   }, [])
 
-  const gateVideoUrls = useMemo(() => {
+  const gateAssets: GateAsset[] = useMemo(() => {
     const rawSlots = display.templateId === 'cafe-1' ? cafeCarouselSlotsRaw : carouselSlotsRaw
-    return rawSlots
-      .filter((slot) => slot?.mediaType === 'mp4' && !!slot?.resolvedUrl)
-      .map((slot) => slot.resolvedUrl as string)
+    return rawSlots.map((slot) => ({
+      url: slot?.mediaType === 'mp4' ? slot?.resolvedUrl ?? null : null,
+      sizeBytes: slot?.mediaSizeBytes ?? null,
+    }))
   }, [display.templateId, carouselSlotsRaw, cafeCarouselSlotsRaw])
 
   useEffect(() => {
@@ -122,7 +124,7 @@ export default function TenantDisplayPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      <FullBufferGate enabled={fullBufferGateEnabled} videoUrls={gateVideoUrls} airfieldName={airfieldName} logoUrl={logoUrl}>
+      <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
         {display.templateId === 'cafe-1' ? (
           <CafeTemplate
             themeOverride={themeOverride}

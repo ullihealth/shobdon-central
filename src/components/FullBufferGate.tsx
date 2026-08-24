@@ -1,4 +1,4 @@
-import { useBufferingGate } from '../hooks/useVideoDownloadStates'
+import { useBufferingGate, type GateAsset } from '../hooks/useVideoDownloadStates'
 import VenueCornerBadge from './VenueCornerBadge'
 
 interface FullBufferGateProps {
@@ -9,16 +9,17 @@ interface FullBufferGateProps {
   // compass/runway display immediately, only MediaPanel's own box-scoped
   // gate applies).
   enabled: boolean
-  // Every currently-included mp4 slot's resolvedUrl this page's real
-  // template will show, in rotation order - registering them here (via
-  // useBufferingGate, unconditionally on every render regardless of
-  // whether the gate is still showing) is what actually starts their
-  // downloads through the shared queue, since `children` - and the
-  // MediaPanel instances nested inside it - stay entirely UNMOUNTED
-  // until this gate clears. Without this component registering them
-  // itself, nothing would ever start downloading while the black screen
-  // is up.
-  videoUrls: string[]
+  // Every currently-included slot this page's real template will show,
+  // in rotation order - registering them here (via useBufferingGate,
+  // unconditionally on every render regardless of whether the gate is
+  // still showing) is what actually starts mp4 downloads through the
+  // shared queue, since `children` - and the MediaPanel instances
+  // nested inside it - stay entirely UNMOUNTED until this gate clears.
+  // Without this component registering them itself, nothing would ever
+  // start downloading while the black screen is up. Non-mp4 assets
+  // (url null, sizeBytes their real file size) feed the byte-weighted
+  // percentage below without being tracked/downloaded here at all.
+  assets: GateAsset[]
   airfieldName?: string | null
   logoUrl?: string | null
   children: React.ReactNode
@@ -38,25 +39,34 @@ interface FullBufferGateProps {
 // dashboard/carousel, never a partial/degrading state in between.
 export default function FullBufferGate({
   enabled,
-  videoUrls,
+  assets,
   airfieldName,
   logoUrl,
   children,
 }: FullBufferGateProps): JSX.Element {
-  const { resolvedCount, total, gateCleared } = useBufferingGate(videoUrls, enabled)
+  const { resolvedCount, total, gateCleared, byteProgress } = useBufferingGate(assets, enabled)
 
   if (!enabled || gateCleared) return <>{children}</>
 
-  const progress = total > 0 ? resolvedCount / total : 0
+  const percent = Math.round(byteProgress * 100)
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-black text-center">
       <div className="text-2xl font-bold uppercase tracking-widest text-primary">Buffering Media</div>
-      <div className="text-sm font-semibold text-muted-300">
-        {resolvedCount} of {total} ready
-      </div>
+      {/* Byte-weighted percentage (primary) - continuous, driven by
+          actual bytes received across every currently-included,
+          non-excluded asset, not file-completion count, so a single
+          large video doesn't leave this looking frozen for a long
+          stretch while it's genuinely downloading fine. */}
+      <div className="text-5xl font-black tabular-nums text-primary">{percent}%</div>
       <div className="h-2 w-64 overflow-hidden rounded-full bg-slate-800">
-        <div className="h-full bg-accent-sky-500 transition-all duration-300" style={{ width: `${progress * 100}%` }} />
+        <div className="h-full bg-accent-sky-500 transition-all duration-300" style={{ width: `${percent}%` }} />
+      </div>
+      {/* Secondary count (discrete, file-completion based) - kept
+          alongside the percentage above for extra context, not as the
+          primary readout anymore. */}
+      <div className="text-sm font-semibold text-muted-300">
+        {resolvedCount} of {total} assets ready
       </div>
       {/* Same clickable logo/link-back-to-config behaviour every other
           public screen already has (Header.tsx/VenueCornerBadge.tsx's

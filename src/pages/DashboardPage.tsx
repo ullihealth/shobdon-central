@@ -6,6 +6,7 @@ import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
 import DashboardLoading from '../components/DashboardLoading'
 import FullBufferGate from '../components/FullBufferGate'
+import type { GateAsset } from '../hooks/useVideoDownloadStates'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -67,16 +68,16 @@ export default function DashboardPage(): JSX.Element {
   // completely unaffected regardless of this value.
   const [cafeFallbackActive, setCafeFallbackActive] = useState(false)
   // Byte-verified buffering gate round (migration 0094) - per-tenant
-  // opt-in whole-page gate flag, and the mp4 slot urls (in rotation
-  // order) belonging to whichever carousel this page will actually
-  // render (café's, if this tenant falls back to or is configured for
-  // it; the main carousel otherwise) - see the computation below for why
-  // this has to be derived at fetch time rather than read from
-  // carouselSlots/cafeCarouselSlots directly, since which one applies
-  // depends on cafeFallbackActive/mainTemplateId, both resolved in the
-  // very same fetch.
+  // opt-in whole-page gate flag, and every slot (in rotation order,
+  // as GateAssets - see that type's own comment) belonging to whichever
+  // carousel this page will actually render (café's, if this tenant
+  // falls back to or is configured for it; the main carousel otherwise)
+  // - see the computation below for why this has to be derived at
+  // fetch time rather than read from carouselSlots/cafeCarouselSlots
+  // directly, since which one applies depends on cafeFallbackActive/
+  // mainTemplateId, both resolved in the very same fetch.
   const [fullBufferGateEnabled, setFullBufferGateEnabled] = useState(false)
-  const [gateVideoUrls, setGateVideoUrls] = useState<string[]>([])
+  const [gateAssets, setGateAssets] = useState<GateAsset[]>([])
   // Gates rendering any real template until the config fetch settles
   // (success, failure, or network error - all three via .finally below)
   // - without this, the brief pre-fetch window rendered Clubhouse1Template
@@ -133,11 +134,12 @@ export default function DashboardPage(): JSX.Element {
         if (data?.mainTemplateId === 'cafe-1') willUseCafeCarousel = true
         setFullBufferGateEnabled(!!data?.fullBufferGateEnabled)
         const rawGateSlots = willUseCafeCarousel ? data?.cafeCarouselSlots : data?.carouselSlots
-        setGateVideoUrls(
+        setGateAssets(
           Array.isArray(rawGateSlots)
-            ? rawGateSlots
-                .filter((slot: { mediaType?: string; resolvedUrl?: string | null }) => slot?.mediaType === 'mp4' && slot?.resolvedUrl)
-                .map((slot: { resolvedUrl: string }) => slot.resolvedUrl)
+            ? rawGateSlots.map((slot: { mediaType?: string; resolvedUrl?: string | null; mediaSizeBytes?: number | null }) => ({
+                url: slot?.mediaType === 'mp4' ? slot?.resolvedUrl ?? null : null,
+                sizeBytes: slot?.mediaSizeBytes ?? null,
+              }))
             : []
         )
       })
@@ -160,7 +162,7 @@ export default function DashboardPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      <FullBufferGate enabled={fullBufferGateEnabled} videoUrls={gateVideoUrls} airfieldName={airfieldName} logoUrl={logoUrl}>
+      <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
         {cafeFallbackActive ? (
           <CafeTemplate
             themeOverride={themeOverride}

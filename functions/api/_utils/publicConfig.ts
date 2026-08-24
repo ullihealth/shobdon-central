@@ -113,6 +113,15 @@ interface CarouselSlotResolvedRow {
   bannerFontSize: string;
   zone: string;
   autoFullscreen: boolean;
+  // Byte-weighted buffering gate round - a non-mp4 slot's real file
+  // size (media_library.sizeBytes), so the gate's aggregate percentage
+  // can count it as an instant, fixed contribution to both the
+  // numerator and denominator the moment it's included, rather than
+  // either ignoring it (understating the total) or guessing at a
+  // placeholder weight. null for mp4 (byte progress comes from the
+  // live download instead), webcam/gyropedia/reserved/website (no
+  // underlying file at all).
+  mediaSizeBytes: number | null;
 }
 
 interface OpsPanelRow {
@@ -367,6 +376,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
+           ml.sizeBytes AS mediaSizeBytes,
            cam.url AS cameraUrl,
            nc.mode AS newCameraMode,
            nc.youtube_video_id AS newCameraYoutubeVideoId,
@@ -401,6 +411,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mp4DurationSeconds: number | null;
         r2Key: string | null;
         mediaUploadedAt: string | null;
+        mediaSizeBytes: number | null;
         cameraUrl: string | null;
         newCameraMode: string | null;
         newCameraYoutubeVideoId: string | null;
@@ -438,6 +449,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            ml.mp4DurationSeconds AS mp4DurationSeconds,
            ml.r2Key AS r2Key,
            ml.uploadedAt AS mediaUploadedAt,
+           ml.sizeBytes AS mediaSizeBytes,
            cam.url AS cameraUrl,
            nc.mode AS newCameraMode,
            nc.youtube_video_id AS newCameraYoutubeVideoId,
@@ -472,6 +484,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mp4DurationSeconds: number | null;
         r2Key: string | null;
         mediaUploadedAt: string | null;
+        mediaSizeBytes: number | null;
         cameraUrl: string | null;
         newCameraMode: string | null;
         newCameraYoutubeVideoId: string | null;
@@ -588,7 +601,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
                 cs.fitMode AS fitMode, cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
                 cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
                 cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize,
-                ml.mp4DurationSeconds AS mp4DurationSeconds, ml.r2Key AS r2Key, ml.uploadedAt AS mediaUploadedAt
+                ml.mp4DurationSeconds AS mp4DurationSeconds, ml.r2Key AS r2Key, ml.uploadedAt AS mediaUploadedAt,
+                ml.sizeBytes AS mediaSizeBytes
          FROM carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          WHERE cs.organizationId = ? AND cs.slotNumber IN (5, 8, 12)`
@@ -613,6 +627,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mp4DurationSeconds: number | null;
         r2Key: string | null;
         mediaUploadedAt: string | null;
+        mediaSizeBytes: number | null;
       }>(),
   ]);
 
@@ -888,6 +903,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         : row.r2Key && mediaBaseUrl
           ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
           : null,
+    mediaSizeBytes: row.mediaSizeBytes,
   }));
 
   // Reserved Owner Slots & Time Budget round. carouselRows above only
@@ -941,6 +957,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
             zone: "both",
             autoFullscreen: false,
             resolvedUrl: row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}` : null,
+            mediaSizeBytes: row.mediaSizeBytes,
           }
         : {
             // No owner content assigned yet (or no row exists for this
@@ -962,6 +979,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
             zone: "both",
             autoFullscreen: false,
             resolvedUrl: null,
+            mediaSizeBytes: null,
           };
       carouselSlots.push(reservedSlot);
     }
@@ -993,6 +1011,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
           : row.r2Key && mediaBaseUrl
             ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}`
             : null,
+    mediaSizeBytes: row.mediaSizeBytes,
   }));
 
   const opsPanel = opsPanelRow
