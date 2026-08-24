@@ -1,0 +1,23 @@
+-- Backfills every EXISTING tenant to full_buffer_gate_enabled = 1 -
+-- deliberate, confirmed decision to make the whole-page buffering gate
+-- the default experience everywhere, not just megs-cafe-media (migration
+-- 0094's own original default-on tenant). Every tenant now sees the
+-- gate on load: no weather/compass/runway/carousel content renders
+-- until every currently-included asset has resolved.
+--
+-- Does NOT touch the column's own DEFAULT clause (still 0 from
+-- migration 0094) - SQLite has no ALTER TABLE...ALTER COLUMN...SET
+-- DEFAULT at all (confirmed directly against a real SQLite instance:
+-- it's a syntax error, not merely unsupported), and the only way to
+-- change a column's default is a full table-rebuild (create new table,
+-- copy every row, drop old, rename) - far riskier than this change
+-- warrants for a column on a heavily-referenced, live production table.
+-- Instead, functions/api/_utils/tenantProvisioning.ts (the one shared
+-- INSERT every real tenant-creation path routes through - trial-signup.ts's
+-- two branches, onboard.ts) now explicitly sets full_buffer_gate_enabled
+-- = 1 on every new row, achieving the same practical "every future
+-- tenant gets the gate on automatically" outcome without a table
+-- rebuild. The column default staying 0 is now purely a defensive
+-- fallback for any INSERT that somehow omits the column entirely, not
+-- the thing actually controlling new-tenant behaviour.
+UPDATE tenants SET full_buffer_gate_enabled = 1;

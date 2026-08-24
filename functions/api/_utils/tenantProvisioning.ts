@@ -82,8 +82,19 @@ export async function createTenantOrganization(
   try {
     await db
       .prepare(
-        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed, tenant_type)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, 1, 0, NULL, ?, ?, ?)`
+        // full_buffer_gate_enabled explicit 1 (not left to the column's
+        // own DEFAULT 0 from migration 0094) - SQLite has no ALTER
+        // COLUMN...SET DEFAULT at all (confirmed directly: it's a
+        // syntax error, not just unsupported), so the only way to
+        // change what a NEW tenant gets without a full table-rebuild
+        // migration is to stop relying on the column default here and
+        // set it explicitly instead, same as active/is_internal/etc.
+        // already are on this exact INSERT. Every real tenant-creation
+        // path (trial-signup.ts's two branches, onboard.ts) routes
+        // through this one shared function - see this file's own
+        // header comment - so this is the single place that needs it.
+        `INSERT INTO tenants (slug, name, subdomain, organization_id, icao_code, lat, lon, weather_public, ops_public, active, is_internal, logo_r2_key, brand_display_json, subdomain_confirmed, tenant_type, full_buffer_gate_enabled)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 0, 1, 0, NULL, ?, ?, ?, 1)`
       )
       .bind(slug, name, subdomain, organizationId, lat, lon, DEFAULT_BRAND_DISPLAY, subdomainConfirmed ? 1 : 0, tenantType)
       .run();
