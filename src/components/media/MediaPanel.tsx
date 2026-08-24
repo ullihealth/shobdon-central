@@ -268,6 +268,20 @@ export default function MediaPanel({
   // below (see that map's own comment on why every slot - including a
   // currently-excluded one - stays mounted rather than being torn down).
   const [activeSlotNumber, setActiveSlotNumber] = useState<number | null>(null)
+  // Video-loop-flash round - the slot ABOUT to become active next, so
+  // MediaSlotRenderer can pre-seek that slot's video back to frame 0
+  // WHILE IT'S STILL HIDDEN, well ahead of its own activation (as soon
+  // as the current slot starts, not reactively once the switch already
+  // happened). Real TVs confirmed to have slow-enough seek/decode
+  // latency that resetting currentTime at the same moment a slot
+  // becomes visible can briefly paint the video's last-known frame
+  // (near the clip's own end, since the away-timer fires close to
+  // natural completion) before the seek actually resolves - a multi-
+  // second head start while nobody's looking makes that latency
+  // irrelevant instead of trying to detect/wait it out after the fact,
+  // which would just move the same visible pause earlier (the outgoing
+  // slide lingering) rather than removing it.
+  const [upcomingSlotNumber, setUpcomingSlotNumber] = useState<number | null>(null)
 
   // Cycles through the currently-included (non-excluded) slots in
   // order, each for its own duration (mp4DurationSeconds overrides
@@ -289,11 +303,18 @@ export default function MediaPanel({
     window.clearTimeout(timerRef.current)
     if (!bufferingDone || rotationSlots.length === 0) {
       setActiveSlotNumber(null)
+      setUpcomingSlotNumber(null)
       return
     }
 
+    // Single-slot rotation has no distinct "next" (it would just be
+    // itself) - upcoming stays null rather than pre-seeking the
+    // slot that's already active/playing.
+    const nextSlotNumber = (index: number) => (rotationSlots.length > 1 ? rotationSlots[(index + 1) % rotationSlots.length].slotNumber : null)
+
     let index = 0
     setActiveSlotNumber(rotationSlots[0].slotNumber)
+    setUpcomingSlotNumber(nextSlotNumber(0))
 
     const scheduleNext = () => {
       const slot = rotationSlots[index]
@@ -302,6 +323,7 @@ export default function MediaPanel({
       timerRef.current = window.setTimeout(() => {
         index = (index + 1) % rotationSlots.length
         setActiveSlotNumber(rotationSlots[index].slotNumber)
+        setUpcomingSlotNumber(nextSlotNumber(index))
         scheduleNext()
       }, Math.max(1, seconds) * 1000)
     }
@@ -357,9 +379,10 @@ export default function MediaPanel({
             // here, since the shared download manager's own queue is what
             // enforces one-at-a-time loading instead.
             const isActive = bufferingDone && slot.slotNumber === activeSlotNumber
+            const isUpNext = bufferingDone && slot.slotNumber === upcomingSlotNumber
             return (
               <div key={slot.slotNumber} className={`absolute inset-0 ${isActive ? '' : 'invisible'}`}>
-                <MediaSlotRenderer slot={slot} isActive={isActive} />
+                <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
               </div>
             )
           })
@@ -477,9 +500,10 @@ export default function MediaPanel({
               .filter((slot) => slot.autoFullscreen)
               .map((slot) => {
                 const isActive = bufferingDone && activeSlot?.slotNumber === slot.slotNumber
+                const isUpNext = bufferingDone && slot.slotNumber === upcomingSlotNumber
                 return (
                   <div key={slot.slotNumber} className={`fixed inset-0 z-50 bg-black ${isActive ? '' : 'invisible'}`}>
-                    <MediaSlotRenderer slot={slot} isActive={isActive} />
+                    <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
                   </div>
                 )
               })}

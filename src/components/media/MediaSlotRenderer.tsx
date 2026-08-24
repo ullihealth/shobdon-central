@@ -273,12 +273,18 @@ function GyropediaPanel(): JSX.Element {
 // visible so its own video element can pause while hidden instead of
 // playing/decoding off-screen indefinitely.
 //
+// isUpNext (video-loop-flash round) - true for exactly the ONE slot
+// MediaPanel.tsx knows is about to become active next, for however long
+// the CURRENTLY active slot's own slide lasts (several seconds at
+// least) - see the effect below for why.
 export default function MediaSlotRenderer({
   slot,
   isActive = true,
+  isUpNext = false,
 }: {
   slot: MediaSlotVisual
   isActive?: boolean
+  isUpNext?: boolean
 }): JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -334,6 +340,23 @@ export default function MediaSlotRenderer({
   // order stays unconditional across renders, per React's own rules -
   // harmless no-op on the non-mp4/no-videoRef branches, since the
   // effect just no-ops when videoRef.current is null.
+  //
+  // Round 2, real-TV round - this reset alone wasn't enough. Setting
+  // currentTime is a REQUEST, not an instant jump: the browser fires
+  // `seeking` immediately but only actually decodes and paints the
+  // frame at the new position once `seeked` fires, and play() here is
+  // called in the same synchronous tick with nothing waiting for that.
+  // Desktop's seek/decode is fast enough this window is imperceptible;
+  // confirmed live on a real TCL Roku TV that its media engine's own
+  // seek latency is not - the element is already visible (MediaPanel's
+  // own invisible-class toggle happens in the SAME render this effect
+  // fires from) while the last-painted frame is still whatever pause()
+  // left behind, near the clip's true end, for a brief but real window.
+  // The isUpNext effect below is the actual fix for that - this effect
+  // is left exactly as-is (still correct and necessary on its own
+  // terms: it's what a slot that somehow reactivates WITHOUT having
+  // been pre-seeked first - e.g. a stalled slot rejoining rotation,
+  // never having had a turn as "upcoming" - still falls back to).
   useEffect(() => {
     const videoEl = videoRef.current
     if (!videoEl) return
@@ -344,6 +367,29 @@ export default function MediaSlotRenderer({
       videoEl.pause()
     }
   }, [isActive])
+
+  // Video-loop-flash round - pre-seeks this slot's video back to frame
+  // 0 WHILE STILL HIDDEN, as soon as MediaPanel knows it's up next
+  // (i.e. for however long the CURRENTLY active slide lasts - several
+  // seconds at minimum), rather than waiting until the moment it
+  // actually goes active to even request the seek. By the time isActive
+  // flips true, a slow TV's own seek/decode latency has had a multi-
+  // second head start with nobody watching, so the frame is already
+  // sitting correctly at 0 - the isActive effect's own currentTime = 0
+  // above then becomes a same-position no-op, and play() starts from a
+  // genuinely-already-decoded frame 0 instead of racing a fresh seek
+  // against becoming visible. Deliberately does NOT call play()/pause()
+  // here at all - isActive already owns play/pause state exclusively;
+  // this only ever touches currentTime, and only while not active (the
+  // isActive!==true guard exists so this can never fire against a
+  // slot that's currently playing, even transiently).
+  useEffect(() => {
+    const videoEl = videoRef.current
+    if (!videoEl || isActive) return
+    if (isUpNext) {
+      videoEl.currentTime = 0
+    }
+  }, [isUpNext, isActive])
 
   // gyropedia/reserved have no resolvedUrl at all - gyropedia's content
   // comes from GyropediaPanel's own fetch of the shared public endpoint
