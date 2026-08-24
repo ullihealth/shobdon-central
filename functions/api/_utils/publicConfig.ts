@@ -267,7 +267,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, full_buffer_gate_enabled AS fullBufferGateEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -276,6 +276,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         hasPhysicalAtc: number;
         brandDisplayJson: string | null;
         carouselBudgetEnabled: number;
+        fullBufferGateEnabled: number;
         afisoOpen: number;
         afisoFrequency: string;
         pilotTickerSlotsJson: string;
@@ -902,6 +903,12 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // through from carouselRows above completely normally, as if it were
   // never reserved at all.
   const carouselBudgetEnabled = !!tenantRow?.carouselBudgetEnabled;
+  // Byte-verified buffering gate round (migration 0094) - per-tenant
+  // opt-in for DashboardPage.tsx/TenantDisplayPage.tsx's new whole-page
+  // black-screen gate, deliberately independent of tenant_type (see that
+  // migration's own comment). Defaults to 0/false for every tenant that
+  // hasn't been explicitly opted in.
+  const fullBufferGateEnabled = !!tenantRow?.fullBufferGateEnabled;
   if (carouselBudgetEnabled) {
     // Iterate the fixed [5, 8, 12] list, not reservedSlotRows.results -
     // a tenant who has never touched Dashboard Manager at all (or never
@@ -1132,6 +1139,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     mainTemplateId,
     mainDisplayActive,
     cafeDisplayActive,
+    fullBufferGateEnabled,
     cafeSettings,
     // Café ticker weather-mirroring round - lets CafeTemplate.tsx know
     // (without a second D1 round-trip of its own) whether THIS tenant is

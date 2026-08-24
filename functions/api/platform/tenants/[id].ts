@@ -40,6 +40,7 @@ interface TenantRow {
   storageQuotaBytes: number;
   carouselBudgetSeconds: number;
   carouselBudgetEnabled: number;
+  fullBufferGateEnabled: number;
   globalLinkEnabled: number;
   afisoOpen: number;
   afisoFrequency: string;
@@ -75,6 +76,14 @@ interface PatchBody {
   // budget the 9 tenant-controlled carousel slots divide between them.
   carouselBudgetSeconds?: number;
   carouselBudgetEnabled?: boolean;
+  // Byte-verified buffering gate round (migration 0094) - per-tenant
+  // opt-in for the whole-page black-screen "Buffering Media" gate on the
+  // real public display route (DashboardPage.tsx/TenantDisplayPage.tsx),
+  // deliberately independent of tenant_type - see that migration's own
+  // comment on why. Defaults on for megs-cafe-media, off for everyone
+  // else; this is what lets a platform admin change it for any tenant
+  // going forward.
+  fullBufferGateEnabled?: boolean;
   // /global "Show live dashboard link" toggle (migration 0065) -
   // independent of weatherPublic/opsPublic, which control listing/data;
   // this only controls whether the link itself renders on that card.
@@ -157,6 +166,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "storageQuotaBytes",
     "carouselBudgetSeconds",
     "carouselBudgetEnabled",
+    "fullBufferGateEnabled",
     "globalLinkEnabled",
     "afisoOpen",
     "afisoFrequency",
@@ -183,6 +193,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "isInternal",
     "hasPhysicalAtc",
     "carouselBudgetEnabled",
+    "fullBufferGateEnabled",
     "globalLinkEnabled",
     "afisoOpen",
     "mobileEnabled",
@@ -232,6 +243,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       `SELECT name, organization_id AS organizationId, active, weather_public AS weatherPublic, ops_public AS opsPublic, is_internal AS isInternal,
               has_physical_atc AS hasPhysicalAtc, storage_quota_bytes AS storageQuotaBytes,
               carousel_budget_seconds AS carouselBudgetSeconds, carousel_budget_enabled AS carouselBudgetEnabled,
+              full_buffer_gate_enabled AS fullBufferGateEnabled,
               global_link_enabled AS globalLinkEnabled,
               afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
               mobile_enabled AS mobileEnabled,
@@ -263,6 +275,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     storageQuotaBytes: body.storageQuotaBytes ?? current.storageQuotaBytes,
     carouselBudgetSeconds: body.carouselBudgetSeconds ?? current.carouselBudgetSeconds,
     carouselBudgetEnabled: body.carouselBudgetEnabled ?? !!current.carouselBudgetEnabled,
+    fullBufferGateEnabled: body.fullBufferGateEnabled ?? !!current.fullBufferGateEnabled,
     globalLinkEnabled: body.globalLinkEnabled ?? !!current.globalLinkEnabled,
     afisoOpen: body.afisoOpen ?? !!current.afisoOpen,
     afisoFrequency: body.afisoFrequency ?? current.afisoFrequency,
@@ -290,7 +303,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   await env.DB
     .prepare(
       `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, has_physical_atc = ?, storage_quota_bytes = ?,
-              carousel_budget_seconds = ?, carousel_budget_enabled = ?, global_link_enabled = ?,
+              carousel_budget_seconds = ?, carousel_budget_enabled = ?, full_buffer_gate_enabled = ?, global_link_enabled = ?,
               afiso_open = ?, afiso_frequency = ?,
               mobile_enabled = ?,
               subscription_status = ?, subscription_notes = ?, qnh_qfe_offset_hpa = ?, deleted_at = ?,
@@ -308,6 +321,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.storageQuotaBytes,
       next.carouselBudgetSeconds,
       next.carouselBudgetEnabled ? 1 : 0,
+      next.fullBufferGateEnabled ? 1 : 0,
       next.globalLinkEnabled ? 1 : 0,
       next.afisoOpen ? 1 : 0,
       next.afisoFrequency,

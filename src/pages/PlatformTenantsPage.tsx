@@ -113,6 +113,13 @@ interface PlatformTenant {
   // divide between them.
   carouselBudgetSeconds: number
   carouselBudgetEnabled: boolean
+  // Byte-verified buffering gate round (migration 0094) - per-tenant
+  // opt-in for the whole-page black-screen "Buffering Media" gate on the
+  // real public display route, deliberately independent of tenant_type
+  // (a future airfield tenant running heavy ad content needs the exact
+  // same option venue_cafe tenants do). Defaults on for megs-cafe-media,
+  // off for every other tenant.
+  fullBufferGateEnabled: boolean
   // /global "Show live dashboard link" toggle (migration 0065) -
   // independent of weatherPublic/opsPublic, which control whether the
   // tenant is listed on /global at all; this only controls whether the
@@ -173,6 +180,7 @@ type BooleanField =
   | 'isInternal'
   | 'hasPhysicalAtc'
   | 'carouselBudgetEnabled'
+  | 'fullBufferGateEnabled'
   | 'globalLinkEnabled'
   | 'afisoOpen'
   | 'mobileEnabled'
@@ -2255,6 +2263,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                       label="Reserved owner slots + time budget"
                       checked={selectedTenant.carouselBudgetEnabled}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'carouselBudgetEnabled', next)}
+                    />
+                    <SettingsToggleRow
+                      label="Full-screen buffering gate on public display"
+                      checked={selectedTenant.fullBufferGateEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'fullBufferGateEnabled', next)}
                     />
                     <SettingsToggleRow
                       label="Show live dashboard link on /global"

@@ -46,6 +46,7 @@ interface TenantRow {
   storageQuotaBytes: number;
   carouselBudgetSeconds: number;
   carouselBudgetEnabled: number;
+  fullBufferGateEnabled: number;
   globalLinkEnabled: number;
   afisoOpen: number;
   afisoFrequency: string;
@@ -119,6 +120,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                 is_internal AS isInternal, has_physical_atc AS hasPhysicalAtc,
                 storage_quota_bytes AS storageQuotaBytes,
                 carousel_budget_seconds AS carouselBudgetSeconds, carousel_budget_enabled AS carouselBudgetEnabled,
+                full_buffer_gate_enabled AS fullBufferGateEnabled,
                 global_link_enabled AS globalLinkEnabled,
                 afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
                 mobile_enabled AS mobileEnabled, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
@@ -223,6 +225,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       storageQuotaBytes: tenant.storageQuotaBytes,
       carouselBudgetSeconds: tenant.carouselBudgetSeconds,
       carouselBudgetEnabled: !!tenant.carouselBudgetEnabled,
+      fullBufferGateEnabled: !!tenant.fullBufferGateEnabled,
       globalLinkEnabled: !!tenant.globalLinkEnabled,
       afisoOpen: !!tenant.afisoOpen,
       afisoFrequency: tenant.afisoFrequency,
