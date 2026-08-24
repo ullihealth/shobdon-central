@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CarouselSlot, CropRect, MediaLibraryFile } from '../../types/mediaLibrary'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
-import { useVideoDownloadStates } from '../../hooks/useVideoDownloadStates'
+import { useVideoDownloadStates, isTrackedMediaType } from '../../hooks/useVideoDownloadStates'
 
 // Same client-side check the backend (functions/api/tenant/cafe-carousel/
 // index.ts) enforces authoritatively - this copy is UX only (inline error
@@ -414,29 +414,31 @@ export function CarouselSlotList({
   onSelect: (slotNumber: number) => void
   onToggleEnabled: (slot: CarouselSlot, enabled: boolean) => void
 }): JSX.Element {
-  // Media Manager admin visibility round - every mp4 slot's label/tick
-  // renders red until its download is byte-verified complete, white once
-  // it is (see this map's own isVideoNotReady below), driven by the
-  // exact same shared download manager the public display route itself
-  // reads from (videoDownloadManager.ts) - never a separate, static/
-  // cached notion of "ready". Registering these urls here is also what
-  // starts them downloading in THIS admin tab if not already tracked
-  // (e.g. from an earlier visit to the public dashboard in the same
-  // tab/session) - deliberate, since a truthful live indicator requires
-  // an actual download to check against, not a guess. Reserved slots
-  // have no download-status concept and are excluded (isReserved).
-  const mp4Urls = slots
-    .filter((slot) => !slot.isReserved && slot.mediaType === 'mp4')
+  // Media Manager admin visibility round - every trackable slot's
+  // (mp4, and now image - see isTrackedMediaType's own comment)
+  // label/tick renders red until its download is byte-verified
+  // complete, white once it is (see this map's own isVideoNotReady
+  // below), driven by the exact same shared download manager the
+  // public display route itself reads from (videoDownloadManager.ts) -
+  // never a separate, static/cached notion of "ready". Registering
+  // these urls here is also what starts them downloading in THIS admin
+  // tab if not already tracked (e.g. from an earlier visit to the
+  // public dashboard in the same tab/session) - deliberate, since a
+  // truthful live indicator requires an actual download to check
+  // against, not a guess. Reserved slots have no download-status
+  // concept and are excluded (isReserved).
+  const trackedUrls = slots
+    .filter((slot) => !slot.isReserved && isTrackedMediaType(slot.mediaType))
     .map((slot) => files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null)
     .filter((url): url is string => !!url)
-  const videoDownloadStates = useVideoDownloadStates(mp4Urls)
+  const videoDownloadStates = useVideoDownloadStates(trackedUrls)
 
   return (
     <div className="flex flex-col gap-1.5">
       {slots.map((slot) => {
         const isSelected = slot.slotNumber === selectedSlotNumber
         const slotVideoUrl =
-          !slot.isReserved && slot.mediaType === 'mp4' ? files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null : null
+          !slot.isReserved && isTrackedMediaType(slot.mediaType) ? files.find((f) => f.id === slot.mediaLibraryId)?.url ?? null : null
         const isVideoNotReady = !!slotVideoUrl && videoDownloadStates[slotVideoUrl]?.status !== 'ready'
         // Reserved Owner Slots & Time Budget round - a reserved slot is
         // still selectable (so CarouselSlotEditor below can show its own

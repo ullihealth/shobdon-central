@@ -6,7 +6,7 @@ import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
 import TenantUnavailable from '../components/TenantUnavailable'
 import FullBufferGate from '../components/FullBufferGate'
-import type { GateAsset } from '../hooks/useVideoDownloadStates'
+import { isTrackedMediaType, type GateAsset } from '../hooks/useVideoDownloadStates'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -89,7 +89,7 @@ export default function TenantDisplayPage(): JSX.Element {
   const gateAssets: GateAsset[] = useMemo(() => {
     const rawSlots = display.templateId === 'cafe-1' ? cafeCarouselSlotsRaw : carouselSlotsRaw
     return rawSlots.map((slot) => ({
-      url: slot?.mediaType === 'mp4' ? slot?.resolvedUrl ?? null : null,
+      url: slot?.mediaType && isTrackedMediaType(slot.mediaType) ? slot?.resolvedUrl ?? null : null,
       sizeBytes: slot?.mediaSizeBytes ?? null,
     }))
   }, [display.templateId, carouselSlotsRaw, cafeCarouselSlotsRaw])

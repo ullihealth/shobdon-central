@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CropRect } from '../../types/mediaLibrary'
 import { AIRFIELD_TIMEZONE, GYROPEDIA_DEPARTURES_URL } from '../../config/publicApi'
-import { useVideoDownloadStates } from '../../hooks/useVideoDownloadStates'
+import { useVideoDownloadStates, isTrackedMediaType } from '../../hooks/useVideoDownloadStates'
 
 export interface MediaSlotVisual {
   mediaType: string
@@ -290,11 +290,20 @@ export default function MediaSlotRenderer({
   // own equivalent call registering every slot's url up front, in
   // rotation order, which runs first in the same render pass (a parent
   // component's hooks always run before its children's) - this call
-  // becoming a no-op re-registration for an already-tracked url. mp4
-  // only; every other content type never looks at videoDownloadUrl.
-  const videoDownloadUrl = slot.mediaType === 'mp4' ? slot.resolvedUrl : null
-  const videoDownloadStates = useVideoDownloadStates(videoDownloadUrl ? [videoDownloadUrl] : [])
-  const videoDownload = videoDownloadUrl ? videoDownloadStates[videoDownloadUrl] : undefined
+  // becoming a no-op re-registration for an already-tracked url.
+  //
+  // Image round - mp4 AND image both route through the same manager
+  // now, so a carousel image is fully cached locally (Blob objectUrl)
+  // before its slide ever comes up live, exactly like video, instead
+  // of the network fetch happening for the first time the moment the
+  // slide goes active. Every other content type (webcam/pdf/website/
+  // gyropedia/reserved) never looks at mediaDownloadUrl - those either
+  // have no real file behind them at all, or are rendered via iframe
+  // (a real download+Blob round-trip buys nothing for an embedded
+  // page you don't own the bytes of).
+  const mediaDownloadUrl = isTrackedMediaType(slot.mediaType) ? slot.resolvedUrl : null
+  const mediaDownloadStates = useVideoDownloadStates(mediaDownloadUrl ? [mediaDownloadUrl] : [])
+  const mediaDownload = mediaDownloadUrl ? mediaDownloadStates[mediaDownloadUrl] : undefined
 
   // Ref-based play/pause, not the autoPlay attribute - autoPlay only
   // fires once on mount, which is exactly wrong now that mp4 slots stay
@@ -385,8 +394,18 @@ export default function MediaSlotRenderer({
       )
       break
     case 'image':
+      // Image round - src is ONLY ever the Blob object url produced
+      // once the shared manager confirms the whole file downloaded,
+      // same as mp4 below - never the network url directly, so a
+      // carousel image is fully cached locally before its slide ever
+      // comes up live, with zero fetch delay at that point.
       content = (
-        <img src={slot.resolvedUrl ?? undefined} alt="" className={`h-full w-full ${objectFitClass}`} style={mediaStyle} />
+        <img
+          src={mediaDownload?.status === 'ready' ? mediaDownload.objectUrl ?? undefined : undefined}
+          alt=""
+          className={`h-full w-full ${objectFitClass}`}
+          style={mediaStyle}
+        />
       )
       break
     case 'mp4':
@@ -402,7 +421,7 @@ export default function MediaSlotRenderer({
         <video
           ref={videoRef}
           key={slot.resolvedUrl}
-          src={videoDownload?.status === 'ready' ? videoDownload.objectUrl ?? undefined : undefined}
+          src={mediaDownload?.status === 'ready' ? mediaDownload.objectUrl ?? undefined : undefined}
           className={`h-full w-full ${objectFitClass}`}
           style={mediaStyle}
           muted

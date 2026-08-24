@@ -6,7 +6,7 @@ import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
 import DashboardLoading from '../components/DashboardLoading'
 import FullBufferGate from '../components/FullBufferGate'
-import type { GateAsset } from '../hooks/useVideoDownloadStates'
+import { isTrackedMediaType, type GateAsset } from '../hooks/useVideoDownloadStates'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -137,7 +137,7 @@ export default function DashboardPage(): JSX.Element {
         setGateAssets(
           Array.isArray(rawGateSlots)
             ? rawGateSlots.map((slot: { mediaType?: string; resolvedUrl?: string | null; mediaSizeBytes?: number | null }) => ({
-                url: slot?.mediaType === 'mp4' ? slot?.resolvedUrl ?? null : null,
+                url: slot?.mediaType && isTrackedMediaType(slot.mediaType) ? slot?.resolvedUrl ?? null : null,
                 sizeBytes: slot?.mediaSizeBytes ?? null,
               }))
             : []

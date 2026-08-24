@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
-import { useBufferingGate, type GateAsset } from '../../hooks/useVideoDownloadStates'
+import { useBufferingGate, isTrackedMediaType, type GateAsset } from '../../hooks/useVideoDownloadStates'
 
 interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
@@ -222,19 +222,24 @@ export default function MediaPanel({
 
   // Buffering-gate round - every slot THIS panel's own rotation will
   // show (post zone/preferVideo filtering), in rotation order, as
-  // GateAssets - mp4 slots carry their resolvedUrl (registering it via
-  // useVideoDownloadStates is also what enqueues it with the shared,
-  // module-wide download manager, see that hook's own comment - the
-  // manager's own strict one-at-a-time queue is what now enforces
-  // sequential loading, replacing the old shouldSlotLoad cursor this
-  // file used to maintain by hand); every other slot carries only its
-  // real sizeBytes (or null), feeding the byte-weighted percentage
-  // below without being tracked/downloaded at all. gateCleared/
-  // resolvedCount/total below stay driven purely by the mp4 urls
-  // among these (useBufferingGate's own url-only tracking), unaffected
-  // by including non-mp4 assets here.
+  // GateAssets - trackable slots (mp4, and now image - see
+  // isTrackedMediaType's own comment) carry their resolvedUrl
+  // (registering it via useVideoDownloadStates is also what enqueues
+  // it with the shared, module-wide download manager, see that hook's
+  // own comment - the manager's own strict one-at-a-time queue is what
+  // now enforces sequential loading, replacing the old shouldSlotLoad
+  // cursor this file used to maintain by hand); every other slot
+  // carries only its real sizeBytes (or null), feeding the byte-
+  // weighted percentage below without being tracked/downloaded at all.
+  // gateCleared/resolvedCount/total below stay driven purely by the
+  // trackable urls among these (useBufferingGate's own url-only
+  // tracking), unaffected by including non-trackable assets here.
   const gateAssets: GateAsset[] = useMemo(
-    () => effectiveSlots.map((slot) => ({ url: slot.mediaType === 'mp4' ? slot.resolvedUrl : null, sizeBytes: slot.mediaSizeBytes })),
+    () =>
+      effectiveSlots.map((slot) => ({
+        url: isTrackedMediaType(slot.mediaType) ? slot.resolvedUrl : null,
+        sizeBytes: slot.mediaSizeBytes,
+      })),
     [effectiveSlots]
   )
   // Preview pages get none of this (see isPreview's own comment on the
@@ -249,11 +254,11 @@ export default function MediaPanel({
 
   // Stalled slots (requirement: excluded from rotation entirely, as if
   // manually unticked, until their background retry - via the same
-  // shared queue - completes) - every non-mp4 slot is unaffected, and
-  // an mp4 slot rejoins the moment its retry succeeds and stalledUrls no
-  // longer contains its url.
+  // shared queue - completes) - every non-trackable slot is unaffected,
+  // and a trackable slot (mp4 or image) rejoins the moment its retry
+  // succeeds and stalledUrls no longer contains its url.
   const rotationSlots = useMemo(
-    () => effectiveSlots.filter((slot) => slot.mediaType !== 'mp4' || !slot.resolvedUrl || !stalledUrls.has(slot.resolvedUrl)),
+    () => effectiveSlots.filter((slot) => !isTrackedMediaType(slot.mediaType) || !slot.resolvedUrl || !stalledUrls.has(slot.resolvedUrl)),
     [effectiveSlots, stalledUrls]
   )
 

@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useReducer, useState } from 'react'
 import { getVideoDownloadState, subscribeVideoDownload, type VideoDownloadState } from '../services/videoDownloadManager'
 
+// Image round - the single place that says which carousel mediaTypes
+// route through the byte-verified download manager (fetch, track
+// bytes, Blob objectUrl, stall/retry) rather than a direct network
+// src - mp4 always did; images now do too, so a slide is fully cached
+// locally before it ever comes up live, same as video. Every caller
+// that needs to know "is this slot's url trackable" (MediaSlotRenderer,
+// MediaPanel/DashboardPage/TenantDisplayPage's own gate-asset building,
+// CarouselSlotEditor's red/white indicator) reads this one function
+// rather than each keeping its own copy of the mediaType list, so
+// adding a future trackable type is a one-line change here, not a hunt
+// across the app for every place that assumed "mp4 only" or "mp4 and
+// image only".
+export function isTrackedMediaType(mediaType: string): boolean {
+  return mediaType === 'mp4' || mediaType === 'image'
+}
+
 // Subscribes to a whole SET of video urls at once (not one hook call
 // per url - the set size varies per tenant/carousel, and hooks can't be
 // called a variable number of times) and re-renders whenever ANY of

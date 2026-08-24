@@ -159,6 +159,14 @@ async function startDownload(url: string): Promise<void> {
     if (!response.ok || !response.body) throw new Error(`video fetch failed: ${response.status}`)
     const contentLengthHeader = response.headers.get('content-length')
     const totalBytes = contentLengthHeader ? Number(contentLengthHeader) : null
+    // Image round - this manager now also serves image slots (same
+    // fetch/byte-tracking/stall/retry pipeline, no other change needed
+    // here at all), so the resulting Blob needs its own real MIME type
+    // rather than none - browsers have always sniffed a typeless Blob
+    // well enough for <video> in practice, but an <img> deserves the
+    // same explicit correctness rather than relying on that same
+    // sniffing to keep working for a second content type.
+    const contentType = response.headers.get('content-type') || undefined
     d.state = { ...d.state, totalBytes }
 
     const reader = response.body.getReader()
@@ -186,7 +194,7 @@ async function startDownload(url: string): Promise<void> {
       throw new Error(`video stream ended short: ${bytesReceived}/${totalBytes}`)
     }
 
-    const blob = new Blob(d.chunks as BlobPart[])
+    const blob = new Blob(d.chunks as BlobPart[], contentType ? { type: contentType } : undefined)
     const objectUrl = URL.createObjectURL(blob)
     d.chunks = []
     d.controller = null
