@@ -33,6 +33,7 @@ export const DEVELOPER_SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { to: '/platform/known-devices', label: 'Known Devices' },
       { to: '/platform/uptime-report', label: 'Uptime Report' },
       { to: '/platform/ip-directory', label: 'IP Directory' },
+      { to: '/platform/capture-history', label: 'Capture History' },
     ],
   },
   {

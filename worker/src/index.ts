@@ -735,6 +735,106 @@ async function runWeatherFallbackCheck(env: Env): Promise<void> {
   }
 }
 
+// Same bucket formula as migrations/0096_weather_snapshots_15min.sql and
+// 0097_backfill_weather_snapshots_15min.sql use against a stored
+// observed_at column - applied here to datetime('now') instead, so this
+// cron and that one-time backfill can never silently disagree about what
+// "the current 15-minute bucket" is for data straddling the cutover.
+const CURRENT_BUCKET_SQL = "strftime('%Y-%m-%dT%H:', 'now') || printf('%02d', (CAST(strftime('%M', 'now') AS INTEGER) / 15) * 15) || ':00.000Z'"
+
+// Weather capture retention round: runs every cron tick alongside (not
+// instead of) runWeatherFallbackCheck above - see scheduled() below for
+// how the two are isolated from each other. Three independent jobs in
+// one pass, all tenant-scoped and all safe to re-run every 5 minutes:
+//
+// 1. Snapshot: for every station-owning tenant, if no
+//    weather_snapshots_15min row exists yet for the CURRENT 15-minute
+//    bucket, insert one sourced from that tenant's latest
+//    weather_observations row. INSERT OR IGNORE + migration 0096's own
+//    UNIQUE(tenant_id, observed_at) makes this idempotent across however
+//    many ticks land inside the same bucket - no separate existence
+//    check needed first.
+// 2. Trim weather_observations to a rolling 24h (full-resolution capture
+//    history only needs to cover "what happened very recently" - the
+//    15-min snapshot table is what covers the long term from here on).
+// 3. Trim weather_snapshots_15min to a rolling 12 months.
+//
+// Both trims are plain age-based DELETEs (observed_at cutoff), not
+// per-tenant loops - a pure "how old is this row" condition applies
+// uniformly across every tenant in a single statement.
+async function runSnapshotAndTrimJob(env: Env): Promise<void> {
+  const { results: stationTenants } = await env.DB
+    .prepare("SELECT id FROM tenants WHERE active_weather_provider = 'atc' AND active = 1 AND deleted_at IS NULL")
+    .bind()
+    .all<{ id: number }>()
+
+  for (const tenant of stationTenants) {
+    try {
+      await env.DB
+        .prepare(
+          `INSERT OR IGNORE INTO weather_snapshots_15min
+             (tenant_id, observed_at, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, qfe_hpa, temp_c, dewpoint_c, visibility_m, runway, runway_hand, source_type)
+           SELECT
+             tenant_id, ${CURRENT_BUCKET_SQL}, wind_speed_kt, wind_dir_deg, wind_gust_kt, qnh_hpa, qfe_hpa, temp_c, dewpoint_c, visibility_m, runway, runway_hand, source_type
+           FROM weather_observations
+           WHERE tenant_id = ?
+           ORDER BY observed_at DESC
+           LIMIT 1`
+        )
+        .bind(tenant.id)
+        .run()
+    } catch (error) {
+      console.error('runSnapshotAndTrimJob: snapshot insert failed', {
+        tenantId: tenant.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  try {
+    // latest_conditions.observation_id (migrations/0022_tenant_schema.sql)
+    // FK-references weather_observations(id) - the exact same constraint
+    // that blocked this retention round's own Step 1 stray-row cleanup
+    // until the referencing row was nulled first (see that migration's
+    // own investigation notes). Left alone, ANY tenant whose station
+    // stops reporting for >24h (or a template/demo tenant sitting on a
+    // single old row) would make this DELETE fail outright every single
+    // tick - a plain DELETE is all-or-nothing, so one stale reference
+    // anywhere would silently block the 24h trim forever, not just for
+    // that one row. Nulling first (not deleting latest_conditions rows)
+    // matches Step 1's own precedent: the column is nullable by design,
+    // and a tenant briefly showing "no known latest reading" until its
+    // next real capture arrives is the correct, harmless interim state.
+    await env.DB
+      .prepare(
+        `UPDATE latest_conditions SET observation_id = NULL
+         WHERE observation_id IN (SELECT id FROM weather_observations WHERE observed_at < datetime('now', '-24 hours'))`
+      )
+      .bind()
+      .run()
+
+    await env.DB
+      .prepare("DELETE FROM weather_observations WHERE observed_at < datetime('now', '-24 hours')")
+      .bind()
+      .run()
+  } catch (error) {
+    console.error('runSnapshotAndTrimJob: 24h weather_observations trim failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  try {
+    await env.DB
+      .prepare("DELETE FROM weather_snapshots_15min WHERE observed_at < datetime('now', '-12 months')")
+      .bind()
+      .run()
+  } catch (error) {
+    console.error('runSnapshotAndTrimJob: 12mo weather_snapshots_15min trim failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 // Forwards this capture's already-parsed fields to the generic,
 // genuinely multi-tenant D1 ingestion endpoint, ADDITIONALLY to (never
 // instead of) the KV write below - built to let Shobdon migrate off
@@ -1135,5 +1235,6 @@ export default {
   // logs per-tenant failures internally.
   async scheduled(_event: MinimalScheduledEvent, env: Env, ctx: MinimalExecutionContext): Promise<void> {
     ctx.waitUntil(runWeatherFallbackCheck(env).catch((error) => console.error('runWeatherFallbackCheck failed', error)))
+    ctx.waitUntil(runSnapshotAndTrimJob(env).catch((error) => console.error('runSnapshotAndTrimJob failed', error)))
   },
 }

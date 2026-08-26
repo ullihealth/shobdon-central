@@ -32,6 +32,7 @@ import PlatformVisitsPage from './pages/PlatformVisitsPage'
 import KnownDevicesPage from './pages/KnownDevicesPage'
 import UptimeReportPage from './pages/UptimeReportPage'
 import IpDirectoryPage from './pages/IpDirectoryPage'
+import CaptureHistoryPage from './pages/CaptureHistoryPage'
 import RunwaysPage from './pages/RunwaysPage'
 import PilotPanelPage from './pages/PilotPanelPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
@@ -159,6 +160,7 @@ export default function App(): JSX.Element {
           <Route path="/platform/uptime-report" element={<UptimeReportPage />} />
           {/* The global IP directory (migration 0057). */}
           <Route path="/platform/ip-directory" element={<IpDirectoryPage />} />
+          <Route path="/platform/capture-history" element={<CaptureHistoryPage />} />
           {/* Internal, app-wide running changelog (migration 0050). */}
           <Route path="/platform/updates" element={<PlatformUpdatesPage />} />
           {/* Private developer workspace (migration 0067) - mirrors
