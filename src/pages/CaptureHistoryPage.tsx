@@ -87,6 +87,13 @@ function CaptureTable({ rows }: { rows: CaptureRow[] }): JSX.Element {
   )
 }
 
+type Tab = 'observations' | 'snapshots'
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'observations', label: 'Full-Resolution (24H)' },
+  { id: 'snapshots', label: '15-Minute Snapshots (12mo)' },
+]
+
 // Weather capture retention round: raw list view of both retention
 // tables (24h full-resolution weather_observations, 12-month downsampled
 // weather_snapshots_15min) - a diagnostic to confirm the capture worker's
@@ -101,6 +108,9 @@ export default function CaptureHistoryPage(): JSX.Element {
   const [data, setData] = useState<CaptureHistoryResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
+  // Both tables arrive in the one fetch below, so switching tabs is a
+  // pure client-side render toggle - no refetch needed.
+  const [activeTab, setActiveTab] = useState<Tab>('observations')
 
   useEffect(() => {
     setLoading(true)
@@ -144,26 +154,43 @@ export default function CaptureHistoryPage(): JSX.Element {
         ) : !data ? (
           <p className="text-sm text-status-bad">Failed to load capture history.</p>
         ) : (
-          <div className="space-y-10">
-            <section>
-              <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">
-                Full-resolution captures (24h)
-                <span className="ml-2 text-xs font-normal normal-case text-muted-500">
-                  showing {data.observations.length} of {data.observationsTotalCount}
-                </span>
-              </h2>
-              <CaptureTable rows={data.observations} />
-            </section>
+          <div>
+            <div className="mb-6 flex flex-wrap gap-2">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-widest ${
+                    activeTab === tab.id ? 'bg-accent-sky-500 text-white' : 'border border-border text-muted-400 hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-            <section>
-              <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">
-                15-minute snapshots (12 months)
-                <span className="ml-2 text-xs font-normal normal-case text-muted-500">
-                  showing {data.snapshots.length} of {data.snapshotsTotalCount}
-                </span>
-              </h2>
-              <CaptureTable rows={data.snapshots} />
-            </section>
+            {activeTab === 'observations' ? (
+              <section>
+                <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">
+                  Full-resolution captures (24h)
+                  <span className="ml-2 text-xs font-normal normal-case text-muted-500">
+                    showing {data.observations.length} of {data.observationsTotalCount}
+                  </span>
+                </h2>
+                <CaptureTable rows={data.observations} />
+              </section>
+            ) : (
+              <section>
+                <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">
+                  15-minute snapshots (12 months)
+                  <span className="ml-2 text-xs font-normal normal-case text-muted-500">
+                    showing {data.snapshots.length} of {data.snapshotsTotalCount}
+                  </span>
+                </h2>
+                <CaptureTable rows={data.snapshots} />
+              </section>
+            )}
           </div>
         )}
       </div>
