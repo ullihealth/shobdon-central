@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const CAPTURE_HISTORY_URL = '/api/platform/capture-history'
 const CHART_URL = '/api/platform/capture-history/chart'
@@ -124,17 +124,43 @@ const RANGE_OPTIONS: { id: ChartRange; label: string }[] = [
   { id: 'custom', label: 'Custom' },
 ]
 
-function formatBucketLabel(iso: string, unit: BucketUnit): string {
-  const d = new Date(iso)
-  if (unit === '15min' || unit === 'hour') {
-    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+// Mirrors chart.ts's own BUCKET_MS on the backend - needed here to turn
+// a bucket's own start boundary into an END boundary for tooltip/
+// duration math (a bucket's stored timestamp is always its START, e.g.
+// a 15-min bucket "ends" 15 minutes after it starts).
+const BUCKET_MS: Record<BucketUnit, number> = {
+  '15min': 15 * 60_000,
+  hour: 60 * 60_000,
+  day: 24 * 60 * 60_000,
+  week: 7 * 24 * 60 * 60_000,
 }
 
-// Same idea as formatBucketLabel, but for AXIS ticks specifically: an
-// hour-unit tick spanning a multi-day range (Week view) needs its date
-// too, not just the time-of-day, or e.g. every daily tick would just
+// Always date + time, regardless of bucket unit - unlike the axis tick
+// labels (which stay brief and unit-aware, see formatAxisLabel below),
+// a tooltip is only ever shown one at a time on demand, so there's no
+// competing-for-space constraint that would justify trimming it down.
+function formatTooltipDate(iso: string): string {
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+// "19d 17h 26m" / "2h 5m" / "30m" - omits leading zero-value units
+// (never "0d 2h 5m") but always keeps minutes, even when they're 0
+// (e.g. "2h 0m"), so the string never looks truncated/cut off.
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.round(ms / 60_000)
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  const parts: string[] = []
+  if (days) parts.push(`${days}d`)
+  if (days || hours) parts.push(`${hours}h`)
+  parts.push(`${minutes}m`)
+  return parts.join(' ')
+}
+
+// Axis tick text: an hour-unit tick spanning a multi-day range (Week
+// view) needs its date too, not just the time-of-day, or e.g. every
+// daily tick would just
 // read "00:00" with no way to tell which day. 15-min ticks stay
 // time-only even when includeDate would technically apply, since a Day
 // range is by construction never more than ~24h wide - see
@@ -189,55 +215,190 @@ function computeLabelStep(bucketCount: number, unit: BucketUnit): number {
   return candidates[candidates.length - 1]
 }
 
+// Reserved on the LEFT of every chart's bar row, its axis-label row, AND
+// the Uptime strip (which has no numeric y-axis of its own) - giving
+// Uptime a matching blank gutter means all three charts' bars start at
+// the identical x-offset, so they read as one aligned timeline rather
+// than three independently-laid-out charts that happen to be stacked.
+const Y_AXIS_GUTTER_PX = 34
+
+// A floating, mouse-anchored info box - shared by the Uptime strip and
+// both RangeBarChart instances (Temperature, Wind) via useChartTooltip
+// below. Pinned to the top-center of whichever segment/bar was entered
+// (computed once on mouseenter from that element's own bounding box,
+// not tracked continuously on every mousemove) - simpler than cursor-
+// following and reads fine for a chart make of adjacent equal-width
+// bars, since the tooltip only ever needs to say "this bar/segment".
+interface TooltipState {
+  left: number
+  top: number
+  content: string
+}
+
+function TooltipOverlay({ tooltip }: { tooltip: TooltipState | null }): JSX.Element | null {
+  if (!tooltip) return null
+  return (
+    <div
+      className="pointer-events-none absolute z-20 max-w-[240px] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-border bg-slate-950 px-2.5 py-1.5 text-[11px] leading-snug text-muted-100 shadow-lg"
+      style={{ left: tooltip.left, top: tooltip.top - 6 }}
+    >
+      {tooltip.content}
+    </div>
+  )
+}
+
+// Shared by every chart below: a ref to the chart's own relatively-
+// positioned container (tooltip coordinates are computed relative to
+// it), plus show/hide handlers taking the hovered element itself
+// (not raw mouse coordinates) so the tooltip anchors to that element's
+// own position rather than the cursor's exact pixel.
+function useChartTooltip() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+
+  function show(el: HTMLElement, content: string) {
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    if (!containerRect) return
+    const elRect = el.getBoundingClientRect()
+    const rawLeft = elRect.left - containerRect.left + elRect.width / 2
+    // Clamped so a bar/segment near either edge of the chart doesn't
+    // push the tooltip (max-w-[240px], centered on rawLeft) out past
+    // the chart's own bounds - 100px is a rough half-width estimate,
+    // not a measurement of the actual rendered tooltip, but close
+    // enough to keep it visually contained for the edge cases that
+    // matter (the first/last couple of bars).
+    const left = Math.min(Math.max(rawLeft, 100), containerRect.width - 100)
+    setTooltip({ left, top: elRect.top - containerRect.top, content })
+  }
+  function hide() {
+    setTooltip(null)
+  }
+
+  return { containerRef, tooltip, show, hide }
+}
+
 // Rendered once under EACH of the three charts (Uptime, Temperature,
 // Wind) with the same buckets/bucketUnit/rangeStart/rangeEnd inputs, so
 // all three always show identical tick spacing and identical labels for
 // the same range - the whole point being that they read together as one
-// timeline rather than three independently-labelled charts. Uses the
-// exact same flex/gap/padding shape as the bar rows above it (in
-// UptimeStrip and RangeBarChart) so each label lines up under its bar.
+// timeline rather than three independently-labelled charts. A short
+// vertical tick renders under EVERY bucket (so any individual bar can be
+// located precisely even between labels); the date/time text itself
+// only renders under every Nth tick, per computeLabelStep.
 function AxisLabels({ buckets, bucketUnit, rangeStart, rangeEnd }: { buckets: ChartBucket[]; bucketUnit: BucketUnit; rangeStart: string; rangeEnd: string }): JSX.Element {
   const step = computeLabelStep(buckets.length, bucketUnit)
   const includeDate = bucketUnit === 'hour' && rangeSpansMultipleDays(rangeStart, rangeEnd)
 
   return (
-    <div className="mt-1 flex gap-px px-1">
+    <div className="mt-1.5 flex gap-px" style={{ paddingLeft: Y_AXIS_GUTTER_PX }}>
       {buckets.map((b, i) => (
-        <div key={b.bucket} className="flex-1 overflow-visible text-center text-[9px] whitespace-nowrap text-muted-500">
-          {i % step === 0 ? formatAxisLabel(b.bucket, bucketUnit, includeDate) : ''}
+        <div key={b.bucket} className="flex flex-1 flex-col items-center overflow-visible">
+          <div className="h-1 w-px bg-border" />
+          {i % step === 0 && (
+            <span className="mt-1 whitespace-nowrap text-[9px] leading-none text-muted-500">{formatAxisLabel(b.bucket, bucketUnit, includeDate)}</span>
+          )}
         </div>
       ))}
     </div>
   )
 }
 
+const UPTIME_HEIGHT_PX = 36
+
 // Presence/absence only, per bucket - green if at least one capture row
 // landed in that window, red if none. Deliberately not a value chart:
 // this is the fastest way to spot a real outage (station down, capture
-// worker not running) at a glance across a whole range.
+// worker not running) at a glance across a whole range. Adjacent
+// same-status buckets are merged into one logical segment for hover
+// purposes (computeSegments) - hovering any bucket in a 40-bucket-long
+// green run shows ONE tooltip for the whole run's start/end/duration,
+// not 40 separate one-bucket tooltips.
+interface UptimeSegment {
+  startIndex: number
+  endIndex: number
+  hasCapture: boolean
+}
+
+function computeSegments(buckets: ChartBucket[]): UptimeSegment[] {
+  const segments: UptimeSegment[] = []
+  buckets.forEach((b, i) => {
+    const last = segments[segments.length - 1]
+    if (last && last.hasCapture === b.hasCapture) {
+      last.endIndex = i
+    } else {
+      segments.push({ startIndex: i, endIndex: i, hasCapture: b.hasCapture })
+    }
+  })
+  return segments
+}
+
+function segmentTooltipText(seg: UptimeSegment, buckets: ChartBucket[], bucketUnit: BucketUnit): string {
+  const startIso = buckets[seg.startIndex].bucket
+  const endIso = new Date(new Date(buckets[seg.endIndex].bucket).getTime() + BUCKET_MS[bucketUnit]).toISOString()
+  const duration = formatDuration(new Date(endIso).getTime() - new Date(startIso).getTime())
+  const range = `${formatTooltipDate(startIso)} → ${formatTooltipDate(endIso)} · ${duration}`
+  return seg.hasCapture ? range : `No captures: ${range}`
+}
+
 function UptimeStrip({ buckets, bucketUnit }: { buckets: ChartBucket[]; bucketUnit: BucketUnit }): JSX.Element {
+  const { containerRef, tooltip, show, hide } = useChartTooltip()
+  const segments = computeSegments(buckets)
+  const segmentByIndex: UptimeSegment[] = []
+  segments.forEach((seg) => {
+    for (let i = seg.startIndex; i <= seg.endIndex; i++) segmentByIndex[i] = seg
+  })
+
   return (
-    <div className="flex h-8 w-full gap-px overflow-hidden rounded-lg border border-border">
-      {buckets.map((b) => (
-        <div
-          key={b.bucket}
-          title={`${formatBucketLabel(b.bucket, bucketUnit)} — ${b.hasCapture ? `${b.captureCount} capture${b.captureCount === 1 ? '' : 's'}` : 'no captures'}`}
-          className={`flex-1 ${b.hasCapture ? 'bg-status-good' : 'bg-status-bad'}`}
-        />
-      ))}
+    <div ref={containerRef} className="relative" style={{ paddingLeft: Y_AXIS_GUTTER_PX }}>
+      <div className="flex w-full gap-px overflow-hidden rounded-lg border border-border" style={{ height: UPTIME_HEIGHT_PX }}>
+        {buckets.map((b, i) => {
+          const seg = segmentByIndex[i]
+          return (
+            <div
+              key={b.bucket}
+              onMouseEnter={(e) => show(e.currentTarget, segmentTooltipText(seg, buckets, bucketUnit))}
+              onMouseLeave={hide}
+              className={`flex-1 ${b.hasCapture ? 'bg-status-good' : 'bg-status-bad'}`}
+            />
+          )
+        })}
+      </div>
+      <TooltipOverlay tooltip={tooltip} />
     </div>
   )
 }
 
-const CHART_HEIGHT_PX = 160
+const CHART_HEIGHT_PX = 260
+
+// Fixed axis domain with subtle gridlines every `step` units, extending
+// gracefully beyond the fixed base range if real data ever exceeds it
+// (rather than clipping bars against the chart's own edge) - confirmed
+// against real production data before hardcoding these bases that
+// neither case currently occurs (max observed so far: ~36°C, ~28kt),
+// but a UK station can plausibly see sub-zero winter temperatures, so
+// the low end extends too, not just the high end.
+function computeAxisScale(values: number[], baseMin: number, baseMax: number, step: number): { min: number; max: number; ticks: number[] } {
+  let min = baseMin
+  let max = baseMax
+  if (values.length > 0) {
+    const dataMin = Math.min(...values)
+    const dataMax = Math.max(...values)
+    while (dataMin < min) min -= step
+    while (dataMax > max) max += step
+  }
+  const ticks: number[] = []
+  for (let v = min; v <= max + 1e-9; v += step) ticks.push(Math.round(v * 100) / 100)
+  return { min, max, ticks }
+}
 
 // Shared min/max-per-bucket range chart, reused for both temperature and
 // wind - a thin vertical bar spanning [min, max] observed within that
-// bucket. markerKey is optional and renders as a single thin tick rather
-// than a range (used for wind gust, which - confirmed against real
-// production data before building this - is populated on only ~1-8% of
-// rows, so a fully-fledged third range series would be mostly empty;
-// an occasional marker is the honest representation of how sparse it is).
+// bucket, against a fixed gridlined scale (see computeAxisScale).
+// markerKey is optional and renders as a single thin tick rather than a
+// range (used for wind gust, which - confirmed against real production
+// data before building this - is populated on only ~1-8% of rows, so a
+// fully-fledged third range series would be mostly empty; an occasional
+// marker is the honest representation of how sparse it is).
 function RangeBarChart({
   buckets,
   bucketUnit,
@@ -245,6 +406,9 @@ function RangeBarChart({
   maxKey,
   markerKey,
   unitSuffix,
+  baseMin,
+  baseMax,
+  axisStep,
   barColorClass,
   markerColorClass,
   emptyMessage,
@@ -255,10 +419,15 @@ function RangeBarChart({
   maxKey: 'tempMax' | 'windMax'
   markerKey?: 'gustMax'
   unitSuffix: string
+  baseMin: number
+  baseMax: number
+  axisStep: number
   barColorClass: string
   markerColorClass?: string
   emptyMessage: string
 }): JSX.Element {
+  const { containerRef, tooltip, show, hide } = useChartTooltip()
+
   const values: number[] = []
   for (const b of buckets) {
     if (b[minKey] != null) values.push(b[minKey] as number)
@@ -270,17 +439,7 @@ function RangeBarChart({
     return <p className="text-sm text-muted-500">{emptyMessage}</p>
   }
 
-  let scaleMin = Math.min(...values)
-  let scaleMax = Math.max(...values)
-  if (scaleMin === scaleMax) {
-    scaleMin -= 1
-    scaleMax += 1
-  }
-  // Headroom so a bar sitting exactly at the range's own min/max doesn't
-  // visually clip against the chart's top/bottom edge.
-  const padding = (scaleMax - scaleMin) * 0.1
-  scaleMin -= padding
-  scaleMax += padding
+  const { min: scaleMin, max: scaleMax, ticks } = computeAxisScale(values, baseMin, baseMax, axisStep)
   const span = scaleMax - scaleMin
 
   function toPct(value: number): number {
@@ -288,48 +447,59 @@ function RangeBarChart({
   }
 
   return (
-    <div>
-      <div className="relative rounded-lg border border-border bg-panel" style={{ height: CHART_HEIGHT_PX }}>
-        <span className="absolute right-2 top-1 text-[10px] text-muted-500">
-          {scaleMax.toFixed(1)}
-          {unitSuffix}
-        </span>
-        <span className="absolute bottom-1 right-2 text-[10px] text-muted-500">
-          {scaleMin.toFixed(1)}
-          {unitSuffix}
-        </span>
-        <div className="flex h-full items-stretch gap-px px-1">
-          {buckets.map((b) => {
-            const min = b[minKey] as number | null
-            const max = b[maxKey] as number | null
-            const marker = markerKey ? (b[markerKey] as number | null) : null
-            const hasRange = min != null && max != null
-            return (
-              <div
-                key={b.bucket}
-                className="relative h-full flex-1"
-                title={`${formatBucketLabel(b.bucket, bucketUnit)}${hasRange ? ` — ${min}${unitSuffix} to ${max}${unitSuffix}` : ' — no data'}${marker != null ? `, gust ${marker}${unitSuffix}` : ''}`}
-              >
-                {hasRange && (
-                  <div
-                    className={`absolute w-full rounded-sm ${barColorClass}`}
-                    style={{
-                      bottom: `${toPct(min as number)}%`,
-                      height: `${Math.max(2, toPct(max as number) - toPct(min as number))}%`,
-                    }}
-                  />
-                )}
-                {marker != null && (
-                  <div
-                    className={`absolute h-[2px] w-full ${markerColorClass ?? 'bg-amber-400'}`}
-                    style={{ bottom: `${toPct(marker)}%` }}
-                  />
-                )}
-              </div>
-            )
-          })}
+    <div ref={containerRef} className="relative" style={{ height: CHART_HEIGHT_PX }}>
+      {ticks.map((t) => (
+        <div key={t} className="absolute inset-x-0" style={{ bottom: `${toPct(t)}%` }}>
+          <div className="absolute right-0 border-t border-white/[0.06]" style={{ left: Y_AXIS_GUTTER_PX }} />
+          <span className="absolute left-0 -translate-y-1/2 text-[9px] leading-none text-muted-500">
+            {t}
+            {unitSuffix}
+          </span>
         </div>
+      ))}
+      <div className="absolute inset-0 flex items-stretch gap-px" style={{ paddingLeft: Y_AXIS_GUTTER_PX, paddingRight: 4 }}>
+        {buckets.map((b) => {
+          const min = b[minKey] as number | null
+          const max = b[maxKey] as number | null
+          const marker = markerKey ? (b[markerKey] as number | null) : null
+          const hasRange = min != null && max != null
+          const tooltipText = hasRange
+            ? `${formatTooltipDate(b.bucket)} — ${min}–${max}${unitSuffix}${marker != null ? `, gust ${marker}${unitSuffix}` : ''}`
+            : `${formatTooltipDate(b.bucket)} — no data`
+          return (
+            <div
+              key={b.bucket}
+              className="relative h-full flex-1"
+              // Anchor the tooltip to the actual visible bar (data-bar),
+              // not this wrapper - the wrapper spans the FULL chart
+              // height deliberately (so the whole column is hoverable,
+              // not just a thin bar), so anchoring to it directly would
+              // always pin the tooltip to the top of the chart
+              // regardless of the bar's real value/position.
+              onMouseEnter={(e) => show(e.currentTarget.querySelector<HTMLElement>('[data-bar]') ?? e.currentTarget, tooltipText)}
+              onMouseLeave={hide}
+            >
+              {hasRange && (
+                <div
+                  data-bar
+                  className={`absolute w-full rounded-sm ${barColorClass}`}
+                  style={{
+                    bottom: `${toPct(min as number)}%`,
+                    height: `${Math.max(1, toPct(max as number) - toPct(min as number))}%`,
+                  }}
+                />
+              )}
+              {marker != null && (
+                <div
+                  className={`absolute h-[2px] w-full ${markerColorClass ?? 'bg-amber-400'}`}
+                  style={{ bottom: `${toPct(marker)}%` }}
+                />
+              )}
+            </div>
+          )
+        })}
       </div>
+      <TooltipOverlay tooltip={tooltip} />
     </div>
   )
 }
@@ -452,34 +622,37 @@ function ChartsView(): JSX.Element {
       ) : chartError ? (
         <p className="text-sm text-status-bad">{chartError}</p>
       ) : !chartData ? null : (
-        <div className="space-y-10">
+        <div className="space-y-6">
           <p className="text-xs text-muted-500">
             {chartData.buckets.length} buckets ({chartData.bucketUnit}) from {formatDate(chartData.start)} to {formatDate(chartData.end)} · source:{' '}
             {chartData.source === 'weather_observations' ? 'full-resolution captures' : '15-minute snapshots'}
           </p>
 
-          <section>
-            <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">Uptime</h2>
+          <section className="rounded-2xl border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-muted-100">Uptime</h2>
             <UptimeStrip buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} />
             <AxisLabels buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} rangeStart={chartData.start} rangeEnd={chartData.end} />
           </section>
 
-          <section>
-            <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">Temperature (°C)</h2>
+          <section className="rounded-2xl border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-muted-100">Temperature (°C)</h2>
             <RangeBarChart
               buckets={chartData.buckets}
               bucketUnit={chartData.bucketUnit}
               minKey="tempMin"
               maxKey="tempMax"
               unitSuffix="°C"
+              baseMin={0}
+              baseMax={40}
+              axisStep={5}
               barColorClass="bg-accent-sky-500"
               emptyMessage="No temperature data in this range."
             />
             <AxisLabels buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} rangeStart={chartData.start} rangeEnd={chartData.end} />
           </section>
 
-          <section>
-            <h2 className="mb-3 flex items-center gap-2 text-lg font-bold uppercase tracking-wide text-muted-100">
+          <section className="rounded-2xl border border-border bg-panel p-4">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted-100">
               Wind (kt)
               <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/5 px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-muted-400">
                 <span className="inline-block h-2 w-3 rounded-sm bg-amber-400" aria-hidden="true" />
@@ -493,7 +666,10 @@ function ChartsView(): JSX.Element {
               maxKey="windMax"
               markerKey="gustMax"
               unitSuffix="kt"
-              barColorClass="bg-emerald-400"
+              baseMin={0}
+              baseMax={50}
+              axisStep={5}
+              barColorClass="bg-violet-400"
               markerColorClass="bg-amber-400"
               emptyMessage="No wind data in this range."
             />
