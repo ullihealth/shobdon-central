@@ -13,6 +13,7 @@ import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_TICKER_STYLE } from '../services/tickerStyleStore'
 import { useElementHeight } from '../hooks/useElementHeight'
+import { useTotalLoopTime, formatLoopDuration } from '../hooks/useTotalLoopTime'
 
 const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
@@ -624,6 +625,11 @@ export default function CafeMediaPage(): JSX.Element {
   }
 
   const selectedCafeSlot = cafeSlots.find((s) => s.slotNumber === selectedCafeSlotNumber) ?? null
+  // Called unconditionally, before either early return below, per the
+  // Rules of Hooks - useTotalLoopTime itself is cheap (useMemo over at
+  // most 12 slots) so computing it even on the loading/upsell paths
+  // (where its result just goes unused) costs nothing real.
+  const totalLoopTime = useTotalLoopTime(cafeSlots, files)
 
   if (loading) {
     return (
@@ -714,6 +720,22 @@ export default function CafeMediaPage(): JSX.Element {
           <Link to="/media-library" className="text-xs font-semibold text-accent-sky-400 hover:underline">
             Manage Media Library →
           </Link>
+        </div>
+        {/* Total loop time - same shared hook/format as Dashboard
+            Manager's own bar (useTotalLoopTime.ts). Café has no
+            reserved-slot/time-budget concept at all (see that hook's
+            own comment), so this is just the sum of enabled slots'
+            effective durations - no reserved-slot addition applies
+            here in practice. */}
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-border/60 bg-slate-900/60 px-4 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
+            Total loop time: <span className="text-white">{formatLoopDuration(totalLoopTime.totalSeconds)}</span>
+            {totalLoopTime.unknownDurationCount > 0 && (
+              <span className="ml-2 normal-case text-status-warn">
+                ({totalLoopTime.unknownDurationCount} video{totalLoopTime.unknownDurationCount === 1 ? '' : 's'} with unknown length not counted)
+              </span>
+            )}
+          </span>
         </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
           <CarouselSlotList

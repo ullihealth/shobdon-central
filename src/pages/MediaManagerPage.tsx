@@ -4,6 +4,7 @@ import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 import { CAROUSEL_SLOTS_URL, GAS_PRICES_URL, MEDIA_LIBRARY_URL, OPS_PANEL_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { CarouselSlotEditor, CarouselSlotList, filterAssetsForScreen, type CameraOption } from '../components/media/CarouselSlotEditor'
 import TickerSettingsCards from '../components/media/TickerSettingsCards'
+import { useTotalLoopTime, formatLoopDuration } from '../hooks/useTotalLoopTime'
 
 const CURRENCY_OPTIONS = ['£', '$', '€']
 
@@ -218,6 +219,7 @@ export default function MediaManagerPage(): JSX.Element {
   }
 
   const usedSeconds = computeUsedSeconds(slots)
+  const totalLoopTime = useTotalLoopTime(slots, files)
 
   // Local state (hence the live preview) updates synchronously on every
   // call; the network PUT is batched and debounced so dragging a crop/
@@ -381,6 +383,23 @@ export default function MediaManagerPage(): JSX.Element {
             >
               Manage Media Library →
             </Link>
+          </div>
+          {/* Total loop time - how long the live rotation actually takes
+              to cycle once, for every tenant (unlike the budget bar
+              below, not gated behind budgetEnabled). Unlike
+              computeUsedSeconds, this DOES include reserved slots
+              (fixed 10s each) since they're always in the real rotation
+              regardless of budget status - see useTotalLoopTime's own
+              comment for why the two numbers deliberately differ. */}
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-border/60 bg-slate-900/60 px-4 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
+              Total loop time: <span className="text-white">{formatLoopDuration(totalLoopTime.totalSeconds)}</span>
+              {totalLoopTime.unknownDurationCount > 0 && (
+                <span className="ml-2 normal-case text-status-warn">
+                  ({totalLoopTime.unknownDurationCount} video{totalLoopTime.unknownDurationCount === 1 ? '' : 's'} with unknown length not counted)
+                </span>
+              )}
+            </span>
           </div>
           {/* Reserved Owner Slots & Time Budget round - only shown at all
               for a tenant with the feature switched on (budgetEnabled
