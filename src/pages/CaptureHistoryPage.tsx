@@ -132,6 +132,85 @@ function formatBucketLabel(iso: string, unit: BucketUnit): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
+// Same idea as formatBucketLabel, but for AXIS ticks specifically: an
+// hour-unit tick spanning a multi-day range (Week view) needs its date
+// too, not just the time-of-day, or e.g. every daily tick would just
+// read "00:00" with no way to tell which day. 15-min ticks stay
+// time-only even when includeDate would technically apply, since a Day
+// range is by construction never more than ~24h wide - see
+// bucketUnitForSpan's mirror on the backend (chart.ts) for why.
+function formatAxisLabel(iso: string, unit: BucketUnit, includeDate: boolean): string {
+  const d = new Date(iso)
+  if (unit === '15min') {
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  }
+  if (unit === 'hour') {
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    return includeDate ? `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${time}` : time
+  }
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+function rangeSpansMultipleDays(startIso: string, endIso: string): boolean {
+  return startIso.slice(0, 10) !== endIso.slice(0, 10)
+}
+
+// How many buckets apart consecutive axis labels should be, so a chart
+// with a lot of bars doesn't try to label every single one and turn
+// into unreadable overlapping text. Candidates are listed smallest-
+// first per bucket unit; computeLabelStep below picks the smallest one
+// that keeps the total label count under TARGET_MAX_LABELS for that
+// unit - small bucket counts (e.g. a short Custom range) naturally fall
+// through to step 1 (label every bucket) since even that already meets
+// the target. Chosen per-unit rather than one global constant because
+// longer label text (hour-unit ticks often need a date prefix, see
+// formatAxisLabel) needs more horizontal room per label than a short
+// time-only or date-only tick does.
+const LABEL_STEP_CANDIDATES: Record<BucketUnit, number[]> = {
+  '15min': [4, 8, 16, 24, 48, 96],
+  hour: [6, 12, 24, 48, 72, 168],
+  day: [1, 2, 3, 5, 7, 14, 30, 60, 90],
+  week: [1, 2, 4, 8, 13, 26, 52],
+}
+
+const TARGET_MAX_LABELS: Record<BucketUnit, number> = {
+  '15min': 24, // Day (~96 buckets) -> hourly labels
+  hour: 14, // Week (~168 buckets) -> every ~12h
+  day: 10, // Month (~30 buckets) -> every ~3rd day
+  week: 13, // Year (~52 buckets) -> roughly monthly
+}
+
+function computeLabelStep(bucketCount: number, unit: BucketUnit): number {
+  const candidates = LABEL_STEP_CANDIDATES[unit]
+  const target = TARGET_MAX_LABELS[unit]
+  for (const step of candidates) {
+    if (Math.ceil(bucketCount / step) <= target) return step
+  }
+  return candidates[candidates.length - 1]
+}
+
+// Rendered once under EACH of the three charts (Uptime, Temperature,
+// Wind) with the same buckets/bucketUnit/rangeStart/rangeEnd inputs, so
+// all three always show identical tick spacing and identical labels for
+// the same range - the whole point being that they read together as one
+// timeline rather than three independently-labelled charts. Uses the
+// exact same flex/gap/padding shape as the bar rows above it (in
+// UptimeStrip and RangeBarChart) so each label lines up under its bar.
+function AxisLabels({ buckets, bucketUnit, rangeStart, rangeEnd }: { buckets: ChartBucket[]; bucketUnit: BucketUnit; rangeStart: string; rangeEnd: string }): JSX.Element {
+  const step = computeLabelStep(buckets.length, bucketUnit)
+  const includeDate = bucketUnit === 'hour' && rangeSpansMultipleDays(rangeStart, rangeEnd)
+
+  return (
+    <div className="mt-1 flex gap-px px-1">
+      {buckets.map((b, i) => (
+        <div key={b.bucket} className="flex-1 overflow-visible text-center text-[9px] whitespace-nowrap text-muted-500">
+          {i % step === 0 ? formatAxisLabel(b.bucket, bucketUnit, includeDate) : ''}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Presence/absence only, per bucket - green if at least one capture row
 // landed in that window, red if none. Deliberately not a value chart:
 // this is the fastest way to spot a real outage (station down, capture
@@ -250,10 +329,6 @@ function RangeBarChart({
             )
           })}
         </div>
-      </div>
-      <div className="mt-1 flex justify-between text-[10px] text-muted-500">
-        <span>{formatBucketLabel(buckets[0].bucket, bucketUnit)}</span>
-        <span>{formatBucketLabel(buckets[buckets.length - 1].bucket, bucketUnit)}</span>
       </div>
     </div>
   )
@@ -386,6 +461,7 @@ function ChartsView(): JSX.Element {
           <section>
             <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">Uptime</h2>
             <UptimeStrip buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} />
+            <AxisLabels buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} rangeStart={chartData.start} rangeEnd={chartData.end} />
           </section>
 
           <section>
@@ -399,12 +475,16 @@ function ChartsView(): JSX.Element {
               barColorClass="bg-accent-sky-500"
               emptyMessage="No temperature data in this range."
             />
+            <AxisLabels buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} rangeStart={chartData.start} rangeEnd={chartData.end} />
           </section>
 
           <section>
-            <h2 className="mb-3 text-lg font-bold uppercase tracking-wide text-muted-100">
+            <h2 className="mb-3 flex items-center gap-2 text-lg font-bold uppercase tracking-wide text-muted-100">
               Wind (kt)
-              <span className="ml-2 text-xs font-normal normal-case text-muted-500">amber tick = gust, where recorded</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/5 px-2 py-0.5 text-[10px] font-normal normal-case tracking-normal text-muted-400">
+                <span className="inline-block h-2 w-3 rounded-sm bg-amber-400" aria-hidden="true" />
+                amber tick = gust, where recorded
+              </span>
             </h2>
             <RangeBarChart
               buckets={chartData.buckets}
@@ -417,6 +497,7 @@ function ChartsView(): JSX.Element {
               markerColorClass="bg-amber-400"
               emptyMessage="No wind data in this range."
             />
+            <AxisLabels buckets={chartData.buckets} bucketUnit={chartData.bucketUnit} rangeStart={chartData.start} rangeEnd={chartData.end} />
           </section>
         </div>
       )}
