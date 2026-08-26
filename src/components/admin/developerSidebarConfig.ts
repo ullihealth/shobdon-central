@@ -11,8 +11,8 @@ import type { SidebarGroupConfig } from './sidebarConfig'
 // field.
 //
 // Grouped by function, not the previous flat/arbitrary sidebar order:
-// tenant/business management, monitoring/diagnostics, product/release
-// management, and general tools.
+// tenant/business management, physical hardware/fleet, monitoring/
+// diagnostics, product/release management, and general tools.
 export const DEVELOPER_SIDEBAR_GROUPS: SidebarGroupConfig[] = [
   {
     id: 'tenants',
@@ -24,6 +24,11 @@ export const DEVELOPER_SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       { to: '/platform/onboarding-content', label: 'Onboarding Content' },
       { to: '/platform/cameras', label: 'Cameras' },
     ],
+  },
+  {
+    id: 'hardware',
+    label: 'Hardware & Fleet',
+    items: [{ to: '/platform/pi-fleet', label: 'Pi Fleet' }],
   },
   {
     id: 'monitoring',

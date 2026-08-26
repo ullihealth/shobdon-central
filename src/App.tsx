@@ -25,6 +25,7 @@ import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPa
 import PlatformCafeCarouselOwnerSlotsPage from './pages/PlatformCafeCarouselOwnerSlotsPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
+import PlatformPiFleetPage from './pages/PlatformPiFleetPage'
 import PlatformPreviewPage from './pages/PlatformPreviewPage'
 import PlatformDevFeaturesPage from './pages/PlatformDevFeaturesPage'
 import PlatformUpdatesPage from './pages/PlatformUpdatesPage'
@@ -132,6 +133,7 @@ export default function App(): JSX.Element {
           }
         >
           <Route path="/platform/tenants" element={<PlatformTenantsPage />} />
+          <Route path="/platform/pi-fleet" element={<PlatformPiFleetPage />} />
           {/* Reserved Owner Slots & Time Budget round - assigns owner ad
               content to one specific tenant's slots 5/8/12, linked from
               PlatformTenantsPage.tsx's own tenant detail pane. */}
