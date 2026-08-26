@@ -3,10 +3,10 @@
 // tables side by side: weather_observations (rolling 24h full-resolution
 // capture, trimmed by the capture worker's own cron - see worker/src/
 // index.ts's runSnapshotAndTrimJob) and weather_snapshots_15min (rolling
-// 12-month downsampled history, one row per 15-minute bucket). No charts
-// yet, per the round's own spec - this is a diagnostic list view to
-// confirm the retention pipeline is actually behaving, not a reporting
-// tool.
+// 12-month downsampled history, one row per 15-minute bucket) - a
+// diagnostic list view to confirm the retention pipeline is actually
+// behaving. Pre-aggregated chart data lives in the sibling ./chart.ts
+// endpoint, not here - this one stays a raw, uncapped-columns dump.
 //
 // tenantId defaults to 1 (Shobdon) rather than requiring the caller to
 // know/pass it - only 'atc'-provider tenants generate real capture rows
@@ -16,7 +16,7 @@
 // accepts an explicit ?tenantId= override rather than hardcoding it, so
 // this doesn't need touching again the day a second station-owning
 // tenant exists.
-import { requirePlatformAdmin, jsonResponse, type D1Database } from "../_utils/tenantAuth";
+import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
