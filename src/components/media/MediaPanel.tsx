@@ -368,24 +368,37 @@ export default function MediaPanel({
           // the correct key regardless) so React keeps reusing the same
           // component instance/DOM node across every activeIndex change,
           // never remounting a slot just because a sibling did.
-          effectiveSlots.map((slot) => {
-            // Nothing is genuinely active while still gating - the
-            // buffering overlay (below) covers the box in that case, so
-            // every slot renders invisible underneath it regardless of
-            // activeSlotNumber's default (null) value. Every slot's own
-            // MediaSlotRenderer registers/downloads its mp4 unconditionally
-            // now (see that component's own videoDownloadUrl comment) -
-            // there's no more "only load if active/next" eligibility check
-            // here, since the shared download manager's own queue is what
-            // enforces one-at-a-time loading instead.
-            const isActive = bufferingDone && slot.slotNumber === activeSlotNumber
-            const isUpNext = bufferingDone && slot.slotNumber === upcomingSlotNumber
-            return (
-              <div key={slot.slotNumber} className={`absolute inset-0 ${isActive ? '' : 'invisible'}`}>
-                <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
-              </div>
-            )
-          })
+          //
+          // Single-live-instance round - a real (!isPreview) autoFullscreen
+          // slot is deliberately EXCLUDED from this stack now and rendered
+          // exclusively by the always-mounted portal further down instead
+          // (see that block's own comment) - not duplicated here too. Only
+          // an admin preview still renders an autoFullscreen slot in this
+          // stack (the portal skips previews entirely, same as before this
+          // round; a preview never wants true viewport-fullscreen anyway -
+          // see the portal's own isPreview comment), so preview behaviour
+          // for such a slot is completely unchanged: shown here, plain,
+          // never fullscreen.
+          effectiveSlots
+            .filter((slot) => !slot.autoFullscreen || isPreview)
+            .map((slot) => {
+              // Nothing is genuinely active while still gating - the
+              // buffering overlay (below) covers the box in that case, so
+              // every slot renders invisible underneath it regardless of
+              // activeSlotNumber's default (null) value. Every slot's own
+              // MediaSlotRenderer registers/downloads its mp4 unconditionally
+              // now (see that component's own videoDownloadUrl comment) -
+              // there's no more "only load if active/next" eligibility check
+              // here, since the shared download manager's own queue is what
+              // enforces one-at-a-time loading instead.
+              const isActive = bufferingDone && slot.slotNumber === activeSlotNumber
+              const isUpNext = bufferingDone && slot.slotNumber === upcomingSlotNumber
+              return (
+                <div key={slot.slotNumber} className={`absolute inset-0 ${isActive ? '' : 'invisible'}`}>
+                  <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
+                </div>
+              )
+            })
         ) : webcamUrl ? (
           <iframe
             src={webcamUrl}
@@ -469,13 +482,33 @@ export default function MediaPanel({
           it's the active slide via the identical `invisible`-class
           technique used above - never conditionally created/destroyed.
           Slots without autoFullscreen get no portaled copy at all (no
-          change for them). A slot's fullscreen copy and its own
-          always-mounted copy in the main stack above ARE both live
-          simultaneously while that slide is active (the fullscreen one
-          visually on top, z-50) - not a new cost introduced here, the
-          original code already had exactly the same overlap whenever a
-          slide WAS active, just followed by a destroy/recreate cycle
-          this fix removes.
+          change for them).
+
+          Single-live-instance round: the paragraph above originally
+          ended here with "a slot's fullscreen copy and its own always-
+          mounted copy in the main stack ARE both live simultaneously
+          while active" - true at the time, and harmless for ordinary
+          media (image/mp4/website/pdf), but for a `webcam` slot
+          (a live YouTube/relay iframe) it meant TWO independent,
+          permanently-alive embeds of the SAME live stream mounted at
+          once. Confirmed live: YouTube's own live-broadcast infra
+          doesn't reliably tolerate two concurrent embedded sessions of
+          the same video id from one page - Gyroplane Train's webcam
+          slide (the first, and so far only, webcam slot ever configured
+          with autoFullscreen) would flash the live feed once on load,
+          then flip to YouTube's own "Video unavailable" state - the
+          stream itself was never unhealthy (confirmed via YouTube
+          Studio, a plain watch-page load, and "allow embedding"), it
+          was our own duplicate embed getting one of the two sessions
+          rejected. Fixed by making the two copies mutually exclusive
+          instead of simultaneous: the main stack above now explicitly
+          EXCLUDES any real (non-preview) autoFullscreen slot from its
+          own render (see that map's own `.filter`), so this portal is
+          now the single, sole place such a slot's MediaSlotRenderer -
+          and therefore its one live iframe - ever exists. Nothing about
+          THIS portal's own always-mounted/never-destroyed structure
+          needed to change to fix this; only the main stack's competing
+          copy needed to go.
 
           Gated on `!isPreview`: never true for an admin preview
           (DesignPage.tsx, CafeMediaPage.tsx - see that prop's own
