@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useWeather } from '../context/WeatherContext'
 import { degreesToCardinal } from '../utils/windCalculations'
-import { estimateCloudBaseFt } from '../utils/cloudBase'
+import { resolveCloudBaseFt } from '../utils/cloudBase'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import CloudVisibilityChart from './CloudVisibilityChart'
@@ -180,10 +180,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
   // liveDataUnavailable: the selected source's fetch failed and weather
   // is actually the substituted mock fixture - show N/A rather than
   // presenting that fake data as if it were a real reading.
-  const cloudBaseFt =
-    !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
-      ? null
-      : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
+  const cloudBaseFt = resolveCloudBaseFt(weather, liveDataUnavailable, activeProvider)
   // Same gate as cloudBaseFt itself - a capturedAt timestamp with no real
   // Cloud Base value alongside it would be a freshness claim about data
   // that isn't actually being shown.

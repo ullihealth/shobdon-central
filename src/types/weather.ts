@@ -8,22 +8,37 @@ export interface WeatherData {
   qnh: number // hPa
   // Only ever populated by the 'atc' provider (Shobdon's own Vantage
   // Pro2 station reports it as its own distinct field, not derived) -
-  // undefined for mock/internet/ingested, same scope as dewpoint below.
-  // Powers the Weather Summary QFE card; a missing value means that
-  // card shows N/A rather than presenting QNH twice.
+  // undefined for mock/internet/ingested. Unlike dewpoint below, this
+  // stays 'atc'-only because functions/api/public/weather-latest.ts's own
+  // SELECT (what the 'ingested' provider actually reads) never includes
+  // qfe_hpa at all, even though the write-side ingest endpoint can store
+  // it - no equivalent 'ingested' case exists today. Powers the Weather
+  // Summary QFE card; a missing value means that card shows N/A rather
+  // than presenting QNH twice.
   qfe?: number // hPa
   pressureTrend: PressureTrend
   notams: string[] // active NOTAM text(s); empty array means genuinely none, not "unknown"
-  // Only ever populated by the 'atc' provider (Shobdon's own Vantage Pro2
-  // station) - undefined for mock/internet, which have no dewpoint source.
-  // Powers the Cloud Base (Shobdon Calculated) card; a missing value means
-  // that card shows N/A rather than a fabricated estimate.
+  // Populated by the 'atc' provider (Shobdon's own Vantage Pro2 station)
+  // AND by the 'ingested' provider when the reading is a genuine shared
+  // physical capture (sourceReadingType 'atc_capture' - see
+  // ingestedProvider.ts's own dewpointC mapping) - undefined for mock/
+  // internet, and for an 'ingested' reading that isn't a real station
+  // capture (a subtenant's own genuine third-party feed, or a
+  // 'met_office_fallback' substitution). Powers the Cloud Base (Shobdon
+  // Calculated) card via utils/cloudBase.ts's resolveCloudBaseFt, which
+  // owns the exact provider/sourceReadingType gate; a missing value
+  // means that card shows N/A rather than a fabricated estimate.
   dewpoint?: number // Celsius
-  // ISO timestamp of when the station reading this data came from was
-  // actually captured (Vantage Pro2 -> capture-weathercentral.ps1, ~60s
-  // cadence) - only ever set by the 'atc' provider, same as dewpoint.
-  // Powers the Cloud Base Forecast card's "Last updated" line with a
-  // genuine freshness value, not the current render time.
+  // ISO timestamp of when this reading was actually captured/observed -
+  // set by the 'atc' provider (Vantage Pro2 -> capture-weathercentral.ps1,
+  // ~60s cadence) AND unconditionally by the 'ingested' provider
+  // (reading.observedAt, regardless of sourceReadingType - broader scope
+  // than dewpoint above, which is 'ingested'-conditional on being a
+  // genuine atc_capture). undefined for mock/internet. Powers the Cloud
+  // Base Forecast card's "Last updated" line with a genuine freshness
+  // value, not the current render time - gated by the consuming
+  // components on cloudBaseFt already being non-null, so it's never
+  // shown without a real calculated value alongside it.
   capturedAt?: string
   // Only ever populated by the 'ingested' provider, and only when the
   // reading came via an active cross-tenant weather share

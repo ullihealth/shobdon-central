@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useWeather } from '../../context/WeatherContext'
-import { estimateCloudBaseFt } from '../../utils/cloudBase'
+import { resolveCloudBaseFt } from '../../utils/cloudBase'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 
@@ -62,10 +62,7 @@ export default function WeatherStatGrid(): JSX.Element {
     }
   }, [])
 
-  const cloudBaseFt =
-    !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
-      ? null
-      : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
+  const cloudBaseFt = resolveCloudBaseFt(weather, liveDataUnavailable, activeProvider)
   // Category (Very Good/Poor/etc) dropped from this value entirely, not
   // just the decimal/double-km cleanup above - even with those fixes,
   // "Very Good" plus a range still wrapped to two lines on a real phone

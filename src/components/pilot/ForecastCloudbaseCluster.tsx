@@ -1,5 +1,5 @@
 import { useWeather } from '../../context/WeatherContext'
-import { estimateCloudBaseFt } from '../../utils/cloudBase'
+import { resolveCloudBaseFt } from '../../utils/cloudBase'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
 import CloudVisibilityChart from '../CloudVisibilityChart'
 
@@ -14,10 +14,7 @@ export default function ForecastCloudbaseCluster(): JSX.Element {
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
   const { hours: visibilityHours, fetchedAt: visibilityFetchedAt } = useVisibilityForecast()
 
-  const cloudBaseFt =
-    !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
-      ? null
-      : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
+  const cloudBaseFt = resolveCloudBaseFt(weather, liveDataUnavailable, activeProvider)
   const cloudBaseCapturedAt = cloudBaseFt === null ? null : (weather?.capturedAt ?? null)
 
   // No outer section/title, and no Ceiling/Visibility callout cards any

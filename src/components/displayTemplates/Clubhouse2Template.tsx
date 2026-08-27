@@ -11,7 +11,7 @@ import { currentMedia } from '../../config/media'
 import { TEMPLATE_EDGE_PADDING } from '../../config/templateLayout'
 import { useWeather } from '../../context/WeatherContext'
 import { useVisibilityForecast } from '../../services/visibilityForecastService'
-import { estimateCloudBaseFt } from '../../utils/cloudBase'
+import { resolveCloudBaseFt } from '../../utils/cloudBase'
 import { useElementHeight } from '../../hooks/useElementHeight'
 import { useIsDesktopLayout } from '../../hooks/useIsDesktopLayout'
 
@@ -72,10 +72,7 @@ export default function Clubhouse2Template({
   // it doesn't import DashboardPage's JSX either).
   const { weather, liveDataUnavailable, activeProvider } = useWeather()
   const { hours: visibilityHours, fetchedAt: visibilityFetchedAt } = useVisibilityForecast()
-  const cloudBaseFt =
-    !weather || liveDataUnavailable || activeProvider !== 'atc' || weather.dewpoint === undefined
-      ? null
-      : estimateCloudBaseFt(weather.temperature, weather.dewpoint)
+  const cloudBaseFt = resolveCloudBaseFt(weather, liveDataUnavailable, activeProvider)
   const cloudBaseCapturedAt = cloudBaseFt === null ? null : (weather?.capturedAt ?? null)
   // See Clubhouse1Template.tsx's own comment - measures the bottom
   // "Powered by" + FooterTicker stack's real height so the grid below
