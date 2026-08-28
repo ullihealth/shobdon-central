@@ -12,6 +12,7 @@
 // deliberately unchanged access boundary, not something this file
 // should quietly widen).
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { resolveTenantSlug, triggerTenantRefresh } from "../../_utils/refreshDisplays";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -20,6 +21,11 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+  // Tenant-triggered refresh round - a tenant saving their own café
+  // carousel should never need a separate manual "refresh my display"
+  // action (see _utils/refreshDisplays.ts's own comment for the
+  // CAPTURE_KEY shape).
+  CAPTURE_KEY?: string;
 }
 
 interface CropRectInput {
@@ -348,6 +354,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         now
       )
       .run();
+  }
+
+  // Tenant-triggered refresh round - same reasoning and shape as the
+  // dashboard carousel route's own trigger (functions/api/tenant/carousel/
+  // index.ts) - a café tenant editing from home (the exact motivating
+  // case: Meg's Cafe) has no access to the platform-admin "refresh all"
+  // button and no way to know a manual refresh is even a thing. Scoped to
+  // THIS tenant only, unconditional on every successful save, awaited but
+  // itself timeout-bounded and error-swallowing - see that file's own
+  // comment for the full reasoning, deliberately not duplicated here.
+  const tenantSlug = await resolveTenantSlug(env.DB, organizationId);
+  if (tenantSlug) {
+    await triggerTenantRefresh(env, tenantSlug);
   }
 
   return jsonResponse({ ok: true });

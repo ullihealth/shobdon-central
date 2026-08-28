@@ -8,6 +8,7 @@
 // missed when this route was actually built - discovered via a real
 // admin-role account (test@mail.com) hitting a dead end after login.
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { resolveTenantSlug, triggerTenantRefresh } from "../../_utils/refreshDisplays";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -16,6 +17,10 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+  // Tenant-triggered refresh round - a tenant saving their own carousel
+  // should never need a separate manual "refresh my display" action (see
+  // _utils/refreshDisplays.ts's own comment for the CAPTURE_KEY shape).
+  CAPTURE_KEY?: string;
 }
 
 interface CropRectInput {
@@ -419,6 +424,25 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         now
       )
       .run();
+  }
+
+  // Tenant-triggered refresh round - a café/venue tenant editing their own
+  // carousel from home has no access to the platform-admin "Refresh all
+  // tenant displays" button, and no non-technical way to know a manual
+  // refresh is even a concept - see _utils/refreshDisplays.ts's own
+  // comment. Scoped to THIS tenant only (resolveTenantSlug reads only the
+  // authenticated caller's own organizationId), unconditional on every
+  // successful save (unlike tenant/config.ts's own gated trigger, which
+  // shares one endpoint across several unrelated save flows) - every slot
+  // change here is exactly the kind of change a tenant would want their
+  // own display to pick up. Awaited, not fire-and-forget (Pages Functions
+  // have no ctx.waitUntil in this codebase's own hand-rolled
+  // PagesFunction type - an unawaited promise risks being dropped once
+  // this function returns), but triggerTenantRefresh is itself timeout-
+  // bounded and swallows its own errors, so this never fails the save.
+  const tenantSlug = await resolveTenantSlug(env.DB, organizationId);
+  if (tenantSlug) {
+    await triggerTenantRefresh(env, tenantSlug);
   }
 
   return jsonResponse({ ok: true });
