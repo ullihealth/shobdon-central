@@ -1,7 +1,17 @@
 import { useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { REFRESH_CHECK_URL } from '../config/captureEndpoint'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { isCaptureInProgress } from '../services/captureActivity'
+
+// Matches '/' (DashboardPage, the "main" display) and '/d/:displaySlug'
+// (TenantDisplayPage, named displays) - the only routes personalize-
+// tenant.sh's own DASHBOARD_URL is ever actually pointed at (see its own
+// README examples: a bare tenant subdomain, or e.g. "/d/cafe-tv"). Every
+// other route (admin/editing pages, /login, /pilot, /platform/*) is
+// explicitly excluded - see this component's own top comment for why
+// that's now load-bearing, not just an optimization.
+const PUBLIC_DISPLAY_ROUTE_PATTERN = /^\/(d\/[^/]+)?$/
 
 // Lets a remote trigger (opened from a phone via the Worker's /refresh URL,
 // or the platform-admin "Refresh displays" action) force this tab to
@@ -43,9 +53,28 @@ import { isCaptureInProgress } from '../services/captureActivity'
 // was requested", kept across polls until it's actually safe to act on it.
 // Never interrupts an in-progress capture: that's the one constraint that
 // matters more than anything else about this feature.
+//
+// Multi-consumer round (2026-08-28) - a real incident traced an
+// INTERMITTENT (not broken) auto-refresh failure on Meg's Cafe's kiosk to
+// this component being mounted globally, above <Routes>, meaning it was
+// ALSO polling and consuming the exact same per-tenant flag from a
+// tenant's own admin/editing pages (e.g. /cafe-media) any time that
+// admin had them open - confirmed directly via display_visits showing
+// two distinct devices (the Pi kiosk, and a Mac browser) both hitting the
+// tenant's "main" display in the same window. The flag is single-
+// consumer/delete-on-read: whichever poller's request reached the Worker
+// first won, silently starving the other with zero error anywhere - the
+// trigger fired correctly every time, this was purely a race between two
+// UNINTENDED competing consumers, not a broken poll loop. Now gated on
+// PUBLIC_DISPLAY_ROUTE_PATTERN above - an admin's own session should
+// never compete for (or have their own editing work interrupted by) a
+// reload tied to their tenant's own display, only the actual kiosk/wall-
+// display routes should ever poll this at all.
 const POLL_INTERVAL_MS = 12_000
 
 export default function RemoteRefreshWatcher(): null {
+  const location = useLocation()
+  const isPublicDisplayRoute = PUBLIC_DISPLAY_ROUTE_PATTERN.test(location.pathname)
   const pendingReload = useRef(false)
   // Refs, not state - nothing here ever affects render output (this
   // component always returns null), so there's no reason to trigger a
@@ -53,6 +82,12 @@ export default function RemoteRefreshWatcher(): null {
   const tenantSlug = useRef<string | null>(null)
 
   useEffect(() => {
+    // Covers client-side navigation between a display route and a non-
+    // display one within the same tab (e.g. an admin clicking a preview
+    // link) - the kiosk's own case never navigates at all, so this is a
+    // no-op there; isPublicDisplayRoute is always true for its one fixed
+    // URL for the life of the tab.
+    if (!isPublicDisplayRoute) return
     let cancelled = false
 
     async function resolveTenantSlug(): Promise<string | null> {
@@ -98,7 +133,7 @@ export default function RemoteRefreshWatcher(): null {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [])
+  }, [isPublicDisplayRoute])
 
   return null
 }
