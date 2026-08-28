@@ -14,6 +14,14 @@
 import { requireRoles, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { resolveTenantSlug, triggerTenantRefresh } from "../../_utils/refreshDisplays";
 
+// TEMPORARY (2026-08-28, round 2) - duplicated from _utils/refreshDisplays.ts's
+// own private constants (not exported) purely so the diagnostic trace
+// below can make its OWN direct call and see the real response, instead
+// of going through triggerTenantRefresh's opaque Promise<void>. Remove
+// alongside the rest of this round's instrumentation.
+const DEBUG_CAPTURE_WORKER_BASE = "https://shobdon-central-capture.jeffthompson.workers.dev";
+const DEBUG_FALLBACK_CAPTURE_KEY = "49f761797d8e1fe76898e079b997980f";
+
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
   env: Env;
@@ -26,6 +34,37 @@ interface Env {
   // action (see _utils/refreshDisplays.ts's own comment for the
   // CAPTURE_KEY shape).
   CAPTURE_KEY?: string;
+  // TEMPORARY (2026-08-28, round 2) - full step-by-step trace for the
+  // Meg's Cafe silent-refresh investigation, per explicit request for a
+  // real end-to-end trace rather than another isolated hypothesis.
+  // Writes ONE growing array per request (keyed by a short random id
+  // generated at the very top of onRequestPut, before auth even runs),
+  // so a request that fails/throws partway still leaves whatever steps
+  // it reached. Remove once root cause is confirmed.
+  WEATHER_CACHE?: { get: (key: string) => Promise<string | null>; put: (key: string, value: string) => Promise<void> };
+}
+
+const TRACE_LIST_KEY = "debug-trace-cafe-carousel-list";
+
+async function appendTrace(env: Env, traceId: string, step: string, data: Record<string, unknown>): Promise<void> {
+  try {
+    const key = `debug-trace-cafe-carousel:${traceId}`;
+    const existingRaw = await env.WEATHER_CACHE?.get(key);
+    const existing: Array<Record<string, unknown>> = existingRaw ? JSON.parse(existingRaw) : [];
+    existing.push({ step, at: new Date().toISOString(), ...data });
+    await env.WEATHER_CACHE?.put(key, JSON.stringify(existing));
+
+    // Also maintain a small index of recent trace ids, so they can be
+    // found without already knowing one - newest first, capped at 20.
+    const listRaw = await env.WEATHER_CACHE?.get(TRACE_LIST_KEY);
+    const list: string[] = listRaw ? JSON.parse(listRaw) : [];
+    if (!list.includes(traceId)) {
+      list.unshift(traceId);
+      await env.WEATHER_CACHE?.put(TRACE_LIST_KEY, JSON.stringify(list.slice(0, 20)));
+    }
+  } catch {
+    // Diagnostic only - never lets this affect the real request.
+  }
 }
 
 interface CropRectInput {
@@ -184,12 +223,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
+  const traceId = crypto.randomUUID().slice(0, 8);
+  await appendTrace(env, traceId, "request_received", { url: request.url });
+
   const result = await requireRoles(request, env, ["owner", "admin", "cafe"]);
-  if ("error" in result) return result.error;
+  if ("error" in result) {
+    await appendTrace(env, traceId, "auth_failed", {});
+    return result.error;
+  }
   const { organizationId } = result.membership;
+  await appendTrace(env, traceId, "auth_passed", { organizationId });
 
   const body = (await request.json().catch(() => null)) as { slots?: CafeCarouselSlotInput[] } | null;
   if (!body || !Array.isArray(body.slots)) return jsonResponse({ error: "Invalid JSON body" }, 400);
+  await appendTrace(env, traceId, "body_parsed", { slotCount: body.slots.length, slotNumbers: body.slots.map((s) => s.slotNumber) });
 
   for (const slot of body.slots) {
     if (!Number.isInteger(slot.slotNumber) || slot.slotNumber < 1 || slot.slotNumber > 12) {
@@ -355,6 +402,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       )
       .run();
   }
+  await appendTrace(env, traceId, "db_writes_done", {});
 
   // Tenant-triggered refresh round - same reasoning and shape as the
   // dashboard carousel route's own trigger (functions/api/tenant/carousel/
@@ -365,7 +413,35 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // itself timeout-bounded and error-swallowing - see that file's own
   // comment for the full reasoning, deliberately not duplicated here.
   const tenantSlug = await resolveTenantSlug(env.DB, organizationId);
+  await appendTrace(env, traceId, "tenant_slug_resolved", { organizationId, tenantSlug });
   if (tenantSlug) {
+    // TEMPORARY (round 2) - calling the Worker directly here instead of
+    // through triggerTenantRefresh, purely so the ACTUAL response status/
+    // body can be captured for the trace (triggerTenantRefresh's own
+    // return type is Promise<void> - it already logs failures via
+    // console.error since the earlier round, but those logs aren't
+    // reachable from this investigation's environment). Same URL/key
+    // resolution triggerTenantRefresh itself uses.
+    const debugKey = env.CAPTURE_KEY || DEBUG_FALLBACK_CAPTURE_KEY;
+    const debugUrl = `${DEBUG_CAPTURE_WORKER_BASE}/refresh?key=${debugKey}&tenant=${encodeURIComponent(tenantSlug)}`;
+    try {
+      const debugResponse = await fetch(debugUrl, { signal: AbortSignal.timeout(2000) });
+      const debugBody = await debugResponse.text().catch(() => "<unreadable>");
+      await appendTrace(env, traceId, "trigger_fetch_result", {
+        tenantSlug,
+        status: debugResponse.status,
+        ok: debugResponse.ok,
+        body: debugBody.slice(0, 300),
+        keySource: env.CAPTURE_KEY ? "env.CAPTURE_KEY" : "fallback",
+      });
+    } catch (error) {
+      await appendTrace(env, traceId, "trigger_fetch_threw", {
+        tenantSlug,
+        error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      });
+    }
+    // Real call too, unchanged from before - the debug fetch above is
+    // additional instrumentation, not a replacement.
     await triggerTenantRefresh(env, tenantSlug);
   }
 
