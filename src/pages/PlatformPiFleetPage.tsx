@@ -64,7 +64,7 @@ function TextField({
 }): JSX.Element {
   const [draft, setDraft] = useState(value ?? '')
   return (
-    <label className="flex flex-col gap-1 text-xs text-muted-400">
+    <label className="flex flex-col gap-1 text-sm text-muted-400">
       {label}
       <input
         type={type}
@@ -118,7 +118,7 @@ function UnitDetail({
         <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Unit</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextField label="Serial number" value={unit.serialNumber} onSave={(v) => onPatch({ serialNumber: v })} />
-          <label className="flex flex-col gap-1 text-xs text-muted-400">
+          <label className="flex flex-col gap-1 text-sm text-muted-400">
             Status
             <select
               value={unit.status}
