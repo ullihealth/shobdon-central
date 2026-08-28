@@ -48,9 +48,28 @@ export async function resolveTenantSlug(db: D1Database, organizationId: string):
 // REFRESH_TRIGGER_TIMEOUT_MS above). Same key-injection pattern as
 // capture-refresh.ts/capture-logs.ts, just server-resolved tenant
 // instead of the hardcoded Shobdon-only one those two use.
+//
+// Logs on a non-ok response (silent-failure round, 2026-08-28) - this
+// previously swallowed EVERYTHING, including a non-2xx status, not just
+// network/timeout errors. checkKey() on the Worker side does a strict
+// equality check against ITS OWN env.CAPTURE_KEY secret - a completely
+// separate Cloudflare deployment/secret store from this Pages project's
+// own env.CAPTURE_KEY - so if the two are ever out of sync, every single
+// trigger call gets a 403 that was previously invisible everywhere (a
+// real incident: tenant saves persisted correctly, but the paired
+// refresh silently 403'd every time, with zero evidence anywhere it had
+// even been attempted). Still never throws - logging a warning is not
+// the same as failing the save this is attached to.
 export async function triggerTenantRefresh(env: { CAPTURE_KEY?: string }, tenantSlug: string): Promise<void> {
   const key = env.CAPTURE_KEY || FALLBACK_CAPTURE_KEY;
-  await fetch(`${CAPTURE_WORKER_BASE}/refresh?key=${key}&tenant=${encodeURIComponent(tenantSlug)}`, {
-    signal: AbortSignal.timeout(REFRESH_TRIGGER_TIMEOUT_MS),
-  }).catch(() => {});
+  try {
+    const response = await fetch(`${CAPTURE_WORKER_BASE}/refresh?key=${key}&tenant=${encodeURIComponent(tenantSlug)}`, {
+      signal: AbortSignal.timeout(REFRESH_TRIGGER_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      console.error(`triggerTenantRefresh: Worker responded ${response.status} for tenant "${tenantSlug}"`);
+    }
+  } catch (error) {
+    console.error(`triggerTenantRefresh: request failed for tenant "${tenantSlug}"`, error instanceof Error ? error.message : error);
+  }
 }
