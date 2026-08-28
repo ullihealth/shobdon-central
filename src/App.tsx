@@ -40,6 +40,7 @@ import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
 import PreviewBanner from './components/PreviewBanner'
 import RemoteRefreshWatcher from './components/RemoteRefreshWatcher'
+import KioskRenderMarker from './components/KioskRenderMarker'
 import RequireAuth from './components/RequireAuth'
 import RootRoute from './components/RootRoute'
 import AdminLayout from './components/admin/AdminLayout'
@@ -61,6 +62,7 @@ export default function App(): JSX.Element {
         <PreviewBanner />
         <RemoteRefreshWatcher />
         <UploadIndicator />
+        <KioskRenderMarker />
         <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/checklist" element={<ChecklistPage />} />
