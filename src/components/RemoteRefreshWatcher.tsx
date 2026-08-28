@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { REFRESH_CHECK_URL } from '../config/captureEndpoint'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { isCaptureInProgress } from '../services/captureActivity'
@@ -17,11 +17,26 @@ import { isCaptureInProgress } from '../services/captureActivity'
 // App.tsx, above <Routes>, so unlike a page component it has no route
 // param or page-level fetch to read that from. Self-fetches
 // PUBLIC_CONFIG_URL (Host-header-resolved, same request every tenant
-// dashboard already makes on load) purely to learn its own `slug` -
-// on a host with no matching tenant (the login page, /platform/* admin
-// routes), that resolves to a 404 and this component simply never starts
-// polling at all, same harmless no-op those routes already got before
-// per-tenant scoping existed.
+// dashboard already makes on load) purely to learn its own `slug`.
+//
+// Kiosk-reliability round - a real incident on a live Pi kiosk (Meg's
+// Cafe) confirmed this permanently disabled the whole feature for hours:
+// the slug lookup used to be a SEPARATE, ONE-SHOT effect with no retry -
+// if it failed even once (a network blip at boot, DNS not yet warm - a
+// real risk on exactly the kind of cold-boot-and-auto-load Pi this
+// component matters most for), tenantSlug stayed null forever and the
+// poll loop below never started for the rest of that page's life, fully
+// silently. Recovered only because a full Chromium restart gave the
+// component a fresh mount and one more attempt. Fixed by folding slug
+// resolution INTO the poll loop itself: every tick re-attempts it if
+// still unknown, exactly the same "a failure just means try again next
+// tick" resilience the refresh-check fetch below already had - there is
+// no longer a one-shot step whose single failure can permanently disable
+// this feature. On a host with no matching tenant (the login page,
+// /platform/* admin routes), this now retries the slug lookup forever
+// rather than giving up after one 404 - a harmless extra request every
+// 12s on those routes, not a real cost, and no longer a special case to
+// get wrong.
 //
 // The Worker clears the flag the instant it's read, regardless of what we do
 // with it - so `pendingReload` here is the client's own memory of "a reload
@@ -32,38 +47,35 @@ const POLL_INTERVAL_MS = 12_000
 
 export default function RemoteRefreshWatcher(): null {
   const pendingReload = useRef(false)
-  const [tenantSlug, setTenantSlug] = useState<string | null>(null)
-  const [resolvedTenant, setResolvedTenant] = useState(false)
+  // Refs, not state - nothing here ever affects render output (this
+  // component always returns null), so there's no reason to trigger a
+  // re-render when the slug resolves or a reload becomes pending.
+  const tenantSlug = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch(PUBLIC_CONFIG_URL)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { slug?: string | null } | null) => {
-        if (!cancelled) setTenantSlug(data?.slug ?? null)
-      })
-      .catch(() => {
-        if (!cancelled) setTenantSlug(null)
-      })
-      .finally(() => {
-        if (!cancelled) setResolvedTenant(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
-  useEffect(() => {
-    // Waits for the slug lookup above to finish (resolvedTenant) before
-    // deciding whether to poll at all - starting to poll with a
-    // not-yet-known slug would either 404 forever or (worse, if it ever
-    // fell back to a hardcoded default) poll the WRONG tenant's flag.
-    if (!resolvedTenant || !tenantSlug) return
+    async function resolveTenantSlug(): Promise<string | null> {
+      try {
+        const response = await fetch(PUBLIC_CONFIG_URL)
+        if (!response.ok) return null
+        const data: { slug?: string | null } = await response.json()
+        return data?.slug ?? null
+      } catch {
+        return null
+      }
+    }
 
     async function poll() {
+      if (!tenantSlug.current) {
+        tenantSlug.current = await resolveTenantSlug()
+        if (cancelled) return
+        if (!tenantSlug.current) return // not known yet (or no tenant on this host) - try again next tick
+      }
+
       try {
         if (!pendingReload.current) {
-          const response = await fetch(`${REFRESH_CHECK_URL}&tenant=${encodeURIComponent(tenantSlug as string)}`)
+          const response = await fetch(`${REFRESH_CHECK_URL}&tenant=${encodeURIComponent(tenantSlug.current)}`)
           if (response.ok) {
             const data: { refreshRequested?: boolean } = await response.json()
             if (data.refreshRequested) {
@@ -82,8 +94,11 @@ export default function RemoteRefreshWatcher(): null {
 
     void poll()
     const interval = window.setInterval(poll, POLL_INTERVAL_MS)
-    return () => window.clearInterval(interval)
-  }, [resolvedTenant, tenantSlug])
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
 
   return null
 }
