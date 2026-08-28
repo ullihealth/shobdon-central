@@ -26,6 +26,16 @@ interface Env {
   // action (see _utils/refreshDisplays.ts's own comment for the
   // CAPTURE_KEY shape).
   CAPTURE_KEY?: string;
+  // TEMPORARY (2026-08-28) - diagnostic-only, for the Meg's Cafe
+  // silent-refresh investigation. Reuses the already project-wide-bound
+  // WEATHER_CACHE namespace (wrangler.toml's own comment: "no tenant-
+  // specific or write-meaningful content" - safe for a throwaway,
+  // uniquely-keyed marker) purely so the trigger call site below can
+  // leave directly queryable, timestamped proof of whether it actually
+  // executed during a real save, since live-tailing this project's
+  // Functions logs isn't reachable from the environment doing this
+  // investigation. Remove once the actual root cause is confirmed.
+  WEATHER_CACHE?: { put: (key: string, value: string) => Promise<void> };
 }
 
 interface CropRectInput {
@@ -365,6 +375,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // itself timeout-bounded and error-swallowing - see that file's own
   // comment for the full reasoning, deliberately not duplicated here.
   const tenantSlug = await resolveTenantSlug(env.DB, organizationId);
+  // TEMPORARY diagnostic write - see this Env's own WEATHER_CACHE comment.
+  // Wrapped so a diagnostic failure can never affect the real save.
+  try {
+    await env.WEATHER_CACHE?.put(
+      "debug-cafe-carousel-trigger",
+      JSON.stringify({ at: new Date().toISOString(), organizationId, tenantSlug })
+    );
+  } catch {
+    // Diagnostic only - never lets this affect the real save.
+  }
   if (tenantSlug) {
     await triggerTenantRefresh(env, tenantSlug);
   }
