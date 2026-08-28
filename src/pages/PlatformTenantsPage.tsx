@@ -1635,8 +1635,11 @@ export default function PlatformTenantsPage(): JSX.Element {
   const [refreshAllStatus, setRefreshAllStatus] = useState<RefreshDisplaysStatus>('idle')
 
   async function handleRefreshAllDisplays() {
+    // ~30 seconds, not ~15 - see DesignPage.tsx's own comment on this
+    // exact correction (measured twice on real Pi hardware, mechanism
+    // itself confirmed working correctly).
     const message =
-      'Refresh every tenant’s live displays now? Every dashboard currently open, across every airfield, will reload within about 15 seconds.'
+      'Refresh every tenant’s live displays now? Every dashboard currently open, across every airfield, will reload within about 30 seconds.'
     if (!window.confirm(message)) return
     setRefreshAllStatus('loading')
     const ok = await triggerRefreshDisplays('all')

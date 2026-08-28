@@ -1094,14 +1094,23 @@ export default function DesignPage(): JSX.Element {
     // The no-template-change branch is byte-for-byte the original
     // dashboard/café confirm text - zero wording change for the common
     // case where only colour is being applied.
+    //
+    // ~30 seconds, not ~15 - corrected after measuring the real end-to-
+    // end delay twice on live Pi hardware (Meg's Cafe). The mechanism
+    // itself was never the problem (confirmed via a live network trace);
+    // the original "~15s" estimate under-accounted for actual reload/
+    // re-render time on Pi 4 hardware on top of the ~12s poll interval
+    // (RemoteRefreshWatcher.tsx's own POLL_INTERVAL_MS) - not worth
+    // chasing tighter with engineering effort for a cosmetic wording
+    // mismatch, per that investigation's own conclusion.
     const screenLabel = isDashboard ? 'live dashboard' : 'live café screen'
     const confirmMessage = isDashboard
       ? `Apply this theme${needsTemplatePush ? ' and layout template' : ''} to the ${screenLabel}? This affects every device that loads it (PC2, clubhouse display, etc.)${
-          needsTemplatePush ? ' - the colour change within about 15 seconds, the template change immediately.' : ' within about 15 seconds.'
+          needsTemplatePush ? ' - the colour change within about 30 seconds, the template change immediately.' : ' within about 30 seconds.'
         }`
       : `Apply this design to the ${screenLabel}? This updates the shared colour theme everywhere it's used${
           needsTemplatePush ? ", and switches this screen's own layout template" : ''
-        } - devices pick up the colour change within about 15 seconds${needsTemplatePush ? ', the template change immediately' : ''}.`
+        } - devices pick up the colour change within about 30 seconds${needsTemplatePush ? ', the template change immediately' : ''}.`
 
     if (!window.confirm(confirmMessage)) {
       return

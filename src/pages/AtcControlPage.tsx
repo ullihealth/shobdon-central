@@ -380,9 +380,12 @@ export default function AtcControlPage(): JSX.Element {
   // (handleApplyToLiveScreen) - reusing that exact mechanism rather
   // than building a second one.
   async function handleUpdateDashboard() {
+    // ~30 seconds, not ~15 - see DesignPage.tsx's own comment on this
+    // exact correction (measured twice on real Pi hardware, mechanism
+    // itself confirmed working correctly).
     if (
       !window.confirm(
-        'Push these changes to the live dashboard? This affects every device that loads it (PC2, clubhouse display, etc.) within about 15 seconds.'
+        'Push these changes to the live dashboard? This affects every device that loads it (PC2, clubhouse display, etc.) within about 30 seconds.'
       )
     ) {
       return
@@ -451,7 +454,7 @@ export default function AtcControlPage(): JSX.Element {
             <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Update Dashboard</div>
             <p className="mb-2 text-xs text-muted-500">
               Publishes the staged changes below to the live dashboard - every device that loads it picks them up
-              within about 15 seconds.
+              within about 30 seconds.
             </p>
             {applyStatus === 'success' && (
               <p className="mb-2 text-xs font-semibold text-status-good">Published - live dashboard will update shortly.</p>
