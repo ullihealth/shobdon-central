@@ -1,0 +1,16 @@
+-- Postcode-based location entry round. Adds a UK postcode column
+-- alongside the existing lat/lon columns (migration 0022) - postcode is
+-- now the PRIMARY way an admin sets a tenant's location (AirfieldLocationSection.tsx/
+-- PlatformTenantsPage.tsx both geocode it server-side via postcodes.io in
+-- functions/api/tenant/config.ts, writing the resolved lat/lon into the
+-- existing columns), with raw lat/lon demoted to an advanced manual
+-- override - kept as the columns everything else (notams.ts,
+-- weather-default.ts, weather-metoffice.ts) actually reads, so nothing
+-- downstream needs to know postcode exists at all.
+--
+-- Nullable, no backfill: postcode is genuinely unknown for every
+-- existing tenant (their lat/lon were entered by hand, not derived from
+-- a postcode) - NULL here just means "no postcode on file," matching
+-- lat/lon's own original NULL-until-configured convention, not an error
+-- state.
+ALTER TABLE tenants ADD COLUMN postcode TEXT;

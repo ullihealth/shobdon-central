@@ -147,6 +147,14 @@ export const PLATFORM_ONBOARD_TENANT_URL = '/api/platform/tenants/onboard'
 // guarantee against a race between two concurrent requests.
 export const PLATFORM_CHECK_SLUG_URL = '/api/platform/tenants/check-slug'
 
+// Platform-admin only: postcode-to-lat/lon lookup for the onboarding
+// wizard's own "Locate" action (PlatformTenantsPage.tsx) - functions/api/
+// platform/geocode-postcode.ts. Reuses the same geocodePostcode() helper
+// the venue_cafe self-serve signup branch already established, just
+// authenticated instead of public+rate-limited. Stateless - doesn't
+// create or touch any tenant row, onboard.ts's own POST still does that.
+export const PLATFORM_GEOCODE_POSTCODE_URL = '/api/platform/geocode-postcode'
+
 // Public, unauthenticated invite-link account setup - functions/api/
 // public/onboard/[token].ts (GET validate) and its accept.ts sibling
 // (POST). Consumed by OnboardInvitePage.tsx.

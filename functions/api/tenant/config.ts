@@ -12,6 +12,7 @@
 import { requireOwner, jsonResponse, syncOrganizationIdentity, type D1Database } from "../_utils/tenantAuth";
 import { buildPublicConfigData } from "../_utils/publicConfig";
 import { resolveTenantSlug, triggerTenantRefresh } from "../_utils/refreshDisplays";
+import { geocodePostcode } from "../_utils/postcodeGeocode";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -148,6 +149,21 @@ function isValidLon(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
 }
 
+// Postcode-based location entry round. UK postcode is now the PRIMARY
+// way an admin sets an EXISTING tenant's location (AirfieldLocationSection.tsx)
+// - reuses the exact same geocodePostcode() (_utils/postcodeGeocode.ts)
+// the venue_cafe self-serve signup branch already established
+// (trial-signup.ts/check-postcode.ts), not a second implementation, so
+// there's only ever one place that talks to postcodes.io. That existing
+// helper returns { valid, lat?, lon?, postcode?, error? } - resolved
+// lat/lon go into the same columns everything downstream already reads
+// (notams.ts, weather-metoffice.ts, weather-default.ts), plus the new
+// postcode column (migration 0099, which that older round never added -
+// it only ever persisted a free-text venueName+postcode blob into
+// trial_signups.location_text, nothing structured on tenants itself).
+// Raw lat/lon stays as a manual override (the block below this one) for
+// the rare non-UK tenant or a postcode-lookup failure.
+
 // Windsock strength thresholds (knots) - a sanity ceiling (100kt), not a
 // real aviation limit, purely to reject obvious typos/garbage rather than
 // silently accepting them; no floor beyond "positive", since an admin
@@ -192,7 +208,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         // same derivation as publicConfig.ts's own copy (see that
         // file's comment for the full "why"); internet_provider_
         // display_name (migration 0083) is no longer read, left inert.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, postcode, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -203,6 +219,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         icaoCode: string | null;
         lat: number | null;
         lon: number | null;
+        postcode: string | null;
         windsockBand2Kt: number;
         windsockBand3Kt: number;
         windsockBand4Kt: number;
@@ -258,6 +275,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     icaoCode: tenantRow?.icaoCode ?? null,
     lat: tenantRow?.lat ?? null,
     lon: tenantRow?.lon ?? null,
+    postcode: tenantRow?.postcode ?? null,
     // Runway/Wind widget - 5-tier windsock (migration 0079), same
     // real-world-convention fallback defaults as publicConfig.ts's own
     // copy. bandNKt = crosswind speed (kt) at/above which windsock-N.png
@@ -302,6 +320,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     icaoCode?: unknown;
     lat?: unknown;
     lon?: unknown;
+    postcode?: unknown;
     windsock?: { band2Kt?: unknown; band3Kt?: unknown; band4Kt?: unknown; band5Kt?: unknown };
     activeWeatherProvider?: unknown;
   } | null;
@@ -342,6 +361,40 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         .run();
     } else {
       return jsonResponse({ error: "icaoCode must be exactly 4 alphabetic characters" }, 400);
+    }
+  }
+
+  // postcode: the primary location-entry path (AirfieldLocationSection.tsx's
+  // "Locate" action) - resolved server-side via postcodes.io, writing
+  // BOTH the raw postcode and the resolved lat/lon in one request. "" or
+  // null clears the postcode only (same "independent field" precedent as
+  // icaoCode above) - it deliberately does NOT also clear lat/lon, since
+  // an admin might clear a mistyped postcode while keeping the
+  // coordinates it had already resolved to, or might be about to set
+  // lat/lon manually via the advanced override instead. Runs before the
+  // lat/lon block below so an explicit lat/lon in the SAME request (not
+  // expected from the UI - postcode and manual override are separate
+  // actions - but not rejected either) always wins as the more specific,
+  // more recently-stated instruction.
+  let resolvedLocation: { lat: number; lon: number; postcode: string } | null = null;
+  if (body.postcode !== undefined) {
+    if (body.postcode === null || body.postcode === "") {
+      await env.DB
+        .prepare("UPDATE tenants SET postcode = NULL, updated_at = ? WHERE organization_id = ?")
+        .bind(now, organizationId)
+        .run();
+    } else if (typeof body.postcode === "string") {
+      const geocoded = await geocodePostcode(body.postcode);
+      if (!geocoded.valid || typeof geocoded.lat !== "number" || typeof geocoded.lon !== "number" || !geocoded.postcode) {
+        return jsonResponse({ error: geocoded.error ?? "Postcode not found" }, 400);
+      }
+      await env.DB
+        .prepare("UPDATE tenants SET postcode = ?, lat = ?, lon = ?, updated_at = ? WHERE organization_id = ?")
+        .bind(geocoded.postcode, geocoded.lat, geocoded.lon, now, organizationId)
+        .run();
+      resolvedLocation = { lat: geocoded.lat, lon: geocoded.lon, postcode: geocoded.postcode };
+    } else {
+      return jsonResponse({ error: "postcode must be a string" }, 400);
     }
   }
 
@@ -512,5 +565,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  return jsonResponse({ ok: true });
+  // resolvedLocation only present when this same request just geocoded a
+  // postcode - lets AirfieldLocationSection.tsx show "Located near: X"
+  // immediately without a second round trip back to GET.
+  return jsonResponse({ ok: true, ...(resolvedLocation ? { resolvedLocation } : {}) });
 };

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { PLATFORM_CHECK_SLUG_URL, PLATFORM_ONBOARD_TENANT_URL } from '../config/publicApi'
+import { PLATFORM_CHECK_SLUG_URL, PLATFORM_ONBOARD_TENANT_URL, PLATFORM_GEOCODE_POSTCODE_URL } from '../config/publicApi'
 import type { MemberRole } from '../types/member'
 import PilotTickerSlotsEditor from '../components/platform/PilotTickerSlotsEditor'
 
@@ -1728,6 +1728,47 @@ export default function PlatformTenantsPage(): JSX.Element {
   const latValid = !latBlank && Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
   const lonValid = !lonBlank && Number.isFinite(parsedLon) && parsedLon >= -180 && parsedLon <= 180
 
+  // Postcode-first round - UK Postcode is now the primary way to fill in
+  // lat/lon here (same "Locate" pattern as AirfieldLocationSection.tsx's
+  // own tenant-editable version), reusing the same geocodePostcode()
+  // helper the venue_cafe self-serve signup form already established
+  // (functions/api/_utils/postcodeGeocode.ts) via a small platform-admin-
+  // only lookup endpoint (geocode-postcode.ts - no tenant row exists yet
+  // to PUT against here, unlike /config's own version). Locate only ever
+  // populates lat/lon state below - onboard.ts's own submission and its
+  // required-unless-parent-selected validation are completely unchanged,
+  // they still just read lat/lon exactly as before.
+  const [postcode, setPostcode] = useState('')
+  const [locateStatus, setLocateStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
+  const [locateErrorMessage, setLocateErrorMessage] = useState<string | null>(null)
+  const [advancedLocationExpanded, setAdvancedLocationExpanded] = useState(false)
+
+  async function handleLocate() {
+    if (postcode.trim() === '') return
+    setLocateStatus('working')
+    setLocateErrorMessage(null)
+    try {
+      const response = await fetch(PLATFORM_GEOCODE_POSTCODE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postcode: postcode.trim() }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.valid || typeof data.lat !== 'number' || typeof data.lon !== 'number') {
+        setLocateErrorMessage(typeof data?.error === 'string' ? data.error : "Couldn't locate that postcode - please try again.")
+        setLocateStatus('error')
+        return
+      }
+      setLat(String(data.lat))
+      setLon(String(data.lon))
+      if (typeof data.postcode === 'string') setPostcode(data.postcode)
+      setLocateStatus('success')
+    } catch {
+      setLocateErrorMessage("Couldn't reach the postcode lookup service - please try again.")
+      setLocateStatus('error')
+    }
+  }
+
   // Parent Airfield (onboard-tool venue/café fork round) - venue_cafe
   // only, per the field list this branch replaces. Always visible for
   // that branch, right after Subdomain - no longer gated behind lat/lon
@@ -1841,6 +1882,9 @@ export default function PlatformTenantsPage(): JSX.Element {
       setSlugCheck({ status: 'idle' })
       setLat('')
       setLon('')
+      setPostcode('')
+      setLocateStatus('idle')
+      setAdvancedLocationExpanded(false)
       setParentTenantSlug('')
       // Refresh the list so the new tenant row appears immediately,
       // reusing the exact same fetch the initial mount already does.
@@ -2060,6 +2104,8 @@ export default function PlatformTenantsPage(): JSX.Element {
                         if (event.target.value) {
                           setLat('')
                           setLon('')
+                          setPostcode('')
+                          setLocateStatus('idle')
                         }
                       }}
                       className="w-56 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
@@ -2082,31 +2128,28 @@ export default function PlatformTenantsPage(): JSX.Element {
                 {!parentSelected && (
                   <>
                     <div className="flex flex-col gap-1.5">
-                      <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                        Latitude
+                      <label htmlFor="onboard-postcode" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                        UK Postcode
                       </label>
                       <input
-                        id="onboard-lat"
-                        value={lat}
-                        onChange={(event) => setLat(event.target.value)}
-                        placeholder="52.2416"
-                        inputMode="decimal"
-                        className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                        id="onboard-postcode"
+                        value={postcode}
+                        onChange={(event) => {
+                          setPostcode(event.target.value)
+                          if (locateStatus !== 'idle') setLocateStatus('idle')
+                        }}
+                        placeholder="HR6 9NR"
+                        className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm uppercase text-white placeholder:text-muted-500"
                       />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                        Longitude
-                      </label>
-                      <input
-                        id="onboard-lon"
-                        value={lon}
-                        onChange={(event) => setLon(event.target.value)}
-                        placeholder="-2.8821"
-                        inputMode="decimal"
-                        className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLocate}
+                      disabled={locateStatus === 'working' || postcode.trim() === ''}
+                      className="shrink-0 rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+                    >
+                      {locateStatus === 'working' ? 'Locating…' : 'Locate'}
+                    </button>
                   </>
                 )}
                 <button
@@ -2129,13 +2172,72 @@ export default function PlatformTenantsPage(): JSX.Element {
                   {onboarding ? 'Creating…' : 'Onboard new tenant'}
                 </button>
               </div>
-              {(lat.trim() !== '' && !latValid) || (lon.trim() !== '' && !lonValid) ? (
+              {locateStatus === 'success' && latValid && lonValid ? (
+                <p className="mt-2 text-[11px] text-status-good">Located at {parsedLat.toFixed(2)}, {parsedLon.toFixed(2)}</p>
+              ) : locateStatus === 'error' ? (
+                <p className="mt-2 text-[11px] text-status-bad">{locateErrorMessage}</p>
+              ) : (lat.trim() !== '' && !latValid) || (lon.trim() !== '' && !lonValid) ? (
                 <p className="mt-2 text-[11px] text-status-bad">Latitude must be -90 to 90, longitude -180 to 180.</p>
               ) : parentSelected && latBlank && lonBlank ? (
                 <p className="mt-2 text-[11px] text-muted-500">
                   Left blank - will use the selected Parent Airfield's own coordinates.
                 </p>
               ) : null}
+              {/* Advanced/manual override - same "hidden entirely once a
+                  parent is selected" posture as the postcode field above
+                  (nothing to fill in or look at at that point). Still
+                  needed for a future non-UK tenant (postcodes.io is
+                  UK-only) or if a postcode lookup ever fails and Jeff
+                  already knows the coordinates some other way. Directly
+                  edits the same lat/lon state the postcode Locate action
+                  above also populates - onboard.ts's own submission
+                  reads whichever value is currently in that state,
+                  regardless of which path set it. */}
+              {!parentSelected && (
+                <div className="mt-3 border-t border-slate-700/60 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedLocationExpanded((prev) => !prev)}
+                    className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-400"
+                    aria-expanded={advancedLocationExpanded}
+                  >
+                    <span className={`inline-block transition-transform ${advancedLocationExpanded ? 'rotate-90' : ''}`} aria-hidden="true">
+                      ▸
+                    </span>
+                    Advanced / manual override
+                  </button>
+                  {advancedLocationExpanded && (
+                    <div className="mt-2 flex flex-wrap items-end gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="onboard-lat" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                          Latitude
+                        </label>
+                        <input
+                          id="onboard-lat"
+                          value={lat}
+                          onChange={(event) => setLat(event.target.value)}
+                          placeholder="52.2416"
+                          inputMode="decimal"
+                          className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="onboard-lon" className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                          Longitude
+                        </label>
+                        <input
+                          id="onboard-lon"
+                          value={lon}
+                          onChange={(event) => setLon(event.target.value)}
+                          placeholder="-2.8821"
+                          inputMode="decimal"
+                          className="w-32 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-muted-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
