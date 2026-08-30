@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { REFRESH_CHECK_URL } from '../config/captureEndpoint'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { isCaptureInProgress } from '../services/captureActivity'
+import { isUpdateAvailable, applyUpdate } from '../services/serviceWorkerUpdate'
 
 // Matches '/' (DashboardPage, the "main" display) and '/d/:displaySlug'
 // (TenantDisplayPage, named displays) - the only routes personalize-
@@ -70,6 +71,18 @@ const PUBLIC_DISPLAY_ROUTE_PATTERN = /^\/(d\/[^/]+)?$/
 // never compete for (or have their own editing work interrupted by) a
 // reload tied to their tenant's own display, only the actual kiosk/wall-
 // display routes should ever poll this at all.
+//
+// Offline-resilience round (2026-08-30) - this poll cycle is now ALSO
+// the single decision point for "a new deployed version is ready",
+// alongside the existing remote-flag check, rather than letting
+// src/services/serviceWorkerUpdate.ts's own service-worker registration
+// trigger a reload on its own. That module deliberately uses
+// registerType: 'prompt' (see vite.config.ts's own comment) specifically
+// so it never reloads unilaterally - a kiosk tab that never closes could
+// otherwise pick the worst possible moment (mid-capture, or racing this
+// exact poll cycle) to force a reload from a completely separate,
+// uncoordinated code path. Same isCaptureInProgress() gate covers both
+// triggers now, not just the remote-flag one.
 const POLL_INTERVAL_MS = 12_000
 
 export default function RemoteRefreshWatcher(): null {
@@ -122,8 +135,19 @@ export default function RemoteRefreshWatcher(): null {
         // No connectivity to the check endpoint right now - try again next poll.
       }
 
-      if (pendingReload.current && !isCaptureInProgress()) {
-        window.location.reload()
+      // Either source is treated identically by the safety gate - a
+      // pending SW update just uses applyUpdate() (which activates the
+      // new worker AND reloads in one step) instead of a plain reload,
+      // since reloading first would still run under the OLD worker for
+      // a moment. If both happen to be true at once, applyUpdate() alone
+      // is sufficient - the remote flag was already consumed server-side
+      // by the fetch above regardless of which path actually reloads.
+      if ((pendingReload.current || isUpdateAvailable()) && !isCaptureInProgress()) {
+        if (isUpdateAvailable()) {
+          await applyUpdate()
+        } else {
+          window.location.reload()
+        }
       }
     }
 
