@@ -379,15 +379,23 @@ export default function PlatformPiFleetPage(): JSX.Element {
             styling overridden to match this page's own established
             sub-heading look (the "Unit"/"Deployment"/"Network" card
             headers below) rather than the Pilot View defaults this
-            component ships with. */}
-        <div className="mb-6 max-w-2xl">
+            component ships with.
+            Readability round: max-w-2xl/text-sm read as cramped for
+            something meant to be read carefully rather than skimmed -
+            widened to max-w-5xl (noticeably more of the page's own
+            max-w-[1400px] container, not full-bleed) and every text size
+            inside bumped one step (text-sm -> text-base for the steps,
+            text-xs -> text-sm for the command blocks, kept smaller than
+            the steps themselves since they're already visually set apart
+            by the dark background/monospace font). */}
+        <div className="mb-6 max-w-5xl">
           <PilotCollapsibleSection
             title="How to prep a new Pi unit"
             sectionClassName="rounded-2xl border border-border bg-panel p-4"
             titleClassName="text-sm font-bold uppercase tracking-widest text-accent-sky-400"
             chevronClassName="text-accent-sky-400"
           >
-            <ol className="mt-1 list-decimal space-y-3 pl-5 text-sm text-muted-300">
+            <ol className="mt-1 list-decimal space-y-3 pl-5 text-base text-muted-300">
               <li>
                 Flash a fresh SD card using Raspberry Pi Imager, from the current master image (distributed via a Dropbox
                 share link for now - check a recent unit's own "Master image location" field on this page for the current
@@ -400,19 +408,19 @@ export default function PlatformPiFleetPage(): JSX.Element {
               <li>
                 Boot the card in the new Pi, then SSH in once it's on the network:
                 <br />
-                <code className="mt-1 inline-block rounded bg-slate-900/80 px-2 py-1 font-mono text-xs text-white">
+                <code className="mt-1 inline-block rounded bg-slate-900/80 px-2 py-1 font-mono text-sm text-white">
                   ssh admin@&lt;hostname&gt;.local
                 </code>
               </li>
               <li>
                 Run:
                 <br />
-                <code className="mt-1 inline-block rounded bg-slate-900/80 px-2 py-1 font-mono text-xs text-white">
+                <code className="mt-1 inline-block rounded bg-slate-900/80 px-2 py-1 font-mono text-sm text-white">
                   ./personalize-tenant.sh --url https://&lt;tenant-subdomain&gt;.airfieldcentral.com --hostname
                   &lt;tenant-hostname&gt;
                 </code>
                 <br />
-                This writes <code className="font-mono text-xs text-white">tenant-config.txt</code>, sets the Pi's
+                This writes <code className="font-mono text-sm text-white">tenant-config.txt</code>, sets the Pi's
                 hostname, and reboots automatically into the new tenant's dashboard.
               </li>
               <li>Plug in an HDMI cable and visually confirm the dashboard loads correctly before shipping/installing the unit.</li>
