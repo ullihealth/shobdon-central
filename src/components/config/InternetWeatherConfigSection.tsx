@@ -15,12 +15,32 @@ interface InternetWeatherConfigSectionProps {
   // tenant, not even transiently. Only ever applies to the 'open-meteo'
   // entry, not any other provider this registry might grow later.
   openMeteoDisplayName: string | null
+  // One-source-of-truth round, take 2 - deliberately NOT config.latitude/
+  // config.longitude (below fix's own first attempt routed display
+  // through those, via config.internet kept "in sync" by ConfigPage.tsx -
+  // that raced against this same page's OWN separate resolveWeatherConfig()
+  // effect, which unconditionally overwrites the whole config from
+  // whatever's in localStorage the instant IT resolves, with zero
+  // awareness of the tenant's real lat/lon. Whichever effect's promise
+  // settled last won, so a browser with any pre-existing (even stale/
+  // blank) localStorage entry could see this correctly-fixed value
+  // silently clobbered back to blank moments after load - confirmed
+  // happening for real on newcustomer.airfieldcentral.com/config).
+  // tenantLat/tenantLon bypass that shared, contested state completely -
+  // ConfigPage.tsx's own direct TENANT_CONFIG_URL fetch is the ONLY
+  // thing that ever sets them, so there's no second writer left to race
+  // against. null while ConfigPage.tsx's fetch hasn't resolved yet, or
+  // the tenant genuinely has no location on file.
+  tenantLat: number | null
+  tenantLon: number | null
 }
 
 export default function InternetWeatherConfigSection({
   config,
   onChange,
   openMeteoDisplayName,
+  tenantLat,
+  tenantLon,
 }: InternetWeatherConfigSectionProps): JSX.Element {
   return (
     <div className="flex flex-col gap-6">
@@ -47,14 +67,17 @@ export default function InternetWeatherConfigSection({
           Location's own postcode/manual-override fields below on this
           same page, which meant two different places could each think
           they were "the" tenant location and silently disagree. Now
-          read-only: ConfigPage.tsx keeps config.internet.latitude/
-          longitude synced to Airfield Location's own saved value
-          automatically (both on load and immediately after a save
-          there, no reload needed), so this always reflects the same
-          single source rather than offering a second place to edit it
-          that would just drift again the moment someone typed into it.
-          Editing location is done in Airfield Location; this is
-          confirmation of what Internet Weather will actually use. */}
+          read-only, showing tenantLat/tenantLon directly (see this
+          component's own props comment for why NOT config.latitude/
+          longitude) - always reflects the same single source rather
+          than offering a second place to edit it that would just drift
+          again the moment someone typed into it. Editing location is
+          done in Airfield Location; this is confirmation of what
+          Internet Weather will actually use. Blank (not "0" or "NaN")
+          while tenantLat/tenantLon are still null - either ConfigPage.tsx's
+          fetch hasn't resolved yet, or this tenant genuinely has no
+          location on file, neither of which should ever display as a
+          plausible-looking number. */}
       <ConfigField label="Latitude">
         <input
           type="number"
@@ -62,7 +85,7 @@ export default function InternetWeatherConfigSection({
           readOnly
           disabled
           className={`${configInputClassName} cursor-not-allowed opacity-60`}
-          value={config.latitude}
+          value={tenantLat ?? ''}
           title="Set via the Airfield Location section below"
         />
       </ConfigField>
@@ -75,7 +98,7 @@ export default function InternetWeatherConfigSection({
             readOnly
             disabled
             className={`${configInputClassName} cursor-not-allowed opacity-60`}
-            value={config.longitude}
+            value={tenantLon ?? ''}
             title="Set via the Airfield Location section below"
           />
           <p className="mt-1.5 text-xs text-slate-500">Set via the Airfield Location section below.</p>

@@ -60,6 +60,37 @@ export default function ConfigPage(): JSX.Element {
   // fetch URL/field name underneath it moved.
   const [weatherShare, setWeatherShare] = useState<{ sourceTenantName: string } | null>(null)
 
+  // One-source-of-truth round, take 2 - Internet Weather's read-only
+  // Latitude/Longitude display used to be routed through config.internet
+  // (kept "in sync" via setConfig/saveWeatherConfig from the fetch
+  // below), which raced against the OTHER effect on this page that
+  // resolves the whole config from resolveWeatherConfig() - that one
+  // unconditionally returns whatever's cached in localStorage for a
+  // browser that's ever stored anything before, with zero awareness of
+  // this tenant's real lat/lon, and can resolve AFTER this effect's own
+  // fetch. Whichever setConfig call landed last won, so a browser with
+  // any pre-existing (even stale/blank) localStorage entry could see the
+  // correct value silently overwritten back to blank moments after load
+  // - confirmed happening for real on newcustomer.airfieldcentral.com.
+  // tenantLat/tenantLon are dedicated state with exactly one writer (this
+  // page's own TENANT_CONFIG_URL fetch below, and AirfieldLocationSection's
+  // onLocationChange callback after a save) - nothing else on this page
+  // ever touches them, so there is no second writer left to race against.
+  const [tenantLat, setTenantLat] = useState<number | null>(null)
+  const [tenantLon, setTenantLon] = useState<number | null>(null)
+
+  // Called by AirfieldLocationSection.tsx's own postcode "Locate"/manual-
+  // override saves the instant they succeed - deliberately NOT
+  // setConfig/saveWeatherConfig (see tenantLat/tenantLon's own comment
+  // above for why routing this through the shared, localStorage-backed
+  // config ever caused a real bug). Provider/refreshIntervalSeconds are
+  // untouched - this only ever updates the two fields Airfield Location
+  // actually owns.
+  function handleLocationChange(lat: number, lon: number) {
+    setTenantLat(lat)
+    setTenantLon(lon)
+  }
+
   useEffect(() => {
     let cancelled = false
     fetch('/api/tenant/parent-tenant')
@@ -93,15 +124,13 @@ export default function ConfigPage(): JSX.Element {
           if (typeof data.internetProviderDisplayName === 'string' && data.internetProviderDisplayName.trim()) {
             setInternetProviderDisplayName(data.internetProviderDisplayName.trim())
           }
-          // One-source-of-truth round - seeds Internet Weather's
-          // (now read-only) Latitude/Longitude from this tenant's own
-          // Airfield Location value on initial load, same as
-          // handleLocationChange below does after a live save - see
-          // that function's own comment for the full "why". Only when
-          // both are real numbers: a tenant with no location on file
-          // yet (null/null) has nothing better to seed with than
-          // whatever Internet Weather already had, so it's left alone
-          // rather than overwritten with a blank/NaN value.
+          // Seeds tenantLat/tenantLon (see their own declaration above
+          // for why these are dedicated state, not routed through
+          // config/localStorage) from this tenant's own Airfield
+          // Location value on initial load. Only when both are real
+          // numbers - a tenant with no location on file yet (null/null)
+          // has nothing to seed with, so tenantLat/tenantLon simply stay
+          // null (Internet Weather renders them blank, never a fake 0).
           if (typeof data.lat === 'number' && typeof data.lon === 'number') {
             handleLocationChange(data.lat, data.lon)
           }
@@ -117,35 +146,6 @@ export default function ConfigPage(): JSX.Element {
   function updateConfig(next: WeatherConfig) {
     setConfig(next)
     saveWeatherConfig(next)
-  }
-
-  // One-source-of-truth round - AirfieldLocationSection.tsx's own
-  // postcode "Locate"/manual-override saves call this the instant they
-  // succeed, and the initial-load effect above calls it once with
-  // whatever's already on file - both funnel through here so there's
-  // exactly one place that decides what happens when this tenant's real
-  // location becomes known: keep Internet Weather's (now read-only)
-  // latitude/longitude in permanent lockstep with it. A functional
-  // setConfig update (not a plain updateConfig(...) call closing over
-  // this render's own `config`) - the initial-load effect above and
-  // resolveWeatherConfig()'s own separate effect can both resolve close
-  // together on first mount, and this must always merge onto whichever
-  // config is ACTUALLY current when it runs, never risk clobbering a
-  // slightly-later resolveWeatherConfig() result with a stale closure.
-  // Still calls saveWeatherConfig directly (same persistence
-  // updateConfig itself does) so this device's own cached copy is
-  // corrected too, not just the in-memory value - the next time this
-  // device resolves its weather config, it already reflects the
-  // correct, current tenant location rather than whatever was cached
-  // from this device's first-ever load. Provider/refreshIntervalSeconds
-  // are left completely untouched - only the two fields Airfield
-  // Location actually owns.
-  function handleLocationChange(lat: number, lon: number) {
-    setConfig((current) => {
-      const next = { ...current, internet: { ...current.internet, latitude: lat, longitude: lon } }
-      saveWeatherConfig(next)
-      return next
-    })
   }
 
   // The one field on this page with a real server column (migration
@@ -235,6 +235,8 @@ export default function ConfigPage(): JSX.Element {
               config={config.internet}
               onChange={(internet) => updateConfig({ ...config, internet })}
               openMeteoDisplayName={internetProviderDisplayName}
+              tenantLat={tenantLat}
+              tenantLon={tenantLon}
             />
           )}
           {config.activeProvider === 'ingested' && <IngestedWeatherConfigSection />}
