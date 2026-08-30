@@ -56,14 +56,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-// Same fallback coordinates weather-metoffice.ts/weather-default.ts
-// already use when a tenant has no lat/lon on file - kept in sync with
-// those, not re-derived. (Redundant once every real tenant has values
-// via the new /config Airfield Location section - see the Phase 3
-// deploy notes for this round, not touched here.)
-const SHOBDON_LATITUDE = 52.2416;
-const SHOBDON_LONGITUDE = -2.8821;
-
 const NOTAM_RADIUS_NM = 8;
 const NOTAM_DATA_TTL_SECONDS = 24 * 60 * 60; // 24h floor - always-present last-known-good
 // 240 minutes = the feed's own declared <ttl>, confirmed directly
@@ -429,10 +421,36 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .first<TenantLocationRow>();
 
   const icao = row?.icaoCode ?? null;
-  const lat = row?.lat ?? SHOBDON_LATITUDE;
-  const lon = row?.lon ?? SHOBDON_LONGITUDE;
+  const lat = row?.lat ?? null;
+  const lon = row?.lon ?? null;
 
   const provider = getProvider(env);
+
+  // No lat/lon on file for this tenant - genuinely nothing real to
+  // filter against (there is no sane "default" location for a NOTAM
+  // feed the way there might be for a generic weather forecast). Used to
+  // fall back to hardcoded Shobdon coordinates here, which silently
+  // served Shobdon's own real, live NOTAMs to any tenant that hadn't
+  // configured a location yet (confirmed happening for real to
+  // newcustomer.airfieldcentral.com). Same "unavailable, not a fake
+  // default" posture as weather-default.ts's own lat/lon check - notams:
+  // [] is already the shape RightInfoPanel.tsx's fetch handler treats as
+  // "nothing to show" (it only ever checks Array.isArray(data?.notams)),
+  // so no frontend change is needed to make this render as a clean
+  // no-op rather than an error.
+  if (lat === null || lon === null) {
+    return jsonResponse({
+      icao,
+      lat: null,
+      lon: null,
+      radiusNm: NOTAM_RADIUS_NM,
+      fetchedAt: null,
+      notams: [],
+      providerConfigured: provider !== null,
+      locationConfigured: false,
+      cache: { source: "none", servedAt: new Date().toISOString() },
+    });
+  }
 
   // No provider configured anywhere - skip cache entirely (nothing would
   // ever be cached) and return the documented no-op shape immediately.
@@ -447,6 +465,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       fetchedAt: null,
       notams: [],
       providerConfigured: false,
+      locationConfigured: true,
       cache: { source: "none", servedAt: new Date().toISOString() },
     });
   }
@@ -462,6 +481,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     fetchedAt: payload.fetchedAt,
     notams: payload.notams,
     providerConfigured: true,
+    locationConfigured: true,
     cache: { source, servedAt: new Date().toISOString() },
   });
 };
