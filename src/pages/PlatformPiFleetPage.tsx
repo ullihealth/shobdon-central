@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 
 const PI_UNITS_URL = '/api/platform/pi-units'
 
@@ -366,10 +367,62 @@ export default function PlatformPiFleetPage(): JSX.Element {
             </div>
           )}
         </div>
-        <p className="mb-6 max-w-2xl text-sm text-muted-400">
+        <p className="mb-4 max-w-2xl text-sm text-muted-400">
           Inventory of physical Pi kiosk units - which unit is where, its config, and a dated history log. Reference only:
           this page doesn't flash cards, manage images, or reach the devices themselves.
         </p>
+
+        {/* Pure static reference text, collapsed by default so it never
+            competes with the actual inventory below for attention - see
+            PilotCollapsibleSection's own comment for why this shared
+            accordion (not a new one) is reused here. Title/section
+            styling overridden to match this page's own established
+            sub-heading look (the "Unit"/"Deployment"/"Network" card
+            headers below) rather than the Pilot View defaults this
+            component ships with. */}
+        <div className="mb-6 max-w-2xl">
+          <PilotCollapsibleSection
+            title="How to prep a new Pi unit"
+            sectionClassName="rounded-2xl border border-border bg-panel p-4"
+            titleClassName="text-sm font-bold uppercase tracking-widest text-accent-sky-400"
+            chevronClassName="text-accent-sky-400"
+          >
+            <ol className="mt-1 list-decimal space-y-3 pl-5 text-sm text-muted-300">
+              <li>
+                Flash a fresh SD card using Raspberry Pi Imager, from the current master image (distributed via a Dropbox
+                share link for now - check a recent unit's own "Master image location" field on this page for the current
+                link; a move to Cloudflare R2 is planned but not built yet).
+              </li>
+              <li>
+                Before writing, open Imager's advanced/customisation settings (the gear icon) and preset the new tenant's
+                WiFi network name/password and a hostname for this unit - avoids needing a keyboard/mouse on first boot.
+              </li>
+              <li>
+                Boot the card in the new Pi, then SSH in once it's on the network:
+                <br />
+                <code className="mt-1 inline-block rounded bg-slate-900/80 px-2 py-1 font-mono text-xs text-white">
+                  ssh admin@&lt;hostname&gt;.local
+                </code>
+              </li>
+              <li>
+                Run:
+                <br />
+                <code className="mt-1 inline-block rounded bg-slate-900/80 px-2 py-1 font-mono text-xs text-white">
+                  ./personalize-tenant.sh --url https://&lt;tenant-subdomain&gt;.airfieldcentral.com --hostname
+                  &lt;tenant-hostname&gt;
+                </code>
+                <br />
+                This writes <code className="font-mono text-xs text-white">tenant-config.txt</code>, sets the Pi's
+                hostname, and reboots automatically into the new tenant's dashboard.
+              </li>
+              <li>Plug in an HDMI cable and visually confirm the dashboard loads correctly before shipping/installing the unit.</li>
+              <li>
+                Add a new entry to this page for the unit (serial number, hostname, dashboard URL, master image version,
+                tenant details) so it's tracked going forward.
+              </li>
+            </ol>
+          </PilotCollapsibleSection>
+        </div>
 
         {loading ? (
           <p className="text-sm text-muted-400">Loading…</p>
