@@ -26,11 +26,37 @@ workers_dev = true
 # proxied CNAME) was added and this route deployed - both confirmed via
 # dig/curl against a real tenant subdomain (Gyroplane Train's
 # tenant-5de4rbob.airfieldcentral.com, previously unreachable, now
-# resolving through this Worker). shobdon.airfieldcentral.com, demo.
-# airfieldcentral.com, and newcustomer.airfieldcentral.com are
-# unaffected - those are explicit Pages Custom Domains, and Cloudflare's
-# own precedence rule (exact match beats wildcard) keeps them on Pages,
-# also verified live post-cutover, not just assumed.
+# resolving through this Worker).
+#
+# Corrected 2026-08-30 (stale for over a month - see deploy-worker.yml's
+# own comment, which got this right the same day the mistake was found):
+# this route is the SOLE live server for every real tenant subdomain,
+# shobdon.airfieldcentral.com/demo.airfieldcentral.com/
+# newcustomer.airfieldcentral.com included - NOT just Gyroplane/wildcard-
+# only ones, and this used to say otherwise here. That original claim
+# ("exact match wins, so Shobdon/demo/newcustomer stay on Pages") was the
+# Wildcard DNS Migration Plan's own Step 4 assumption, verified live at
+# cutover time - then empirically DISPROVEN that same day (commit
+# 78b0e87, 2026-07-27): a Worker-only redeploy (no Pages deploy at all)
+# immediately flipped what all three served, simultaneously with every
+# wildcard-only tenant, which is only possible if this Worker - not
+# Pages - was already answering their requests. "Exact match beats
+# wildcard" is real, but only for Workers Route vs. Workers Route on the
+# same zone - it doesn't extend to Workers Route vs. Pages Custom
+# Domain, a different Cloudflare product, not a second entry in the same
+# routing table (see MD FILES/Shobdon-Central-Wildcard-DNS-Migration-Plan.md's
+# own "Update - 2026-07-27" section for the full writeup/evidence). Pages
+# still lists shobdon/demo/newcustomer as attached Custom Domains -
+# that's a real, active, unremoved claim, just not what's actually
+# serving them; leave those claims in place (removing them risks the
+# claim-propagation issue from Decision #4/Runbook 2 for no benefit).
+# The bare apex (airfieldcentral.com) is the one exception, genuinely
+# still Pages-served - this route's leading-label wildcard structurally
+# can't match a zero-label apex. Practical consequence: a change here
+# needs BOTH a Pages deploy (git push, automatic) AND this Worker
+# redeployed (deploy-worker.yml, also automatic on push) to reach any
+# real tenant subdomain - Pages alone is only ever enough for the bare
+# apex.
 [[routes]]
 pattern = "*.airfieldcentral.com/*"
 zone_name = "airfieldcentral.com"
