@@ -26,7 +26,23 @@ type SaveStatus = 'idle' | 'working' | 'success' | 'error'
 // "Advanced" manual override, collapsed by default - still needed for a
 // future non-UK tenant (postcodes.io is UK-only) or if a postcode lookup
 // ever fails and an admin already knows their coordinates some other way.
-export default function AirfieldLocationSection(): JSX.Element | null {
+//
+// One-source-of-truth round - ConfigPage.tsx's own Internet Weather card
+// used to have its own, completely independent Latitude/Longitude
+// fields (localStorage-only, weatherConfigStore.ts), which never
+// reflected a postcode/manual save made here - two editable copies of
+// "this tenant's location" that could silently disagree. onLocationChange
+// (fired only on an actual SAVE here, not on initial load - ConfigPage.tsx
+// gets the initial value from its own existing fetch instead, avoiding a
+// redundant double-set) lets ConfigPage.tsx keep that card's now-
+// read-only display in sync the instant a save here succeeds, no reload
+// needed. See InternetWeatherConfigSection.tsx's own comment for why
+// read-only (not "also editable, also writes here") was the chosen fix.
+interface AirfieldLocationSectionProps {
+  onLocationChange?: (lat: number, lon: number) => void
+}
+
+export default function AirfieldLocationSection({ onLocationChange }: AirfieldLocationSectionProps = {}): JSX.Element | null {
   const [loaded, setLoaded] = useState(false)
   const [icaoCode, setIcaoCode] = useState('')
   const [postcode, setPostcode] = useState('')
@@ -122,6 +138,7 @@ export default function AirfieldLocationSection(): JSX.Element | null {
         setLat(String(resolved.lat))
         setLon(String(resolved.lon))
         setPostcode(typeof resolved.postcode === 'string' ? resolved.postcode : postcode.trim())
+        onLocationChange?.(resolved.lat, resolved.lon)
       }
       setLocateStatus('success')
     } catch {
@@ -147,6 +164,7 @@ export default function AirfieldLocationSection(): JSX.Element | null {
         return
       }
       setManualStatus('success')
+      onLocationChange?.(parsedLat, parsedLon)
     } catch {
       setManualErrorMessage("Couldn't save - please try again.")
       setManualStatus('error')

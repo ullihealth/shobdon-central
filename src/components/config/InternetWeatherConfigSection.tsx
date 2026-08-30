@@ -42,24 +42,44 @@ export default function InternetWeatherConfigSection({
         </select>
       </ConfigField>
 
+      {/* One-source-of-truth round - these used to be freely editable
+          here, independent of (and never kept in sync with) Airfield
+          Location's own postcode/manual-override fields below on this
+          same page, which meant two different places could each think
+          they were "the" tenant location and silently disagree. Now
+          read-only: ConfigPage.tsx keeps config.internet.latitude/
+          longitude synced to Airfield Location's own saved value
+          automatically (both on load and immediately after a save
+          there, no reload needed), so this always reflects the same
+          single source rather than offering a second place to edit it
+          that would just drift again the moment someone typed into it.
+          Editing location is done in Airfield Location; this is
+          confirmation of what Internet Weather will actually use. */}
       <ConfigField label="Latitude">
         <input
           type="number"
           step="0.0001"
-          className={configInputClassName}
+          readOnly
+          disabled
+          className={`${configInputClassName} cursor-not-allowed opacity-60`}
           value={config.latitude}
-          onChange={(event) => onChange({ ...config, latitude: Number(event.target.value) })}
+          title="Set via the Airfield Location section below"
         />
       </ConfigField>
 
       <ConfigField label="Longitude">
-        <input
-          type="number"
-          step="0.0001"
-          className={configInputClassName}
-          value={config.longitude}
-          onChange={(event) => onChange({ ...config, longitude: Number(event.target.value) })}
-        />
+        <div>
+          <input
+            type="number"
+            step="0.0001"
+            readOnly
+            disabled
+            className={`${configInputClassName} cursor-not-allowed opacity-60`}
+            value={config.longitude}
+            title="Set via the Airfield Location section below"
+          />
+          <p className="mt-1.5 text-xs text-slate-500">Set via the Airfield Location section below.</p>
+        </div>
       </ConfigField>
 
       <ConfigField label="Refresh Interval">
