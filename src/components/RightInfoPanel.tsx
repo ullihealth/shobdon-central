@@ -489,7 +489,7 @@ function NotamsPanel({ notices, compact = false }: { notices: SafetyNotice[]; co
           that mislabeling only became directly visible to end users
           once NOTAMs and Notices were split onto genuinely separate
           cards by the restructure - previously this title never shared
-          a rotation with a REAL "NOTAMs (full)" card to be confused
+          a rotation with a REAL "NATS NOTAMs (full)" card to be confused
           against. text-xs in compact mode (was always text-base) -
           part of reclaiming card 1's fixed chrome overhead, see this
           component's own compact comment above. */}
@@ -581,7 +581,7 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
+      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NATS NOTAMs (full)</div>
       <div ref={containerRef} className="relative mt-3 min-h-0 flex-1 overflow-hidden">
         {notams.slice(0, visibleCount).map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
@@ -642,7 +642,7 @@ function NotamMeasurementPass({
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card p-5">
-      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NOTAMs (full)</div>
+      <div className="flex-shrink-0 text-center text-base uppercase tracking-[0.25em] text-muted-500">NATS NOTAMs (full)</div>
       <div ref={containerRef} className="relative mt-3 min-h-0 flex-1 overflow-hidden">
         {notams.map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
