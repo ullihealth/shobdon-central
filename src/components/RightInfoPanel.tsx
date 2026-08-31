@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useWeather } from '../context/WeatherContext'
 import { NOTAMS_URL, PUBLIC_CONFIG_URL } from '../config/publicApi'
+import { formatNotamTextForDisplay } from '../utils/formatNotamText'
 
 // Standalone QR rotation card (Ops Panel's internal carousel) - flip to
 // false to pull the card out of rotation entirely (omitted from
@@ -586,7 +587,14 @@ function AutoNotamsFullPanel({ notams }: { notams: AutoNotam[] }): JSX.Element {
         {notams.slice(0, visibleCount).map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
             <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
-            <span>{notam.text}</span>
+            {/* Display-only reformat (formatNotamText.ts, shared with the
+                Pilot App's own NOTAM card, d76d0bf) - notam.text itself is
+                untouched. NotamMeasurementPass below must render this
+                exact same formatted string, not the raw one, since
+                sentence-cased text measures narrower than the original
+                all-caps feed text and the two panels' own page-count math
+                has to agree on what it's actually measuring. */}
+            <span>{formatNotamTextForDisplay(notam.text)}</span>
           </div>
         ))}
       </div>
@@ -647,7 +655,10 @@ function NotamMeasurementPass({
         {notams.map((notam) => (
           <div key={notam.id} className="mb-3 flex items-start gap-2 text-[15px] text-primary last:mb-0">
             <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
-            <span>{notam.text}</span>
+            {/* Must match AutoNotamsFullPanel's own identical formatted
+                render exactly - this pass exists purely to measure how
+                much space the real (formatted) text needs. */}
+            <span>{formatNotamTextForDisplay(notam.text)}</span>
           </div>
         ))}
       </div>
