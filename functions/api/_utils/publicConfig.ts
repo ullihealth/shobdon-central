@@ -122,6 +122,13 @@ interface CarouselSlotResolvedRow {
   // live download instead), webcam/gyropedia/reserved/website (no
   // underlying file at all).
   mediaSizeBytes: number | null;
+  // Fixed-canvas website embed round (migration 0100) - café-only
+  // (cafe_carousel_slots), always false for the dashboard's own
+  // carouselSlots/reserved-slot rows below (neither table/branch has
+  // this column, and 'website' isn't a valid mediaType for either) -
+  // MediaSlotRenderer.tsx's own 'website' case is what actually reads
+  // this, see that file's own comment for the full "why".
+  websiteFixedCanvas: boolean;
 }
 
 interface OpsPanelRow {
@@ -455,7 +462,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            nc.youtube_video_id AS newCameraYoutubeVideoId,
            nsr.local_base_url AS newCameraLocalBaseUrl,
            cs.cameraId AS newCameraId,
-           cs.externalUrl AS externalUrl
+           cs.externalUrl AS externalUrl,
+           cs.websiteFixedCanvas AS websiteFixedCanvas
          FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
          LEFT JOIN camera_slots cam ON cam.organizationId = cs.organizationId AND cam.slotNumber = cs.cameraSlotNumber
@@ -491,6 +499,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         newCameraLocalBaseUrl: string | null;
         newCameraId: string | null;
         externalUrl: string | null;
+        websiteFixedCanvas: number;
       }>(),
     env.DB
       .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
@@ -884,6 +893,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
+    websiteFixedCanvas: false,
     // The ?v= cache-buster matters now that a slide can be edited IN
     // PLACE (same r2Key, new bytes) - without it, a browser or the R2
     // public bucket's own edge caching could keep serving the pre-edit
@@ -956,6 +966,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
             bannerFontSize: row.bannerFontSize,
             zone: "both",
             autoFullscreen: false,
+            websiteFixedCanvas: false,
             resolvedUrl: row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}` : null,
             mediaSizeBytes: row.mediaSizeBytes,
           }
@@ -978,6 +989,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
             bannerFontSize: "md",
             zone: "both",
             autoFullscreen: false,
+            websiteFixedCanvas: false,
             resolvedUrl: null,
             mediaSizeBytes: null,
           };
@@ -1001,6 +1013,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     bannerFontSize: row.bannerFontSize,
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
+    websiteFixedCanvas: !!row.websiteFixedCanvas,
     resolvedUrl:
       row.mediaType === "webcam"
         ? row.newCameraId

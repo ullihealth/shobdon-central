@@ -1,0 +1,22 @@
+-- Fixed-canvas website embed round. Meg's Cafe's "Website" slot
+-- (mediaType='website', migration 0093) embeds another tenant's own
+-- full kiosk dashboard (Shobdon's /) as a carousel slide - confirmed on
+-- real hardware that its text/windsock/runway graphic all render
+-- smaller than intended while the compass renders correctly, traced to
+-- MediaSlotRenderer.tsx's iframe filling the slot's own (much smaller
+-- than a real TV) box directly: the embedded page's root font-size
+-- (index.css, clamp(12px, 1.5vmin, 20px)) computes against that small
+-- viewport, shrinking every rem-based element (most text, and the
+-- windsock/runway widget, confirmed w-36/9rem) along with it - the
+-- compass alone escapes this because its own sizing is flex/percentage-
+-- based, not rem-based, unrelated to the fix.
+--
+-- Opt-in, default OFF - this 'website' slot type is generic (any
+-- external URL, not just another AirfieldCentral kiosk dashboard), and
+-- forcing every embed to render at a fixed 1920x1080 canvas and scale
+-- down would be wrong for a genuinely responsive page that already
+-- reflows correctly to any container size. No other tenant currently
+-- has a 'website' slot configured (confirmed against production - Meg's
+-- Cafe -> Shobdon is the only real usage today), so this is purely
+-- additive with zero behaviour change for every existing row.
+ALTER TABLE cafe_carousel_slots ADD COLUMN websiteFixedCanvas INTEGER NOT NULL DEFAULT 0;

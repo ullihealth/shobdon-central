@@ -57,6 +57,7 @@ interface CafeCarouselSlotRow {
   autoFullscreen: number;
   ownerSlotUnlocked: number;
   externalUrl: string | null;
+  websiteFixedCanvas: number;
 }
 
 // Café Reserved Owner Slots round (migration 0092) - same fixed
@@ -87,6 +88,10 @@ interface CafeCarouselSlotInput {
   // Café "Website" slot type (migration 0093) - café-only, deliberately
   // never added to the dashboard's own carousel/index.ts equivalent.
   externalUrl?: string | null;
+  // Fixed-canvas embed round (migration 0100) - opt-in per slot, only
+  // meaningful for mediaType 'website'. See MediaSlotRenderer.tsx's own
+  // comment on its 'website' case for the full "why".
+  websiteFixedCanvas?: boolean;
 }
 
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf", "webcam", "gyropedia", "website"];
@@ -129,6 +134,7 @@ function defaultSlots(): CafeCarouselSlotRow[] {
     autoFullscreen: 0,
     ownerSlotUnlocked: 0,
     externalUrl: null,
+    websiteFixedCanvas: 0,
   }));
 }
 
@@ -158,6 +164,7 @@ function rowToApi(row: CafeCarouselSlotRow) {
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
     externalUrl: row.externalUrl,
+    websiteFixedCanvas: !!row.websiteFixedCanvas,
     isReserved,
   };
 }
@@ -171,7 +178,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked, externalUrl
+              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked, externalUrl,
+              websiteFixedCanvas
        FROM cafe_carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -298,15 +306,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const zone = slot.zone ?? "both";
     const autoFullscreen = slot.autoFullscreen ? 1 : 0;
     const externalUrl = slot.mediaType === "website" ? slot.externalUrl?.trim() || null : null;
+    // Same "reset when not applicable" posture as externalUrl above -
+    // meaningless (and potentially confusing if a slot is later switched
+    // back to 'website') on any other mediaType.
+    const websiteFixedCanvas = slot.mediaType === "website" && slot.websiteFixedCanvas ? 1 : 0;
 
     await env.DB
       .prepare(
         `INSERT INTO cafe_carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, externalUrl, updatedAt
+           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, externalUrl, websiteFixedCanvas, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -327,6 +339,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
            zone = excluded.zone,
            autoFullscreen = excluded.autoFullscreen,
            externalUrl = excluded.externalUrl,
+           websiteFixedCanvas = excluded.websiteFixedCanvas,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -351,6 +364,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         zone,
         autoFullscreen,
         externalUrl,
+        websiteFixedCanvas,
         now
       )
       .run();

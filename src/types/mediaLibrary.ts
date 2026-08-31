@@ -70,6 +70,21 @@ export interface CarouselSlot {
   // set yet", same "not configured" posture mediaLibraryId already has
   // for image/mp4/pdf.
   externalUrl: string | null
+  // Fixed-canvas embed round (migration 0100, cafe_carousel_slots only,
+  // same café-only posture as externalUrl above) - opt-in per slot, only
+  // meaningful when mediaType is 'website'. When true,
+  // MediaSlotRenderer.tsx renders the iframe at a fixed 1920x1080
+  // canvas and scales the WHOLE result down via transform: scale() to
+  // fit the slot, rather than shrinking the iframe's own viewport - see
+  // that file's own comment for why this matters (a smaller iframe
+  // viewport makes the embedded page's OWN rem/vmin-based CSS compute
+  // against a genuinely smaller screen, shrinking some elements more
+  // than others depending on how each happens to be sized - confirmed
+  // on Meg's Cafe's embed of Shobdon's own dashboard). Off by default -
+  // wrong for a genuinely responsive embedded page, which already
+  // reflows correctly to whatever container size it's given and needs
+  // no such trick.
+  websiteFixedCanvas: boolean
   // 'fill' = object-fit: cover (crops to fill the box); 'contain' =
   // object-fit: contain (always shows the whole image/video, letterboxed
   // if the aspect ratio doesn't match). Only meaningful for image/mp4 -

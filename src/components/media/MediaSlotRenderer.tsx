@@ -20,6 +20,13 @@ export interface MediaSlotVisual {
   bannerText: string
   bannerOpacity: number
   bannerFontSize: 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
+  // Fixed-canvas embed round (migration 0100) - only ever meaningful
+  // for mediaType 'website', see that case's own comment below for the
+  // full "why". Always false for every other mediaType/slot source
+  // (functions/api/_utils/publicConfig.ts's own dashboard-carousel and
+  // reserved-slot branches hardcode it, since neither has this column
+  // at all).
+  websiteFixedCanvas: boolean
 }
 
 // Deliberately NOT reusing NOTAMS' sm/md/lg -> text-base/lg/xl scale
@@ -47,6 +54,20 @@ const BANNER_HEIGHT_CLASSES: Record<'sm' | 'md' | 'lg' | 'xl' | 'xxl', string> =
 }
 
 const IDENTITY_CROP: CropRect = { x: 0, y: 0, width: 100, height: 100 }
+
+// Fixed-canvas website embed round - the reference resolution a
+// slot.websiteFixedCanvas iframe renders at internally before being
+// scaled down as a whole via transform: scale(). 1920x1080, not an
+// arbitrary/generic choice: index.css's own root font-size comment
+// (clamp(12px, 1.5vmin, 20px)) cites this exact resolution as what the
+// app's fluid type scale was tuned against ("1.5vmin lands at ~16.2px
+// on 1920x1080, matches today's unscaled Tailwind default almost
+// exactly") - rendering the embedded page at this size makes its own
+// vmin/rem-based CSS compute identically to how it renders on its own
+// real, full-size kiosk TV, regardless of how small the carousel slot
+// embedding it actually is.
+const WEBSITE_CANVAS_WIDTH = 1920
+const WEBSITE_CANVAS_HEIGHT = 1080
 
 // Applied directly to the img/video element itself, ON TOP of its own
 // normal object-fit:{fitMode} rendering - NOT via a separate wrapper
@@ -391,6 +412,32 @@ export default function MediaSlotRenderer({
     }
   }, [isUpNext, isActive])
 
+  // Fixed-canvas website embed round - see the 'website' case below for
+  // the full "why". Declared unconditionally (not inside the switch),
+  // same rules-of-hooks posture as every other hook in this component -
+  // a no-op ResizeObserver on a ref that's never attached for any other
+  // mediaType or a non-fixed-canvas website slot.
+  const websiteWrapperRef = useRef<HTMLDivElement>(null)
+  const [websiteScale, setWebsiteScale] = useState(1)
+  useEffect(() => {
+    if (!slot.websiteFixedCanvas) return
+    const wrapper = websiteWrapperRef.current
+    if (!wrapper) return
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const { width, height } = entry.contentRect
+      if (width <= 0 || height <= 0) return
+      // object-fit: contain's own logic, not independent X/Y scaling -
+      // the whole point is preserving the embedded page's real
+      // proportions exactly as they'd render on its own full-size
+      // screen, which a non-uniform stretch would immediately undo.
+      setWebsiteScale(Math.min(width / WEBSITE_CANVAS_WIDTH, height / WEBSITE_CANVAS_HEIGHT))
+    })
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [slot.websiteFixedCanvas])
+
   // gyropedia/reserved have no resolvedUrl at all - gyropedia's content
   // comes from GyropediaPanel's own fetch of the shared public endpoint
   // below, not a per-slot URL; reserved (Reserved Owner Slots & Time
@@ -502,7 +549,47 @@ export default function MediaSlotRenderer({
       // and failing to blank/broken (never a crash) is the correct,
       // expected outcome for those - see this slot type's own inline UI
       // hint (CarouselSlotEditor.tsx).
-      content = (
+      //
+      // Fixed-canvas embed round - confirmed on real hardware (Meg's
+      // Cafe embedding Shobdon's own dashboard) that a plain h-full
+      // w-full iframe makes the embedded page's OWN CSS compute against
+      // whatever (much smaller than a real TV) box the carousel slot
+      // happens to be - most of this app's own text/graphics are rem-
+      // based, cascading from index.css's vmin-driven root font-size,
+      // so they shrink right along with that smaller viewport, while
+      // anything sized via plain flex/percentage layout (confirmed:
+      // CompassPanel.tsx) doesn't, producing an inconsistent, part-
+      // shrunk render. slot.websiteFixedCanvas (opt-in, off by default -
+      // wrong for a genuinely responsive embedded page that already
+      // reflows correctly) renders the iframe at the SAME fixed
+      // reference resolution (WEBSITE_CANVAS_WIDTH/HEIGHT) regardless of
+      // slot size, so the embedded page's own CSS always computes
+      // exactly as it would on its native full-size screen, then scales
+      // the whole rendered result down as one visual unit via
+      // transform: scale() - which only affects paint, never the
+      // embedded document's own layout/viewport - so every element
+      // (compass included) ends up scaled by the identical factor,
+      // eliminating the inconsistency by construction rather than
+      // fixing each affected element individually. websiteScale is
+      // recomputed live via the websiteWrapperRef ResizeObserver above,
+      // so this stays correct across template/window/orientation
+      // changes, not just at first mount.
+      content = slot.websiteFixedCanvas ? (
+        <div ref={websiteWrapperRef} className="flex h-full w-full items-center justify-center overflow-hidden">
+          <iframe
+            src={slot.resolvedUrl ?? undefined}
+            style={{
+              border: 0,
+              width: `${WEBSITE_CANVAS_WIDTH}px`,
+              height: `${WEBSITE_CANVAS_HEIGHT}px`,
+              flexShrink: 0,
+              transform: `scale(${websiteScale})`,
+            }}
+            sandbox="allow-scripts allow-same-origin"
+            title="Embedded website"
+          />
+        </div>
+      ) : (
         <iframe
           src={slot.resolvedUrl ?? undefined}
           className="h-full w-full"

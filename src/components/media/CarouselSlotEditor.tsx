@@ -102,6 +102,7 @@ function resolveSlotVisual(
     bannerText: slot.bannerText,
     bannerOpacity: slot.bannerOpacity,
     bannerFontSize: slot.bannerFontSize,
+    websiteFixedCanvas: slot.websiteFixedCanvas,
   }
 }
 
@@ -679,6 +680,22 @@ function CarouselSlotEditor({
             Works reliably for AirfieldCentral tenant dashboards. Some external websites block themselves from being
             embedded and may not display.
           </p>
+          {/* Fixed-canvas embed round (migration 0100) - confirmed on real
+              hardware that embedding another kiosk dashboard shrinks it
+              inconsistently (some text/graphics smaller than intended,
+              others not) because the iframe's own smaller viewport makes
+              the embedded page's CSS compute against a genuinely smaller
+              screen. Off by default - wrong for a normal responsive
+              webpage, which already reflows correctly on its own. */}
+          <label className="mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={slot.websiteFixedCanvas}
+              onChange={(event) => onChange({ websiteFixedCanvas: event.target.checked })}
+              className="h-4 w-4"
+            />
+            <span className="text-sm text-muted-300">Embedding another kiosk dashboard (render at full size, then scale down)</span>
+          </label>
         </div>
       )}
 

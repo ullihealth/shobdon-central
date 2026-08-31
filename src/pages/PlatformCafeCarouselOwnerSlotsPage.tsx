@@ -29,6 +29,12 @@ interface CafeOwnerSlot {
   // scope) - always false, present only for the same structural-typing
   // reason as cameraSlotNumber/cameraId above.
   autoFullscreen: boolean
+  // Owner-assigned content is always image/mp4/pdf (MEDIA_TYPE_OPTIONS
+  // above) - 'website' is never a possibility here, so both of these
+  // are always null/false, present only for the same structural-typing
+  // reason as cameraSlotNumber/cameraId/autoFullscreen above.
+  externalUrl: string | null
+  websiteFixedCanvas: boolean
   ownerSlotUnlocked: boolean
   ownerContentAssigned: boolean
   filename: string | null
@@ -64,6 +70,7 @@ function toVisual(slot: CafeOwnerSlot): MediaSlotVisual {
     bannerText: slot.bannerText,
     bannerOpacity: slot.bannerOpacity,
     bannerFontSize: slot.bannerFontSize,
+    websiteFixedCanvas: false,
   }
 }
 
