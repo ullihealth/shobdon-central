@@ -116,12 +116,13 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// Remote-refresh trigger: a single-shot flag in the same KV namespace, gated
-// by the same shared key. GET /refresh sets it (so opening the URL on a
-// phone is enough - no button/JS required); GET /refresh-check is polled by
-// the app and clears the flag the moment it's read, whether or not the app
-// actually reloads that cycle. This keeps the worker itself simple - the
-// "don't interrupt an in-progress capture" logic lives entirely client-side.
+// Remote-refresh trigger: a persistent per-tenant timestamp in the same KV
+// namespace, gated by the same shared key. GET /refresh sets it (so opening
+// the URL on a phone is enough - no button/JS required); GET /refresh-check
+// is polled by the app and returns the CURRENT stored timestamp - never
+// deletes it. The "don't interrupt an in-progress capture" logic, and now
+// also "have I already acted on this specific timestamp" logic, both live
+// entirely client-side (RemoteRefreshWatcher.tsx).
 //
 // Platform "refresh displays" round - this used to be ONE global key, read
 // by every tenant's dashboard regardless of which tenant it belonged to.
@@ -135,9 +136,36 @@ function escapeHtml(value: string): string {
 // individually (server-side), not by inventing a second "everyone" flag
 // concept that RemoteRefreshWatcher would need its own separate polling
 // path for.
+//
+// Multi-consumer round 2 (2026-08-31) - this used to be delete-on-read
+// (whichever poller's GET reached the Worker first consumed and cleared
+// it, silently starving every other simultaneous poller with zero error).
+// Confirmed as a real, live bug once a tenant's OWN dashboard could be
+// embedded as a carousel "website" slide on a SECOND tenant's kiosk
+// (Meg's Cafe embedding Shobdon's own '/') - that embed runs Shobdon's
+// real app, including its own RemoteRefreshWatcher instance, so Shobdon's
+// per-tenant flag now legitimately has two independent, simultaneous
+// consumers (its own real kiosk, and Meg's embedded copy), not just the
+// one the original delete-on-read design assumed. display_visits
+// confirmed two distinct devices polling the same "main" display
+// concurrently. Fixed by making the read side non-consuming: any number
+// of independent pollers can now check the same timestamp as often as
+// they like without affecting each other - see RemoteRefreshWatcher.tsx's
+// own comment for the client-side half (treating the first-ever read as
+// a baseline, not a trigger, so this doesn't need re-introducing
+// consumption to avoid an infinite reload loop).
 function refreshFlagKey(tenantSlug: string): string {
   return `refresh-requested:${tenantSlug}`
 }
+
+// 24h - generous enough that a display that's been offline overnight
+// still correctly catches up on the most recent trigger once it's back,
+// short enough that KV doesn't accumulate genuinely-forgotten per-tenant
+// keys forever now that reads no longer delete them. Purely a storage/
+// hygiene bound, not a correctness requirement - a poller's own
+// per-client baseline (see RemoteRefreshWatcher.tsx) is what actually
+// prevents a stale timestamp from ever re-triggering a reload.
+const REFRESH_FLAG_TTL_SECONDS = 24 * 60 * 60
 
 // Bare `/refresh?key=...` with no `?tenant=` - PC2's own phone-bookmark
 // shortcut, unchanged since before per-tenant scoping existed. Must keep
@@ -165,10 +193,12 @@ async function handleSetRefreshFlag(request: Request, env: Env): Promise<Respons
   let summary: string
   if (tenantParam === REFRESH_ALL_SENTINEL) {
     const slugs = await fetchActiveTenantSlugs(env)
-    await Promise.all(slugs.map((slug) => env.CAPTURES.put(refreshFlagKey(slug), new Date().toISOString())))
+    await Promise.all(
+      slugs.map((slug) => env.CAPTURES.put(refreshFlagKey(slug), new Date().toISOString(), { expirationTtl: REFRESH_FLAG_TTL_SECONDS }))
+    )
     summary = `${slugs.length} tenant display${slugs.length === 1 ? '' : 's'}`
   } else {
-    await env.CAPTURES.put(refreshFlagKey(tenantParam), new Date().toISOString())
+    await env.CAPTURES.put(refreshFlagKey(tenantParam), new Date().toISOString(), { expirationTtl: REFRESH_FLAG_TTL_SECONDS })
     summary = `"${tenantParam}"`
   }
 
@@ -197,12 +227,15 @@ async function handleCheckRefreshFlag(request: Request, env: Env): Promise<Respo
   const tenantParam = new URL(request.url).searchParams.get('tenant') || DEFAULT_REFRESH_TENANT_SLUG
   const key = refreshFlagKey(tenantParam)
 
-  const flag = await env.CAPTURES.get(key)
-  if (flag) {
-    await env.CAPTURES.delete(key)
-  }
+  // Non-consuming read - see this key's own refreshFlagKey() comment
+  // ("Multi-consumer round 2") for why this must never delete on read
+  // anymore. refreshRequestedAt is the raw stored ISO timestamp (or
+  // null if no refresh has ever been requested for this tenant, or the
+  // 24h TTL has since expired it) - RemoteRefreshWatcher.tsx is what
+  // decides whether a given value is "new since I last checked".
+  const refreshRequestedAt = await env.CAPTURES.get(key)
 
-  return new Response(JSON.stringify({ refreshRequested: !!flag }), {
+  return new Response(JSON.stringify({ refreshRequestedAt: refreshRequestedAt ?? null }), {
     status: 200,
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
   })

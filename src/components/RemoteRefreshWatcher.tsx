@@ -49,9 +49,8 @@ const PUBLIC_DISPLAY_ROUTE_PATTERN = /^\/(d\/[^/]+)?$/
 // 12s on those routes, not a real cost, and no longer a special case to
 // get wrong.
 //
-// The Worker clears the flag the instant it's read, regardless of what we do
-// with it - so `pendingReload` here is the client's own memory of "a reload
-// was requested", kept across polls until it's actually safe to act on it.
+// `pendingReload` here is the client's own memory of "a reload was
+// requested", kept across polls until it's actually safe to act on it.
 // Never interrupts an in-progress capture: that's the one constraint that
 // matters more than anything else about this feature.
 //
@@ -62,15 +61,41 @@ const PUBLIC_DISPLAY_ROUTE_PATTERN = /^\/(d\/[^/]+)?$/
 // tenant's own admin/editing pages (e.g. /cafe-media) any time that
 // admin had them open - confirmed directly via display_visits showing
 // two distinct devices (the Pi kiosk, and a Mac browser) both hitting the
-// tenant's "main" display in the same window. The flag is single-
-// consumer/delete-on-read: whichever poller's request reached the Worker
-// first won, silently starving the other with zero error anywhere - the
-// trigger fired correctly every time, this was purely a race between two
-// UNINTENDED competing consumers, not a broken poll loop. Now gated on
-// PUBLIC_DISPLAY_ROUTE_PATTERN above - an admin's own session should
-// never compete for (or have their own editing work interrupted by) a
-// reload tied to their tenant's own display, only the actual kiosk/wall-
-// display routes should ever poll this at all.
+// tenant's "main" display in the same window. The flag was single-
+// consumer/delete-on-read at the time: whichever poller's request reached
+// the Worker first won, silently starving the other with zero error
+// anywhere - the trigger fired correctly every time, this was purely a
+// race between two UNINTENDED competing consumers, not a broken poll
+// loop. Fixed then by gating on PUBLIC_DISPLAY_ROUTE_PATTERN above - an
+// admin's own session should never compete for (or have their own
+// editing work interrupted by) a reload tied to their tenant's own
+// display, only the actual kiosk/wall-display routes should ever poll
+// this at all.
+//
+// Multi-consumer round 2 (2026-08-31) - that fix assumed "at most one
+// real display per tenant, on a public display route" - the 'website'
+// carousel slot type broke that assumption legitimately: Meg's Cafe
+// embedding Shobdon's own '/' as a carousel slide runs Shobdon's real
+// app inside that iframe, including its own instance of THIS component,
+// polling Shobdon's own per-tenant flag - a second genuine, sanctioned
+// consumer route-scoping alone can't and shouldn't try to exclude.
+// display_visits again confirmed two distinct devices (Shobdon's own
+// real kiosk, and the embedded copy running inside Meg's Cafe's Pi) both
+// polling Shobdon's own "main" display concurrently. The Worker's own
+// flag is no longer delete-on-read (see worker/src/index.ts's own
+// refreshFlagKey comment) specifically so this no longer matters -
+// /refresh-check now always returns the current stored timestamp
+// (refreshRequestedAt: string | null), readable by any number of
+// independent pollers without affecting each other. lastSeenRefreshAt/
+// hasRefreshBaseline below are what makes that safe: the FIRST value
+// this component ever reads (whatever's currently stored, which could
+// be a timestamp from hours ago) is treated as the existing state of the
+// world, not a new trigger - only a LATER read returning a DIFFERENT
+// timestamp counts as "something changed since I last checked". Without
+// that baseline step, a tab that just reloaded because of timestamp T
+// would see T again on its very next poll and reload again, forever -
+// the non-consuming flag alone doesn't prevent that on its own, this
+// per-client memory is what does.
 //
 // Offline-resilience round (2026-08-30) - this poll cycle is now ALSO
 // the single decision point for "a new deployed version is ready",
@@ -93,6 +118,11 @@ export default function RemoteRefreshWatcher(): null {
   // component always returns null), so there's no reason to trigger a
   // re-render when the slug resolves or a reload becomes pending.
   const tenantSlug = useRef<string | null>(null)
+  // The last refreshRequestedAt value this tab has already accounted for -
+  // see "Multi-consumer round 2" above for why the FIRST value read must
+  // become this baseline rather than an immediate trigger.
+  const lastSeenRefreshAt = useRef<string | null>(null)
+  const hasRefreshBaseline = useRef(false)
 
   useEffect(() => {
     // Covers client-side navigation between a display route and a non-
@@ -125,9 +155,20 @@ export default function RemoteRefreshWatcher(): null {
         if (!pendingReload.current) {
           const response = await fetch(`${REFRESH_CHECK_URL}&tenant=${encodeURIComponent(tenantSlug.current)}`)
           if (response.ok) {
-            const data: { refreshRequested?: boolean } = await response.json()
-            if (data.refreshRequested) {
+            const data: { refreshRequestedAt?: string | null } = await response.json()
+            const requestedAt = data.refreshRequestedAt ?? null
+            if (!hasRefreshBaseline.current) {
+              // First-ever read for this tab/instance - whatever's already
+              // stored (possibly hours old) is the existing state of the
+              // world, not a new trigger for THIS tab. Treating it as one
+              // would make a freshly-mounted watcher immediately reload
+              // itself again from the very timestamp that caused the
+              // reload it just completed.
+              lastSeenRefreshAt.current = requestedAt
+              hasRefreshBaseline.current = true
+            } else if (requestedAt && requestedAt !== lastSeenRefreshAt.current) {
               pendingReload.current = true
+              lastSeenRefreshAt.current = requestedAt
             }
           }
         }
@@ -139,9 +180,7 @@ export default function RemoteRefreshWatcher(): null {
       // pending SW update just uses applyUpdate() (which activates the
       // new worker AND reloads in one step) instead of a plain reload,
       // since reloading first would still run under the OLD worker for
-      // a moment. If both happen to be true at once, applyUpdate() alone
-      // is sufficient - the remote flag was already consumed server-side
-      // by the fetch above regardless of which path actually reloads.
+      // a moment.
       if ((pendingReload.current || isUpdateAvailable()) && !isCaptureInProgress()) {
         if (isUpdateAvailable()) {
           await applyUpdate()
