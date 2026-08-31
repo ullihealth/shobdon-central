@@ -221,7 +221,12 @@ function PilotViewContent({
             fetching/refreshing on its own existing schedule regardless
             of collapsed state - see PilotCollapsibleSection's own
             comment for why. */}
-        <PilotCollapsibleSection title="NOTAMs">
+        {/* "NATS NOTAMS" - just this card's own title prop, not a shared
+            string/component. Confirmed: RightInfoPanel.tsx's own NOTAM
+            headings on the Reception Dashboard/ATC Ops Panel ("NOTAMs
+            (full)") are separate hardcoded literals in a different
+            file, untouched by this. */}
+        <PilotCollapsibleSection title="NATS NOTAMs">
           <AutoNotamsScrollPanel refreshSignal={refreshTick} />
         </PilotCollapsibleSection>
         <PilotCollapsibleSection title="Forecast & Visibility">

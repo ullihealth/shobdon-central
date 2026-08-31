@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NOTAMS_URL } from '../../config/publicApi'
+import { formatNotamTextForDisplay } from '../../utils/formatNotamText'
 
 type NotamSeverity = 'critical' | 'warning' | 'info'
 
@@ -63,7 +64,13 @@ export default function AutoNotamsScrollPanel({ refreshSignal }: { refreshSignal
       {sorted.map((notam) => (
         <div key={notam.id} className="flex items-start gap-2 rounded-xl border border-border bg-card p-3 text-[17px] text-primary">
           <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${SEVERITY_DOT_CLASSES[notam.severity]}`} />
-          <span>{notam.text}</span>
+          {/* Display-only reformat (formatNotamText.ts) - the feed's own
+              solid-uppercase text (notam.text, unchanged) is what
+              actually gets fetched/stored; only this render is
+              sentence-cased for readability. Pilot App only - not
+              applied in RightInfoPanel.tsx's own Reception Dashboard/ATC
+              NOTAM rendering. */}
+          <span>{formatNotamTextForDisplay(notam.text)}</span>
         </div>
       ))}
     </div>
