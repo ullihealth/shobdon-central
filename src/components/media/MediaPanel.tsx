@@ -4,6 +4,7 @@ import type { MediaItem } from '../../types/media'
 import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
 import { useBufferingGate, isTrackedMediaType, type GateAsset } from '../../hooks/useVideoDownloadStates'
+import PersistentConfigLink from '../PersistentConfigLink'
 
 interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
@@ -543,6 +544,12 @@ export default function MediaPanel({
           </>,
           document.body
         )}
+      {/* The fullscreen portal above covers Header.tsx/VenueCornerBadge.tsx
+          completely (see PersistentConfigLink's own comment) - only
+          rendered for a tenant that actually has a fullscreen slot
+          configured, so a tenant who never uses this feature gets zero
+          visual/DOM change from today. */}
+      {!isPreview && effectiveSlots.some((slot) => slot.autoFullscreen) && <PersistentConfigLink />}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { AIRFIELD_TIMEZONE } from '../config/publicApi'
 import { useHostReachable } from '../hooks/useHostReachable'
 import { isPagesPlatformHost } from '../utils/isPagesPlatformHost'
+import { resolveDashboardLandingPage } from '../utils/dashboardLandingPage'
 
 interface HeaderProps {
   rightSlot?: ReactNode
@@ -132,20 +133,7 @@ export default function Header({
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return
-        const role = data?.role
-        setDashboardLandingPage(
-          role === 'atc'
-            ? '/atc-control'
-            : role === 'media'
-              ? '/media-manager'
-              : role === 'cafe'
-                ? '/cafe-media'
-                : role
-                  ? data?.tenantType === 'venue_cafe'
-                    ? '/cafe-media'
-                    : '/config'
-                  : '/login'
-        )
+        setDashboardLandingPage(resolveDashboardLandingPage(data?.role, data?.tenantType))
         setTenantSubdomain(data?.subdomain ?? null)
       })
       .catch(() => {
