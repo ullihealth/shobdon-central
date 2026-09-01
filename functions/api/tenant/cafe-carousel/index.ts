@@ -56,17 +56,27 @@ interface CafeCarouselSlotRow {
   zone: string;
   autoFullscreen: number;
   ownerSlotUnlocked: number;
+  ownerSlotReserved: number;
   externalUrl: string | null;
   websiteFixedCanvas: number;
 }
 
-// Café Reserved Owner Slots round (migration 0092) - same fixed
-// slotNumber list as the dashboard's own RESERVED_SLOT_NUMBERS
-// (functions/api/tenant/carousel/index.ts), unconditional here (no
-// carousel_budget_enabled equivalent for café - this is pure slot
-// reservation, not that feature's Time Budget concept, so isReserved
-// below has no separate toggle to check).
-const RESERVED_SLOT_NUMBERS = [5, 8, 12];
+// Per-tenant Reserved Slot round (migration 0102) - ownerSlotReserved is
+// now the source of truth for "is this specific slot number reserved
+// for THIS tenant", replacing the old hardcoded RESERVED_SLOT_NUMBERS =
+// [5, 8, 12] list (every tenant used to share the same 3 numbers,
+// enforced here and in the platform-admin owner-slots route). Managed
+// via functions/api/platform/tenants/[id]/cafe-carousel-owner-slots.ts.
+//
+// LEGACY_DEFAULT_RESERVED_SLOTS is only a fallback for a slot that has
+// literally never had a row written at all - migration 0102's own
+// backfill already set ownerSlotReserved=1 on every existing tenant's
+// real 5/8/12 rows (confirmed both Meg's Cafe and the org_newcustomer
+// template already have those rows), so this only matters for a
+// hypothetical tenant that somehow never touched Café Media before this
+// feature existed - not a real case today, but keeps "absence of a row
+// still reads as reserved" exactly the behaviour it always was.
+const LEGACY_DEFAULT_RESERVED_SLOTS = [5, 8, 12];
 
 interface CafeCarouselSlotInput {
   slotNumber: number;
@@ -133,6 +143,7 @@ function defaultSlots(): CafeCarouselSlotRow[] {
     zone: "both",
     autoFullscreen: 0,
     ownerSlotUnlocked: 0,
+    ownerSlotReserved: LEGACY_DEFAULT_RESERVED_SLOTS.includes(i + 1) ? 1 : 0,
     externalUrl: null,
     websiteFixedCanvas: 0,
   }));
@@ -145,7 +156,7 @@ function defaultSlots(): CafeCarouselSlotRow[] {
 // change is needed here at all - this is the only wiring CafeMediaPage's
 // editor needs.
 function rowToApi(row: CafeCarouselSlotRow) {
-  const isReserved = RESERVED_SLOT_NUMBERS.includes(row.slotNumber) && !row.ownerSlotUnlocked;
+  const isReserved = !!row.ownerSlotReserved && !row.ownerSlotUnlocked;
   return {
     slotNumber: row.slotNumber,
     enabled: !!row.enabled,
@@ -178,7 +189,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked, externalUrl,
+              bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked, ownerSlotReserved, externalUrl,
               websiteFixedCanvas
        FROM cafe_carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
@@ -266,19 +277,22 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // slot has no editing controls at all - see CarouselSlotEditor.tsx's
   // isReserved branch) - this is the "can't bypass via a direct API
   // call" half of that pair, matching the dashboard carousel route's own
-  // isReservedSlot check. Absence of a row (never configured) reads as
-  // still-locked, same as RESERVED_SLOT_NUMBERS.map's own ownerSlotUnlocked:
-  // 0 fallback in defaultSlots() above - a slot is reserved from the
-  // moment this feature ships, not opt-in per row.
+  // isReservedSlot check. Absence of a row falls back to
+  // LEGACY_DEFAULT_RESERVED_SLOTS (see that constant's own comment) -
+  // not a real case for any tenant today, since migration 0102's
+  // backfill already gave every existing 5/8/12 row a real
+  // ownerSlotReserved value.
   const { results: currentRows } = await env.DB
-    .prepare(`SELECT slotNumber, ownerSlotUnlocked FROM cafe_carousel_slots WHERE organizationId = ?`)
+    .prepare(`SELECT slotNumber, ownerSlotUnlocked, ownerSlotReserved FROM cafe_carousel_slots WHERE organizationId = ?`)
     .bind(organizationId)
-    .all<{ slotNumber: number; ownerSlotUnlocked: number }>();
+    .all<{ slotNumber: number; ownerSlotUnlocked: number; ownerSlotReserved: number }>();
   const currentBySlot = new Map(currentRows.map((row) => [row.slotNumber, row]));
 
   function isReservedSlot(slotNumber: number): boolean {
-    if (!RESERVED_SLOT_NUMBERS.includes(slotNumber)) return false;
-    return !currentBySlot.get(slotNumber)?.ownerSlotUnlocked;
+    const row = currentBySlot.get(slotNumber);
+    const reserved = row ? !!row.ownerSlotReserved : LEGACY_DEFAULT_RESERVED_SLOTS.includes(slotNumber);
+    if (!reserved) return false;
+    return !row?.ownerSlotUnlocked;
   }
 
   for (const slot of body.slots) {

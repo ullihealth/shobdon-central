@@ -5,6 +5,7 @@ import type { MediaSlotVisual } from '../components/media/MediaSlotRenderer'
 import type { CropRect } from '../types/mediaLibrary'
 
 const TENANTS_URL = '/api/platform/tenants'
+const SLOT_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 interface CafeOwnerSlot {
   slotNumber: number
@@ -35,7 +36,11 @@ interface CafeOwnerSlot {
   // reason as cameraSlotNumber/cameraId/autoFullscreen above.
   externalUrl: string | null
   websiteFixedCanvas: boolean
-  ownerSlotUnlocked: boolean
+  // Per-tenant Reserved Slot round (migration 0102) - is THIS slot
+  // number currently designated Airfield-Central-controlled for THIS
+  // tenant. Replaces the old fixed-to-5/8/12 ownerSlotUnlocked toggle;
+  // any of 1-12 can be true now.
+  ownerSlotReserved: boolean
   ownerContentAssigned: boolean
   filename: string | null
   resolvedUrl: string | null
@@ -74,10 +79,12 @@ function toVisual(slot: CafeOwnerSlot): MediaSlotVisual {
   }
 }
 
-// Platform-admin-only: assign owner-sold/leased ad content to a
-// venue_cafe tenant's reserved café carousel slots (5/8/12) - Café
-// Reserved Owner Slots round (migration 0092). A near-duplicate of the
-// dashboard's own PlatformCarouselOwnerSlotsPage.tsx (carousel_slots),
+// Platform-admin-only: assign owner-sold/leased ad content to any of a
+// venue_cafe tenant's 12 café carousel slots - Café Reserved Owner Slots
+// round (migration 0092), made per-tenant/per-slot dynamic (migration
+// 0102) rather than fixed to slots 5/8/12 platform-wide. A near-
+// duplicate of the dashboard's own PlatformCarouselOwnerSlotsPage.tsx
+// (carousel_slots, still fixed to 5/8/12 - out of scope for this round),
 // same duplicate-not-parameterize convention already established
 // between the tenant-facing carousel/cafe-carousel route pair.
 //
@@ -120,6 +127,12 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
   const [slots, setSlots] = useState<CafeOwnerSlot[]>([])
   const [files, setFiles] = useState<MediaFile[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  // Per-tenant Reserved Slot round - which of the 12 slots this page is
+  // currently showing the detail card for. Re-picked (below, on load)
+  // to the tenant's own first currently-reserved slot when one exists,
+  // so switching tenants doesn't leave the picker sitting on a slot
+  // that's meaningless for the newly-selected tenant.
+  const [selectedSlotNumber, setSelectedSlotNumber] = useState<number>(1)
   const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({})
   const [appearanceOpen, setAppearanceOpen] = useState<Record<number, boolean>>({})
   const [uploadingSlot, setUploadingSlot] = useState<number | null>(null)
@@ -160,8 +173,11 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled || !data) return
-        setSlots(data.slots ?? [])
+        const loadedSlots: CafeOwnerSlot[] = data.slots ?? []
+        setSlots(loadedSlots)
         setFiles(data.files ?? [])
+        const firstReserved = loadedSlots.find((s) => s.ownerSlotReserved)
+        setSelectedSlotNumber(firstReserved ? firstReserved.slotNumber : 1)
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false)
@@ -186,11 +202,11 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
           slots: [
             {
               slotNumber,
+              ownerSlotReserved: updated.ownerSlotReserved,
               enabled: updated.enabled,
               mediaType: updated.mediaType,
               durationSeconds: updated.durationSeconds,
               mediaLibraryId: updated.mediaLibraryId,
-              ownerSlotUnlocked: updated.ownerSlotUnlocked,
               fitMode: updated.fitMode,
               cropRect: updated.cropRect,
               rotationDegrees: updated.rotationDegrees,
@@ -252,17 +268,20 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
   }
 
   const selectedTenant = tenants.find((t) => t.id === selectedTenantId) ?? null
+  const reservedSlotNumbers = slots.filter((s) => s.ownerSlotReserved).map((s) => s.slotNumber)
+  const slot = slots.find((s) => s.slotNumber === selectedSlotNumber) ?? null
 
   return (
-    <div className="mx-auto max-w-5xl px-6 pb-10 pt-10">
+    <div className="mx-auto max-w-3xl px-6 pb-10 pt-10">
       <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Café Reserved Slots</h1>
       <p className="mb-6 max-w-2xl text-sm text-muted-400">
-        Café carousel slots 5, 8, and 12 - reserved, developer-only ad/marketing space on every venue_cafe tenant's
-        Media Screen, assigned automatically on signup (migration 0092). Assign content and manage the per-slot
-        manual unlock here, using that tenant's own media library/storage.
+        Reserved, developer-only ad/marketing space on a venue_cafe tenant's Media Screen. Any of the 12 café
+        carousel slots can be designated Airfield-Central-controlled per tenant - new signups start with slots 5, 8,
+        and 12 reserved (unchanged from before); use the picker below to reserve a different or additional slot for
+        a specific tenant.
       </p>
 
-      <label className="mb-6 flex max-w-sm flex-col gap-1.5">
+      <label className="mb-4 flex max-w-sm flex-col gap-1.5">
         <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Café tenant</span>
         <select
           value={selectedTenantId ?? ''}
@@ -279,6 +298,12 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
         </select>
       </label>
 
+      {selectedTenant && !slotsLoading && (
+        <p className="mb-6 text-xs font-semibold uppercase tracking-widest text-muted-400">
+          Reserved: {reservedSlotNumbers.length > 0 ? reservedSlotNumbers.join(', ') : 'none'}
+        </p>
+      )}
+
       {uploadError && (
         <p className="mb-4 rounded-lg border border-status-bad/40 bg-status-bad/10 px-3 py-2 text-xs text-status-bad">{uploadError}</p>
       )}
@@ -286,19 +311,65 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
       {selectedTenant && slotsLoading && <div className="text-sm text-muted-400">Loading {selectedTenant.name}'s slots…</div>}
 
       {selectedTenant && !slotsLoading && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {slots.map((slot) => {
-            const status = saveStatus[slot.slotNumber] ?? 'idle'
-            const isMp4 = slot.mediaType === 'mp4'
-            const file = files.find((f) => f.id === slot.mediaLibraryId)
-            const showAppearanceControls = slot.mediaType === 'image' || slot.mediaType === 'mp4'
-            const isAppearanceOpen = !!appearanceOpen[slot.slotNumber]
-            return (
-              <section key={slot.slotNumber} className="rounded-2xl border border-border bg-panel p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber}</div>
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-400">
+        <label className="mb-6 flex max-w-xs flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Slot number</span>
+          <select
+            value={selectedSlotNumber}
+            onChange={(event) => setSelectedSlotNumber(Number(event.target.value))}
+            className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+          >
+            {SLOT_NUMBERS.map((n) => (
+              <option key={n} value={n}>
+                Slot {n}
+                {reservedSlotNumbers.includes(n) ? ' (Reserved)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {selectedTenant && !slotsLoading && slot && (
+        <section className="max-w-xl rounded-2xl border border-border bg-panel p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber}</div>
+            <div className="flex overflow-hidden rounded-lg border border-slate-700">
+              <button
+                type="button"
+                onClick={() => slot.ownerSlotReserved && saveSlot(slot.slotNumber, { ownerSlotReserved: false })}
+                className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide transition ${
+                  !slot.ownerSlotReserved ? 'bg-accent-sky-500 text-white' : 'bg-slate-900/80 text-muted-400 hover:text-white'
+                }`}
+              >
+                Tenant-controlled
+              </button>
+              <button
+                type="button"
+                onClick={() => !slot.ownerSlotReserved && saveSlot(slot.slotNumber, { ownerSlotReserved: true })}
+                className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide transition ${
+                  slot.ownerSlotReserved ? 'bg-accent-sky-500 text-white' : 'bg-slate-900/80 text-muted-400 hover:text-white'
+                }`}
+              >
+                Airfield Central
+              </button>
+            </div>
+          </div>
+
+          {!slot.ownerSlotReserved ? (
+            <p className="text-xs text-muted-500">
+              Tenant-controlled - this slot behaves as a normal slot in this tenant's own Café Media editor. Switch to
+              "Airfield Central" to reserve it and assign content here.
+            </p>
+          ) : (
+            <>
+              {(() => {
+                const status = saveStatus[slot.slotNumber] ?? 'idle'
+                const isMp4 = slot.mediaType === 'mp4'
+                const file = files.find((f) => f.id === slot.mediaLibraryId)
+                const showAppearanceControls = slot.mediaType === 'image' || slot.mediaType === 'mp4'
+                const isAppearanceOpen = !!appearanceOpen[slot.slotNumber]
+                return (
+                  <>
+                    <label className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-400">
                       <input
                         type="checkbox"
                         checked={slot.enabled}
@@ -307,25 +378,6 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
                       />
                       Live
                     </label>
-                    <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-400">
-                      <input
-                        type="checkbox"
-                        checked={slot.ownerSlotUnlocked}
-                        onChange={(event) => saveSlot(slot.slotNumber, { ownerSlotUnlocked: event.target.checked })}
-                        className="h-3.5 w-3.5"
-                      />
-                      Unlocked
-                    </label>
-                  </div>
-                </div>
-
-                {slot.ownerSlotUnlocked ? (
-                  <p className="text-xs text-muted-500">
-                    Unlocked - this slot behaves as a normal tenant-controlled slot for this tenant. Uncheck "Unlocked"
-                    to reserve it again.
-                  </p>
-                ) : (
-                  <>
                     <p className="mb-3 text-xs text-muted-500">
                       {slot.enabled
                         ? 'Live on this tenant\'s café screen now.'
@@ -468,11 +520,11 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
                     {status === 'success' && <p className="mt-2 text-xs font-semibold text-status-good">Saved.</p>}
                     {status === 'error' && <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save.</p>}
                   </>
-                )}
-              </section>
-            )
-          })}
-        </div>
+                )
+              })()}
+            </>
+          )}
+        </section>
       )}
     </div>
   )

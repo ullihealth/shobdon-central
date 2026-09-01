@@ -1,12 +1,22 @@
 // Platform-admin only: GET/PUT /api/platform/tenants/:id/cafe-carousel-owner-slots
-// - manages slots 5/8/12 of a SPECIFIC tenant's own cafe_carousel_slots
-// rows (Café Reserved Owner Slots round, migration 0092). A deliberate
+// - manages a SPECIFIC tenant's own cafe_carousel_slots rows (Café
+// Reserved Owner Slots round, migration 0092). A deliberate
 // near-duplicate of the sibling carousel-owner-slots.ts (dashboard's
 // carousel_slots table) rather than a shared/parameterized handler -
 // same "don't touch the live, production-critical main route as a side
 // effect" reasoning functions/api/tenant/cafe-carousel/index.ts's own
 // top comment already established for the tenant-facing café/dashboard
 // split.
+//
+// Per-tenant Reserved Slot round (migration 0102) - originally this
+// endpoint only ever managed the fixed [5, 8, 12] list (same
+// RESERVED_SLOT_NUMBERS constant tenant/cafe-carousel/index.ts used to
+// have), both in its own SQL WHERE clause and its PUT validation -
+// confirmed via investigation neither was just a frontend restriction.
+// Now returns/accepts any of a tenant's 12 slots, keyed off that same
+// row's own ownerSlotReserved column instead of a hardcoded list -
+// PlatformCafeCarouselOwnerSlotsPage.tsx's slot-number selector is what
+// lets an admin actually reach a non-5/8/12 slot now.
 //
 // One deliberate difference from carousel-owner-slots.ts: `enabled` is
 // caller-controlled here (part of OwnerSlotInput), not hardcoded true.
@@ -18,7 +28,7 @@
 // feature), so cafeCarouselSlots' own WHERE enabled = 1 clause is the
 // only thing controlling public visibility. Leaving a reserved slot
 // disabled keeps it genuinely invisible on the live café screen until a
-// developer both unlocks-or-assigns AND explicitly enables it.
+// developer both reserves-or-assigns AND explicitly enables it.
 //
 // Appearance/Duration/Fit Mode/Zone round: this endpoint originally only
 // wrote enabled/mediaType/mediaLibraryId/ownerSlotUnlocked (duration
@@ -42,7 +52,12 @@ interface Env {
   MEDIA_PUBLIC_BASE_URL?: string;
 }
 
-const RESERVED_SLOT_NUMBERS = [5, 8, 12];
+// Fallback only for a slot that has literally never had a row written -
+// see functions/api/tenant/cafe-carousel/index.ts's own
+// LEGACY_DEFAULT_RESERVED_SLOTS comment for the full reasoning; not a
+// real case for any tenant today (migration 0102's backfill covers
+// every existing 5/8/12 row).
+const LEGACY_DEFAULT_RESERVED_SLOTS = [5, 8, 12];
 const VALID_MEDIA_TYPES = ["image", "mp4", "pdf"];
 const VALID_FIT_MODES = ["fill", "contain"];
 const VALID_BANNER_SIZES = ["sm", "md", "lg", "xl", "xxl"];
@@ -61,7 +76,7 @@ interface OwnerSlotRow {
   mediaType: string;
   durationSeconds: number;
   mediaLibraryId: string | null;
-  ownerSlotUnlocked: number;
+  ownerSlotReserved: number;
   ownerContentAssigned: number;
   fitMode: string;
   cropX: number;
@@ -81,11 +96,14 @@ interface OwnerSlotRow {
 
 interface OwnerSlotInput {
   slotNumber: number;
-  enabled: boolean;
-  mediaType: "image" | "mp4" | "pdf";
-  durationSeconds: number;
-  mediaLibraryId: string | null;
-  ownerSlotUnlocked: boolean;
+  ownerSlotReserved: boolean;
+  // Only required/used when ownerSlotReserved is true - switching a
+  // slot to Tenant-controlled needs nothing else at all (see the PUT
+  // handler's own early-continue for that case).
+  enabled?: boolean;
+  mediaType?: "image" | "mp4" | "pdf";
+  durationSeconds?: number;
+  mediaLibraryId?: string | null;
   fitMode?: "fill" | "contain";
   cropRect?: CropRectInput;
   rotationDegrees?: number;
@@ -115,14 +133,14 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
     db
       .prepare(
         `SELECT cs.slotNumber AS slotNumber, cs.enabled AS enabled, cs.mediaType AS mediaType, cs.durationSeconds AS durationSeconds,
-                cs.mediaLibraryId AS mediaLibraryId, cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerContentAssigned AS ownerContentAssigned,
+                cs.mediaLibraryId AS mediaLibraryId, cs.ownerSlotReserved AS ownerSlotReserved, cs.ownerContentAssigned AS ownerContentAssigned,
                 cs.fitMode AS fitMode, cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
                 cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
                 cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize, cs.zone AS zone,
                 ml.r2Key AS r2Key, ml.filename AS filename, ml.mp4DurationSeconds AS mp4DurationSeconds
          FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
-         WHERE cs.organizationId = ? AND cs.slotNumber IN (5, 8, 12)`
+         WHERE cs.organizationId = ?`
       )
       .bind(organizationId)
       .all<OwnerSlotRow>(),
@@ -132,8 +150,12 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
       .all<MediaFileRow>(),
   ]);
 
+  // All 12 slots now (not just the old fixed 3) - the slot-number
+  // selector on PlatformCafeCarouselOwnerSlotsPage.tsx needs every
+  // slot's own ownerSlotReserved state to render its "Reserved: ..."
+  // summary and let an admin pick any of them, not just three.
   const bySlot = new Map(slotRows.map((row) => [row.slotNumber, row]));
-  const slots = RESERVED_SLOT_NUMBERS.map((slotNumber) => {
+  const slots = Array.from({ length: 12 }, (_, i) => i + 1).map((slotNumber) => {
     const row = bySlot.get(slotNumber);
     return {
       slotNumber,
@@ -141,7 +163,7 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
       mediaType: row?.mediaType ?? "image",
       durationSeconds: row?.durationSeconds ?? 10,
       mediaLibraryId: row?.mediaLibraryId ?? null,
-      ownerSlotUnlocked: !!row?.ownerSlotUnlocked,
+      ownerSlotReserved: row ? !!row.ownerSlotReserved : LEGACY_DEFAULT_RESERVED_SLOTS.includes(slotNumber),
       ownerContentAssigned: !!row?.ownerContentAssigned,
       fitMode: row?.fitMode ?? "contain",
       cropRect: { x: row?.cropX ?? 0, y: row?.cropY ?? 0, width: row?.cropWidth ?? 100, height: row?.cropHeight ?? 100 },
@@ -188,19 +210,23 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   if (!body || !Array.isArray(body.slots)) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
   for (const slot of body.slots) {
-    if (!RESERVED_SLOT_NUMBERS.includes(slot.slotNumber)) {
-      return jsonResponse({ error: `slotNumber must be one of: ${RESERVED_SLOT_NUMBERS.join(", ")}` }, 400);
+    if (!Number.isInteger(slot.slotNumber) || slot.slotNumber < 1 || slot.slotNumber > 12) {
+      return jsonResponse({ error: `slotNumber must be 1-12 (got ${slot.slotNumber})` }, 400);
     }
-    if (!VALID_MEDIA_TYPES.includes(slot.mediaType)) {
+    if (typeof slot.ownerSlotReserved !== "boolean") {
+      return jsonResponse({ error: "ownerSlotReserved must be a boolean" }, 400);
+    }
+    // Switching to Tenant-controlled needs nothing else - the write
+    // below clears any AC content/config for this slot outright, so
+    // none of the content fields below are read in that case at all.
+    if (!slot.ownerSlotReserved) continue;
+    if (!slot.mediaType || !VALID_MEDIA_TYPES.includes(slot.mediaType)) {
       return jsonResponse({ error: `mediaType must be one of: ${VALID_MEDIA_TYPES.join(", ")}` }, 400);
     }
     if (typeof slot.enabled !== "boolean") {
       return jsonResponse({ error: "enabled must be a boolean" }, 400);
     }
-    if (typeof slot.ownerSlotUnlocked !== "boolean") {
-      return jsonResponse({ error: "ownerSlotUnlocked must be a boolean" }, 400);
-    }
-    if (!Number.isFinite(slot.durationSeconds) || slot.durationSeconds <= 0) {
+    if (!Number.isFinite(slot.durationSeconds) || (slot.durationSeconds as number) <= 0) {
       return jsonResponse({ error: "durationSeconds must be a positive number" }, 400);
     }
     if (slot.fitMode !== undefined && !VALID_FIT_MODES.includes(slot.fitMode)) {
@@ -239,6 +265,26 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
 
   const now = new Date().toISOString();
   for (const slot of body.slots) {
+    if (!slot.ownerSlotReserved) {
+      // Tenant-controlled round-trip: un-reserve and hand the slot back
+      // in a clean state - clears any AC-assigned content/masking
+      // outright (not just an inert flip) so the tenant's own editor
+      // never inherits stale AC config when they regain control. A
+      // plain UPDATE (not upsert) is enough - every tenant that could
+      // reach this slot via the picker already has a real row for it
+      // (either from a prior save, or from migration 0102's own
+      // backfill for 5/8/12), so there's nothing to create here.
+      await env.DB
+        .prepare(
+          `UPDATE cafe_carousel_slots
+           SET ownerSlotReserved = 0, ownerSlotUnlocked = 0, mediaLibraryId = NULL, ownerContentAssigned = 0, enabled = 0, updatedAt = ?
+           WHERE organizationId = ? AND slotNumber = ?`
+        )
+        .bind(now, organizationId, slot.slotNumber)
+        .run();
+      continue;
+    }
+
     const mediaLibraryId = slot.mediaLibraryId ?? null;
     const ownerContentAssigned = mediaLibraryId ? 1 : 0;
     const fitMode = slot.fitMode ?? "contain";
@@ -256,17 +302,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     await env.DB
       .prepare(
         `INSERT INTO cafe_carousel_slots (
-           organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerContentAssigned,
+           organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerSlotReserved, ownerContentAssigned,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
            bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
            durationSeconds = excluded.durationSeconds,
            mediaLibraryId = excluded.mediaLibraryId,
            ownerSlotUnlocked = excluded.ownerSlotUnlocked,
+           ownerSlotReserved = excluded.ownerSlotReserved,
            ownerContentAssigned = excluded.ownerContentAssigned,
            fitMode = excluded.fitMode,
            cropX = excluded.cropX,
@@ -288,7 +335,6 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
         slot.mediaType,
         slot.durationSeconds,
         mediaLibraryId,
-        slot.ownerSlotUnlocked ? 1 : 0,
         ownerContentAssigned,
         fitMode,
         cropX,

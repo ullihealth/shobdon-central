@@ -2427,7 +2427,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                       }
                       className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10"
                     >
-                      Manage reserved slots (5/8/12) →
+                      {selectedTenant.tenantType === 'venue_cafe' ? 'Manage reserved slots →' : 'Manage reserved slots (5/8/12) →'}
                     </Link>
                     <RefreshDisplaysButton tenant={selectedTenant} />
                   </div>
