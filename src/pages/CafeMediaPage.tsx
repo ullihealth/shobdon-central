@@ -13,7 +13,8 @@ import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_TICKER_STYLE } from '../services/tickerStyleStore'
 import { useElementHeight } from '../hooks/useElementHeight'
-import { useTotalLoopTime, formatLoopDuration } from '../hooks/useTotalLoopTime'
+import { formatLoopDuration } from '../hooks/useTotalLoopTime'
+import { useCafeLoopTimes } from '../hooks/useCafeLoopTimes'
 
 const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
@@ -626,10 +627,10 @@ export default function CafeMediaPage(): JSX.Element {
 
   const selectedCafeSlot = cafeSlots.find((s) => s.slotNumber === selectedCafeSlotNumber) ?? null
   // Called unconditionally, before either early return below, per the
-  // Rules of Hooks - useTotalLoopTime itself is cheap (useMemo over at
+  // Rules of Hooks - useCafeLoopTimes itself is cheap (useMemo over at
   // most 12 slots) so computing it even on the loading/upsell paths
   // (where its result just goes unused) costs nothing real.
-  const totalLoopTime = useTotalLoopTime(cafeSlots, files)
+  const cafeLoopTimes = useCafeLoopTimes(cafeSlots, files)
 
   if (loading) {
     return (
@@ -721,20 +722,22 @@ export default function CafeMediaPage(): JSX.Element {
             Manage Media Library →
           </Link>
         </div>
-        {/* Total loop time - same shared hook/format as Dashboard
-            Manager's own bar (useTotalLoopTime.ts). Café has no
-            reserved-slot/time-budget concept at all (see that hook's
-            own comment), so this is just the sum of enabled slots'
-            effective durations - no reserved-slot addition applies
-            here in practice. */}
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-border/60 bg-slate-900/60 px-4 py-2">
+        {/* Two distinct figures (useCafeLoopTimes.ts) - replaced a
+            single "Total loop time" bar that reused the dashboard's own
+            reserved-slot-always-counts formula, which was wrong for
+            café (reserved slots here only ever appear live if ALSO
+            enabled - see that hook's own comment) and could silently
+            inflate the total by 10s per reserved-but-disabled slot no
+            viewer could actually see. Pre-Loaded is forward-looking
+            (every slot with real content assigned, enabled or not) -
+            Live is exactly what publicConfig.ts hands the real public
+            screen right now (enabled slots only). */}
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-slate-900/60 px-4 py-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
-            Total loop time: <span className="text-white">{formatLoopDuration(totalLoopTime.totalSeconds)}</span>
-            {totalLoopTime.unknownDurationCount > 0 && (
-              <span className="ml-2 normal-case text-status-warn">
-                ({totalLoopTime.unknownDurationCount} video{totalLoopTime.unknownDurationCount === 1 ? '' : 's'} with unknown length not counted)
-              </span>
-            )}
+            Pre-Loaded Total Loop Length: <span className="text-white">{formatLoopDuration(cafeLoopTimes.preLoadedSeconds)}</span>
+          </span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
+            Live Total Loop Length: <span className="text-white">{formatLoopDuration(cafeLoopTimes.liveSeconds)}</span>
           </span>
         </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
