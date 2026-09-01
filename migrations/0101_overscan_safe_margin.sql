@@ -1,0 +1,43 @@
+-- Overscan safe-margin round - a real tenant's mounted TV (Bush-brand,
+-- broken remote, no reachable picture-settings menu) applies hardware
+-- overscan, cropping the incoming HDMI signal a few percent on every
+-- edge - confirmed via photo, the footer ticker's text was sliced off at
+-- the bottom edge. Unlike TEMPLATE_EDGE_PADDING (src/config/
+-- templateLayout.ts, an always-on content-box padding already shipped),
+-- this is an opt-in, whole-canvas scale-and-recenter (OverscanSafeFrame,
+-- src/components/OverscanSafeFrame.tsx) - shrinks the entire rendered
+-- dashboard toward its own center so a TV that crops further still can't
+-- reach anything that matters.
+--
+-- Per-tenant (not per-display) - mirrors display_width_cm's own
+-- precedent (migration 0088): a venue_cafe tenant only ever has one
+-- active display in practice (trial-signup.ts's venue_cafe branch
+-- creates `main` permanently entitled=0/active=0), so per-tenant and
+-- per-display are operationally identical for the case that's actually
+-- reported. An airfield tenant running two different live TVs (main +
+-- cafe-tv) would share one value - an accepted limitation, same one
+-- display_width_cm already lives with.
+--
+-- Self-service, not developer-only (unlike display_width_cm, which
+-- needs a physical measurement and is meaningless without one) -
+-- overscan is something an owner can literally see on their own screen,
+-- edited via Screens Design's own "Displays" tab, PUT /api/tenant/config.
+--
+-- DEFAULT 0 (off) for both columns' own defaults applies identically to
+-- every existing row and every future new tenant - considered defaulting
+-- new tenants to enabled, rejected: most modern TVs and virtually all
+-- monitors don't overscan at all, so an unconditional margin would be a
+-- visible, unnecessary regression (dashboard reads as slightly smaller/
+-- letterboxed) for the majority who never had the problem. A one-click
+-- self-service toggle is the better trade for the minority who do.
+ALTER TABLE tenants ADD COLUMN overscan_safe_margin_enabled INTEGER NOT NULL DEFAULT 0;
+-- Percent of margin visible on EACH of the four edges when enabled (not
+-- a total/combined figure) - see OverscanSafeFrame.tsx's own comment for
+-- the scale = 1 - (marginPercent * 2) / 100 derivation. 4 is the
+-- shipped default once a tenant turns this on for the first time -
+-- consumer-TV "Just Scan"-style overscan is commonly cited in the
+-- 2.5-5% band, so 4 sits centrally in it. Configurable 2-10 (validated
+-- in functions/api/tenant/config.ts's own PUT) so a specific tenant's
+-- own TV can be dialled in exactly, rather than living with a single
+-- fixed guess.
+ALTER TABLE tenants ADD COLUMN overscan_safe_margin_percent REAL NOT NULL DEFAULT 4;

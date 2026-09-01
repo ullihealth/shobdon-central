@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties } from 'react'
 import ColorField from '../components/ColorField'
+import OverscanSafeFrame from '../components/OverscanSafeFrame'
 import DisplayUrlList from '../components/config/DisplayUrlList'
 import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Template'
 import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
@@ -596,6 +597,16 @@ export default function DesignPage(): JSX.Element {
   const [opsPanelData, setOpsPanelData] = useState<OpsPanelPublic | null | undefined>(undefined)
   const [opsPanelChartData, setOpsPanelChartData] = useState<OpsPanelChartConfig | null | undefined>(undefined)
   const [gasPricesData, setGasPricesData] = useState<GasPricesPublic | null | undefined>(undefined)
+  // Overscan safe-margin (migration 0101, OverscanSafeFrame.tsx) - self-
+  // service, edited on this page's own "Displays" tab below. Staged
+  // locally (same immediate-PUT-no-confirm posture as savedSwatches
+  // above - a margin percentage is trivially reversible, not a
+  // multi-field form needing an "Apply" gate) and also threaded into
+  // the live preview further down, so toggling this shows its real
+  // effect before/without needing to leave this page.
+  const [overscanSafeMarginEnabled, setOverscanSafeMarginEnabled] = useState(false)
+  const [overscanSafeMarginPercent, setOverscanSafeMarginPercent] = useState(4)
+  const [overscanSaveStatus, setOverscanSaveStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
   useEffect(() => {
     let cancelled = false
     fetch(TENANT_CONFIG_URL)
@@ -607,6 +618,8 @@ export default function DesignPage(): JSX.Element {
         if (data?.brandDisplay?.main) setBrandMain(data.brandDisplay.main)
         if (data?.brandDisplay?.cafe) setBrandCafe(data.brandDisplay.cafe)
         if (Array.isArray(data?.savedSwatches)) setSavedSwatches(data.savedSwatches)
+        setOverscanSafeMarginEnabled(!!data?.overscanSafeMarginEnabled)
+        if (typeof data?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(data.overscanSafeMarginPercent)
         if (data) {
           setMediaData({
             cameraSlots: Array.isArray(data.cameraSlots) ? data.cameraSlots : [],
@@ -639,6 +652,39 @@ export default function DesignPage(): JSX.Element {
     })
       .then((response) => setBrandSaveStatus(response.ok ? 'success' : 'error'))
       .catch(() => setBrandSaveStatus('error'))
+  }
+
+  // Optimistic local update first (the live preview below re-renders
+  // from this same state immediately, before the network round-trip
+  // resolves), reverted on failure - same posture as persistSavedSwatches
+  // below. Both fields save together in one PUT since they're shown
+  // together in one small control - no reason to split them into two
+  // requests.
+  function persistOverscanSafeMargin(nextEnabled: boolean, nextPercent: number) {
+    const previousEnabled = overscanSafeMarginEnabled
+    const previousPercent = overscanSafeMarginPercent
+    setOverscanSafeMarginEnabled(nextEnabled)
+    setOverscanSafeMarginPercent(nextPercent)
+    setOverscanSaveStatus('working')
+    fetch(TENANT_CONFIG_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overscanSafeMarginEnabled: nextEnabled, overscanSafeMarginPercent: nextPercent }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          setOverscanSaveStatus('success')
+        } else {
+          setOverscanSafeMarginEnabled(previousEnabled)
+          setOverscanSafeMarginPercent(previousPercent)
+          setOverscanSaveStatus('error')
+        }
+      })
+      .catch(() => {
+        setOverscanSafeMarginEnabled(previousEnabled)
+        setOverscanSafeMarginPercent(previousPercent)
+        setOverscanSaveStatus('error')
+      })
   }
 
   // Immediate PUT, no confirm, no applyStatus/Apply-to-live-screen gate -
@@ -1878,6 +1924,52 @@ export default function DesignPage(): JSX.Element {
               <div>
                 <div className="mb-4 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Your Displays</div>
                 <DisplayUrlList cafeEntitled={cafeEntitled} />
+
+                {/* Overscan safe-margin (migration 0101) - self-service,
+                    since this is something an owner can literally see on
+                    their own screen (unlike e.g. display_width_cm, a
+                    developer-only setting that needs a physical
+                    measurement to mean anything). Placed on this tab
+                    specifically so the live preview to the right shows
+                    the real effect immediately, before/without saving. */}
+                <div className="mt-8 border-t border-border pt-6">
+                  <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+                    Screen Fit
+                  </div>
+                  <p className="mb-4 max-w-md text-xs text-muted-500">
+                    If your screen crops the outer edge of the picture (a common TV "overscan" behaviour, especially
+                    on older or budget sets) - and you can't turn it off in the TV's own picture settings - enable
+                    this to shrink the dashboard slightly and keep everything safely inside the visible area.
+                  </p>
+                  <label className="mb-3 flex w-fit cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={overscanSafeMarginEnabled}
+                      onChange={(event) => persistOverscanSafeMargin(event.target.checked, overscanSafeMarginPercent)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-slate-300">Enable safe margin</span>
+                  </label>
+                  {overscanSafeMarginEnabled && (
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={2}
+                        max={10}
+                        step={1}
+                        value={overscanSafeMarginPercent}
+                        onChange={(event) => persistOverscanSafeMargin(overscanSafeMarginEnabled, Number(event.target.value))}
+                        className="w-48"
+                      />
+                      <span className="w-20 text-sm text-slate-300">{overscanSafeMarginPercent}% margin</span>
+                    </div>
+                  )}
+                  {overscanSaveStatus === 'working' && <p className="mt-2 text-xs font-semibold text-slate-400">Saving…</p>}
+                  {overscanSaveStatus === 'success' && <p className="mt-2 text-xs font-semibold text-status-good">Saved.</p>}
+                  {overscanSaveStatus === 'error' && (
+                    <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save - try again.</p>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1925,74 +2017,89 @@ export default function DesignPage(): JSX.Element {
                 transformOrigin: 'top left',
               }}
             >
-              <WeatherProvider forcedConfig={MOCK_CONFIG}>
-                {activeScreen === 'dashboard' ? (
-                  // Dispatches on pendingMainId (the STAGED selection, not
-                  // necessarily live yet) to the exact same real template
-                  // components DashboardPage.tsx itself renders - a genuine
-                  // preview of what Apply would actually publish, not a
-                  // fixed Clubhouse-1-shaped lookalike regardless of which
-                  // card is selected. isPreview on each makes them size to
-                  // this scaled box instead of the real viewport (see each
-                  // component's own comment). activeGradientMode (the
-                  // Solid/Gradient preview toggle) isn't threaded through
-                  // here - confirmed in an earlier round that it was
-                  // already never applied to the real live dashboard
-                  // either way (template-library-only, dead outside this
-                  // page's own preview), so this isn't a live-behaviour
-                  // regression, just a cosmetic preview-only detail that
-                  // stops applying once a genuine template renders.
-                  pendingMainId === 'clubhouse-2' ? (
-                    <Clubhouse2Template
-                      themeOverride={previewStyle}
-                      airfieldName={airfieldName}
-                      logoUrl={logoUrl}
-                      showLogo={brandMain.showLogo}
-                      showName={brandMain.showName}
-                      nameFontSize={brandMain.nameFontSize}
-                      isPreview
-                      mediaData={mediaData}
-                      opsPanelData={opsPanelData}
-                      opsPanelChartData={opsPanelChartData}
-                    />
-                  ) : pendingMainId === 'cafe-1' ? (
-                    <CafeTemplate
-                      themeOverride={previewStyle}
-                      airfieldName={airfieldName}
-                      logoUrl={logoUrl}
-                      showLogo={brandMain.showLogo}
-                      showName={brandMain.showName}
-                      nameFontSize={brandMain.nameFontSize}
-                      isPreview
-                      mediaData={mediaData}
-                      safetyNoticesData={opsPanelData?.safetyNotices}
-                      gasPricesData={gasPricesData}
-                    />
+              {/* Nested inside the preview's own top-left-anchored
+                  reference-size transform above - composes normally
+                  (CSS transforms nest without special handling).
+                  outerClassName="h-full w-full", not the default
+                  'h-screen w-screen': this sits inside an already fixed-
+                  size reference box, not the true browser viewport, same
+                  "h-full/w-full in preview mode" adjustment every real
+                  template's own isPreview prop already makes internally. */}
+              <OverscanSafeFrame
+                enabled={overscanSafeMarginEnabled}
+                marginPercent={overscanSafeMarginPercent}
+                themeOverride={previewStyle}
+                outerClassName="h-full w-full"
+              >
+                <WeatherProvider forcedConfig={MOCK_CONFIG}>
+                  {activeScreen === 'dashboard' ? (
+                    // Dispatches on pendingMainId (the STAGED selection, not
+                    // necessarily live yet) to the exact same real template
+                    // components DashboardPage.tsx itself renders - a genuine
+                    // preview of what Apply would actually publish, not a
+                    // fixed Clubhouse-1-shaped lookalike regardless of which
+                    // card is selected. isPreview on each makes them size to
+                    // this scaled box instead of the real viewport (see each
+                    // component's own comment). activeGradientMode (the
+                    // Solid/Gradient preview toggle) isn't threaded through
+                    // here - confirmed in an earlier round that it was
+                    // already never applied to the real live dashboard
+                    // either way (template-library-only, dead outside this
+                    // page's own preview), so this isn't a live-behaviour
+                    // regression, just a cosmetic preview-only detail that
+                    // stops applying once a genuine template renders.
+                    pendingMainId === 'clubhouse-2' ? (
+                      <Clubhouse2Template
+                        themeOverride={previewStyle}
+                        airfieldName={airfieldName}
+                        logoUrl={logoUrl}
+                        showLogo={brandMain.showLogo}
+                        showName={brandMain.showName}
+                        nameFontSize={brandMain.nameFontSize}
+                        isPreview
+                        mediaData={mediaData}
+                        opsPanelData={opsPanelData}
+                        opsPanelChartData={opsPanelChartData}
+                      />
+                    ) : pendingMainId === 'cafe-1' ? (
+                      <CafeTemplate
+                        themeOverride={previewStyle}
+                        airfieldName={airfieldName}
+                        logoUrl={logoUrl}
+                        showLogo={brandMain.showLogo}
+                        showName={brandMain.showName}
+                        nameFontSize={brandMain.nameFontSize}
+                        isPreview
+                        mediaData={mediaData}
+                        safetyNoticesData={opsPanelData?.safetyNotices}
+                        gasPricesData={gasPricesData}
+                      />
+                    ) : (
+                      <Clubhouse1Template
+                        themeOverride={previewStyle}
+                        airfieldName={airfieldName}
+                        logoUrl={logoUrl}
+                        showLogo={brandMain.showLogo}
+                        showName={brandMain.showName}
+                        nameFontSize={brandMain.nameFontSize}
+                        isPreview
+                        mediaData={mediaData}
+                        opsPanelData={opsPanelData}
+                        opsPanelChartData={opsPanelChartData}
+                        gasPricesData={gasPricesData}
+                      />
+                    )
                   ) : (
-                    <Clubhouse1Template
-                      themeOverride={previewStyle}
+                    <CafePreview
                       airfieldName={airfieldName}
                       logoUrl={logoUrl}
-                      showLogo={brandMain.showLogo}
-                      showName={brandMain.showName}
-                      nameFontSize={brandMain.nameFontSize}
-                      isPreview
+                      gradientMode={activeGradientMode}
+                      brandCafe={brandCafe}
                       mediaData={mediaData}
-                      opsPanelData={opsPanelData}
-                      opsPanelChartData={opsPanelChartData}
-                      gasPricesData={gasPricesData}
                     />
-                  )
-                ) : (
-                  <CafePreview
-                    airfieldName={airfieldName}
-                    logoUrl={logoUrl}
-                    gradientMode={activeGradientMode}
-                    brandCafe={brandCafe}
-                    mediaData={mediaData}
-                  />
-                )}
-              </WeatherProvider>
+                  )}
+                </WeatherProvider>
+              </OverscanSafeFrame>
             </div>
           </div>
         </div>

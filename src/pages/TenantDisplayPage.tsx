@@ -6,6 +6,7 @@ import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
 import TenantUnavailable from '../components/TenantUnavailable'
 import FullBufferGate from '../components/FullBufferGate'
+import OverscanSafeFrame from '../components/OverscanSafeFrame'
 import { isTrackedMediaType, type GateAsset } from '../hooks/useVideoDownloadStates'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
@@ -62,6 +63,11 @@ export default function TenantDisplayPage(): JSX.Element {
   const [fullBufferGateEnabled, setFullBufferGateEnabled] = useState(false)
   const [carouselSlotsRaw, setCarouselSlotsRaw] = useState<GateCarouselSlot[]>([])
   const [cafeCarouselSlotsRaw, setCafeCarouselSlotsRaw] = useState<GateCarouselSlot[]>([])
+  // Overscan safe-margin (migration 0101) - same tenant-level setting
+  // DashboardPage.tsx reads, applies identically here since named
+  // displays (/d/:slug) are still the same tenant's own hardware.
+  const [overscanSafeMarginEnabled, setOverscanSafeMarginEnabled] = useState(false)
+  const [overscanSafeMarginPercent, setOverscanSafeMarginPercent] = useState(4)
 
   useEffect(() => {
     let cancelled = false
@@ -76,6 +82,8 @@ export default function TenantDisplayPage(): JSX.Element {
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
+        setOverscanSafeMarginEnabled(!!data?.overscanSafeMarginEnabled)
+        if (typeof data?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(data.overscanSafeMarginPercent)
         setFullBufferGateEnabled(!!data?.fullBufferGateEnabled)
         setCarouselSlotsRaw(Array.isArray(data?.carouselSlots) ? data.carouselSlots : [])
         setCafeCarouselSlotsRaw(Array.isArray(data?.cafeCarouselSlots) ? data.cafeCarouselSlots : [])
@@ -124,28 +132,34 @@ export default function TenantDisplayPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
-        {display.templateId === 'cafe-1' ? (
-          <CafeTemplate
-            themeOverride={themeOverride}
-            airfieldName={airfieldName}
-            logoUrl={logoUrl}
-            showLogo={brandDisplay?.cafe.showLogo}
-            showName={brandDisplay?.cafe.showName}
-            nameFontSize={brandDisplay?.cafe.nameFontSize}
-          />
-        ) : (
-          <ClassicTemplate
-            panelConfig={display.panelConfig}
-            themeOverride={themeOverride}
-            airfieldName={airfieldName}
-            logoUrl={logoUrl}
-            showLogo={brandDisplay?.main.showLogo}
-            showName={brandDisplay?.main.showName}
-            nameFontSize={brandDisplay?.main.nameFontSize}
-          />
-        )}
-      </FullBufferGate>
+      <OverscanSafeFrame
+        enabled={overscanSafeMarginEnabled}
+        marginPercent={overscanSafeMarginPercent}
+        themeOverride={themeOverride}
+      >
+        <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
+          {display.templateId === 'cafe-1' ? (
+            <CafeTemplate
+              themeOverride={themeOverride}
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandDisplay?.cafe.showLogo}
+              showName={brandDisplay?.cafe.showName}
+              nameFontSize={brandDisplay?.cafe.nameFontSize}
+            />
+          ) : (
+            <ClassicTemplate
+              panelConfig={display.panelConfig}
+              themeOverride={themeOverride}
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandDisplay?.main.showLogo}
+              showName={brandDisplay?.main.showName}
+              nameFontSize={brandDisplay?.main.nameFontSize}
+            />
+          )}
+        </FullBufferGate>
+      </OverscanSafeFrame>
     </WeatherProvider>
   )
 }

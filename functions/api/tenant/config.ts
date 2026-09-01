@@ -208,7 +208,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         // same derivation as publicConfig.ts's own copy (see that
         // file's comment for the full "why"); internet_provider_
         // display_name (migration 0083) is no longer read, left inert.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, postcode, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, icao_code AS icaoCode, lat, lon, postcode, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, active_weather_provider AS activeWeatherProvider, overscan_safe_margin_enabled AS overscanSafeMarginEnabled, overscan_safe_margin_percent AS overscanSafeMarginPercent, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -225,6 +225,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         windsockBand4Kt: number;
         windsockBand5Kt: number;
         activeWeatherProvider: string | null;
+        overscanSafeMarginEnabled: number;
+        overscanSafeMarginPercent: number;
         slug: string;
         parentSlug: string | null;
       }>(),
@@ -292,6 +294,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // null/missing value everywhere else on this endpoint.
     activeWeatherProvider: tenantRow?.activeWeatherProvider ?? null,
     internetProviderDisplayName,
+    // Overscan safe-margin (migration 0101) - see OverscanSafeFrame.tsx's
+    // own comment for the full "why". percent defaults to 4 at the DB
+    // layer (a brand-new tenant that's never touched this reads 4, not
+    // some other arbitrary number, the moment they first turn it on).
+    overscanSafeMarginEnabled: !!tenantRow?.overscanSafeMarginEnabled,
+    overscanSafeMarginPercent: tenantRow?.overscanSafeMarginPercent ?? 4,
     cameraSlots: cameraRows.results.map((row) => ({ slot: row.slotNumber, label: row.label, url: row.url })),
     cameras: publicConfigData.cameras,
     carouselSlots: publicConfigData.carouselSlots,
@@ -323,6 +331,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     postcode?: unknown;
     windsock?: { band2Kt?: unknown; band3Kt?: unknown; band4Kt?: unknown; band5Kt?: unknown };
     activeWeatherProvider?: unknown;
+    overscanSafeMarginEnabled?: unknown;
+    overscanSafeMarginPercent?: unknown;
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
@@ -465,6 +475,30 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     } else {
       return jsonResponse({ error: "activeWeatherProvider must be one of atc, internet, ingested, mock, or null" }, 400);
     }
+  }
+
+  // Overscan safe-margin (migration 0101, OverscanSafeFrame.tsx) - self-
+  // service, Screens Design's own "Displays" tab. Independent booleans/
+  // fields (not an "all or nothing" pair like lat/lon above) - a tenant
+  // can toggle the feature off without also having to resend a valid
+  // percent, and can adjust the percent while leaving it enabled.
+  if (body.overscanSafeMarginEnabled !== undefined) {
+    if (typeof body.overscanSafeMarginEnabled !== "boolean") {
+      return jsonResponse({ error: "overscanSafeMarginEnabled must be a boolean" }, 400);
+    }
+    await env.DB
+      .prepare("UPDATE tenants SET overscan_safe_margin_enabled = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(body.overscanSafeMarginEnabled ? 1 : 0, now, organizationId)
+      .run();
+  }
+  if (body.overscanSafeMarginPercent !== undefined) {
+    if (typeof body.overscanSafeMarginPercent !== "number" || body.overscanSafeMarginPercent < 2 || body.overscanSafeMarginPercent > 10) {
+      return jsonResponse({ error: "overscanSafeMarginPercent must be a number between 2 and 10" }, 400);
+    }
+    await env.DB
+      .prepare("UPDATE tenants SET overscan_safe_margin_percent = ?, updated_at = ? WHERE organization_id = ?")
+      .bind(body.overscanSafeMarginPercent, now, organizationId)
+      .run();
   }
 
   // Both main and cafe must be present and valid - a partial/malformed

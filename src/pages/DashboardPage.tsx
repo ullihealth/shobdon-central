@@ -6,6 +6,7 @@ import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
 import DashboardLoading from '../components/DashboardLoading'
 import FullBufferGate from '../components/FullBufferGate'
+import OverscanSafeFrame from '../components/OverscanSafeFrame'
 import { isTrackedMediaType, type GateAsset } from '../hooks/useVideoDownloadStates'
 import { WeatherProvider } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
@@ -43,6 +44,14 @@ export default function DashboardPage(): JSX.Element {
   // row's template_id, resolved server-side in publicConfig.ts - never
   // missing/null in the response itself, always at least 'classic').
   const [mainTemplateId, setMainTemplateId] = useState('classic')
+  // Overscan safe-margin (migration 0101, self-service via Screens
+  // Design's "Displays" tab) - defaults to off/4 until the fetch
+  // resolves, matching the DB column's own defaults, so the brief
+  // pre-fetch window already renders exactly what an unconfigured
+  // tenant would show anyway (no visible flash of a margin appearing
+  // then disappearing).
+  const [overscanSafeMarginEnabled, setOverscanSafeMarginEnabled] = useState(false)
+  const [overscanSafeMarginPercent, setOverscanSafeMarginPercent] = useState(4)
   // Migration 0039 (Screens Design's Branding tab) - null until the
   // fetch resolves, same stance as airfieldName/logoUrl above. Header.tsx/
   // VenueCornerBadge.tsx both default every one of these props to
@@ -115,6 +124,8 @@ export default function DashboardPage(): JSX.Element {
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.mainTemplateId) setMainTemplateId(data.mainTemplateId as string)
         if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
+        setOverscanSafeMarginEnabled(!!data?.overscanSafeMarginEnabled)
+        if (typeof data?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(data.overscanSafeMarginPercent)
         // Part D developer override (migration 0034) - a support/
         // maintenance force-off for '/' itself, independent of both
         // tenants.active (whole-tenant pause, handled by the !response.ok
@@ -162,45 +173,58 @@ export default function DashboardPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
-        {cafeFallbackActive ? (
-          <CafeTemplate
-            themeOverride={themeOverride}
-            airfieldName={airfieldName}
-            logoUrl={logoUrl}
-            showLogo={brandDisplay?.cafe.showLogo}
-            showName={brandDisplay?.cafe.showName}
-            nameFontSize={brandDisplay?.cafe.nameFontSize}
-          />
-        ) : mainTemplateId === 'clubhouse-2' ? (
-          <Clubhouse2Template
-            themeOverride={themeOverride}
-            airfieldName={airfieldName}
-            logoUrl={logoUrl}
-            showLogo={brandDisplay?.main.showLogo}
-            showName={brandDisplay?.main.showName}
-            nameFontSize={brandDisplay?.main.nameFontSize}
-          />
-        ) : mainTemplateId === 'cafe-1' ? (
-          <CafeTemplate
-            themeOverride={themeOverride}
-            airfieldName={airfieldName}
-            logoUrl={logoUrl}
-            showLogo={brandDisplay?.cafe.showLogo}
-            showName={brandDisplay?.cafe.showName}
-            nameFontSize={brandDisplay?.cafe.nameFontSize}
-          />
-        ) : (
-          <Clubhouse1Template
-            themeOverride={themeOverride}
-            airfieldName={airfieldName}
-            logoUrl={logoUrl}
-            showLogo={brandDisplay?.main.showLogo}
-            showName={brandDisplay?.main.showName}
-            nameFontSize={brandDisplay?.main.nameFontSize}
-          />
-        )}
-      </FullBufferGate>
+      {/* Wraps FullBufferGate too (not just the chosen template) -
+          FullBufferGate's own "buffering media" overlay is a plain
+          position:fixed child (not portaled), so it's a genuine DOM
+          descendant of this transform and correctly gets the same
+          margin as the real dashboard it precedes, rather than being
+          able to render its own text right up to the TV's cropped edge
+          during the brief pre-ready window. */}
+      <OverscanSafeFrame
+        enabled={overscanSafeMarginEnabled}
+        marginPercent={overscanSafeMarginPercent}
+        themeOverride={themeOverride}
+      >
+        <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
+          {cafeFallbackActive ? (
+            <CafeTemplate
+              themeOverride={themeOverride}
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandDisplay?.cafe.showLogo}
+              showName={brandDisplay?.cafe.showName}
+              nameFontSize={brandDisplay?.cafe.nameFontSize}
+            />
+          ) : mainTemplateId === 'clubhouse-2' ? (
+            <Clubhouse2Template
+              themeOverride={themeOverride}
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandDisplay?.main.showLogo}
+              showName={brandDisplay?.main.showName}
+              nameFontSize={brandDisplay?.main.nameFontSize}
+            />
+          ) : mainTemplateId === 'cafe-1' ? (
+            <CafeTemplate
+              themeOverride={themeOverride}
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandDisplay?.cafe.showLogo}
+              showName={brandDisplay?.cafe.showName}
+              nameFontSize={brandDisplay?.cafe.nameFontSize}
+            />
+          ) : (
+            <Clubhouse1Template
+              themeOverride={themeOverride}
+              airfieldName={airfieldName}
+              logoUrl={logoUrl}
+              showLogo={brandDisplay?.main.showLogo}
+              showName={brandDisplay?.main.showName}
+              nameFontSize={brandDisplay?.main.nameFontSize}
+            />
+          )}
+        </FullBufferGate>
+      </OverscanSafeFrame>
     </WeatherProvider>
   )
 }
