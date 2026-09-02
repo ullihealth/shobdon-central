@@ -607,6 +607,19 @@ export default function DesignPage(): JSX.Element {
   const [overscanSafeMarginEnabled, setOverscanSafeMarginEnabled] = useState(false)
   const [overscanSafeMarginPercent, setOverscanSafeMarginPercent] = useState(4)
   const [overscanSaveStatus, setOverscanSaveStatus] = useState<'idle' | 'working' | 'success' | 'error'>('idle')
+  // Screen Fit lock round - a real tenant's margin was carefully tuned on
+  // real hardware today (back-and-forth troubleshooting to land on the
+  // right percentage for their specific TV's overscan) - this is a UX
+  // safety affordance against an accidental slider bump undoing that,
+  // not an access-control feature (any owner/admin who can reach this
+  // page could already unlock it with one click). Defaults locked on
+  // every fresh mount of this component - plain local state, not
+  // persisted anywhere, so leaving the page (or reloading it) always
+  // starts safely locked again with no extra timer/effect needed.
+  const [isScreenFitLocked, setIsScreenFitLocked] = useState(true)
+  const [screenFitToast, setScreenFitToast] = useState<string | null>(null)
+  const screenFitToastTimerRef = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(screenFitToastTimerRef.current), [])
   useEffect(() => {
     let cancelled = false
     fetch(TENANT_CONFIG_URL)
@@ -685,6 +698,33 @@ export default function DesignPage(): JSX.Element {
         setOverscanSafeMarginPercent(previousPercent)
         setOverscanSaveStatus('error')
       })
+  }
+
+  // Unlocking is the only action that shows a toast - confirms exactly
+  // what's about to become editable before the tenant touches anything,
+  // using only context this page actually has (tenant name + the real
+  // current setting). No TV brand/model field exists anywhere in this
+  // app's data model to reference (confirmed - the only device-adjacent
+  // field, display_width_cm, is a developer-only physical measurement,
+  // not shown here) - Platform Admin's separate Pi Fleet page may carry
+  // that kind of note informally, but it isn't tenant-facing data this
+  // page could pull from. Re-locking (clicking the padlock again while
+  // unlocked) is quiet by design - only the icon flips and the controls
+  // disable, no toast, since the confirm-before-edit purpose doesn't
+  // apply to putting the lock back on.
+  function toggleScreenFitLock() {
+    if (!isScreenFitLocked) {
+      setIsScreenFitLocked(true)
+      return
+    }
+    setIsScreenFitLocked(false)
+    const who = airfieldName || 'this tenant'
+    const message = overscanSafeMarginEnabled
+      ? `Screen Fit unlocked - ${who} is currently set to ${overscanSafeMarginPercent}% margin.`
+      : `Screen Fit unlocked - safe margin is currently off for ${who}.`
+    setScreenFitToast(message)
+    window.clearTimeout(screenFitToastTimerRef.current)
+    screenFitToastTimerRef.current = window.setTimeout(() => setScreenFitToast(null), 4000)
   }
 
   // Immediate PUT, no confirm, no applyStatus/Apply-to-live-screen gate -
@@ -1932,7 +1972,7 @@ export default function DesignPage(): JSX.Element {
                     measurement to mean anything). Placed on this tab
                     specifically so the live preview to the right shows
                     the real effect immediately, before/without saving. */}
-                <div className="mt-8 border-t border-border pt-6">
+                <div className="relative mt-8 border-t border-border pt-6">
                   <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
                     Screen Fit
                   </div>
@@ -1941,15 +1981,38 @@ export default function DesignPage(): JSX.Element {
                     on older or budget sets) - and you can't turn it off in the TV's own picture settings - enable
                     this to shrink the dashboard slightly and keep everything safely inside the visible area.
                   </p>
-                  <label className="mb-3 flex w-fit cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={overscanSafeMarginEnabled}
-                      onChange={(event) => persistOverscanSafeMargin(event.target.checked, overscanSafeMarginPercent)}
-                      className="h-4 w-4"
-                    />
-                    <span className="text-sm text-slate-300">Enable safe margin</span>
-                  </label>
+                  <div className="mb-3 flex w-fit items-center gap-3">
+                    <label
+                      className={`flex items-center gap-2 ${isScreenFitLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={overscanSafeMarginEnabled}
+                        disabled={isScreenFitLocked}
+                        onChange={(event) => persistOverscanSafeMargin(event.target.checked, overscanSafeMarginPercent)}
+                        className="h-4 w-4 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm text-slate-300">Enable safe margin</span>
+                    </label>
+                    {/* Lock round - defaults locked (see isScreenFitLocked's
+                        own comment) to protect a real tenant's carefully-
+                        tuned setting from an accidental slider bump. Plain
+                        emoji, not an SVG - this is an admin-only desktop
+                        page (unlike the kiosk-facing PersistentConfigLink,
+                        which avoids emoji specifically for cross-platform
+                        rendering consistency on a public display), and
+                        matches this same page's own existing "🎨 Edit
+                        appearance"-style icon-button convention. */}
+                    <button
+                      type="button"
+                      onClick={toggleScreenFitLock}
+                      title={isScreenFitLocked ? 'Locked - click to unlock and edit' : 'Unlocked - click to lock'}
+                      aria-label={isScreenFitLocked ? 'Unlock Screen Fit controls' : 'Lock Screen Fit controls'}
+                      className="text-base leading-none transition hover:opacity-75"
+                    >
+                      {isScreenFitLocked ? '🔒' : '🔓'}
+                    </button>
+                  </div>
                   {overscanSafeMarginEnabled && (
                     <div className="flex items-center gap-3">
                       <input
@@ -1958,8 +2021,9 @@ export default function DesignPage(): JSX.Element {
                         max={25}
                         step={1}
                         value={overscanSafeMarginPercent}
+                        disabled={isScreenFitLocked}
                         onChange={(event) => persistOverscanSafeMargin(overscanSafeMarginEnabled, Number(event.target.value))}
-                        className="w-48"
+                        className="w-48 disabled:cursor-not-allowed disabled:opacity-50"
                       />
                       <span className="w-20 text-sm text-slate-300">{overscanSafeMarginPercent}% margin</span>
                     </div>
@@ -1968,6 +2032,19 @@ export default function DesignPage(): JSX.Element {
                   {overscanSaveStatus === 'success' && <p className="mt-2 text-xs font-semibold text-status-good">Saved.</p>}
                   {overscanSaveStatus === 'error' && (
                     <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save - try again.</p>
+                  )}
+                  {/* Self-dismissing, non-blocking - same toast pattern
+                      SlideEditor.tsx/PilotWindCard.tsx already established
+                      (no shared toast/popover component exists in this
+                      codebase; each caller hand-rolls its own small
+                      instance). */}
+                  {screenFitToast && (
+                    <div
+                      role="status"
+                      className="pointer-events-none absolute left-0 top-full z-10 mt-2 w-max max-w-[90%] rounded-lg border border-accent-sky-500/50 bg-slate-950/95 px-4 py-2.5 text-sm text-slate-200 shadow-xl"
+                    >
+                      {screenFitToast}
+                    </div>
                   )}
                 </div>
               </div>
