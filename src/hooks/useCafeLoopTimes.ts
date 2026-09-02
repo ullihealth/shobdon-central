@@ -100,17 +100,18 @@ export function loopLengthColorClass(totalSeconds: number): string {
   return totalSeconds <= LOOP_LENGTH_WARNING_THRESHOLD_SECONDS ? 'text-status-good' : 'text-status-bad'
 }
 
-// "300 seconds (5:00)" / "46 seconds (0:46)" / "125 seconds (2:05)" -
-// standard digital-clock MM:SS in the bracket (seconds always 2 digits,
-// minutes uncapped - 3661s reads "61:01", never wrapped into hours).
-// Distinct from formatLoopDuration's own "4m 32s" shorthand above,
-// which this deliberately doesn't reuse - that format reads fine as a
-// compact dashboard-bar figure, but Jeff specifically asked for this
-// page's two enlarged figures to use MM:SS instead.
+// "300 seconds (5:00 mins)" / "46 seconds (0:46 mins)" / "125 seconds
+// (2:05 mins)" - standard digital-clock MM:SS in the bracket (seconds
+// always 2 digits, minutes uncapped - 3661s reads "61:01", never
+// wrapped into hours), with a trailing " mins" unit label. Distinct
+// from formatLoopDuration's own "4m 32s" shorthand above, which this
+// deliberately doesn't reuse - that format reads fine as a compact
+// dashboard-bar figure, but Jeff specifically asked for this page's two
+// enlarged figures to use MM:SS instead.
 export function formatLoopSecondsWithMinutes(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds))
   const minutes = Math.floor(s / 60)
   const seconds = s % 60
   const paddedSeconds = String(seconds).padStart(2, '0')
-  return `${s} second${s === 1 ? '' : 's'} (${minutes}:${paddedSeconds})`
+  return `${s} second${s === 1 ? '' : 's'} (${minutes}:${paddedSeconds} mins)`
 }
