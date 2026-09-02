@@ -13,8 +13,7 @@ import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_TICKER_STYLE } from '../services/tickerStyleStore'
 import { useElementHeight } from '../hooks/useElementHeight'
-import { formatLoopDuration } from '../hooks/useTotalLoopTime'
-import { useCafeLoopTimes } from '../hooks/useCafeLoopTimes'
+import { useCafeLoopTimes, formatLoopSecondsWithMinutes, loopLengthColorClass } from '../hooks/useCafeLoopTimes'
 
 const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
@@ -731,14 +730,24 @@ export default function CafeMediaPage(): JSX.Element {
             viewer could actually see. Pre-Loaded is forward-looking
             (every slot with real content assigned, enabled or not) -
             Live is exactly what publicConfig.ts hands the real public
-            screen right now (enabled slots only). */}
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-slate-900/60 px-4 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
-            Pre-Loaded Total Loop Length: <span className="text-white">{formatLoopDuration(cafeLoopTimes.preLoadedSeconds)}</span>
-          </span>
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-400">
-            Live Total Loop Length: <span className="text-white">{formatLoopDuration(cafeLoopTimes.liveSeconds)}</span>
-          </span>
+            screen right now (enabled slots only). Enlarged + colour-
+            coded round: green at 180s (3 min) or under, red over -
+            independently per figure, since Pre-Loaded and Live can
+            legitimately differ (see loopLengthColorClass's own
+            comment). */}
+        <div className="mb-4 flex flex-wrap items-center gap-6 rounded-lg border border-border/60 bg-slate-900/60 px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-muted-400">Pre-Loaded Total Loop Length</div>
+            <div className={`text-2xl font-black tabular-nums ${loopLengthColorClass(cafeLoopTimes.preLoadedSeconds)}`}>
+              {formatLoopSecondsWithMinutes(cafeLoopTimes.preLoadedSeconds)}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-muted-400">Live Total Loop Length</div>
+            <div className={`text-2xl font-black tabular-nums ${loopLengthColorClass(cafeLoopTimes.liveSeconds)}`}>
+              {formatLoopSecondsWithMinutes(cafeLoopTimes.liveSeconds)}
+            </div>
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
           <CarouselSlotList

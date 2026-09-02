@@ -88,3 +88,30 @@ export function useCafeLoopTimes(slots: CarouselSlot[], files: MediaLibraryFile[
     return { preLoadedSeconds, liveSeconds }
   }, [slots, files])
 }
+
+// Threshold round - 180s (3 minutes) or under reads as green (a loop
+// short enough that a viewer sees everything without a long wait
+// between repeats), over reads as red. Applied independently to each
+// figure by the caller (CafeMediaPage.tsx), not baked into a single
+// combined verdict, since Pre-Loaded and Live can legitimately differ.
+const LOOP_LENGTH_WARNING_THRESHOLD_SECONDS = 180
+
+export function loopLengthColorClass(totalSeconds: number): string {
+  return totalSeconds <= LOOP_LENGTH_WARNING_THRESHOLD_SECONDS ? 'text-status-good' : 'text-status-bad'
+}
+
+// "300 seconds (5 mins)" / "46 seconds (46 secs)" / "125 seconds (2 mins
+// 5 secs)" - the bracketed conversion always uses "mins"/"secs"
+// (distinct from formatLoopDuration's own "4m 32s" shorthand above,
+// which this deliberately doesn't reuse - that format reads fine as a
+// compact dashboard-bar figure, but Jeff specifically asked for this
+// page's two enlarged figures to spell out "X seconds (Y mins)").
+export function formatLoopSecondsWithMinutes(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds))
+  const minutes = Math.floor(s / 60)
+  const seconds = s % 60
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`
+  const bracket =
+    minutes === 0 ? plural(seconds, 'sec') : seconds === 0 ? plural(minutes, 'min') : `${plural(minutes, 'min')} ${plural(seconds, 'sec')}`
+  return `${plural(s, 'second')} (${bracket})`
+}
