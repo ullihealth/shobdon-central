@@ -5,6 +5,7 @@ import { PUBLIC_CONFIG_URL } from '../../config/publicApi'
 import MediaSlotRenderer, { type MediaSlotVisual } from './MediaSlotRenderer'
 import { useBufferingGate, isTrackedMediaType, type GateAsset } from '../../hooks/useVideoDownloadStates'
 import PersistentConfigLink from '../PersistentConfigLink'
+import { overscanSafeScale } from '../OverscanSafeFrame'
 
 interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
@@ -148,6 +149,17 @@ export default function MediaPanel({
   // falls straight through to this, not a broken empty screen.
   const [webcamUrl, setWebcamUrl] = useState('')
   const [carouselSlots, setCarouselSlots] = useState<CarouselSlotResolved[]>([])
+  // Overscan safe-margin round (fullscreen-portal extension) - only ever
+  // meaningful on a real live page (the fullscreen portal below is
+  // skipped entirely whenever isPreview is true), which is also the only
+  // case that reaches this self-fetch branch at all - every current
+  // `data`-prop caller (DesignPage.tsx/CafeMediaPage.tsx) always passes
+  // isPreview too, so this never needs plumbing through the `data` prop.
+  // Kept independent of DashboardPage.tsx/TenantDisplayPage.tsx's own
+  // identical fetch of the same two fields, matching this codebase's own
+  // established "each panel self-fetches what it needs" convention.
+  const [overscanSafeMarginEnabled, setOverscanSafeMarginEnabled] = useState(false)
+  const [overscanSafeMarginPercent, setOverscanSafeMarginPercent] = useState(4)
   const timerRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
@@ -184,6 +196,8 @@ export default function MediaPanel({
         if (slotOne?.url) setWebcamUrl(slotOne.url)
         const rawSlots = slotSource === 'cafe' ? responseData?.cafeCarouselSlots : responseData?.carouselSlots
         setCarouselSlots(Array.isArray(rawSlots) ? rawSlots : [])
+        setOverscanSafeMarginEnabled(!!responseData?.overscanSafeMarginEnabled)
+        if (typeof responseData?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(responseData.overscanSafeMarginPercent)
       })
       .catch((err) => {
         if (!cancelled) console.error('MediaPanel: public config fetch threw', err)
@@ -340,6 +354,16 @@ export default function MediaPanel({
   // edge-to-edge. Only the empty-state placeholder text keeps its
   // padding, since it's centred text, not a media element.
   const isEdgeToEdgeContent = hasCarousel ? !!activeSlot : !!webcamUrl || item.type === 'image'
+
+  // Overscan safe-margin round (fullscreen-portal extension) - the
+  // fullscreen portal below is a document.body sibling of
+  // OverscanSafeFrame's own wrapper, not a descendant of it, so that
+  // wrapper's own transform has zero effect on it (a CSS transform only
+  // ever affects the subtree it's applied to). Reapplies the identical
+  // overscanSafeScale() formula independently inside the portal's own
+  // subtree instead - 1 (no-op) whenever the feature is off, exactly
+  // matching OverscanSafeFrame's own disabled-case behaviour.
+  const fullscreenScale = overscanSafeMarginEnabled ? overscanSafeScale(overscanSafeMarginPercent) : 1
 
   return (
     <div
@@ -526,7 +550,16 @@ export default function MediaPanel({
           screen. isActive also respects bufferingDone (buffering-gate
           round) for the identical reason the main stack above does -
           nothing is genuinely active, fullscreen or otherwise, until
-          every currently-included video has resolved. */}
+          every currently-included video has resolved.
+
+          Overscan safe-margin round - each slot's own outer fixed div
+          now wraps an inner h-full/w-full div carrying the same
+          transform: scale(...) OverscanSafeFrame.tsx applies to the
+          normal in-flow page. Needed independently here (not inherited)
+          because this portal is a document.body SIBLING of that
+          wrapper, not a descendant of it - a transform never affects
+          anything outside the subtree it's set on, portal or not. See
+          fullscreenScale's own comment above for the full "why". */}
       {!isPreview &&
         createPortal(
           <>
@@ -536,8 +569,10 @@ export default function MediaPanel({
                 const isActive = bufferingDone && activeSlot?.slotNumber === slot.slotNumber
                 const isUpNext = bufferingDone && slot.slotNumber === upcomingSlotNumber
                 return (
-                  <div key={slot.slotNumber} className={`fixed inset-0 z-50 bg-black ${isActive ? '' : 'invisible'}`}>
-                    <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
+                  <div key={slot.slotNumber} className={`fixed inset-0 z-50 overflow-hidden bg-black ${isActive ? '' : 'invisible'}`}>
+                    <div className="h-full w-full" style={{ transform: `scale(${fullscreenScale})`, transformOrigin: 'center center' }}>
+                      <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
+                    </div>
                   </div>
                 )
               })}
