@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AIRFIELD_TIMEZONE } from '../../config/publicApi'
 
 type DisplayMode = 'local' | 'zulu'
@@ -114,26 +115,44 @@ export default function LiveClock(): JSX.Element {
           tap-outside-to-dismiss, only an explicit OK button, which is a
           genuinely different (blocking, modal) interaction. Mirrors
           DesignPage.tsx's own existing confirm-modal shape (backdrop +
-          centered card + heading-less body text + bottom-right button)
-          rather than inventing a new visual pattern - the backdrop
-          itself has no onClick, so tapping outside does nothing, exactly
-          as specified. */}
-      {showOnboarding && (
-        <div role="dialog" aria-modal="true" aria-label="New feature" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-panel p-6 shadow-2xl">
-            <p className="text-sm text-slate-200">New feature: tap on the clock to toggle between local time and Zulu time.</p>
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={dismissOnboarding}
-                className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-bold uppercase tracking-wide text-slate-200 transition hover:bg-accent-sky-500/10"
-              >
-                OK
-              </button>
+          centered card + body text + button) rather than inventing a
+          new visual pattern - the backdrop itself has no onClick, so
+          tapping outside does nothing, exactly as specified.
+
+          Portaled to document.body - PilotHeader.tsx renders <LiveClock>
+          inside its own <header className="sticky ... backdrop-blur">.
+          backdrop-blur is Tailwind's backdrop-filter, and backdrop-
+          filter on an ancestor creates a new containing block for
+          position:fixed descendants (same family as transform/filter/
+          perspective/will-change - the exact issue already solved twice
+          elsewhere this session, OverscanSafeFrame's own transform and
+          MediaPanel.tsx's fullscreen portal). Without the portal, this
+          modal's "fixed inset-0" was being confined to the HEADER's own
+          small box instead of the true viewport - confirmed as the
+          actual root cause of the reported cut-off/overlap bug, not a
+          sizing issue on its own. */}
+      {showOnboarding &&
+        createPortal(
+          <div role="dialog" aria-modal="true" aria-label="New feature" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+            {/* Enlarged round - max-w-sm/p-6/text-sm read as cramped on a
+                real phone. max-w-md/p-8/text-2xl (plus a full-width, generously-
+                padded button) reads as a proper mobile onboarding dialog at
+                arm's length, not a compact desktop-style confirm box. */}
+            <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-8 shadow-2xl">
+              <p className="text-2xl leading-snug text-slate-200">New feature: tap on the clock to toggle between local time and Zulu time.</p>
+              <div className="mt-8">
+                <button
+                  type="button"
+                  onClick={dismissOnboarding}
+                  className="w-full rounded-lg border border-accent-sky-500 bg-slate-900/80 px-6 py-4 text-lg font-bold uppercase tracking-wide text-slate-200 transition hover:bg-accent-sky-500/10"
+                >
+                  OK
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   )
 }
