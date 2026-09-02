@@ -738,13 +738,13 @@ export default function CafeMediaPage(): JSX.Element {
         <div className="mb-4 flex flex-wrap items-center gap-6 rounded-lg border border-border/60 bg-slate-900/60 px-4 py-3">
           <div>
             <div className="text-sm font-semibold uppercase tracking-wide text-muted-400">Pre-Loaded Total Loop Length</div>
-            <div className={`text-2xl font-black tabular-nums ${loopLengthColorClass(cafeLoopTimes.preLoadedSeconds)}`}>
+            <div className={`text-2xl tabular-nums ${loopLengthColorClass(cafeLoopTimes.preLoadedSeconds)}`}>
               {formatLoopSecondsWithMinutes(cafeLoopTimes.preLoadedSeconds)}
             </div>
           </div>
           <div>
             <div className="text-sm font-semibold uppercase tracking-wide text-muted-400">Live Total Loop Length</div>
-            <div className={`text-2xl font-black tabular-nums ${loopLengthColorClass(cafeLoopTimes.liveSeconds)}`}>
+            <div className={`text-2xl tabular-nums ${loopLengthColorClass(cafeLoopTimes.liveSeconds)}`}>
               {formatLoopSecondsWithMinutes(cafeLoopTimes.liveSeconds)}
             </div>
           </div>
