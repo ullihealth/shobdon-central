@@ -92,11 +92,21 @@ interface OwnerSlotRow {
   r2Key: string | null;
   filename: string | null;
   mp4DurationSeconds: number | null;
+  durationCapOverrideSeconds: number | null;
 }
 
 interface OwnerSlotInput {
   slotNumber: number;
   ownerSlotReserved: boolean;
+  // Per-slot duration cap round (migration 0103) - deliberately read
+  // and written regardless of ownerSlotReserved, unlike every other
+  // field below (which the PUT handler's own early-continue skips for
+  // a Tenant-controlled slot). The whole point is a developer can raise
+  // (or lower) a slot's cap without ever reserving it - Meg's own
+  // Website slot is the first real case, staying tenant-controlled the
+  // whole time. null/undefined means the platform-wide 20s default
+  // applies.
+  durationCapOverrideSeconds?: number | null;
   // Only required/used when ownerSlotReserved is true - switching a
   // slot to Tenant-controlled needs nothing else at all (see the PUT
   // handler's own early-continue for that case).
@@ -137,6 +147,7 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
                 cs.fitMode AS fitMode, cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
                 cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
                 cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize, cs.zone AS zone,
+                cs.durationCapOverrideSeconds AS durationCapOverrideSeconds,
                 ml.r2Key AS r2Key, ml.filename AS filename, ml.mp4DurationSeconds AS mp4DurationSeconds
          FROM cafe_carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
@@ -176,6 +187,7 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
       filename: row?.filename ?? null,
       resolvedUrl: row?.r2Key && mediaPublicBaseUrl ? `${mediaPublicBaseUrl}/${row.r2Key}` : null,
       mp4DurationSeconds: row?.mp4DurationSeconds ?? null,
+      durationCapOverrideSeconds: row?.durationCapOverrideSeconds ?? null,
     };
   });
 
@@ -216,9 +228,19 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     if (typeof slot.ownerSlotReserved !== "boolean") {
       return jsonResponse({ error: "ownerSlotReserved must be a boolean" }, 400);
     }
+    if (
+      slot.durationCapOverrideSeconds !== undefined &&
+      slot.durationCapOverrideSeconds !== null &&
+      (!Number.isInteger(slot.durationCapOverrideSeconds) || slot.durationCapOverrideSeconds <= 0)
+    ) {
+      return jsonResponse({ error: "durationCapOverrideSeconds must be a positive integer, or null to clear it" }, 400);
+    }
     // Switching to Tenant-controlled needs nothing else - the write
     // below clears any AC content/config for this slot outright, so
     // none of the content fields below are read in that case at all.
+    // durationCapOverrideSeconds is the one exception, already validated
+    // above - it's independent of ownerSlotReserved (see its own
+    // OwnerSlotInput comment).
     if (!slot.ownerSlotReserved) continue;
     if (!slot.mediaType || !VALID_MEDIA_TYPES.includes(slot.mediaType)) {
       return jsonResponse({ error: `mediaType must be one of: ${VALID_MEDIA_TYPES.join(", ")}` }, 400);
@@ -277,10 +299,11 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
       await env.DB
         .prepare(
           `UPDATE cafe_carousel_slots
-           SET ownerSlotReserved = 0, ownerSlotUnlocked = 0, mediaLibraryId = NULL, ownerContentAssigned = 0, enabled = 0, updatedAt = ?
+           SET ownerSlotReserved = 0, ownerSlotUnlocked = 0, mediaLibraryId = NULL, ownerContentAssigned = 0, enabled = 0,
+               durationCapOverrideSeconds = ?, updatedAt = ?
            WHERE organizationId = ? AND slotNumber = ?`
         )
-        .bind(now, organizationId, slot.slotNumber)
+        .bind(slot.durationCapOverrideSeconds ?? null, now, organizationId, slot.slotNumber)
         .run();
       continue;
     }
@@ -303,10 +326,10 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
       .prepare(
         `INSERT INTO cafe_carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerSlotReserved, ownerContentAssigned,
-           fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
+           durationCapOverrideSeconds, fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
            bannerText, bannerOpacity, bannerFontSize, zone, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -315,6 +338,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
            ownerSlotUnlocked = excluded.ownerSlotUnlocked,
            ownerSlotReserved = excluded.ownerSlotReserved,
            ownerContentAssigned = excluded.ownerContentAssigned,
+           durationCapOverrideSeconds = excluded.durationCapOverrideSeconds,
            fitMode = excluded.fitMode,
            cropX = excluded.cropX,
            cropY = excluded.cropY,
@@ -336,6 +360,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
         slot.durationSeconds,
         mediaLibraryId,
         ownerContentAssigned,
+        slot.durationCapOverrideSeconds ?? null,
         fitMode,
         cropX,
         cropY,

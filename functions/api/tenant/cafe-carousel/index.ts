@@ -59,7 +59,19 @@ interface CafeCarouselSlotRow {
   ownerSlotReserved: number;
   externalUrl: string | null;
   websiteFixedCanvas: number;
+  durationCapOverrideSeconds: number | null;
 }
+
+// Per-slot duration cap round (migration 0103) - the tenant-facing
+// Duration (seconds) input (image/pdf/webcam/gyropedia/website only -
+// mp4 is read-only/auto-detected, no manual field to cap) is limited to
+// this many seconds by default; durationCapOverrideSeconds overrides it
+// per-slot, developer-set only via the platform-admin owner-slots tool.
+// Enforced here as a server-side safety net (silent clamp, not a
+// rejection) - CarouselSlotEditor.tsx's own `max` attribute is the real,
+// user-facing boundary; this just makes sure a direct API call can't
+// bypass it.
+const DEFAULT_DURATION_CAP_SECONDS = 20;
 
 // Per-tenant Reserved Slot round (migration 0102) - ownerSlotReserved is
 // now the source of truth for "is this specific slot number reserved
@@ -146,6 +158,7 @@ function defaultSlots(): CafeCarouselSlotRow[] {
     ownerSlotReserved: LEGACY_DEFAULT_RESERVED_SLOTS.includes(i + 1) ? 1 : 0,
     externalUrl: null,
     websiteFixedCanvas: 0,
+    durationCapOverrideSeconds: null,
   }));
 }
 
@@ -177,6 +190,7 @@ function rowToApi(row: CafeCarouselSlotRow) {
     externalUrl: row.externalUrl,
     websiteFixedCanvas: !!row.websiteFixedCanvas,
     isReserved,
+    durationCapOverrideSeconds: row.durationCapOverrideSeconds,
   };
 }
 
@@ -190,7 +204,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
               cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
               bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked, ownerSlotReserved, externalUrl,
-              websiteFixedCanvas
+              websiteFixedCanvas, durationCapOverrideSeconds
        FROM cafe_carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
     )
     .bind(organizationId)
@@ -283,9 +297,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // backfill already gave every existing 5/8/12 row a real
   // ownerSlotReserved value.
   const { results: currentRows } = await env.DB
-    .prepare(`SELECT slotNumber, ownerSlotUnlocked, ownerSlotReserved FROM cafe_carousel_slots WHERE organizationId = ?`)
+    .prepare(`SELECT slotNumber, ownerSlotUnlocked, ownerSlotReserved, durationCapOverrideSeconds FROM cafe_carousel_slots WHERE organizationId = ?`)
     .bind(organizationId)
-    .all<{ slotNumber: number; ownerSlotUnlocked: number; ownerSlotReserved: number }>();
+    .all<{ slotNumber: number; ownerSlotUnlocked: number; ownerSlotReserved: number; durationCapOverrideSeconds: number | null }>();
   const currentBySlot = new Map(currentRows.map((row) => [row.slotNumber, row]));
 
   function isReservedSlot(slotNumber: number): boolean {
@@ -293,6 +307,15 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const reserved = row ? !!row.ownerSlotReserved : LEGACY_DEFAULT_RESERVED_SLOTS.includes(slotNumber);
     if (!reserved) return false;
     return !row?.ownerSlotUnlocked;
+  }
+
+  // Per-slot duration cap - server-side safety net matching
+  // CarouselSlotEditor.tsx's own `max` attribute (the real, user-facing
+  // boundary). A direct API call above the effective cap is silently
+  // clamped down to it, not rejected - same "defense in depth, not a
+  // user-facing error" posture the investigation asked for.
+  function effectiveDurationCapSeconds(slotNumber: number): number {
+    return currentBySlot.get(slotNumber)?.durationCapOverrideSeconds ?? DEFAULT_DURATION_CAP_SECONDS;
   }
 
   for (const slot of body.slots) {
@@ -303,6 +326,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
 
   const now = new Date().toISOString();
   for (const slot of body.slots) {
+    const cappedDurationSeconds = Math.min(slot.durationSeconds, effectiveDurationCapSeconds(slot.slotNumber));
     const isWebcamWithNewCamera = slot.mediaType === "webcam" && typeof slot.cameraId === "string" && slot.cameraId.length > 0;
     const mediaLibraryId = slot.mediaType === "webcam" ? null : slot.mediaLibraryId ?? null;
     const cameraSlotNumber = slot.mediaType === "webcam" && !isWebcamWithNewCamera ? slot.cameraSlotNumber ?? null : null;
@@ -361,7 +385,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         slot.slotNumber,
         slot.enabled ? 1 : 0,
         slot.mediaType,
-        slot.durationSeconds,
+        cappedDurationSeconds,
         mediaLibraryId,
         cameraSlotNumber,
         cameraId,

@@ -45,6 +45,11 @@ interface CafeOwnerSlot {
   filename: string | null
   resolvedUrl: string | null
   mp4DurationSeconds: number | null
+  // Per-slot duration cap round (migration 0103) - independent of
+  // ownerSlotReserved above (see this page's own toggle for that);
+  // null means the platform-wide 20s default applies to this slot's
+  // tenant-facing Duration input.
+  durationCapOverrideSeconds: number | null
 }
 
 interface MediaFile {
@@ -203,6 +208,7 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
             {
               slotNumber,
               ownerSlotReserved: updated.ownerSlotReserved,
+              durationCapOverrideSeconds: updated.durationCapOverrideSeconds,
               enabled: updated.enabled,
               mediaType: updated.mediaType,
               durationSeconds: updated.durationSeconds,
@@ -353,6 +359,33 @@ export default function PlatformCafeCarouselOwnerSlotsPage(): JSX.Element {
               </button>
             </div>
           </div>
+
+          {/* Per-slot duration cap round (migration 0103) - independent
+              of the Tenant-controlled/Airfield Central toggle above,
+              deliberately rendered outside that branch: a developer can
+              raise (or lower) this slot's Duration input ceiling in the
+              tenant's own Café Media editor without ever reserving the
+              slot - Meg's own Website slot (slot 2) is the first real
+              case, staying Tenant-controlled throughout. Blank/empty
+              means the platform-wide 20s default applies. */}
+          <label className="mb-4 flex max-w-xs flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Duration Cap Override (seconds)</span>
+            <input
+              type="number"
+              min={1}
+              placeholder="20 (default)"
+              value={slot.durationCapOverrideSeconds ?? ''}
+              onChange={(event) => {
+                const raw = event.target.value.trim()
+                saveSlot(slot.slotNumber, { durationCapOverrideSeconds: raw === '' ? null : Math.max(1, Number(raw) || 1) })
+              }}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+            <span className="text-[11px] text-muted-500">
+              Blank = platform default (20s). This tenant's own editor for this slot won't allow a longer duration than
+              whatever is set here.
+            </span>
+          </label>
 
           {!slot.ownerSlotReserved ? (
             <p className="text-xs text-muted-500">

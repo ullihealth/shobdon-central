@@ -1,0 +1,12 @@
+-- Per-slot duration cap round (investigated and approved). The tenant-
+-- facing café slot editor's own Duration (seconds) input (image/pdf/
+-- webcam/gyropedia/website - never mp4, which is read-only/auto-detected
+-- from the file and has no manual field to cap at all) gets a ceiling
+-- of 20s by default, platform-wide. NULL here means that default
+-- applies; a real value overrides it for this one slot only. Developer-
+-- set exclusively via the platform-admin cafe-carousel-owner-slots tool
+-- - independent of the existing ownerSlotReserved lock, since a slot
+-- doesn't need to be Airfield-Central-controlled to get a longer cap
+-- (Meg's own Website slot, still tenant-controlled, is the first real
+-- case - see the same round's data change).
+ALTER TABLE cafe_carousel_slots ADD COLUMN durationCapOverrideSeconds INTEGER;

@@ -122,4 +122,12 @@ export interface CarouselSlot {
   // carousel has no equivalent concept) - CarouselSlotList/
   // CarouselSlotEditor.tsx treat undefined the same as false.
   isReserved?: boolean
+  // Per-slot duration cap override (café-only, cafe_carousel_slots -
+  // dashboard's own carousel_slots has no equivalent column). NULL/
+  // undefined means the platform-wide 20s default cap applies; a real
+  // value overrides it for this specific slot. Developer-set only, via
+  // the platform-admin owner-slots tool - CarouselSlotEditor.tsx never
+  // writes this itself, it only reads it (via the parent page's own
+  // maxDurationSeconds prop) to size the Duration input's own ceiling.
+  durationCapOverrideSeconds?: number | null
 }

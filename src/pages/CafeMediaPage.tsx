@@ -19,6 +19,10 @@ const CAFE_SETTINGS_URL = '/api/tenant/cafe-settings'
 const TICKER_SLOT_COUNT = 10
 const NOTICE_NAME_MAX_LENGTH = 40
 const NOTICE_TEXT_MAX_LENGTH = 40
+// Per-slot duration cap round - matches functions/api/tenant/cafe-carousel/
+// index.ts's own DEFAULT_DURATION_CAP_SECONDS exactly. Applies when a
+// slot's durationCapOverrideSeconds is null (the common case).
+const DEFAULT_DURATION_CAP_SECONDS = 20
 
 // id/name added for Part C - notices are now named and individually
 // selectable per ticker slot, not one undifferentiated block of text.
@@ -768,6 +772,7 @@ export default function CafeMediaPage(): JSX.Element {
               onSourceChange={(value) => handleCafeSourceChange(selectedCafeSlot, value)}
               onChange={(patch) => saveCafeSlot({ ...selectedCafeSlot, ...patch })}
               allowWebsite
+              maxDurationSeconds={selectedCafeSlot.durationCapOverrideSeconds ?? DEFAULT_DURATION_CAP_SECONDS}
             />
           )}
         </div>

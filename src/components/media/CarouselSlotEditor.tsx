@@ -534,6 +534,7 @@ function CarouselSlotEditor({
   onSourceChange,
   onChange,
   allowWebsite = false,
+  maxDurationSeconds,
 }: {
   slot: CarouselSlot
   files: MediaLibraryFile[]
@@ -550,6 +551,16 @@ function CarouselSlotEditor({
   // reject mediaType 'website' anyway, but there's no reason to show a
   // control that can't actually be saved there.
   allowWebsite?: boolean
+  // Per-slot duration cap round (café-only, migration 0103) - the
+  // ceiling for the manually-editable Duration input below (never
+  // applies to mp4's own read-only/auto-detected field, which has no
+  // input to constrain at all). Undefined/omitted (every dashboard call
+  // site, which never passes this prop) means no cap - Dashboard
+  // Manager's own carousel has no equivalent override tool. CafeMediaPage.tsx
+  // computes this per-slot (slot.durationCapOverrideSeconds ?? 20)
+  // before passing it in - this component stays context-free, matching
+  // its own established "no opinion about which screen it's in" stance.
+  maxDurationSeconds?: number
 }): JSX.Element {
   const file = files.find((f) => f.id === slot.mediaLibraryId)
   const isMp4 = slot.mediaType === 'mp4'
@@ -712,8 +723,12 @@ function CarouselSlotEditor({
           <input
             type="number"
             min={1}
+            max={maxDurationSeconds}
             value={slot.durationSeconds}
-            onChange={(event) => onChange({ durationSeconds: Number(event.target.value) || 10 })}
+            onChange={(event) => {
+              const raw = Number(event.target.value) || 10
+              onChange({ durationSeconds: maxDurationSeconds ? Math.min(raw, maxDurationSeconds) : raw })
+            }}
             className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
           />
         )}
