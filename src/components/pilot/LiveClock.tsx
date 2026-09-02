@@ -74,7 +74,7 @@ export default function LiveClock(): JSX.Element {
   }
 
   const time = displayMode === 'local' ? localTimeString(now) : zuluTimeString(now)
-  const suffix = displayMode === 'local' ? 'LOCAL' : 'Z'
+  const suffix = displayMode === 'local' ? 'L' : 'Z'
 
   // text-3xl/font-extrabold matches Header.tsx's own TV-dashboard clock
   // treatment (that file's own comment: "text-lg font-extrabold
@@ -85,7 +85,7 @@ export default function LiveClock(): JSX.Element {
   // neon blue already used for CIRCUIT (RunwayWindWidget.tsx) and Club
   // Safety Notices elsewhere on this same page. Both text treatments are
   // completely unchanged by the tap-toggle round below - only which of
-  // the two suffix strings ("LOCAL" vs "Z") and which computed time
+  // the two suffix strings ("L" vs "Z") and which computed time
   // shows now varies, per spec's own "reuse the exact same styling,
   // don't introduce new styling" instruction.
   return (
