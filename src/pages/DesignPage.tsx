@@ -1955,7 +1955,7 @@ export default function DesignPage(): JSX.Element {
                       <input
                         type="range"
                         min={2}
-                        max={10}
+                        max={25}
                         step={1}
                         value={overscanSafeMarginPercent}
                         onChange={(event) => persistOverscanSafeMargin(overscanSafeMarginEnabled, Number(event.target.value))}

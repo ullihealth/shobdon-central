@@ -492,8 +492,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       .run();
   }
   if (body.overscanSafeMarginPercent !== undefined) {
-    if (typeof body.overscanSafeMarginPercent !== "number" || body.overscanSafeMarginPercent < 2 || body.overscanSafeMarginPercent > 10) {
-      return jsonResponse({ error: "overscanSafeMarginPercent must be a number between 2 and 10" }, 400);
+    if (typeof body.overscanSafeMarginPercent !== "number" || body.overscanSafeMarginPercent < 2 || body.overscanSafeMarginPercent > 25) {
+      return jsonResponse({ error: "overscanSafeMarginPercent must be a number between 2 and 25" }, 400);
     }
     await env.DB
       .prepare("UPDATE tenants SET overscan_safe_margin_percent = ?, updated_at = ? WHERE organization_id = ?")

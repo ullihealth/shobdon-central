@@ -4,10 +4,15 @@ interface OverscanSafeFrameProps {
   enabled: boolean
   // Percent of margin visible on EACH of the four edges, not a
   // combined/total figure - see scale's own comment below for the
-  // derivation. Validated 2-10 server-side (functions/api/tenant/
+  // derivation. Validated 2-25 server-side (functions/api/tenant/
   // config.ts's own PUT), but this component clamps defensively too so
   // a stale/out-of-range stored value can never invert or blow up the
-  // transform.
+  // transform. Ceiling raised from the original 10 (2026-09-02) - a
+  // real tenant's TV (Meg's Cafe) needed more correction than 10% could
+  // provide; confirmed via CDP that the transform was applying exactly
+  // the requested scale at the old ceiling, with zero visible effect on
+  // the physical screen, so the fix is headroom, not a bug in the
+  // scale math itself.
   marginPercent: number
   themeOverride: CSSProperties
   children: ReactNode
@@ -46,7 +51,7 @@ interface OverscanSafeFrameProps {
 // ratio, which is exactly the "small EVEN margin on all four edges" the
 // feature asks for. Solving (1-s)/2 = marginPercent/100 for s:
 export function overscanSafeScale(marginPercent: number): number {
-  const clamped = Math.min(10, Math.max(0, marginPercent))
+  const clamped = Math.min(25, Math.max(0, marginPercent))
   return 1 - (clamped * 2) / 100
 }
 
