@@ -140,6 +140,27 @@ export default function MediaPanel({
   data,
   isPreview = false,
 }: MediaPanelProps): JSX.Element {
+  // Kiosk cursor round - toggles the global .kiosk-hide-cursor class
+  // (src/index.css) on document.body for exactly as long as a real
+  // (non-preview) instance of this component is mounted - every live
+  // display template renders exactly one, so this is a reliable single
+  // point to hide the cursor fleet-wide with no per-page duplication.
+  // document.body is also the fullscreen portal's own actual DOM parent
+  // (see the portal below), so this same toggle reaches that portaled
+  // content too, not just the normal in-flow page - unlike a class on
+  // some in-tree wrapper, which the portal would escape entirely (the
+  // same "portal is a document.body sibling, not a descendant" fact
+  // that already applies to the overscan-margin and PersistentConfigLink
+  // fixes). Never applied when isPreview (DesignPage.tsx/CafeMediaPage.tsx),
+  // so admin pages keep a normal cursor.
+  useEffect(() => {
+    if (isPreview) return
+    document.body.classList.add('kiosk-hide-cursor')
+    return () => {
+      document.body.classList.remove('kiosk-hide-cursor')
+    }
+  }, [isPreview])
+
   // Club-configured live webcam takes priority over item (image/placeholder)
   // whenever it's set - empty string (no webcam configured, or not yet
   // loaded) falls back to item exactly as before. This is the pre-

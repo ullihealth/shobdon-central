@@ -174,3 +174,26 @@ body.pilot-view-scroll-root {
     transform: translateX(calc(-1 * var(--cafe-ticker-distance, 50%)));
   }
 }
+
+/* Kiosk cursor round - unclutter (X11-only) does nothing on labwc/Wayland,
+   confirmed via research: there's no Wayland equivalent hook for an
+   unrelated process to reach into another client's own cursor state.
+   Fixed at the app level instead of the compositor level, since there's
+   no mouse plugged into any of these kiosks in production at all - the
+   cursor should simply never render, not merely hide-after-idle. Uses
+   Wayland's own standard client-side mechanism (Chromium requests a null
+   cursor surface for `cursor: none`, the same way any Wayland client
+   suppresses its own pointer image) rather than a labwc-version-
+   dependent compositor feature, so this works regardless of which
+   labwc/wlroots version a given Pi happens to be running.
+   `!important` + the wildcard descendant selector are deliberate, not
+   sloppy - every element (including a real <Link>/<button> that would
+   otherwise show its own `cursor: pointer`) must be forced, since a
+   plain inherited value never overrides a more specific explicit one.
+   Toggled on document.body by MediaPanel.tsx (mounted by every real
+   display template, gated on the same !isPreview check already used for
+   the overscan/portal fixes) - never applied on admin pages. */
+.kiosk-hide-cursor,
+.kiosk-hide-cursor * {
+  cursor: none !important;
+}
