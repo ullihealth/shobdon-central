@@ -1,56 +1,31 @@
 import { useEffect, useState } from 'react'
-import { AIRFIELD_TIMEZONE, PUBLIC_CONFIG_URL } from '../../config/publicApi'
+import { AIRFIELD_TIMEZONE } from '../../config/publicApi'
 
-type PilotClockMode = 'summer' | 'gmt' | 'utc'
+type DisplayMode = 'local' | 'zulu'
 
-// Real UTC offset (minutes) Europe/London is CURRENTLY observing -
-// 0 in winter (GMT), 60 in summer (BST). Deliberately not a hand-rolled
-// "is DST active" date calculation (the UK's BST start/end dates aren't
-// a fixed calendar rule - they're the last Sunday in March/October,
-// which shifts year to year) - 'shortOffset' asks the browser's own
-// IANA tz database for the real answer, the same source of truth
-// {timeZone: AIRFIELD_TIMEZONE} below already relies on for the digits
-// themselves, so the offset and the digits can never disagree with
-// each other.
-function londonOffsetMinutes(date: Date): number {
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', timeZoneName: 'shortOffset' }).formatToParts(date)
-  const raw = parts.find((part) => part.type === 'timeZoneName')?.value ?? 'GMT'
-  const match = raw.match(/GMT([+-]\d+)?/)
-  return match?.[1] ? Number(match[1]) * 60 : 0
+const ONBOARDING_SEEN_KEY = 'localTimeToggleToastSeen'
+
+// Tap-to-toggle round - replaces the old developer-only pilotClockMode
+// system (three modes: 'summer'/'gmt'/'utc', set via DeveloperToolsPage.
+// tsx's PilotClockModeToggle, ops_panel_state.pilot_clock_mode) with a
+// simpler, always-available, user-facing Local/Zulu toggle - approved
+// explicitly given the two systems would otherwise conflict. This
+// component no longer fetches or reads pilotClockMode at all - that
+// developer toggle still exists and still saves (DeveloperToolsPage.tsx
+// untouched, out of this round's scope), it just has no effect here
+// anymore.
+//
+// Local is real Europe/London civil time via the IANA tz database
+// (toLocaleTimeString already knows the real BST/GMT transition dates -
+// no hand-rolled DST calculation needed, and it can never disagree with
+// itself the way a separately-computed offset could). Zulu is the exact
+// same computation the old 'utc' mode always used, kept byte-for-byte
+// unchanged as instructed.
+function localTimeString(now: Date): string {
+  return now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: AIRFIELD_TIMEZONE })
 }
-
-// Pilot View header clock-mode round - three admin-selectable modes
-// (DeveloperToolsPage.tsx's PilotClockModeToggle, ops_panel_state.
-// pilot_clock_mode, migration 0075). 'summer' (the default, and what
-// this component always did before this round existed) is Europe/
-// London local time with a suffix that follows the real UK daylight-
-// saving calendar each year - "BST" while it's actually in effect,
-// "GMT" the rest of the year, per londonOffsetMinutes above. 'gmt'
-// pins the DIGITS themselves to fixed UTC+0 year-round (never shifts
-// for BST, even in summer) with a static "GMT" suffix - a genuinely
-// different real-world time from 'summer' mode during BST months, not
-// just a different label on the same number. 'utc' is numerically
-// identical to 'gmt' (both are fixed UTC+0, no DST) - the two exist as
-// separate modes because "GMT" and "Zulu/UTC" are conventionally
-// different suffixes for the same underlying civil time, not because
-// the clock itself differs.
-function computeClock(now: Date, mode: PilotClockMode): { time: string; suffix: string } {
-  if (mode === 'gmt') {
-    return {
-      time: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Etc/GMT' }),
-      suffix: 'GMT',
-    }
-  }
-  if (mode === 'utc') {
-    return {
-      time: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' }),
-      suffix: 'Z',
-    }
-  }
-  return {
-    time: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: AIRFIELD_TIMEZONE }),
-    suffix: londonOffsetMinutes(now) > 0 ? 'BST' : 'GMT',
-  }
+function zuluTimeString(now: Date): string {
+  return now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' })
 }
 
 // Pilot View header - small extraction of Header.tsx's own clock logic
@@ -59,32 +34,46 @@ function computeClock(now: Date, mode: PilotClockMode): { time: string; suffix: 
 // enough that duplicating it matches this codebase's own established
 // stance on small single-purpose UI bits, same reasoning
 // RunwayInUseCard.tsx's own comment gives). Desktop's own Header.tsx
-// clock is completely untouched by this round - pilotClockMode only
-// ever reaches this one component.
+// clock is completely untouched by this round - the Local/Zulu toggle
+// only ever reaches this one component.
 export default function LiveClock(): JSX.Element {
   const [now, setNow] = useState(new Date())
-  const [mode, setMode] = useState<PilotClockMode>('summer')
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('local')
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(new Date()), 1000)
     return () => window.clearInterval(interval)
   }, [])
 
+  // One-time onboarding modal - shown the first time this device loads
+  // Pilot View after this feature shipped, never again once dismissed.
+  // Wrapped in try/catch - localStorage can throw (private-browsing
+  // edge cases on some browsers), and failing to read/write the seen
+  // flag should never break the clock itself, worst case the modal
+  // just shows again on a later visit.
   useEffect(() => {
-    let cancelled = false
-    fetch(PUBLIC_CONFIG_URL)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        const value = data?.opsPanel?.pilotClockMode
-        if (!cancelled && (value === 'summer' || value === 'gmt' || value === 'utc')) setMode(value)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
+    try {
+      if (!window.localStorage.getItem(ONBOARDING_SEEN_KEY)) setShowOnboarding(true)
+    } catch {
+      // Can't read the flag - fail closed by not showing it, rather
+      // than risking it showing every single visit on a device where
+      // writing the flag also silently fails.
     }
   }, [])
 
-  const { time, suffix } = computeClock(now, mode)
+  function dismissOnboarding() {
+    setShowOnboarding(false)
+    try {
+      window.localStorage.setItem(ONBOARDING_SEEN_KEY, 'true')
+    } catch {
+      // Same posture as above - a failed write just means the modal
+      // may show again next visit, not a crash.
+    }
+  }
+
+  const time = displayMode === 'local' ? localTimeString(now) : zuluTimeString(now)
+  const suffix = displayMode === 'local' ? 'LOCAL' : 'Z'
 
   // text-3xl/font-extrabold matches Header.tsx's own TV-dashboard clock
   // treatment (that file's own comment: "text-lg font-extrabold
@@ -93,10 +82,58 @@ export default function LiveClock(): JSX.Element {
   // Suffix is deliberately smaller and a distinct colour, not just a
   // dimmer version of the time itself - text-accent-sky-400 is the same
   // neon blue already used for CIRCUIT (RunwayWindWidget.tsx) and Club
-  // Safety Notices elsewhere on this same page.
+  // Safety Notices elsewhere on this same page. Both text treatments are
+  // completely unchanged by the tap-toggle round below - only which of
+  // the two suffix strings ("LOCAL" vs "Z") and which computed time
+  // shows now varies, per spec's own "reuse the exact same styling,
+  // don't introduce new styling" instruction.
   return (
-    <span className="text-3xl font-extrabold text-primary">
-      {time} <span className="text-lg font-bold text-accent-sky-400">{suffix}</span>
-    </span>
+    <>
+      {/* Tap target round - same button semantics (type="button",
+          descriptive aria-label, transition + hover feedback) as
+          PilotWindCard.tsx's own tappable camera icon elsewhere on this
+          same page, adapted for a text target rather than an icon: -mx/
+          -my padding enlarges the actual hit area for touch without
+          shifting where the text itself visually sits (the negative
+          margin exactly cancels the added padding's own offset). No new
+          font/size/weight/colour - bg-transparent and the hover opacity
+          are the only rules this button itself contributes. */}
+      <button
+        type="button"
+        onClick={() => setDisplayMode((mode) => (mode === 'local' ? 'zulu' : 'local'))}
+        aria-label={`Showing ${displayMode === 'local' ? 'local' : 'Zulu'} time - tap to switch to ${displayMode === 'local' ? 'Zulu' : 'local'} time`}
+        className="-mx-2 -my-1 rounded-lg bg-transparent px-2 py-1 transition hover:opacity-80"
+      >
+        <span className="text-3xl font-extrabold text-primary">
+          {time} <span className="text-lg font-bold text-accent-sky-400">{suffix}</span>
+        </span>
+      </button>
+      {/* Onboarding modal - deliberately NOT the self-dismissing toast
+          pattern used elsewhere in this codebase (SlideEditor.tsx/
+          PilotWindCard.tsx) - spec calls for no auto-dismiss and no
+          tap-outside-to-dismiss, only an explicit OK button, which is a
+          genuinely different (blocking, modal) interaction. Mirrors
+          DesignPage.tsx's own existing confirm-modal shape (backdrop +
+          centered card + heading-less body text + bottom-right button)
+          rather than inventing a new visual pattern - the backdrop
+          itself has no onClick, so tapping outside does nothing, exactly
+          as specified. */}
+      {showOnboarding && (
+        <div role="dialog" aria-modal="true" aria-label="New feature" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-panel p-6 shadow-2xl">
+            <p className="text-sm text-slate-200">New feature: tap on the clock to toggle between local time and Zulu time.</p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={dismissOnboarding}
+                className="rounded-lg border border-accent-sky-500 bg-slate-900/80 px-4 py-2 text-sm font-bold uppercase tracking-wide text-slate-200 transition hover:bg-accent-sky-500/10"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
