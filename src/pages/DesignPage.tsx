@@ -1972,7 +1972,7 @@ export default function DesignPage(): JSX.Element {
                     measurement to mean anything). Placed on this tab
                     specifically so the live preview to the right shows
                     the real effect immediately, before/without saving. */}
-                <div className="relative mt-8 border-t border-border pt-6">
+                <div className="mt-8 border-t border-border pt-6">
                   <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
                     Screen Fit
                   </div>
@@ -2013,6 +2013,24 @@ export default function DesignPage(): JSX.Element {
                       {isScreenFitLocked ? '🔒' : '🔓'}
                     </button>
                   </div>
+                  {/* Normal document flow, not an absolute overlay - the
+                      earlier absolute/top-full version could render past
+                      this card's own bottom edge depending on how much
+                      content sits above it (confirmed via screenshot: it
+                      was spilling below the card's own visible frame).
+                      Matches the overscanSaveStatus messages' own plain-
+                      block styling directly below (same card, same
+                      pattern, never had this problem) - simplest, most
+                      robust fix, and reads naturally right where the
+                      unlock action that triggered it just happened.
+                      text-base, not text-sm - text-sm was still too small
+                      to read comfortably here, same category of issue as
+                      the earlier /platform/pi-fleet label-size fix. */}
+                  {screenFitToast && (
+                    <p role="status" className="mb-3 rounded-lg border border-accent-sky-500/50 bg-slate-950/95 px-4 py-2.5 text-base text-slate-200 shadow-xl">
+                      {screenFitToast}
+                    </p>
+                  )}
                   {overscanSafeMarginEnabled && (
                     <div className="flex items-center gap-3">
                       <input
@@ -2033,19 +2051,6 @@ export default function DesignPage(): JSX.Element {
                   {overscanSaveStatus === 'error' && (
                     <p className="mt-2 text-xs font-semibold text-status-bad">Couldn't save - try again.</p>
                   )}
-                  {/* Self-dismissing, non-blocking - same toast pattern
-                      SlideEditor.tsx/PilotWindCard.tsx already established
-                      (no shared toast/popover component exists in this
-                      codebase; each caller hand-rolls its own small
-                      instance). */}
-                  {screenFitToast && (
-                    <div
-                      role="status"
-                      className="pointer-events-none absolute left-0 top-full z-10 mt-2 w-max max-w-[90%] rounded-lg border border-accent-sky-500/50 bg-slate-950/95 px-4 py-2.5 text-sm text-slate-200 shadow-xl"
-                    >
-                      {screenFitToast}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -2060,8 +2065,25 @@ export default function DesignPage(): JSX.Element {
             than a small box floating in empty space. justify-center
             below the breakpoint (viewport-width-driven, may be narrower
             than the preview's own natural size), flex-start above it
-            (this column has real room, no need to center within it). */}
-        <div className="flex min-w-0 flex-1 justify-center min-[1200px]:justify-start">
+            (this column has real room, no need to center horizontally
+            within it).
+
+            self-stretch + items-center round - the preview's own fixed
+            size (~580x326, a fraction of the left rail's own content
+            height on most tabs) left a large empty gap below it once the
+            row's own height (always driven by its tallest child - the
+            rail - under flex, regardless of align-items) exceeded the
+            preview's natural height. self-stretch overrides align-items
+            for JUST this one flex item, independent of the row's own
+            items-start (deliberately left unchanged - see that
+            decision's own comment on the row itself: stretching the RAIL
+            was already tried and rejected as looking odd/cropping the
+            preview - this only stretches the preview's OWN column to the
+            row's already-existing height, not the rail). items-center
+            then centers the fixed-size preview box vertically within
+            that now-taller column, splitting the empty space above/below
+            instead of dumping it all beneath the box. */}
+        <div className="flex min-w-0 flex-1 items-center justify-center self-stretch min-[1200px]:justify-start">
           {/* Rendered at the real 1920x1080 reference size (matching
               DashboardPage.tsx's own layout, or CafeTemplate.tsx's own
               layout, exactly), then scaled down as one unit via
