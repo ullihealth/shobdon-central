@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, Ref } from 'react'
 // Same three self-hosted, OFL-1.1 @fontsource families already used by
 // the Slide Editor's font picker (src/components/media/slideFonts.ts) -
@@ -15,13 +15,13 @@ import '@fontsource/montserrat/400.css'
 import '@fontsource/montserrat/700.css'
 import '@fontsource/oswald/400.css'
 import '@fontsource/oswald/700.css'
-import { AIRFIELD_TIMEZONE } from '../config/publicApi'
+import { AIRFIELD_TIMEZONE, PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { degreesToCardinal } from '../utils/windCalculations'
 import { weatherIconFor } from '../utils/weatherIcons'
 import type { VisibilityHour } from '../services/visibilityForecastService'
 import type { WeatherData } from '../types/weather'
 
-export type TickerSlotType = 'clock' | 'forecast' | 'conditions' | 'notice' | 'fuel'
+export type TickerSlotType = 'clock' | 'forecast' | 'conditions' | 'notice' | 'fuel' | 'sunriseSunset'
 
 export interface TickerSlot {
   position: number
@@ -200,6 +200,70 @@ function gasPricesSegmentText(gasPrices: TickerGasPrices): string {
   return parts.length > 0 ? `FUEL PRICES: ${parts.join(' · ')}` : ''
 }
 
+interface SunriseSunsetTimes {
+  sunrise: number
+  sunset: number
+}
+
+// Self-fetched, not threaded in as a prop - unlike weather/visibilityHours/
+// gasPrices (fetched once by the parent template/preview and handed down),
+// sunrise/sunset has no existing parent-level fetch to piggyback on, and
+// this component has many call sites (café template, Pilot footer, both
+// admin preview cards). Following MediaPanel.tsx's own precedent for
+// exactly this situation (see that file's "self-fetches independently
+// from /api/public/config" comment) rather than threading a new prop
+// through every one of those call sites for a single ticker option.
+// Fetched once per mount, not on an interval - sunrise/sunset only
+// changes once a day, unlike useClockText's per-second tick above.
+function useSunriseSunsetTimes(): SunriseSunsetTimes | null {
+  const [times, setTimes] = useState<SunriseSunsetTimes | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch(PUBLIC_CONFIG_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { sunriseSunsetTimes?: SunriseSunsetTimes | null } | null) => {
+        if (cancelled) return
+        if (data?.sunriseSunsetTimes) setTimes(data.sunriseSunsetTimes)
+      })
+      .catch(() => {
+        // Same graceful-degradation posture as every other optional
+        // ticker segment - a failed fetch just means this segment stays
+        // empty and gets filtered out below, not a crash.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return times
+}
+
+// Ordering: whichever of the two events is coming up NEXT gets listed
+// first. Both timestamps are always TODAY's (from sunriseSunsetTimes,
+// computed server-side for the current calendar day) - "next" here
+// means "the sooner of the two today", not a genuine look-ahead to
+// tomorrow's sunrise once today's has passed (e.g. at 9pm this still
+// shows today's already-passed 07:03 sunrise, just listed first - a
+// deliberate simplification, not a bug, per spec's own worked example).
+//
+// now < sunrise: before dawn - sunrise hasn't happened yet today, so
+// it's the next event (5am case).
+// sunrise <= now < sunset: daytime - sunset is the next event (11am
+// case: "Sunset 18:23hrs - Sunrise 07:03hrs").
+// now >= sunset: evening/night - sunset has already happened, so
+// sunrise (tomorrow's, but displayed as today's fixed value per above)
+// is the next event (9pm case: "Sunrise 07:03hrs - Sunset 18:23hrs").
+// The first and third conditions collapse into one check below.
+function sunriseSunsetSegmentText(sunriseSunsetTimes: SunriseSunsetTimes | null): string {
+  if (!sunriseSunsetTimes) return ''
+  const { sunrise, sunset } = sunriseSunsetTimes
+  const now = Date.now()
+  const sunriseIsNext = now < sunrise || now >= sunset
+  const formatTime = (utcMs: number) => new Date(utcMs).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: AIRFIELD_TIMEZONE })
+  return sunriseIsNext
+    ? `Sunrise ${formatTime(sunrise)}hrs - Sunset ${formatTime(sunset)}hrs`
+    : `Sunset ${formatTime(sunset)}hrs - Sunrise ${formatTime(sunrise)}hrs`
+}
+
 // One resolved slot's own display text plus its own colour override (if
 // any) - a slot's `position`/other identity is deliberately NOT carried
 // through here (never was, even before textColor existed): several
@@ -239,6 +303,7 @@ interface TickerSegment {
 // ever renders as a blank segment.
 function useResolvedSegments(props: CafeTickerProps): TickerSegment[] {
   const clockText = useClockText()
+  const sunriseSunsetTimes = useSunriseSunsetTimes()
   const { slots, weather, liveDataUnavailable, visibilityHours, safetyNotices, gasPrices } = props
 
   return slots
@@ -265,6 +330,8 @@ function useResolvedSegments(props: CafeTickerProps): TickerSegment[] {
                 return noticeSegmentText(slot.noticeId, safetyNotices)
               case 'fuel':
                 return gasPricesSegmentText(gasPrices)
+              case 'sunriseSunset':
+                return sunriseSunsetSegmentText(sunriseSunsetTimes)
               default:
                 return ''
             }

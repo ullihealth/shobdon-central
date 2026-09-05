@@ -28,7 +28,7 @@ interface Env {
   DB: D1Database;
 }
 
-type TickerSlotType = "clock" | "forecast" | "conditions" | "notice" | "fuel";
+type TickerSlotType = "clock" | "forecast" | "conditions" | "notice" | "fuel" | "sunriseSunset";
 
 interface TickerSlotInput {
   position: number;
@@ -63,7 +63,7 @@ interface TickerStyleInput {
   gapPx: number;
 }
 
-const VALID_TICKER_TYPES = ["clock", "forecast", "conditions", "notice", "fuel"];
+const VALID_TICKER_TYPES = ["clock", "forecast", "conditions", "notice", "fuel", "sunriseSunset"];
 const MAX_MANUAL_TEXT_LENGTH = 200;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const VALID_FONT_FAMILIES = ["Inter", "Montserrat", "Oswald"];

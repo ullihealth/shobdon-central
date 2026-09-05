@@ -43,6 +43,7 @@ function buildSlotOptions(notices: SafetyNotice[]): { value: string; label: stri
     { value: 'forecast', label: '6-Hour Met Office Forecast' },
     { value: 'conditions', label: 'Current Conditions (Temp / Wind)' },
     { value: 'fuel', label: 'Fuel Prices' },
+    { value: 'sunriseSunset', label: 'Sunrise / Sunset' },
     ...notices.map((notice, index) => ({
       value: `notice:${notice.id ?? index}`,
       label: `Notice: ${notice.name || notice.text}${notice.enabled === false ? ' (off)' : ''}`,
