@@ -7,6 +7,13 @@ import { useBufferingGate, isTrackedMediaType, type GateAsset } from '../../hook
 import PersistentConfigLink from '../PersistentConfigLink'
 import { overscanSafeScale } from '../OverscanSafeFrame'
 
+// How long the kiosk cursor stays visible after the last real mouse
+// movement before it's hidden again - see the reveal-on-movement effect
+// below. Long enough to comfortably move the pointer to the logo and
+// click it, short enough that it still reads as "hidden" during normal
+// unattended kiosk operation.
+const CURSOR_REVEAL_IDLE_MS = 3000
+
 interface CarouselSlotResolved extends MediaSlotVisual {
   slotNumber: number
   durationSeconds: number
@@ -153,10 +160,35 @@ export default function MediaPanel({
   // that already applies to the overscan-margin and PersistentConfigLink
   // fixes). Never applied when isPreview (DesignPage.tsx/CafeMediaPage.tsx),
   // so admin pages keep a normal cursor.
+  //
+  // Reveal-on-movement round: this same live dashboard doubles as the
+  // admin's own way back into /config (Header.tsx/PilotHeader.tsx's
+  // logo is a login/config entry point) - with the cursor permanently
+  // invisible, an admin sitting at a real mouse had no way to even see
+  // where their pointer was to click it. mousemove removes the hide
+  // class immediately and (re)starts a short idle timer that re-applies
+  // it once movement stops, so the cursor is visible exactly while
+  // someone is actively using a real mouse and hidden the rest of the
+  // time. A touch-only kiosk with no mouse ever attached - the actual
+  // production case this feature was built for - never fires mousemove
+  // at all, so it stays permanently hidden there, unchanged.
   useEffect(() => {
     if (isPreview) return
     document.body.classList.add('kiosk-hide-cursor')
+
+    let idleTimer: number | undefined
+    function revealCursor() {
+      document.body.classList.remove('kiosk-hide-cursor')
+      window.clearTimeout(idleTimer)
+      idleTimer = window.setTimeout(() => {
+        document.body.classList.add('kiosk-hide-cursor')
+      }, CURSOR_REVEAL_IDLE_MS)
+    }
+    window.addEventListener('mousemove', revealCursor)
+
     return () => {
+      window.removeEventListener('mousemove', revealCursor)
+      window.clearTimeout(idleTimer)
       document.body.classList.remove('kiosk-hide-cursor')
     }
   }, [isPreview])
