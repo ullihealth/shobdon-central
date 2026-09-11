@@ -95,12 +95,29 @@ export function useCompassMode(
 // pre-extraction buttons - active vs inactive is text colour alone
 // (white vs slate-400), not a background fill, tuned there against real
 // /pilot renders.
+// Pilot text-colour round - activeTextColor covers the ACTIVE button's
+// own colour only (the "RUNWAY"-stuck-white bug: Pilot View defaults to
+// RUNWAY mode, so it's the active state's hardcoded text-white that was
+// actually visible and broken against a light custom background, not
+// the inactive slate-400 - that one's already a neutral mid-tone that
+// reads reasonably on either a light or dark background, matching this
+// app's own established "muted tier needs no override" precedent
+// elsewhere). Optional, defaults to 'white' (today's exact literal) so
+// this component's OTHER caller (RunwaysPage.tsx, a desktop admin page
+// with no theming concept at all) is completely unaffected - it never
+// passes this prop. An inline style always wins over the Tailwind class
+// it's paired with, so the effect is only ever visible when this prop
+// is actually supplied. Hover styling on the inactive button
+// (hover:text-white) is deliberately left untouched - a transient
+// mouse-only interaction state, not something the bug report raised.
 export function CompassModeButtons({
   effectiveCompassMode,
   onChange,
+  activeTextColor = 'white',
 }: {
   effectiveCompassMode: CompassMode
   onChange: (next: CompassMode) => void
+  activeTextColor?: string
 }): JSX.Element {
   return (
     <>
@@ -108,8 +125,9 @@ export function CompassModeButtons({
         type="button"
         onClick={() => onChange('north')}
         className={`rounded-xl border border-slate-700 px-[20px] py-[7px] text-[17px] font-bold uppercase tracking-widest transition ${
-          effectiveCompassMode === 'north' ? 'text-white' : 'text-slate-400 hover:text-white'
+          effectiveCompassMode === 'north' ? '' : 'text-slate-400 hover:text-white'
         }`}
+        style={effectiveCompassMode === 'north' ? { color: activeTextColor } : undefined}
       >
         North
       </button>
@@ -117,8 +135,9 @@ export function CompassModeButtons({
         type="button"
         onClick={() => onChange('runway')}
         className={`rounded-xl border border-slate-700 px-[20px] py-[7px] text-[17px] font-bold uppercase tracking-widest transition ${
-          effectiveCompassMode === 'runway' ? 'text-white' : 'text-slate-400 hover:text-white'
+          effectiveCompassMode === 'runway' ? '' : 'text-slate-400 hover:text-white'
         }`}
+        style={effectiveCompassMode === 'runway' ? { color: activeTextColor } : undefined}
       >
         Runway
       </button>

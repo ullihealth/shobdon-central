@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { PilotThemeOverride } from '../../utils/pilotThemeStyle'
+import { COLOR_FAMILIES, TEXT_COLOR_OPTIONS, deriveTheme, isTextColorLegible, shadeToHex, type ColourFamily } from '../../services/pilotThemePresets'
 
 // Pilot Panel's own saveable colour-scheme templates - direct structural
 // copy of PilotTickerStyleCards.tsx's own template list (same component
@@ -118,6 +119,17 @@ export default function PilotThemeTemplatesCard({ theme, onApply }: PilotThemeTe
   const [busy, setBusy] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameInput, setRenameInput] = useState('')
+  // "Match your colours" picker round - two-step (family+shade, then
+  // font colour) rather than one flat list of every possible generated
+  // combination (~24 base colours x up to 5 legible text options each
+  // would be roughly 100 buttons). Resets naturally: picking a new
+  // family clears the shade choice (see handleSelectFamily below,
+  // which also auto-selects the shade for a single-shade family so
+  // there's nothing to additionally pick there), and picking a
+  // different shade within the same family clears nothing further
+  // downstream since the text-colour row re-renders fresh either way.
+  const [pickerFamilyId, setPickerFamilyId] = useState<string | null>(null)
+  const [pickerShadeIndex, setPickerShadeIndex] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -131,6 +143,21 @@ export default function PilotThemeTemplatesCard({ theme, onApply }: PilotThemeTe
       cancelled = true
     }
   }, [])
+
+  function handleSelectFamily(family: ColourFamily) {
+    setPickerFamilyId(family.id)
+    // Single-shade families (Gold/Silver/Charcoal/White) have nothing
+    // else to pick at this step - jump straight to shade index 0 so the
+    // text-colour row appears immediately, matching how a multi-shade
+    // family only reveals it once a shade is also chosen.
+    setPickerShadeIndex(family.shades.length === 1 ? 0 : null)
+  }
+
+  function handleSelectTextColor(family: ColourFamily, shadeIndex: number, textHex: string) {
+    const shade = family.shades[shadeIndex]
+    if (!shade) return
+    onApply(deriveTheme(shade, textHex))
+  }
 
   async function handleSave() {
     const name = nameInput.trim()
@@ -210,7 +237,7 @@ export default function PilotThemeTemplatesCard({ theme, onApply }: PilotThemeTe
         page - nothing reaches the live dashboard until you click "Save Pilot Panel".
       </p>
 
-      <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-400">Presets</div>
+      <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-400">Quick Presets</div>
       <div className="mb-4 flex flex-wrap gap-2">
         {BUILT_IN_THEME_PRESETS.map((preset) => (
           <button
@@ -223,6 +250,97 @@ export default function PilotThemeTemplatesCard({ theme, onApply }: PilotThemeTe
             {preset.name}
           </button>
         ))}
+      </div>
+
+      {/* Match Your Colours - two-step family+shade then font-colour
+          picker (see pilotThemePresets.ts's own comment for why this is
+          derived programmatically rather than ~100 more hand-authored
+          presets). Step 1 always shows all 8 families. Step 2 (shades)
+          only renders for the four multi-shade families - the four
+          singles (Gold/Silver/Charcoal/White) skip straight to step 3,
+          see handleSelectFamily. Step 3 (font colour) only renders once
+          a shade is resolved either way, and disables (not hides -
+          still visible, so the option isn't just mysteriously absent)
+          any pairing below the real WCAG contrast threshold. */}
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-400">Match Your Colours</div>
+      <div className="mb-4 rounded-xl border border-border bg-slate-900/50 p-3">
+        <div className="flex flex-wrap gap-2">
+          {COLOR_FAMILIES.map((family) => {
+            const previewShade = family.shades[Math.floor(family.shades.length / 2)]
+            return (
+              <button
+                key={family.id}
+                type="button"
+                onClick={() => handleSelectFamily(family)}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500 ${
+                  pickerFamilyId === family.id ? 'border-accent-sky-500' : 'border-border bg-slate-900/80'
+                }`}
+              >
+                <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: shadeToHex(previewShade) }} />
+                {family.name}
+              </button>
+            )
+          })}
+        </div>
+
+        {pickerFamilyId &&
+          (() => {
+            const family = COLOR_FAMILIES.find((f) => f.id === pickerFamilyId)
+            if (!family) return null
+            return (
+              <>
+                {family.shades.length > 1 && (
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                    {family.shades.map((shade, index) => (
+                      <button
+                        key={shade.label}
+                        type="button"
+                        onClick={() => setPickerShadeIndex(index)}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500 ${
+                          pickerShadeIndex === index ? 'border-accent-sky-500' : 'border-border bg-slate-900/80'
+                        }`}
+                      >
+                        <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: shadeToHex(shade) }} />
+                        {shade.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {pickerShadeIndex !== null &&
+                  (() => {
+                    const shade = family.shades[pickerShadeIndex]
+                    if (!shade) return null
+                    const backgroundHex = shadeToHex(shade)
+                    return (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                        <span className="text-xs text-muted-500">Font colour:</span>
+                        {TEXT_COLOR_OPTIONS.map((textOption) => {
+                          const legible = isTextColorLegible(backgroundHex, textOption.hex)
+                          return (
+                            <button
+                              key={textOption.label}
+                              type="button"
+                              disabled={!legible}
+                              onClick={() => handleSelectTextColor(family, pickerShadeIndex, textOption.hex)}
+                              title={legible ? undefined : 'Too low-contrast against this background to be legible'}
+                              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                                legible
+                                  ? 'border-border bg-slate-900/80 text-slate-200 hover:border-accent-sky-500'
+                                  : 'cursor-not-allowed border-border/50 bg-slate-900/40 text-muted-500 opacity-50'
+                              }`}
+                            >
+                              <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: textOption.hex }} />
+                              {textOption.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+              </>
+            )
+          })()}
       </div>
 
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-400">Your Saved Schemes</div>

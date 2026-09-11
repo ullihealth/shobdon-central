@@ -166,7 +166,13 @@ function PilotViewContent({
         {pullDistance > REFRESH_THRESHOLD_PX ? 'Release to refresh' : 'Pull to refresh'}
       </div>
 
-      <PilotHeader airfieldName={airfieldName} logoUrl={logoUrl} afisoOpen={afisoOpen} afisoFrequency={afisoFrequency} />
+      <PilotHeader
+        airfieldName={airfieldName}
+        logoUrl={logoUrl}
+        afisoOpen={afisoOpen}
+        afisoFrequency={afisoFrequency}
+        textColor={pilotBackgroundOverride?.textColor}
+      />
 
       {/* Data-freshness safety net (dataStale, WeatherContext.tsx) -
           deliberately independent of the weather status badge's own

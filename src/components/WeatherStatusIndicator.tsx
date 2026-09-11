@@ -31,9 +31,22 @@ interface WeatherStatusIndicatorProps {
   // already use for /pilot-specific presentation tweaks to a shared
   // component.
   hideIcon?: boolean
+  // Pilot text-colour round - the base label colour (text-slate-200
+  // below) was missed by the original textColor override entirely: it's
+  // a literal Tailwind palette class, not inherited and not one of this
+  // app's --color-* tokens, so it never responded to the wrapper-level
+  // colour PilotViewPage.tsx sets. An inline style always wins over a
+  // class regardless of specificity, so this only ever takes effect
+  // when explicitly passed - every desktop caller (every TV-dashboard
+  // template) omits it and renders exactly as before. Deliberately does
+  // NOT touch the isLive case's own text-station-live colour below -
+  // that's a genuine status signal ("is this really live ATC data"),
+  // same category as AfisoIndicator's text-status-good/-bad, not
+  // general page text that should follow the tenant's chosen theme.
+  textColorOverride?: string
 }
 
-export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStatusIndicatorProps): JSX.Element {
+export default function WeatherStatusIndicator({ hideIcon = false, textColorOverride }: WeatherStatusIndicatorProps): JSX.Element {
   const { activeProvider, weather, config, liveDataUnavailable, usingFallback, internetProviderDisplayName } = useWeather()
 
   // liveDataUnavailable means the selected source's fetch failed and the
@@ -130,7 +143,7 @@ export default function WeatherStatusIndicator({ hideIcon = false }: WeatherStat
   const isLive = emoji === '🟢'
 
   return (
-    <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200">
+    <div className="flex items-center gap-2 text-base font-bold tracking-wide text-slate-200" style={textColorOverride ? { color: textColorOverride } : undefined}>
       {/* isLive gets a plain CSS-drawn dot (bg-station-live), not the 🟢
           glyph - confirmed empirically (rendered color: #c8f336 on the
           emoji and sampled the actual output pixels) that CSS `color`

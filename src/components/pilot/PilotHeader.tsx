@@ -7,6 +7,14 @@ interface PilotHeaderProps {
   logoUrl: string | null
   afisoOpen: boolean
   afisoFrequency: string
+  // Text-colour audit round - passed straight through to LiveClock's
+  // own modalTextColor and WeatherStatusIndicator's own
+  // textColorOverride, both of which live inside this header and were
+  // missed by the original override (see each component's own comment
+  // for why). Optional, undefined leaves both completely unchanged -
+  // matches PilotViewPage.tsx's own "only pass when an override is
+  // actually active" call site.
+  textColor?: string
 }
 
 // Pilot View header (Section 1). Logo doubles as the future login entry
@@ -16,7 +24,7 @@ interface PilotHeaderProps {
 // eventual login wiring has one obvious place to attach rather than
 // needing a header restructure to add a click target that doesn't exist
 // yet.
-export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFrequency }: PilotHeaderProps): JSX.Element {
+export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFrequency, textColor }: PilotHeaderProps): JSX.Element {
   return (
     <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-panel/95 px-4 py-3 backdrop-blur">
       <button
@@ -92,7 +100,7 @@ export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFre
           one wrapped <span> per LiveClock.tsx, not a separate element
           needing its own adjustment. */}
       <div className="absolute left-1/2 top-[calc(50%+10px)] -translate-x-1/2 -translate-y-1/2">
-        <LiveClock />
+        <LiveClock modalTextColor={textColor} />
       </div>
       {/* ml-auto (not just the header's own justify-between) - the logo
           button is absolutely positioned when a real logo is set (see
@@ -114,7 +122,7 @@ export default function PilotHeader({ airfieldName, logoUrl, afisoOpen, afisoFre
             this app avoids everywhere else. hideIcon drops the leading
             emoji/dot for this header specifically - text label only,
             desktop dashboard unaffected (defaults false there). */}
-        <WeatherStatusIndicator hideIcon />
+        <WeatherStatusIndicator hideIcon textColorOverride={textColor} />
         <AfisoIndicator open={afisoOpen} frequency={afisoFrequency} />
       </div>
     </header>

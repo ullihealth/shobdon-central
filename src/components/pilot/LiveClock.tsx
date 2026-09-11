@@ -37,7 +37,22 @@ function zuluTimeString(now: Date): string {
 // RunwayInUseCard.tsx's own comment gives). Desktop's own Header.tsx
 // clock is completely untouched by this round - the Local/Zulu toggle
 // only ever reaches this one component.
-export default function LiveClock(): JSX.Element {
+interface LiveClockProps {
+  // Pilot text-colour audit round - the onboarding modal's own body text
+  // (text-slate-200 below) was missed by the original override: a
+  // literal Tailwind palette class, not inherited. Worth fixing despite
+  // this modal being one-time/low-frequency (localStorage-gated, shows
+  // once ever per browser) - unlike the compass's exempt cases, this
+  // modal's OWN card background is bg-panel, which already DOES follow
+  // the tenant's panelBg choice, so a light custom panel colour would
+  // leave this white-ish text genuinely illegible against it, not just
+  // cosmetically inconsistent. The OK button's own text-slate-200 stays
+  // untouched - see its own comment below for why. Optional, undefined
+  // leaves the body text completely unchanged.
+  modalTextColor?: string
+}
+
+export default function LiveClock({ modalTextColor }: LiveClockProps = {}): JSX.Element {
   const [now, setNow] = useState(new Date())
   const [displayMode, setDisplayMode] = useState<DisplayMode>('local')
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -139,11 +154,19 @@ export default function LiveClock(): JSX.Element {
                 padded button) reads as a proper mobile onboarding dialog at
                 arm's length, not a compact desktop-style confirm box. */}
             <div className="w-full max-w-md rounded-2xl border border-border bg-panel p-8 shadow-2xl">
-              <p className="text-2xl leading-snug text-slate-200">New feature: tap on the clock to toggle between local time and Zulu time.</p>
+              <p className="text-2xl leading-snug text-slate-200" style={modalTextColor ? { color: modalTextColor } : undefined}>
+                New feature: tap on the clock to toggle between local time and Zulu time.
+              </p>
               <div className="mt-8">
                 <button
                   type="button"
                   onClick={dismissOnboarding}
+                  // bg-slate-900/80 here is this button's OWN hardcoded
+                  // background, not bg-panel/bg-card - unlike the <p>
+                  // above, it doesn't follow the tenant's theme at all,
+                  // so its text-slate-200 stays exactly as-is, same
+                  // "self-contained, don't theme" posture as the
+                  // compass's own centre wind-readout badge.
                   className="w-full rounded-lg border border-accent-sky-500 bg-slate-900/80 px-6 py-4 text-lg font-bold uppercase tracking-wide text-slate-200 transition hover:bg-accent-sky-500/10"
                 >
                   OK

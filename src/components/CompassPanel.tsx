@@ -665,6 +665,12 @@ interface CompassPanelProps {
   // mechanism, and the degree-number bearing labels/muted-grey tier
   // (see PilotViewPage.tsx's own comment on why those needed no
   // override either).
+  //
+  // Audit round: also passed straight through to CompassModeButtons'
+  // own activeTextColor below (the North/Runway toggle's ACTIVE-state
+  // text was the exact "RUNWAY still white on a light background" bug
+  // this round fixed) - same value, same semantic tier ("this page's
+  // primary/active text colour"), no separate prop needed for it.
   cardinalTextColor?: string
 }
 
@@ -950,7 +956,7 @@ export default function CompassPanel({
       {spacious && (
         <div className="flex w-full flex-shrink-0 flex-col items-center gap-2 mb-[-33px] sm:mb-[-29px] sm:w-auto">
           <div className="flex w-full items-center justify-between">
-            <CompassModeButtons effectiveCompassMode={effectiveCompassMode} onChange={handleCompassModeChange} />
+            <CompassModeButtons effectiveCompassMode={effectiveCompassMode} onChange={handleCompassModeChange} activeTextColor={cardinalTextColor} />
           </div>
           {/* Requirement 3's fallback - derived, not a one-off toast: stays
               visible for as long as RUNWAY is the stored preference but
