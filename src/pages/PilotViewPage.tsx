@@ -43,6 +43,20 @@ interface PilotBackgroundOverride {
   compassMarkers?: string
   panelBg?: string
   cardBg?: string
+  // Text-colour round - applied to this page's own base/inherited text
+  // colour (most plain body text on this page has no colour of its own,
+  // it just inherits the wrapper's text-slate-100) AND --color-text-
+  // primary (WeatherStatGrid's stat values, anything else using
+  // text-primary specifically) AND the compass's cardinal-letter fill
+  // (CompassPanel.tsx's own new prop, passed explicitly below - SVG
+  // fill doesn't inherit CSS colour by default). Deliberately NOT
+  // applied to the muted-grey tier (--color-text-muted-*) - see
+  // BackgroundOverrideInput's own comment in pilot-view.ts for why that
+  // tier needed no override - and NOT applied to the compass's own
+  // centre wind-readout text, reverted after testing showed it sits on
+  // a permanently-dark badge of its own - see CompassPanel.tsx's own
+  // comment on cardinalTextColor for the full story.
+  textColor?: string
 }
 
 interface PilotViewContentProps {
@@ -109,6 +123,15 @@ function PilotViewContent({
         ...(pilotBackgroundOverride.compassDiscBg ? { '--color-compass-disc-bg': pilotBackgroundOverride.compassDiscBg } : {}),
         ...(pilotBackgroundOverride.panelBg ? { '--color-panel-bg': pilotBackgroundOverride.panelBg } : {}),
         ...(pilotBackgroundOverride.cardBg ? { '--color-card-bg': pilotBackgroundOverride.cardBg } : {}),
+        // Sets BOTH the wrapper's own inherited `color` (reaches any
+        // plain text below that doesn't set its own) and --color-text-
+        // primary (reaches text-primary specifically) - two different
+        // mechanisms because plain inherited text and Tailwind's
+        // text-primary utility resolve colour two different ways, and
+        // both need to move together for this to look intentional.
+        ...(pilotBackgroundOverride.textColor
+          ? { color: pilotBackgroundOverride.textColor, '--color-text-primary': pilotBackgroundOverride.textColor }
+          : {}),
       } as CSSProperties)
     : undefined
 
@@ -257,6 +280,7 @@ function PilotViewContent({
           ringColor={pilotBackgroundOverride?.compassRing}
           cardinalColor={pilotBackgroundOverride?.compassCardinal}
           markersColor={pilotBackgroundOverride?.compassMarkers}
+          cardinalTextColor={pilotBackgroundOverride?.textColor}
         />
         <WeatherStatGrid />
         <PilotRunwayWindPanel refreshSignal={refreshTick} />

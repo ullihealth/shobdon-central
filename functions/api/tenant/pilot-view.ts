@@ -57,9 +57,19 @@ interface BackgroundOverrideInput {
   compassMarkers?: string;
   panelBg?: string;
   cardBg?: string;
+  // Text-colour round - covers the page's own base/inherited text colour
+  // plus --color-text-primary (WeatherStatGrid's stat values etc.) and
+  // the compass's cardinal-letter/wind-readout fills - see
+  // PilotViewPage.tsx's own comment for exactly which elements this
+  // reaches. Deliberately one field, not a primary/muted pair - the
+  // existing muted-grey tier already reads fine against both light and
+  // dark custom backgrounds (it's a neutral mid-tone by design), so only
+  // the primary/value tier needed a real override to fix the reported
+  // "white text invisible on a light background" problem.
+  textColor?: string;
 }
 
-const OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS = ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg"] as const;
+const OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS = ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg", "textColor"] as const;
 
 // Same 8-field shape as CafeTicker.tsx's own TickerStyle / cafe-settings/
 // index.ts's flat ticker* columns - bundled as one JSON blob here

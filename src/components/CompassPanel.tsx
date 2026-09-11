@@ -650,6 +650,22 @@ interface CompassPanelProps {
   ringColor?: string
   cardinalColor?: string
   markersColor?: string
+  // Text-colour round - same "explicit prop, default matches today's
+  // literal" pattern as the three above, for the compass's own cardinal
+  // letters (N/E/S/W), hardcoded fill="white" before this. The centre
+  // wind-readout text ("280 / 7") was tried the same way and reverted -
+  // confirmed via real rendered screenshot, not just reasoning - it sits
+  // on its own permanently-dark badge (id="centre-wind-label", a fixed
+  // rgba(15, 23, 42, 0.94) rect specifically for guaranteed contrast
+  // "always on top of the rotating arrow", independent of the disc/page
+  // theme entirely), so making its text dark too made it unreadable
+  // against its own always-dark backdrop - the exact inverse of the bug
+  // this round set out to fix. Stays hardcoded white, same posture as
+  // the runway identifier's own independent outline-stroke contrast
+  // mechanism, and the degree-number bearing labels/muted-grey tier
+  // (see PilotViewPage.tsx's own comment on why those needed no
+  // override either).
+  cardinalTextColor?: string
 }
 
 export default function CompassPanel({
@@ -659,6 +675,7 @@ export default function CompassPanel({
   ringColor = 'rgba(59, 130, 246, 0.25)',
   cardinalColor = 'rgba(59, 130, 246, 0.2)',
   markersColor = 'rgba(148, 163, 184, 0.25)',
+  cardinalTextColor = 'white',
 }: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
@@ -1048,16 +1065,16 @@ export default function CompassPanel({
                   OWN orientation, keeping it screen-upright. */}
               <g id="cardinal-points" className="pointer-events-none">
                 <g transform={`rotate(${-dialRotationDegrees} ${NORTH_POINT.x} ${NORTH_POINT.y})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
-                  <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">N</text>
+                  <text x={NORTH_POINT.x} y={NORTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill={cardinalTextColor} fontSize="41" fontWeight="800">N</text>
                 </g>
                 <g transform={`rotate(${-dialRotationDegrees} ${EAST_POINT.x} ${EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
-                  <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">E</text>
+                  <text x={EAST_POINT.x} y={EAST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill={cardinalTextColor} fontSize="41" fontWeight="800">E</text>
                 </g>
                 <g transform={`rotate(${-dialRotationDegrees} ${SOUTH_POINT.x} ${SOUTH_POINT.y})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
-                  <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">S</text>
+                  <text x={SOUTH_POINT.x} y={SOUTH_POINT.y} textAnchor="middle" dominantBaseline="middle" className="select-none" fill={cardinalTextColor} fontSize="41" fontWeight="800">S</text>
                 </g>
                 <g transform={`rotate(${-dialRotationDegrees} ${WEST_POINT.x} ${WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
-                  <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill="white" fontSize="41" fontWeight="800">W</text>
+                  <text x={WEST_POINT.x} y={WEST_POINT.y + CARDINAL_LETTER_VERTICAL_NUDGE} textAnchor="middle" dominantBaseline="middle" className="select-none" fill={cardinalTextColor} fontSize="41" fontWeight="800">W</text>
                 </g>
               </g>
 

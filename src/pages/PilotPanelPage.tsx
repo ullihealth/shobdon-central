@@ -3,6 +3,7 @@ import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } f
 import ColorField from '../components/ColorField'
 import PilotTickerSlotsCards, { PILOT_TICKER_SLOT_COUNT } from '../components/media/PilotTickerSlotsCards'
 import PilotTickerStyleCards from '../components/media/PilotTickerStyleCards'
+import PilotThemeTemplatesCard from '../components/media/PilotThemeTemplatesCard'
 import PilotPreviewFrame from '../components/pilot/PilotPreviewFrame'
 import { DEFAULT_TICKER_STYLE } from '../components/pilot/PilotFooterTicker'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
@@ -34,6 +35,11 @@ interface BackgroundOverride {
   compassMarkers?: string
   panelBg?: string
   cardBg?: string
+  // Text-colour round - same independently-optional posture as the six
+  // above. Deliberately one field (not a primary/muted pair) - see
+  // pilot-view.ts's own BackgroundOverrideInput comment for why the
+  // existing muted-grey tier needed no override of its own.
+  textColor?: string
 }
 
 interface SafetyNotice {
@@ -70,6 +76,32 @@ const DEFAULT_COMPASS_CARDINAL_HEX = '#3b82f6'
 const DEFAULT_COMPASS_MARKERS_HEX = '#94a3b8'
 const DEFAULT_PANEL_BG_HEX = '#020617'
 const DEFAULT_CARD_BG_HEX = '#0f172a'
+// Today's real default text colour (CompassPanel.tsx's own fill="white"
+// literals, --color-text-primary's own #ffffff default) - same
+// "picker's own starting point only" posture as the six above.
+const DEFAULT_TEXT_COLOR_HEX = '#ffffff'
+// One-click "invert" buttons, right next to the picker - Jeff's own
+// framing was specifically "an option to invert to dark/black text",
+// not just a bare colour picker, so these sit alongside the full
+// ColorField rather than replacing it (a picker alone would make the
+// exact "invert" action - go straight to a sensible dark text colour -
+// take several clicks in the native colour dialog instead of one).
+const LIGHT_TEXT_COLOR_HEX = '#ffffff'
+const DARK_TEXT_COLOR_HEX = '#0f172a'
+
+// Plain perceptual luminance (not full gamma-correct WCAG relative
+// luminance) - adequate for a lightweight "which way should I invert"
+// hint, not a precision contrast checker. Explicit instruction was not
+// to build a fully automatic system, only to consider whether a
+// suggestion is cheap to add alongside the real, manual control - this
+// is the cheap version: a label, not an enforced/auto-applied choice.
+function suggestedTextColorLabel(backgroundHex: string): 'Light' | 'Dark' {
+  const r = parseInt(backgroundHex.slice(1, 3), 16) / 255
+  const g = parseInt(backgroundHex.slice(3, 5), 16) / 255
+  const b = parseInt(backgroundHex.slice(5, 7), 16) / 255
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b
+  return luminance > 0.5 ? 'Dark' : 'Light'
+}
 
 const MOCK_CONFIG = { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'mock' as const }
 const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
@@ -220,6 +252,8 @@ export default function PilotPanelPage(): JSX.Element {
 
             <PilotTickerStyleCards style={tickerStyle} onChange={setTickerStyle} />
 
+            <PilotThemeTemplatesCard theme={backgroundOverride} onApply={setBackgroundOverride} />
+
             <section className="rounded-2xl border border-border bg-panel p-6">
               <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Pilot Background</div>
               <p className="mt-1 text-xs text-muted-500">
@@ -336,6 +370,47 @@ export default function PilotPanelPage(): JSX.Element {
                     toHex={(value) => value}
                     savedSwatches={savedSwatches}
                     onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.cardBg ?? DEFAULT_CARD_BG_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                </div>
+              </section>
+            )}
+
+            {backgroundOverride && (
+              <section className="rounded-2xl border border-border bg-panel p-6">
+                <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Text Colour</div>
+                <p className="mt-1 text-xs text-muted-500">
+                  The wind box, compass cardinal letters (N/S/E/W), and QNH/QFE/Cloud Base/Visibility values on
+                  /pilot. Invert to dark text if you've picked a light background colour above. Leave unset to keep
+                  today's default white text.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundOverride({ ...backgroundOverride, textColor: LIGHT_TEXT_COLOR_HEX })}
+                    className="rounded-lg border border-border bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500"
+                  >
+                    Light text
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBackgroundOverride({ ...backgroundOverride, textColor: DARK_TEXT_COLOR_HEX })}
+                    className="rounded-lg border border-border bg-slate-900/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500"
+                  >
+                    Dark text
+                  </button>
+                  <span className="text-xs text-muted-500">
+                    Suggested for your background: {suggestedTextColorLabel(backgroundOverride.backgroundColor)}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-col gap-1">
+                  <ColorField
+                    label="Text colour"
+                    value={backgroundOverride.textColor ?? DEFAULT_TEXT_COLOR_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, textColor: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.textColor ?? DEFAULT_TEXT_COLOR_HEX)}
                     onClearSwatch={handleClearSwatch}
                   />
                 </div>
