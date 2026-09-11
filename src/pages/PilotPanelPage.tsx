@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../components/CafeTicker'
+import ColorField from '../components/ColorField'
 import PilotTickerSlotsCards, { PILOT_TICKER_SLOT_COUNT } from '../components/media/PilotTickerSlotsCards'
 import PilotTickerStyleCards from '../components/media/PilotTickerStyleCards'
 import PilotPreviewFrame from '../components/pilot/PilotPreviewFrame'
@@ -18,8 +19,21 @@ import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
 // the preview itself, same posture as DesignPage.tsx's own live preview.
 type SaveStatus = 'idle' | 'working' | 'success' | 'error'
 
+// Compass/info-panel colours round - all six new fields stay optional
+// even while an override is active, independent of each other and of
+// backgroundColor (unlike backgroundColor, which every toggle-on always
+// seeds immediately - see DEFAULT_OVERRIDE_COLOR below). A tenant who's
+// only ever set a background colour keeps every one of these absent,
+// which means /pilot leaves today's hardcoded default exactly alone for
+// that specific piece - see PilotViewPage.tsx's own matching comment.
 interface BackgroundOverride {
   backgroundColor: string
+  compassDiscBg?: string
+  compassRing?: string
+  compassCardinal?: string
+  compassMarkers?: string
+  panelBg?: string
+  cardBg?: string
 }
 
 interface SafetyNotice {
@@ -42,6 +56,20 @@ const DEFAULT_OVERRIDE_COLOR = '#0f172a'
 // preview's own fallback when no override is set, so the "off" state
 // still looks like a real screen rather than transparent/white.
 const SHARED_THEME_FALLBACK_COLOR = '#0f172a'
+
+// Opaque-hex approximations of today's real (translucent rgba) defaults
+// from src/index.css/CompassPanel.tsx - shown as each picker's own
+// starting point ONLY (a native <input type="color"> always needs some
+// hex value to display, it can't show "inherit"). Purely cosmetic: an
+// untouched field is never written into backgroundOverride, so /pilot
+// itself keeps reading the REAL default through unchanged, not this
+// approximation - see BackgroundOverride's own comment.
+const DEFAULT_COMPASS_DISC_BG_HEX = '#0f172a'
+const DEFAULT_COMPASS_RING_HEX = '#3b82f6'
+const DEFAULT_COMPASS_CARDINAL_HEX = '#3b82f6'
+const DEFAULT_COMPASS_MARKERS_HEX = '#94a3b8'
+const DEFAULT_PANEL_BG_HEX = '#020617'
+const DEFAULT_CARD_BG_HEX = '#0f172a'
 
 const MOCK_CONFIG = { ...DEFAULT_WEATHER_CONFIG, activeProvider: 'mock' as const }
 const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null, jetA1Price: null, currency: '£' }
@@ -92,6 +120,14 @@ export default function PilotPanelPage(): JSX.Element {
   const [tickerSlots, setTickerSlots] = useState<TickerSlot[]>(defaultTickerSlots())
   const [desktopTickerSlots, setDesktopTickerSlots] = useState<TickerSlot[]>([])
   const [backgroundOverride, setBackgroundOverride] = useState<BackgroundOverride | null>(null)
+  // Compass/info-panel colours round - local-only, not persisted to D1
+  // (unlike DesignPage.tsx's own savedSwatches, which round-trips
+  // through /api/tenant/config). This page's colour pickers are a much
+  // smaller, self-contained surface than Screens Design's - a plain
+  // per-session capture/reuse/clear clipboard for the six ColorField
+  // instances below, reset on every fresh page load, no new backend
+  // field needed for it.
+  const [savedSwatches, setSavedSwatches] = useState<string[]>([])
   const [tickerStyle, setTickerStyle] = useState<TickerStyle>(DEFAULT_TICKER_STYLE)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
@@ -141,6 +177,18 @@ export default function PilotPanelPage(): JSX.Element {
       cancelled = true
     }
   }, [])
+
+  // Same capture/clear shape as DesignPage.tsx's own handleCaptureSwatch/
+  // handleClearSwatch, minus the PUT - see savedSwatches' own comment for
+  // why this stays local-only.
+  function handleCaptureSwatch(hex: string) {
+    if (savedSwatches.includes(hex) || savedSwatches.length >= 5) return
+    setSavedSwatches((prev) => [...prev, hex])
+  }
+
+  function handleClearSwatch(hex: string) {
+    setSavedSwatches((prev) => prev.filter((s) => s !== hex))
+  }
 
   async function handleSave() {
     setSaveStatus('working')
@@ -194,13 +242,105 @@ export default function PilotPanelPage(): JSX.Element {
                   <input
                     type="color"
                     value={backgroundOverride.backgroundColor}
-                    onChange={(event) => setBackgroundOverride({ backgroundColor: event.target.value })}
+                    onChange={(event) => setBackgroundOverride({ ...backgroundOverride, backgroundColor: event.target.value })}
                     className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
                   />
                   <span className="text-xs text-muted-500">{backgroundOverride.backgroundColor}</span>
                 </div>
               )}
             </section>
+
+            {/* Compass/info-panel colours round - both sections only
+                render while the independent background is on, same
+                gating as the background colour field itself immediately
+                above (there's nothing to theme independently of the
+                desktop dashboard until that's switched on). Each
+                ColorField stays genuinely optional in saved state - an
+                untouched field is never written into backgroundOverride
+                at all (see that interface's own comment), the
+                DEFAULT_*_HEX constants below are only what the picker
+                itself displays as a starting point. toHex is the
+                identity function, not DesignPage.tsx's own rgbaToHex -
+                every value here already round-trips as a plain #rrggbb
+                hex string straight from the native colour input, never
+                an rgba() one. */}
+            {backgroundOverride && (
+              <section className="rounded-2xl border border-border bg-panel p-6">
+                <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Compass Colours</div>
+                <p className="mt-1 text-xs text-muted-500">
+                  Recolour the compass disc, outer ring, cardinal-point lines, and degree markers on /pilot. Leave any
+                  of these unset to keep today's default dark navy/blue look for that part.
+                </p>
+                <div className="mt-3 flex flex-col gap-1">
+                  <ColorField
+                    label="Disc background"
+                    value={backgroundOverride.compassDiscBg ?? DEFAULT_COMPASS_DISC_BG_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, compassDiscBg: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.compassDiscBg ?? DEFAULT_COMPASS_DISC_BG_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                  <ColorField
+                    label="Outer ring"
+                    value={backgroundOverride.compassRing ?? DEFAULT_COMPASS_RING_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, compassRing: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.compassRing ?? DEFAULT_COMPASS_RING_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                  <ColorField
+                    label="Cardinal lines"
+                    value={backgroundOverride.compassCardinal ?? DEFAULT_COMPASS_CARDINAL_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, compassCardinal: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.compassCardinal ?? DEFAULT_COMPASS_CARDINAL_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                  <ColorField
+                    label="Degree markers"
+                    value={backgroundOverride.compassMarkers ?? DEFAULT_COMPASS_MARKERS_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, compassMarkers: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.compassMarkers ?? DEFAULT_COMPASS_MARKERS_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                </div>
+              </section>
+            )}
+
+            {backgroundOverride && (
+              <section className="rounded-2xl border border-border bg-panel p-6">
+                <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Info Panel Colours</div>
+                <p className="mt-1 text-xs text-muted-500">
+                  Recolour the QNH/QFE/Cloud Base/Visibility boxes (and every other panel/card on /pilot - header, wind
+                  card, notices). Leave either unset to keep today's default dark navy look.
+                </p>
+                <div className="mt-3 flex flex-col gap-1">
+                  <ColorField
+                    label="Panel background"
+                    value={backgroundOverride.panelBg ?? DEFAULT_PANEL_BG_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, panelBg: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.panelBg ?? DEFAULT_PANEL_BG_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                  <ColorField
+                    label="Card background"
+                    value={backgroundOverride.cardBg ?? DEFAULT_CARD_BG_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, cardBg: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.cardBg ?? DEFAULT_CARD_BG_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                </div>
+              </section>
+            )}
 
             <div className="flex items-center gap-3">
               <button

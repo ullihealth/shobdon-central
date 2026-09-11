@@ -630,12 +630,35 @@ interface CompassPanelProps {
   // genuinely first-ever load, matching PilotViewPage.tsx's own explicit
   // 'runway', which needs no change itself.
   initialCompassMode?: CompassMode
+  // Pilot mobile-theming round - these three were previously hardcoded
+  // literals, not read from the matching --color-compass-ring/-cardinal/
+  // -markers CSS variables that already exist in the token set (unlike
+  // --color-compass-disc-bg just above, which genuinely is wired to its
+  // variable). Investigated first: those three variables are also never
+  // surfaced anywhere in DesignPage.tsx's own colour-picker UI, so no
+  // real tenant's desktop theme could ever have actually diverged from
+  // these literals - resurrecting the global CSS variables directly
+  // seemed safe on paper, but risked an unverifiable edge case (some
+  // tenant's stored club_theme.tokensJson blob genuinely carrying a
+  // stale, divergent value from years-old preset data no longer
+  // reachable through any current UI). Explicit props instead, defaulted
+  // to today's exact literals, sidestep that entirely: every existing
+  // caller (every TV-dashboard template) omits these and renders
+  // byte-for-byte as before, guaranteed by construction rather than by
+  // auditing every tenant's stored theme data. Only PilotViewPage.tsx's
+  // independent mobile background override passes non-default values.
+  ringColor?: string
+  cardinalColor?: string
+  markersColor?: string
 }
 
 export default function CompassPanel({
   spacious = false,
   hideReadout = false,
   initialCompassMode = 'runway',
+  ringColor = 'rgba(59, 130, 246, 0.25)',
+  cardinalColor = 'rgba(59, 130, 246, 0.2)',
+  markersColor = 'rgba(148, 163, 184, 0.25)',
 }: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
@@ -995,7 +1018,7 @@ export default function CompassPanel({
               cy="200"
               r={RING_RADIUS}
               fill="var(--color-compass-disc-bg)"
-              stroke="rgba(59, 130, 246, 0.25)"
+              stroke={ringColor}
               strokeWidth="1.5"
             />
 
@@ -1041,7 +1064,7 @@ export default function CompassPanel({
               {/* Cardinal Direction Lines - no counter-rotation needed,
                   plain line segments have no inherent "upright"
                   orientation to preserve. */}
-              <g id="cardinal-lines" stroke="rgba(59, 130, 246, 0.2)" strokeWidth="1.5">
+              <g id="cardinal-lines" stroke={cardinalColor} strokeWidth="1.5">
                 <line x1="200" y1="20" x2="200" y2="50" />
                 <line x1="350" y1="200" x2="380" y2="200" />
                 <line x1="200" y1="350" x2="200" y2="380" />
@@ -1079,7 +1102,7 @@ export default function CompassPanel({
 
               {/* Degree Markers (every 30°) - no counter-rotation, same
                   reasoning as the cardinal lines above. */}
-              <g id="degree-markers" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1">
+              <g id="degree-markers" stroke={markersColor} strokeWidth="1">
                 {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
                   const point = circlePoint(200, 200, TICK_MARK_OUTER_RADIUS, degree)
                   const innerPoint = circlePoint(200, 200, TICK_MARK_INNER_RADIUS, degree)

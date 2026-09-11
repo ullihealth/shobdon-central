@@ -43,9 +43,23 @@ interface TickerSlotInput {
   textColor?: string;
 }
 
+// Compass/info-panel colours round - all six optional, independent of
+// each other and of backgroundColor (see PilotViewPage.tsx's own
+// PilotBackgroundOverride comment for why - a tenant can set just the
+// background and leave every one of these unset, which means "keep
+// today's hardcoded default" all the way through to the public config
+// response, not a guessed replacement value).
 interface BackgroundOverrideInput {
   backgroundColor: string;
+  compassDiscBg?: string;
+  compassRing?: string;
+  compassCardinal?: string;
+  compassMarkers?: string;
+  panelBg?: string;
+  cardBg?: string;
 }
+
+const OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS = ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg"] as const;
 
 // Same 8-field shape as CafeTicker.tsx's own TickerStyle / cafe-settings/
 // index.ts's flat ticker* columns - bundled as one JSON blob here
@@ -156,8 +170,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let backgroundOverride: BackgroundOverrideInput | null = null;
   if (row?.backgroundOverrideJson) {
     try {
-      const parsed = JSON.parse(row.backgroundOverrideJson) as { backgroundColor?: unknown };
-      if (typeof parsed.backgroundColor === "string") backgroundOverride = { backgroundColor: parsed.backgroundColor };
+      const parsed = JSON.parse(row.backgroundOverrideJson) as Record<string, unknown>;
+      if (typeof parsed.backgroundColor === "string") {
+        backgroundOverride = { backgroundColor: parsed.backgroundColor };
+        for (const key of OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS) {
+          if (typeof parsed[key] === "string") backgroundOverride[key] = parsed[key] as string;
+        }
+      }
     } catch {
       backgroundOverride = null;
     }
@@ -219,6 +238,15 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     if (!HEX_COLOR_PATTERN.test(body.backgroundOverride.backgroundColor ?? "")) {
       return jsonResponse({ error: "backgroundOverride.backgroundColor must be a #rrggbb hex colour" }, 400);
     }
+    // Each of these six stays genuinely optional - only validated (and
+    // only required to be a valid hex) when actually present, same
+    // "independently omittable" posture as their own interface comment.
+    for (const key of OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS) {
+      const value = body.backgroundOverride[key];
+      if (value !== undefined && !HEX_COLOR_PATTERN.test(value)) {
+        return jsonResponse({ error: `backgroundOverride.${key} must be a #rrggbb hex colour` }, 400);
+      }
+    }
   }
 
   // Same ranges as cafe-settings/index.ts's own ticker* validation,
@@ -271,7 +299,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     body.backgroundOverride !== undefined
       ? body.backgroundOverride === null
         ? null
-        : JSON.stringify({ backgroundColor: body.backgroundOverride.backgroundColor })
+        : JSON.stringify(
+            OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS.reduce(
+              (acc, key) => {
+                const value = body.backgroundOverride![key];
+                if (value !== undefined) acc[key] = value;
+                return acc;
+              },
+              { backgroundColor: body.backgroundOverride.backgroundColor } as BackgroundOverrideInput
+            )
+          )
       : (existing?.backgroundOverrideJson ?? null);
   const nextTickerStyleJson =
     body.tickerStyle !== undefined

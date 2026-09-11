@@ -730,11 +730,32 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // club_theme exactly as before" - PilotViewPage.tsx only departs from
   // that when this is genuinely non-null, so this migration is inert
   // for every tenant until they explicitly opt in via Pilot Panel.
-  let pilotBackgroundOverride: { backgroundColor: string } | null = null;
+  // Compass/info-panel colours round - six new optional fields alongside
+  // the original backgroundColor, all independently omittable (a tenant
+  // who's only ever set a background colour has none of these in their
+  // stored JSON at all). Each is read individually rather than spreading
+  // `parsed` wholesale, so a field of the wrong type in older/malformed
+  // stored JSON is dropped rather than handed to the client as-is.
+  let pilotBackgroundOverride:
+    | {
+        backgroundColor: string;
+        compassDiscBg?: string;
+        compassRing?: string;
+        compassCardinal?: string;
+        compassMarkers?: string;
+        panelBg?: string;
+        cardBg?: string;
+      }
+    | null = null;
   if (tenantRow?.pilotBackgroundOverrideJson) {
     try {
-      const parsed = JSON.parse(tenantRow.pilotBackgroundOverrideJson) as { backgroundColor?: unknown };
-      if (typeof parsed.backgroundColor === "string") pilotBackgroundOverride = { backgroundColor: parsed.backgroundColor };
+      const parsed = JSON.parse(tenantRow.pilotBackgroundOverrideJson) as Record<string, unknown>;
+      if (typeof parsed.backgroundColor === "string") {
+        pilotBackgroundOverride = { backgroundColor: parsed.backgroundColor };
+        for (const key of ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg"] as const) {
+          if (typeof parsed[key] === "string") pilotBackgroundOverride[key] = parsed[key] as string;
+        }
+      }
     } catch {
       pilotBackgroundOverride = null;
     }

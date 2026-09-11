@@ -27,6 +27,24 @@ import GasPricesPanel from '../components/GasPricesPanel'
 
 const REFRESH_INTERVAL_MS = 60_000
 
+// Pilot mobile-theming round - the compass/info-panel fields are all
+// optional even while an override is active (backgroundColor is not -
+// that one's been required since migration 0085 and every toggle-on
+// still seeds it immediately, see PilotPanelPage.tsx's own
+// DEFAULT_OVERRIDE_COLOR). A tenant who's only ever set a background
+// colour, never touched these, gets every one of them as undefined -
+// see the render below for exactly how that maps to "leave today's
+// hardcoded default alone entirely" rather than a guessed replacement.
+interface PilotBackgroundOverride {
+  backgroundColor: string
+  compassDiscBg?: string
+  compassRing?: string
+  compassCardinal?: string
+  compassMarkers?: string
+  panelBg?: string
+  cardBg?: string
+}
+
 interface PilotViewContentProps {
   airfieldName: string | null
   logoUrl: string | null
@@ -34,7 +52,7 @@ interface PilotViewContentProps {
   afisoFrequency: string
   refreshTick: number
   onManualRefresh: () => void
-  pilotBackgroundOverride: { backgroundColor: string } | null
+  pilotBackgroundOverride: PilotBackgroundOverride | null
   primaryCameraUrl: string | null
   onOpenCamera: () => void
 }
@@ -75,6 +93,25 @@ function PilotViewContent({
 
   const { pulling, pullDistance } = usePullToRefresh(handlePullRefresh)
 
+  // Compass/info-panel colours (compassDiscBg/panelBg/cardBg) each stay
+  // completely absent from this style object when unset, rather than
+  // being filled with a guessed default - CSS custom properties left
+  // unset here simply keep resolving through to :root's own real
+  // defaults (src/index.css), which IS today's exact hardcoded
+  // appearance, not an approximation of it. compassRing/compassCardinal/
+  // compassMarkers aren't CSS variables at all (see CompassPanel.tsx's
+  // own comment on why) - passed as explicit props at the call site
+  // below instead, same "undefined omits it entirely" behaviour via
+  // that component's own default parameters.
+  const pilotThemeStyle: CSSProperties | undefined = pilotBackgroundOverride
+    ? ({
+        backgroundColor: pilotBackgroundOverride.backgroundColor,
+        ...(pilotBackgroundOverride.compassDiscBg ? { '--color-compass-disc-bg': pilotBackgroundOverride.compassDiscBg } : {}),
+        ...(pilotBackgroundOverride.panelBg ? { '--color-panel-bg': pilotBackgroundOverride.panelBg } : {}),
+        ...(pilotBackgroundOverride.cardBg ? { '--color-card-bg': pilotBackgroundOverride.cardBg } : {}),
+      } as CSSProperties)
+    : undefined
+
   return (
     // Pilot Panel round (migration 0085) - pilotBackgroundOverride null
     // (every tenant's default) keeps today's exact gradient classes, an
@@ -89,7 +126,7 @@ function PilotViewContent({
           ? 'min-h-screen pb-20 text-slate-100'
           : 'min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to pb-20 text-slate-100'
       }
-      style={pilotBackgroundOverride ? { backgroundColor: pilotBackgroundOverride.backgroundColor } : undefined}
+      style={pilotThemeStyle}
     >
       {/* Sized to actually be legible at arm's length / outdoors, not
           fine print - was text-xs/text-muted-400 (12px, dim grey),
@@ -213,7 +250,14 @@ function PilotViewContent({
             dashboard remains completely untouched either way -
             CompassPanel itself only gained an opt-in prop, defaulted
             off everywhere else. */}
-        <CompassPanel spacious hideReadout initialCompassMode="runway" />
+        <CompassPanel
+          spacious
+          hideReadout
+          initialCompassMode="runway"
+          ringColor={pilotBackgroundOverride?.compassRing}
+          cardinalColor={pilotBackgroundOverride?.compassCardinal}
+          markersColor={pilotBackgroundOverride?.compassMarkers}
+        />
         <WeatherStatGrid />
         <PilotRunwayWindPanel refreshSignal={refreshTick} />
         {/* NOTAMs/Forecast/Notices/Fuel Prices - collapsed by default,
@@ -306,7 +350,7 @@ export default function PilotViewPage(): JSX.Element {
   // component's own comment).
   const [mobileEnabled, setMobileEnabled] = useState(true)
   const [themeOverride, setThemeOverride] = useState<CSSProperties>({})
-  const [pilotBackgroundOverride, setPilotBackgroundOverride] = useState<{ backgroundColor: string } | null>(null)
+  const [pilotBackgroundOverride, setPilotBackgroundOverride] = useState<PilotBackgroundOverride | null>(null)
   const [unavailable, setUnavailable] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
