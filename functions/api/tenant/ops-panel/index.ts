@@ -363,15 +363,31 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     .bind(organizationId)
     .first<{ activeRunwayEnd: string; circuitDirection: string; runwayAutomationEnabled: number }>();
 
-  const automationCurrentlyEnabled = current ? !!current.runwayAutomationEnabled : true;
-  if (automationCurrentlyEnabled && body.runwayAutomationEnabled !== false) {
-    const currentActiveRunwayEnd = current?.activeRunwayEnd ?? "";
-    const currentCircuitDirection = current?.circuitDirection ?? "left";
-    if (body.activeRunwayEnd !== currentActiveRunwayEnd || body.circuitDirection !== currentCircuitDirection) {
-      return jsonResponse(
-        { error: "Runway and circuit direction are controlled by SADDS automation. Disable automation to set them manually." },
-        409
-      );
+  // Gated on `current` existing at all - a brand-new tenant's very first
+  // save (no row yet) has nothing SADDS-managed to protect, but used to
+  // 409 anyway: with no row, the "current" baseline defaulted to ""/
+  // "left" (both fields below), while the frontend always resolves
+  // activeRunwayEnd to a REAL identifier on load (never the literal
+  // empty string - see AtcControlPage.tsx's own `opsPanel.activeRunwayEnd
+  // || (endA ?? '08')`), so any tenant whose real runway end isn't
+  // literally "" tripped this as a false "manual change" the instant
+  // they clicked Update Dashboard, before ever touching anything.
+  // Reproduced for both a parent-linked tenant with no runway_groups of
+  // its own (inherits the parent's real identifiers) and a fully
+  // unlinked tenant with its own real runway_groups - neither is
+  // specific to the parent/sub-tenant inheritance work, both are just
+  // "first save ever" hitting this same gap. Once a row exists, the
+  // lock behaves exactly as before - this only skips the check for a
+  // tenant that has never saved here yet.
+  if (current) {
+    const automationCurrentlyEnabled = !!current.runwayAutomationEnabled;
+    if (automationCurrentlyEnabled && body.runwayAutomationEnabled !== false) {
+      if (body.activeRunwayEnd !== current.activeRunwayEnd || body.circuitDirection !== current.circuitDirection) {
+        return jsonResponse(
+          { error: "Runway and circuit direction are controlled by SADDS automation. Disable automation to set them manually." },
+          409
+        );
+      }
     }
   }
 
