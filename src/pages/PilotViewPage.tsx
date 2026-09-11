@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CropRect } from '../types/mediaLibrary'
+import { buildPilotThemeStyle, type PilotThemeOverride } from '../utils/pilotThemeStyle'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
@@ -27,37 +28,19 @@ import GasPricesPanel from '../components/GasPricesPanel'
 
 const REFRESH_INTERVAL_MS = 60_000
 
-// Pilot mobile-theming round - the compass/info-panel fields are all
-// optional even while an override is active (backgroundColor is not -
-// that one's been required since migration 0085 and every toggle-on
+// Pilot mobile-theming round - the compass/info-panel/text fields are
+// all optional even while an override is active (backgroundColor is not
+// - that one's been required since migration 0085 and every toggle-on
 // still seeds it immediately, see PilotPanelPage.tsx's own
 // DEFAULT_OVERRIDE_COLOR). A tenant who's only ever set a background
 // colour, never touched these, gets every one of them as undefined -
-// see the render below for exactly how that maps to "leave today's
-// hardcoded default alone entirely" rather than a guessed replacement.
-interface PilotBackgroundOverride {
-  backgroundColor: string
-  compassDiscBg?: string
-  compassRing?: string
-  compassCardinal?: string
-  compassMarkers?: string
-  panelBg?: string
-  cardBg?: string
-  // Text-colour round - applied to this page's own base/inherited text
-  // colour (most plain body text on this page has no colour of its own,
-  // it just inherits the wrapper's text-slate-100) AND --color-text-
-  // primary (WeatherStatGrid's stat values, anything else using
-  // text-primary specifically) AND the compass's cardinal-letter fill
-  // (CompassPanel.tsx's own new prop, passed explicitly below - SVG
-  // fill doesn't inherit CSS colour by default). Deliberately NOT
-  // applied to the muted-grey tier (--color-text-muted-*) - see
-  // BackgroundOverrideInput's own comment in pilot-view.ts for why that
-  // tier needed no override - and NOT applied to the compass's own
-  // centre wind-readout text, reverted after testing showed it sits on
-  // a permanently-dark badge of its own - see CompassPanel.tsx's own
-  // comment on cardinalTextColor for the full story.
-  textColor?: string
-}
+// see buildPilotThemeStyle's own comment (src/utils/pilotThemeStyle.ts)
+// for exactly how that maps to "leave today's hardcoded default alone
+// entirely" rather than a guessed replacement. Type + style-building
+// logic now live in that shared file (not here) so PilotPanelPage.tsx's
+// own live preview builds the exact same style from the exact same
+// override, rather than a second hand-maintained copy that could drift.
+type PilotBackgroundOverride = PilotThemeOverride
 
 interface PilotViewContentProps {
   airfieldName: string | null
@@ -107,33 +90,11 @@ function PilotViewContent({
 
   const { pulling, pullDistance } = usePullToRefresh(handlePullRefresh)
 
-  // Compass/info-panel colours (compassDiscBg/panelBg/cardBg) each stay
-  // completely absent from this style object when unset, rather than
-  // being filled with a guessed default - CSS custom properties left
-  // unset here simply keep resolving through to :root's own real
-  // defaults (src/index.css), which IS today's exact hardcoded
-  // appearance, not an approximation of it. compassRing/compassCardinal/
-  // compassMarkers aren't CSS variables at all (see CompassPanel.tsx's
-  // own comment on why) - passed as explicit props at the call site
-  // below instead, same "undefined omits it entirely" behaviour via
-  // that component's own default parameters.
-  const pilotThemeStyle: CSSProperties | undefined = pilotBackgroundOverride
-    ? ({
-        backgroundColor: pilotBackgroundOverride.backgroundColor,
-        ...(pilotBackgroundOverride.compassDiscBg ? { '--color-compass-disc-bg': pilotBackgroundOverride.compassDiscBg } : {}),
-        ...(pilotBackgroundOverride.panelBg ? { '--color-panel-bg': pilotBackgroundOverride.panelBg } : {}),
-        ...(pilotBackgroundOverride.cardBg ? { '--color-card-bg': pilotBackgroundOverride.cardBg } : {}),
-        // Sets BOTH the wrapper's own inherited `color` (reaches any
-        // plain text below that doesn't set its own) and --color-text-
-        // primary (reaches text-primary specifically) - two different
-        // mechanisms because plain inherited text and Tailwind's
-        // text-primary utility resolve colour two different ways, and
-        // both need to move together for this to look intentional.
-        ...(pilotBackgroundOverride.textColor
-          ? { color: pilotBackgroundOverride.textColor, '--color-text-primary': pilotBackgroundOverride.textColor }
-          : {}),
-      } as CSSProperties)
-    : undefined
+  // See buildPilotThemeStyle's own comment for exactly how each field
+  // maps (or, if unset, deliberately doesn't) onto the style below -
+  // shared with PilotPanelPage.tsx's own live preview so the two can
+  // never render this differently.
+  const pilotThemeStyle: CSSProperties | undefined = buildPilotThemeStyle(pilotBackgroundOverride)
 
   return (
     // Pilot Panel round (migration 0085) - pilotBackgroundOverride null

@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../components/CafeTicker'
 import ColorField from '../components/ColorField'
+import CompassPanel from '../components/CompassPanel'
 import PilotTickerSlotsCards, { PILOT_TICKER_SLOT_COUNT } from '../components/media/PilotTickerSlotsCards'
 import PilotTickerStyleCards from '../components/media/PilotTickerStyleCards'
 import PilotThemeTemplatesCard from '../components/media/PilotThemeTemplatesCard'
 import PilotPreviewFrame from '../components/pilot/PilotPreviewFrame'
+import WeatherStatGrid from '../components/pilot/WeatherStatGrid'
 import { DEFAULT_TICKER_STYLE } from '../components/pilot/PilotFooterTicker'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { useVisibilityForecast } from '../services/visibilityForecastService'
 import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
+import { buildPilotThemeStyle, type PilotThemeOverride } from '../utils/pilotThemeStyle'
 
 // Settings > Pilot Panel - configures the /pilot mobile view's own
 // ticker and background, independently of the desktop dashboard's
@@ -20,27 +23,17 @@ import { DEFAULT_WEATHER_CONFIG } from '../services/weatherConfigStore'
 // the preview itself, same posture as DesignPage.tsx's own live preview.
 type SaveStatus = 'idle' | 'working' | 'success' | 'error'
 
-// Compass/info-panel colours round - all six new fields stay optional
-// even while an override is active, independent of each other and of
-// backgroundColor (unlike backgroundColor, which every toggle-on always
-// seeds immediately - see DEFAULT_OVERRIDE_COLOR below). A tenant who's
-// only ever set a background colour keeps every one of these absent,
-// which means /pilot leaves today's hardcoded default exactly alone for
-// that specific piece - see PilotViewPage.tsx's own matching comment.
-interface BackgroundOverride {
-  backgroundColor: string
-  compassDiscBg?: string
-  compassRing?: string
-  compassCardinal?: string
-  compassMarkers?: string
-  panelBg?: string
-  cardBg?: string
-  // Text-colour round - same independently-optional posture as the six
-  // above. Deliberately one field (not a primary/muted pair) - see
-  // pilot-view.ts's own BackgroundOverrideInput comment for why the
-  // existing muted-grey tier needed no override of its own.
-  textColor?: string
-}
+// Compass/info-panel/text colours round - all seven new fields stay
+// optional even while an override is active, independent of each other
+// and of backgroundColor (unlike backgroundColor, which every toggle-on
+// always seeds immediately - see DEFAULT_OVERRIDE_COLOR below). A
+// tenant who's only ever set a background colour keeps every one of
+// these absent, which means /pilot leaves today's hardcoded default
+// exactly alone for that specific piece. Type now lives in
+// src/utils/pilotThemeStyle.ts (not here) so this page's own draft
+// state and PilotViewPage.tsx's real-page rendering share the exact
+// same shape - see that file's own comment.
+type BackgroundOverride = PilotThemeOverride
 
 interface SafetyNotice {
   text: string
@@ -111,6 +104,33 @@ const DEFAULT_GAS_PRICES: TickerGasPrices = { avgasPrice: null, ul91Price: null,
 // below provides. Pure presentational preview: every prop here is
 // in-progress draft state from the parent, never independently fetched
 // or saved by this component.
+//
+// Live-preview-accuracy round: previously only ever showed the flat
+// background colour behind the ticker - none of the compass/info-panel/
+// text overrides added over the last two rounds were reflected here at
+// all. Investigated first: CompassPanel and WeatherStatGrid are BOTH
+// already explicitly documented as self-contained, prop-less "drop in
+// anywhere" components (own useWeather()/useVisibilityForecast()/
+// PUBLIC_CONFIG_URL calls, no data threaded in from a parent - see
+// WeatherStatGrid.tsx's own comment, "matching every other drop-in-
+// anywhere panel in this codebase (CompassPanel, GasPricesPanel)"), and
+// their SVG/Tailwind sizing is already fluid (CompassPanel's own
+// viewBox + w-full h-full, WeatherStatGrid's plain Tailwind text sizes)
+// - both already shrink cleanly to whatever width they're given, no
+// separate "preview-sized" variant needed. Reusing the real components
+// here instead of hand-building a simplified mock means this preview
+// structurally CANNOT drift from the real page's own rendering - same
+// components, same buildPilotThemeStyle call PilotViewPage.tsx itself
+// uses (see src/utils/pilotThemeStyle.ts).
+//
+// Layout: compass + stat grid now scroll inside their own area (this
+// preview frame is a small fixed-size box, taller content needs
+// somewhere to go), with the ticker staying pinned as a normal flex
+// child at the very bottom - not a literal position:fixed footer like
+// the real page (fighting position:fixed inside a small transformed
+// mockup box is its own can of worms for zero real benefit here), just
+// visually equivalent: ticker always visible, everything else scrolls
+// beneath it.
 function PilotPanelPreview({
   tickerSlots,
   tickerStyle,
@@ -127,12 +147,29 @@ function PilotPanelPreview({
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
 
+  // Same style object the real page builds (buildPilotThemeStyle),
+  // falling back to a flat dark colour rather than undefined when no
+  // override is set - PREVIEW-only convenience (the real page falls
+  // back to its own gradient CSS classes instead, which this small
+  // mockup box has no equivalent of), not something buildPilotThemeStyle
+  // itself should know about.
+  const themeStyle = buildPilotThemeStyle(backgroundOverride) ?? { backgroundColor: SHARED_THEME_FALLBACK_COLOR }
+
   return (
     <PilotPreviewFrame>
-      <div
-        className="flex h-full flex-col justify-end"
-        style={{ backgroundColor: backgroundOverride?.backgroundColor ?? SHARED_THEME_FALLBACK_COLOR }}
-      >
+      <div className="flex h-full flex-col" style={themeStyle}>
+        <div className="flex-1 overflow-y-auto px-2 pt-2">
+          <CompassPanel
+            spacious
+            hideReadout
+            initialCompassMode="runway"
+            ringColor={backgroundOverride?.compassRing}
+            cardinalColor={backgroundOverride?.compassCardinal}
+            markersColor={backgroundOverride?.compassMarkers}
+            cardinalTextColor={backgroundOverride?.textColor}
+          />
+          <WeatherStatGrid />
+        </div>
         <CafeTicker
           slots={tickerSlots}
           weather={weather}

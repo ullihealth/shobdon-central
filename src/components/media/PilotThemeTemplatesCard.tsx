@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { PilotThemeOverride } from '../../utils/pilotThemeStyle'
 
 // Pilot Panel's own saveable colour-scheme templates - direct structural
 // copy of PilotTickerStyleCards.tsx's own template list (same component
@@ -19,16 +20,7 @@ import { useEffect, useState } from 'react'
 const TEMPLATES_URL = '/api/tenant/pilot-background-templates'
 const MAX_NAME_LENGTH = 60
 
-export interface PilotThemeColours {
-  backgroundColor: string
-  compassDiscBg?: string
-  compassRing?: string
-  compassCardinal?: string
-  compassMarkers?: string
-  panelBg?: string
-  cardBg?: string
-  textColor?: string
-}
+export type PilotThemeColours = PilotThemeOverride
 
 interface ThemeTemplate {
   id: string
@@ -36,6 +28,77 @@ interface ThemeTemplate {
   theme: PilotThemeColours
   createdAt: string
 }
+
+// Built-in, hardcoded, non-persisted presets - same pattern as
+// tickerStyleStore.ts's own BUILT_IN_TICKER_PRESETS (News/Christmas/
+// Summer/Business Style), which this directly mirrors: a curated array
+// a tenant can apply instantly, nothing to build/save first. Four
+// distinct identities, same count as that precedent. Each is a complete
+// bundle (every field set, not partial) so applying one always fully
+// replaces whatever's currently staged, same "apply = replace the whole
+// draft" behaviour a saved custom template already has. High Contrast
+// Light is the one genuinely practical (not just aesthetic) option here
+// - a light, high-contrast scheme reads better than a dark one in
+// direct sunlight on a real phone screen, a real outdoor-cockpit
+// consideration, not just a look.
+const BUILT_IN_THEME_PRESETS: { id: string; name: string; theme: PilotThemeColours }[] = [
+  {
+    id: 'preset-high-contrast-light',
+    name: 'High Contrast Light',
+    theme: {
+      backgroundColor: '#f5f5f0',
+      panelBg: '#e8e8e0',
+      cardBg: '#f5f5f0',
+      compassDiscBg: '#e8e8e0',
+      compassRing: '#334155',
+      compassCardinal: '#334155',
+      compassMarkers: '#475569',
+      textColor: '#0f172a',
+    },
+  },
+  {
+    id: 'preset-ocean-blue',
+    name: 'Ocean Blue',
+    theme: {
+      backgroundColor: '#0c2d48',
+      panelBg: '#08202f',
+      cardBg: '#0c2d48',
+      compassDiscBg: '#08202f',
+      compassRing: '#38bdf8',
+      compassCardinal: '#38bdf8',
+      compassMarkers: '#7dd3fc',
+      textColor: '#ffffff',
+    },
+  },
+  {
+    id: 'preset-forest-green',
+    name: 'Forest Green',
+    theme: {
+      backgroundColor: '#14251a',
+      panelBg: '#0d1912',
+      cardBg: '#14251a',
+      compassDiscBg: '#0d1912',
+      compassRing: '#4ade80',
+      compassCardinal: '#4ade80',
+      compassMarkers: '#86efac',
+      textColor: '#ffffff',
+    },
+  },
+  {
+    id: 'preset-sunset-amber',
+    name: 'Sunset Amber',
+    theme: {
+      backgroundColor: '#2b1a0f',
+      panelBg: '#1f120a',
+      cardBg: '#2b1a0f',
+      compassDiscBg: '#1f120a',
+      compassRing: '#fb923c',
+      compassCardinal: '#fb923c',
+      compassMarkers: '#fdba74',
+      textColor: '#ffffff',
+    },
+  },
+]
 
 interface PilotThemeTemplatesCardProps {
   // null when the independent-background toggle is off - there is
@@ -140,15 +203,33 @@ export default function PilotThemeTemplatesCard({ theme, onApply }: PilotThemeTe
 
   return (
     <section className="rounded-2xl border border-border bg-panel p-6">
-      <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Saved Colour Schemes</div>
+      <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Colour Schemes</div>
       <p className="mt-1 text-xs text-muted-500">
-        Save the background, compass, info-panel, and text colours below as a named scheme you can reuse later.
-        Selecting a saved scheme only updates the staged colours on this page - nothing reaches the live dashboard
-        until you click "Save Pilot Panel".
+        Pick a ready-made preset below, or save the background, compass, info-panel, and text colours you've set as
+        your own named scheme to reuse later. Either way, selecting a scheme only updates the staged colours on this
+        page - nothing reaches the live dashboard until you click "Save Pilot Panel".
       </p>
 
+      <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-400">Presets</div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {BUILT_IN_THEME_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => onApply(preset.theme)}
+            className="flex items-center gap-2 rounded-lg border border-border bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-accent-sky-500"
+          >
+            <span className="h-3 w-3 rounded-full border border-white/20" style={{ backgroundColor: preset.theme.backgroundColor }} />
+            {preset.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-400">Your Saved Schemes</div>
+      {templates.length === 0 && <p className="mb-4 text-xs text-muted-500">No saved schemes yet.</p>}
+
       {templates.length > 0 && (
-        <div className="mb-4 mt-4 flex flex-col gap-1.5">
+        <div className="mb-4 flex flex-col gap-1.5">
           {templates.map((template) => (
             <div
               key={template.id}
