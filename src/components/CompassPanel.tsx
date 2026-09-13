@@ -662,9 +662,8 @@ interface CompassPanelProps {
   // against its own always-dark backdrop - the exact inverse of the bug
   // this round set out to fix. Stays hardcoded white, same posture as
   // the runway identifier's own independent outline-stroke contrast
-  // mechanism, and the degree-number bearing labels/muted-grey tier
-  // (see PilotViewPage.tsx's own comment on why those needed no
-  // override either).
+  // mechanism and the muted-grey tier (see pilot-view.ts's own
+  // BackgroundOverrideInput comment on why that tier needed no override).
   //
   // Audit round: also passed straight through to CompassModeButtons'
   // own activeTextColor below (the North/Runway toggle's ACTIVE-state
@@ -672,6 +671,16 @@ interface CompassPanelProps {
   // this round fixed) - same value, same semantic tier ("this page's
   // primary/active text colour"), no separate prop needed for it.
   cardinalTextColor?: string
+  // Degree-number labels round - a genuinely separate element from
+  // markersColor above, which only ever controlled the small tick LINES
+  // around the ring, not the "24"/"30"/"33" NUMBER text just inside
+  // them - the two look related but were never the same hardcoded
+  // literal (tick lines: 25% alpha, deliberately faint; number text:
+  // 85% alpha, meant to actually be read), so they can't safely share
+  // one field without one of them regressing. Same RGB hue as
+  // markersColor's own default, different alpha, matching today's
+  // exact literal.
+  bearingLabelColor?: string
 }
 
 export default function CompassPanel({
@@ -682,6 +691,7 @@ export default function CompassPanel({
   cardinalColor = 'rgba(59, 130, 246, 0.2)',
   markersColor = 'rgba(148, 163, 184, 0.25)',
   cardinalTextColor = 'white',
+  bearingLabelColor = 'rgba(148, 163, 184, 0.85)',
 }: CompassPanelProps = {}): JSX.Element {
   const { weather, liveDataUnavailable } = useWeather()
   // Was a synchronous loadClubProfile() (localStorage) read - now an
@@ -1111,7 +1121,7 @@ export default function CompassPanel({
                         textAnchor="middle"
                         dominantBaseline="middle"
                         className="select-none"
-                        fill="rgba(148, 163, 184, 0.85)"
+                        fill={bearingLabelColor}
                         fontSize="18"
                         fontWeight="600"
                         letterSpacing="0.5"

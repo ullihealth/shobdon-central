@@ -248,6 +248,7 @@ function PilotViewContent({
           cardinalColor={pilotBackgroundOverride?.compassCardinal}
           markersColor={pilotBackgroundOverride?.compassMarkers}
           cardinalTextColor={pilotBackgroundOverride?.textColor}
+          bearingLabelColor={pilotBackgroundOverride?.compassBearingLabels}
         />
         <WeatherStatGrid />
         <PilotRunwayWindPanel refreshSignal={refreshTick} />

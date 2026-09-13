@@ -18,6 +18,17 @@ export interface PilotThemeOverride {
   panelBg?: string
   cardBg?: string
   textColor?: string
+  // Degree-number labels round - a genuinely separate element from
+  // compassMarkers above, which only ever controlled the small tick
+  // LINES around the ring, not the "24"/"30"/"33" NUMBER text - the two
+  // look related (both literally about degree markings) but were never
+  // the same hardcoded literal (tick lines: 25% alpha, deliberately
+  // faint; number text: 85% alpha, meant to actually be read) and can't
+  // safely share one field without one of them regressing. Reported by
+  // Jeff after finding no way to change the numbers specifically -
+  // "Degree Tick Marks" (compassMarkers) was already there but visibly
+  // didn't cover this.
+  compassBearingLabels?: string
 }
 
 // Compass/info-panel colours (compassDiscBg/panelBg/cardBg) each stay

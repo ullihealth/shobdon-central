@@ -67,6 +67,13 @@ const DEFAULT_COMPASS_DISC_BG_HEX = '#0f172a'
 const DEFAULT_COMPASS_RING_HEX = '#3b82f6'
 const DEFAULT_COMPASS_CARDINAL_HEX = '#3b82f6'
 const DEFAULT_COMPASS_MARKERS_HEX = '#94a3b8'
+// Same RGB as DEFAULT_COMPASS_MARKERS_HEX above (today's real literal is
+// the same hue, just 85% alpha vs that one's 25%) - kept as its own
+// named constant rather than reusing the other one directly, since the
+// two fields are independent and this one's default could diverge from
+// the tick-marks default in the future without the naming implying
+// otherwise.
+const DEFAULT_COMPASS_BEARING_LABELS_HEX = '#94a3b8'
 const DEFAULT_PANEL_BG_HEX = '#020617'
 const DEFAULT_CARD_BG_HEX = '#0f172a'
 // Today's real default text colour (CompassPanel.tsx's own fill="white"
@@ -167,6 +174,7 @@ function PilotPanelPreview({
             cardinalColor={backgroundOverride?.compassCardinal}
             markersColor={backgroundOverride?.compassMarkers}
             cardinalTextColor={backgroundOverride?.textColor}
+            bearingLabelColor={backgroundOverride?.compassBearingLabels}
           />
           <WeatherStatGrid />
         </div>
@@ -339,8 +347,8 @@ export default function PilotPanelPage(): JSX.Element {
               <section className="rounded-2xl border border-border bg-panel p-6">
                 <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Compass Colours</div>
                 <p className="mt-1 text-xs text-muted-500">
-                  Recolour the compass disc, outer ring, cardinal-point lines, and degree markers on /pilot. Leave any
-                  of these unset to keep today's default dark navy/blue look for that part.
+                  Recolour the compass disc, outer ring, cardinal-point lines, degree tick marks, and degree numbers
+                  on /pilot. Leave any of these unset to keep today's default dark navy/blue look for that part.
                 </p>
                 <div className="mt-3 flex flex-col gap-1">
                   <ColorField
@@ -371,12 +379,30 @@ export default function PilotPanelPage(): JSX.Element {
                     onClearSwatch={handleClearSwatch}
                   />
                   <ColorField
-                    label="Degree markers"
+                    label="Degree tick marks"
                     value={backgroundOverride.compassMarkers ?? DEFAULT_COMPASS_MARKERS_HEX}
                     onChange={(value) => setBackgroundOverride({ ...backgroundOverride, compassMarkers: value })}
                     toHex={(value) => value}
                     savedSwatches={savedSwatches}
                     onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.compassMarkers ?? DEFAULT_COMPASS_MARKERS_HEX)}
+                    onClearSwatch={handleClearSwatch}
+                  />
+                  {/* Degree-number labels round - a genuinely separate
+                      element from "Degree tick marks" above (the small
+                      lines around the ring) - this is the "24"/"30"/"33"
+                      NUMBER text just inside them. Reported by Jeff after
+                      finding no way to change the numbers specifically -
+                      renamed the tick-marks field above from its old
+                      plain "Degree markers" label at the same time, so
+                      the two are no longer easy to conflate the way this
+                      one was. */}
+                  <ColorField
+                    label="Degree numbers"
+                    value={backgroundOverride.compassBearingLabels ?? DEFAULT_COMPASS_BEARING_LABELS_HEX}
+                    onChange={(value) => setBackgroundOverride({ ...backgroundOverride, compassBearingLabels: value })}
+                    toHex={(value) => value}
+                    savedSwatches={savedSwatches}
+                    onCaptureSwatch={() => handleCaptureSwatch(backgroundOverride.compassBearingLabels ?? DEFAULT_COMPASS_BEARING_LABELS_HEX)}
                     onClearSwatch={handleClearSwatch}
                   />
                 </div>

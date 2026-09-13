@@ -746,6 +746,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         panelBg?: string;
         cardBg?: string;
         textColor?: string;
+        compassBearingLabels?: string;
       }
     | null = null;
   if (tenantRow?.pilotBackgroundOverrideJson) {
@@ -753,7 +754,16 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       const parsed = JSON.parse(tenantRow.pilotBackgroundOverrideJson) as Record<string, unknown>;
       if (typeof parsed.backgroundColor === "string") {
         pilotBackgroundOverride = { backgroundColor: parsed.backgroundColor };
-        for (const key of ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg", "textColor"] as const) {
+        for (const key of [
+          "compassDiscBg",
+          "compassRing",
+          "compassCardinal",
+          "compassMarkers",
+          "panelBg",
+          "cardBg",
+          "textColor",
+          "compassBearingLabels",
+        ] as const) {
           if (typeof parsed[key] === "string") pilotBackgroundOverride[key] = parsed[key] as string;
         }
       }

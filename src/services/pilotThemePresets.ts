@@ -209,6 +209,12 @@ export function deriveTheme(shade: ColourShade, textColor: string): PilotThemeOv
     compassRing: ringHex,
     compassCardinal: ringHex,
     compassMarkers: markersHex,
+    // Same value as compassMarkers (the tick lines) - markersHex is
+    // already tuned to be clearly legible (not the faint 25%-alpha look
+    // the tick lines get from their own separate hardcoded default), so
+    // reusing it for the degree NUMBERS too keeps the generated theme
+    // visually coherent without deriving a third distinct accent value.
+    compassBearingLabels: markersHex,
     textColor,
   }
 }

@@ -36,9 +36,19 @@ interface BackgroundOverrideInput {
   panelBg?: string;
   cardBg?: string;
   textColor?: string;
+  compassBearingLabels?: string;
 }
 
-const OPTIONAL_THEME_COLOR_FIELDS = ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg", "textColor"] as const;
+const OPTIONAL_THEME_COLOR_FIELDS = [
+  "compassDiscBg",
+  "compassRing",
+  "compassCardinal",
+  "compassMarkers",
+  "panelBg",
+  "cardBg",
+  "textColor",
+  "compassBearingLabels",
+] as const;
 
 interface TemplateRow {
   id: string;

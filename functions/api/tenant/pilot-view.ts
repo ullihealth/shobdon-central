@@ -67,9 +67,23 @@ interface BackgroundOverrideInput {
   // the primary/value tier needed a real override to fix the reported
   // "white text invisible on a light background" problem.
   textColor?: string;
+  // Degree-number labels round - separate from compassMarkers, which
+  // only ever controlled the small degree TICK LINES around the ring,
+  // not the "24"/"30"/"33" NUMBER text just inside them (different
+  // hardcoded alpha values, can't safely share one field).
+  compassBearingLabels?: string;
 }
 
-const OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS = ["compassDiscBg", "compassRing", "compassCardinal", "compassMarkers", "panelBg", "cardBg", "textColor"] as const;
+const OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS = [
+  "compassDiscBg",
+  "compassRing",
+  "compassCardinal",
+  "compassMarkers",
+  "panelBg",
+  "cardBg",
+  "textColor",
+  "compassBearingLabels",
+] as const;
 
 // Same 8-field shape as CafeTicker.tsx's own TickerStyle / cafe-settings/
 // index.ts's flat ticker* columns - bundled as one JSON blob here
