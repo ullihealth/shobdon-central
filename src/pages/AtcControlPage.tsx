@@ -205,6 +205,17 @@ export default function AtcControlPage(): JSX.Element {
   const [weatherSummaryStateADuration, setWeatherSummaryStateADuration] = useState(WEATHER_SUMMARY_STATE_A_DEFAULT_SECONDS)
   const [weatherSummaryStateBDuration, setWeatherSummaryStateBDuration] = useState(WEATHER_SUMMARY_STATE_B_DEFAULT_SECONDS)
   const [applyStatus, setApplyStatus] = useState<ApplyStatus>('idle')
+  // Diagnosability round (found investigating a real stuck-tenant report -
+  // a save was failing with a genuine 400 from the server, every time,
+  // but this page only ever showed "check your connection", which sent
+  // the search in exactly the wrong direction). null for the true network/
+  // thrown-exception case (the original message IS accurate then); set to
+  // the server's own { error } body text whenever a real HTTP response
+  // came back non-2xx, so a validation rejection - a bad field, a stored
+  // value that's since become invalid against a tightened limit, anything
+  // the server actually explains - shows up verbatim instead of being
+  // swallowed.
+  const [applyErrorDetail, setApplyErrorDetail] = useState<string | null>(null)
   // Purely a local editing convenience, never sent to the backend and
   // never loaded from it - functions/api/tenant/ops-panel/index.ts only
   // stores/reads the RESULTING activeRunwayEnd/circuitDirection values,
@@ -392,6 +403,7 @@ export default function AtcControlPage(): JSX.Element {
     }
 
     setApplyStatus('working')
+    setApplyErrorDetail(null)
     try {
       // Full-replace endpoint - spread the last-loaded full row first
       // (opsPanelState) so fields this page has no UI for
@@ -422,6 +434,12 @@ export default function AtcControlPage(): JSX.Element {
         }),
       })
       if (!response.ok) {
+        // Best-effort - a non-JSON or empty error body (an unexpected 500,
+        // a proxy/edge error page) still falls back to the generic
+        // message below rather than showing "undefined" or raw HTML.
+        const body = await response.json().catch(() => null)
+        const detail = body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error : null
+        setApplyErrorDetail(detail ? `${response.status}: ${detail}` : `Server returned ${response.status}.`)
         setApplyStatus('error')
         return
       }
@@ -460,7 +478,9 @@ export default function AtcControlPage(): JSX.Element {
               <p className="mb-2 text-xs font-semibold text-status-good">Published - live dashboard will update shortly.</p>
             )}
             {applyStatus === 'error' && (
-              <p className="mb-2 text-xs font-semibold text-status-bad">Failed to publish - check your connection and try again.</p>
+              <p className="mb-2 text-xs font-semibold text-status-bad">
+                {applyErrorDetail ? `Failed to publish - ${applyErrorDetail}` : 'Failed to publish - check your connection and try again.'}
+              </p>
             )}
             <button
               type="button"
