@@ -17,7 +17,23 @@
          window.innerWidth), so it never NEEDS zoom, but nothing here
          blocks a user from pinch-zooming it anyway if they want to. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Airfield Central — Pilot App</title>
+    <!-- Landing-page copy fix round - this shared shell title/description
+         is what a visitor to the bare airfieldcentral.com domain actually
+         sees (LandingPage.tsx/RootRoute.tsx set no document.title of their
+         own), so this is the real fix for the stale "Shobdon Central —
+         Weather Connectivity Test" title still live in production - that
+         string isn't in this file (hasn't been for a while, per git
+         history), production is simply running an older deployed build;
+         redeploying this already-correct title is what actually fixes it.
+         "AirfieldCentral" (one word) here specifically because Shobdon is
+         a TENANT name, not the product - every tenant subdomain shares
+         this exact file, so it must never default to any one tenant's
+         own name. -->
+    <title>AirfieldCentral — Airfield Dashboard &amp; Pilot App</title>
+    <meta
+      name="description"
+      content="AirfieldCentral: the Reception Dashboard for your clubhouse screen, the Pilot's App for members and visiting pilots, and the Media Screen add-on for cafes and venues. Weather is Met Office-based as standard, with an optional, best-effort upgrade to your own station."
+    />
     <!-- Site-wide favicon (Airfield Central's jet icon) - covers both the
          landing page and every tenant dashboard automatically, since this
          is the one index.html shell every hostname shares. Sized set

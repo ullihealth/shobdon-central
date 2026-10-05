@@ -28,14 +28,21 @@ interface StatCallout {
 // measured statistics.
 const STAT_CALLOUTS: StatCallout[] = [
   { before: 'Phone ATC to check conditions', after: 'One glance at your dashboard' },
-  { before: 'No way to show visitors live status', after: 'Clubhouse TV, always current' },
+  { before: 'No way to show visitors current status', after: 'Reception Dashboard, always visible' },
   { before: 'Paper NOTAMs board', after: 'Live digital ops panel' },
 ]
 
+// Pricing/naming copy-fix round - "Live wind..." and the old "Clubhouse
+// display + remote access..." line (naming neither the Reception
+// Dashboard nor the Pilot's App) are gone. Weather wording specifically
+// must never promise every customer gets their own live station data -
+// Met Office data is the standard, a physical station is an optional,
+// best-effort, not-guaranteed-everywhere upgrade (see the Pricing
+// section's own disclaimer line below for the fuller version of this).
 const BENEFITS: string[] = [
-  'Live wind, QNH, temperature, visibility — from your own station or regional data from day one',
+  'Wind, QNH, temperature, visibility — Met Office data as standard, your own weather station connectable any time',
   'Digital ops panel for runway status, NOTAMs, PPR, fuel, radio changes',
-  'Clubhouse display + remote access for members and visiting pilots from home',
+  "Reception Dashboard for your clubhouse screen, plus the Pilot's App for members and visiting pilots on their phone",
   'Your own branded address (yourclub.airfieldcentral.com)',
   'Camera feeds and photo/video slides on the same screen',
 ]
@@ -48,7 +55,7 @@ interface FaqEntry {
 const FAQ_ENTRIES: FaqEntry[] = [
   {
     question: 'Do I need a weather station to start?',
-    answer: "No — your dashboard works from day one using regional weather data. Connect your own station whenever you're ready.",
+    answer: "No — your dashboard works from day one using Met Office weather data. Connecting your own station is an optional upgrade, whenever you're ready.",
   },
   {
     question: "What if my weather station isn't a Davis Vantage Pro2?",
@@ -854,7 +861,7 @@ export default function LandingPage(): JSX.Element {
         <div className="relative flex h-full w-full items-center justify-center px-6 pb-56 text-center sm:px-10 sm:pb-64">
           <div className="mx-auto max-w-7xl">
             <h1 className="text-6xl font-bold text-white [text-shadow:0_2px_16px_rgba(0,0,0,0.7)] sm:text-7xl">
-              Live Weather &amp; Airfield Conditions
+              Weather &amp; Airfield Conditions
             </h1>
             <p className="mt-4 text-2xl font-semibold text-white/95 [text-shadow:0_2px_12px_rgba(0,0,0,0.7)] sm:text-3xl">
               For Clubhouse Screens &amp; Mobile Devices
@@ -914,32 +921,50 @@ export default function LandingPage(): JSX.Element {
           </ul>
         </section>
 
-        {/* PRICING */}
+        {/* PRICING - landing-page copy-fix round: replaced the old single
+            "Dashboard + station add-on" pricing (£29/mo dashboard, £20/mo
+            Davis Vantage Pro2 integration) with the three current,
+            separately-billed products, named consistently with how
+            they're named everywhere else in the app (PlatformTenantsPage.
+            tsx's own settings cards, the Stripe entitlement mapping).
+            Monthly GBP prices only, as decided - no annual figures here,
+            since none were given to invent. */}
         <section className="mt-20">
           <h2 className="text-center text-2xl font-bold">Pricing</h2>
           <div className="mx-auto mt-8 max-w-2xl space-y-4">
             <div className="rounded-xl border border-sky-600/40 bg-slate-900/80 p-6">
-              <div className="text-lg font-semibold text-slate-100">
-                Airfield Central Dashboard — £29/month (£290/year)
-              </div>
+              <div className="text-lg font-semibold text-slate-100">Airfield Pack — £44/month</div>
               <p className="mt-2 text-slate-400">
-                Everything above, using regional weather data — live and working from day one, no hardware needed.
+                The Reception Dashboard for your clubhouse screen, plus the Pilot's App — a branded mobile app for
+                members, students and visiting pilots, installable on their phone straight from the browser.
               </p>
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-6">
-              <div className="text-lg font-semibold text-slate-100">
-                + Davis Vantage Pro2 Integration — £20/month (£200/year)
-              </div>
+              <div className="text-lg font-semibold text-slate-100">Pilot's App on its own — £19.99/month</div>
               <p className="mt-2 text-slate-400">
-                Add your own weather station for live, on-site readings. Available any time — no need to decide
-                today.
+                Just the branded mobile app for members and visiting pilots, without the clubhouse screen.
               </p>
-              <p className="mt-2 text-sm text-slate-500">Other station makes/models: get in touch.</p>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-6">
+              <div className="text-lg font-semibold text-slate-100">Media Screen add-on — £29.99/month</div>
+              <p className="mt-2 text-slate-400">
+                A full-screen advertising display for cafés and similar venues, with an advertising revenue split on
+                slots sold. Requires the Airfield Pack.
+              </p>
             </div>
           </div>
+          {/* Weather-wording round - must never read as "every customer
+              gets live station data". Met Office data is the standard;
+              a physical station is an optional, best-effort, not-
+              guaranteed-everywhere upgrade - same posture BENEFITS and
+              the FAQ above now use. */}
           <p className="mx-auto mt-6 max-w-2xl text-center text-sm text-slate-500">
-            14-day free trial on the dashboard. Card required, nothing charged until day 15 — you'll get a reminder
-            first, and cancelling takes one click.
+            Weather is Met Office-based as standard on every plan. Connecting your own weather station is an
+            optional, best-effort upgrade, available any time — not guaranteed at every site.
+          </p>
+          <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-slate-500">
+            14-day free trial. Card required, nothing charged until day 15 — you'll get a reminder first, and
+            cancelling takes one click.
           </p>
         </section>
 
