@@ -137,6 +137,12 @@ interface PlatformTenant {
   // column for future Stripe billing, deliberately not surfaced here -
   // no UI/route wiring for it yet.
   mobileEnabled: boolean
+  // Reception Dashboard entitlement (Airfield Pack round, migration
+  // 0106) - gates '/' and '/d/:slug' for non-café templates only
+  // (DashboardPage.tsx/TenantDisplayPage.tsx show DashboardLockedScreen
+  // when false). Same testing-phase-only posture mobileEnabled above
+  // already has - every existing tenant was backfilled to true.
+  dashboardEnabled: boolean
   // Consistent QNH/QFE rounding round (migration 0074) - null (every
   // tenant's default) means "no known fixed offset, round QNH/QFE
   // independently"; a number means "this tenant's QNH and QFE always
@@ -184,6 +190,7 @@ type BooleanField =
   | 'globalLinkEnabled'
   | 'afisoOpen'
   | 'mobileEnabled'
+  | 'dashboardEnabled'
   | 'qrSlideEnabled'
 type SortOrder = 'name-asc' | 'date-desc' | 'date-asc'
 
@@ -977,13 +984,53 @@ function QrMockupEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSaved: 
 }
 
 // Per-display controls (migration 0034): `active` is Part D's generic
-// force-off, shown for every display slug this tenant has. `entitled` +
-// the trial-expiry date are Part C's café billing gate, shown only for
-// the 'cafe-tv' slug - the only display that mechanism currently gates
-// (functions/api/public/display.ts checks it by slug, not templateId).
-// Same optimistic-toggle-with-revert-on-failure pattern as
-// handleBooleanToggle below, scoped to one display instead of one tenant.
+// support/maintenance force-off, shown for every display slug this
+// tenant has - unrelated to billing/entitlement. cafe-tv's own
+// `entitled` + trial-expiry (Part C's café billing gate) moved out to
+// MediaScreenEntitlementEditor above, its own promoted card (Reception
+// Dashboard entitlement round) - this component now only ever renders
+// the one generic toggle, for every display including cafe-tv's own
+// `active` flag (still here; only `entitled`/trial moved).
 function DisplayControls({
+  tenantId,
+  display,
+  onSaved,
+}: {
+  tenantId: number
+  display: PlatformDisplay
+  onSaved: (displayId: number, patch: Partial<DisplayPatchResult>) => void
+}): JSX.Element {
+  async function toggleActive(next: boolean) {
+    onSaved(display.id, { active: next })
+    const updated = await patchDisplay(tenantId, display.id, { active: next })
+    if (!updated) onSaved(display.id, { active: !next })
+  }
+
+  return (
+    <div className="mb-1.5 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5 last:mb-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{display.slug}</span>
+        <label className="flex items-center gap-1 text-[10px] text-muted-400">
+          <input type="checkbox" checked={display.active} onChange={(event) => toggleActive(event.target.checked)} className="h-3.5 w-3.5" />
+          active
+        </label>
+      </div>
+      <p className="mt-1 text-[10px] text-muted-500">
+        Support/maintenance force-off for this one display only - unrelated to billing or entitlement.
+      </p>
+    </div>
+  )
+}
+
+// Promoted out of the generic Displays list into its own Media Screen
+// card - same toggleField/commitExpiry/clearExpiry shape DisplayControls
+// above already used for this exact cafe-tv row, just given its own
+// component so it can render standalone rather than nested inside a
+// per-display loop. Only ever called with the tenant's 'cafe-tv' display
+// row (found by the caller) - renders nothing sensible for any other
+// slug, same single-purpose scope DisplayControls's own cafe-tv-only
+// block already had.
+function MediaScreenEntitlementEditor({
   tenantId,
   display,
   onSaved,
@@ -999,10 +1046,10 @@ function DisplayControls({
     setExpiryInput(display.entitlementTrialExpiresAt ? display.entitlementTrialExpiresAt.slice(0, 10) : '')
   }, [display.entitlementTrialExpiresAt])
 
-  async function toggleField(field: 'active' | 'entitled', next: boolean) {
-    onSaved(display.id, { [field]: next })
-    const updated = await patchDisplay(tenantId, display.id, { [field]: next })
-    if (!updated) onSaved(display.id, { [field]: !next })
+  async function toggleEntitled(next: boolean) {
+    onSaved(display.id, { entitled: next })
+    const updated = await patchDisplay(tenantId, display.id, { entitled: next })
+    if (!updated) onSaved(display.id, { entitled: !next })
   }
 
   async function commitExpiry() {
@@ -1027,49 +1074,36 @@ function DisplayControls({
   const isExpiredTrial = !!display.entitlementTrialExpiresAt && new Date(display.entitlementTrialExpiresAt).getTime() <= Date.now()
 
   return (
-    <div className="mb-1.5 rounded-lg border border-slate-800 bg-slate-950/40 px-2 py-1.5 last:mb-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{display.slug}</span>
-        <label className="flex items-center gap-1 text-[10px] text-muted-400">
-          <input
-            type="checkbox"
-            checked={display.active}
-            onChange={(event) => toggleField('active', event.target.checked)}
-            className="h-3.5 w-3.5"
-          />
-          active
-        </label>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-muted-300">Media Screen entitled</span>
+        <BooleanToggle checked={display.entitled} onChange={toggleEntitled} label="Media Screen entitled" />
       </div>
-      {display.slug === 'cafe-tv' && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-1.5">
-          <label className="flex items-center gap-1 text-[10px] text-muted-400">
-            <input
-              type="checkbox"
-              checked={display.entitled}
-              onChange={(event) => toggleField('entitled', event.target.checked)}
-              className="h-3.5 w-3.5"
-            />
-            entitled
-          </label>
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-500">trial ends</span>
-            <input
-              type="date"
-              value={expiryInput}
-              disabled={savingExpiry}
-              onChange={(event) => setExpiryInput(event.target.value)}
-              onBlur={commitExpiry}
-              className="rounded border border-slate-700 bg-slate-900/80 px-1 py-0.5 text-[10px] text-white focus:border-sky-500 focus:outline-none"
-            />
-            {display.entitlementTrialExpiresAt && (
-              <button type="button" onClick={clearExpiry} className="text-[10px] text-slate-500 hover:text-slate-300">
-                clear
-              </button>
-            )}
-          </div>
-          {isExpiredTrial && <span className="text-[10px] font-bold text-status-bad">expired</span>}
-        </div>
-      )}
+      <p className="text-xs text-muted-500">
+        Whether the café/clubhouse screen (cafe-tv) is unlocked for this tenant - the actual Media Screen paywall
+        flag. Off shows nothing at /d/cafe-tv.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-400">Trial ends</span>
+        <input
+          type="date"
+          value={expiryInput}
+          disabled={savingExpiry}
+          onChange={(event) => setExpiryInput(event.target.value)}
+          onBlur={commitExpiry}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-white focus:border-sky-500 focus:outline-none"
+        />
+        {display.entitlementTrialExpiresAt && (
+          <button type="button" onClick={clearExpiry} className="text-xs text-slate-500 hover:text-slate-300">
+            clear
+          </button>
+        )}
+        {isExpiredTrial && <span className="text-xs font-bold text-status-bad">expired</span>}
+      </div>
+      <p className="text-xs text-muted-500">
+        Optional - leave blank for an ordinary paid subscription. Set a date to give a time-limited trial that
+        switches itself off automatically once it passes, with no other action needed.
+      </p>
     </div>
   )
 }
@@ -1099,19 +1133,33 @@ function BooleanToggle({
 // A settings-list row - visible text label + BooleanToggle, replacing
 // the old table's column-header-as-label convention now that these
 // live in the detail pane's stacked sections instead of table cells.
+// helper: a short, plain-English line explaining what this control does,
+// written for a non-technical admin - not a developer comment. warning
+// renders in status-bad red instead of the normal muted tone, for the
+// one control (Has physical ATC) where getting this wrong has a real,
+// immediate consequence (breaks the tenant's own live weather) rather
+// than just being a cosmetic/platform-internal setting.
 function SettingsToggleRow({
   label,
   checked,
   onChange,
+  helper,
+  warning,
 }: {
   label: string
   checked: boolean
   onChange: (next: boolean) => void
+  helper?: string
+  warning?: string
 }): JSX.Element {
   return (
-    <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5 last:border-0">
-      <span className="text-sm text-muted-300">{label}</span>
-      <BooleanToggle checked={checked} onChange={onChange} label={label} />
+    <div className="border-b border-border/60 px-4 py-2.5 last:border-0">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-300">{label}</span>
+        <BooleanToggle checked={checked} onChange={onChange} label={label} />
+      </div>
+      {helper && <p className="mt-1 text-xs text-muted-500">{helper}</p>}
+      {warning && <p className="mt-1 text-xs font-semibold text-status-bad">{warning}</p>}
     </div>
   )
 }
@@ -2328,8 +2376,18 @@ export default function PlatformTenantsPage(): JSX.Element {
 
             {selectedTenant && (
               <div className="flex min-w-0 flex-1 flex-col gap-4">
+                {/* Settings cards round (Airfield Pack/Stripe groundwork) -
+                    regroups what used to be one long "Tenant settings"
+                    section into one card per product (so it's obvious
+                    which GBP/mo plan each control actually belongs to)
+                    plus a Platform-internal card for everything that
+                    isn't customer-facing. UI regrouping only - every
+                    control still writes the exact same field it always
+                    did (handleBooleanToggle/patchTenant/patchDisplay,
+                    unchanged). Name/Logo and Suspend/Archive stay
+                    together here, cross-cutting and untouched. */}
                 <section className="rounded-2xl border border-border bg-panel p-5">
-                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Tenant settings</div>
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Tenant</div>
                   <div className="mb-4 flex flex-wrap items-start gap-4">
                     <div className="min-w-[220px] flex-1">
                       <NameEditor tenant={selectedTenant} onSaved={(name) => handleNameSaved(selectedTenant.id, name)} />
@@ -2338,118 +2396,8 @@ export default function PlatformTenantsPage(): JSX.Element {
                       </div>
                     </div>
                     <LogoEditor tenant={selectedTenant} onSaved={(logoUrl) => handleLogoSaved(selectedTenant.id, logoUrl)} />
-                    <QrMockupEditor
-                      tenant={selectedTenant}
-                      onSaved={(mockupImageUrl) => handleQrMockupSaved(selectedTenant.id, mockupImageUrl)}
-                    />
                   </div>
-                  <div className="overflow-hidden rounded-xl border border-border/60">
-                    <SettingsToggleRow
-                      label="Weather public"
-                      checked={selectedTenant.weatherPublic}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'weatherPublic', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Ops public"
-                      checked={selectedTenant.opsPublic}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'opsPublic', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Internal"
-                      checked={selectedTenant.isInternal}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'isInternal', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Has physical ATC"
-                      checked={selectedTenant.hasPhysicalAtc}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'hasPhysicalAtc', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Reserved AirfieldCentral slots + time budget"
-                      checked={selectedTenant.carouselBudgetEnabled}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'carouselBudgetEnabled', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Full-screen buffering gate on public display"
-                      checked={selectedTenant.fullBufferGateEnabled}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'fullBufferGateEnabled', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Show live dashboard link on /global"
-                      checked={selectedTenant.globalLinkEnabled}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'globalLinkEnabled', next)}
-                    />
-                    <SettingsToggleRow
-                      label="AFISO open"
-                      checked={selectedTenant.afisoOpen}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'afisoOpen', next)}
-                    />
-                    <SettingsToggleRow
-                      label="Mobile Pilot View enabled"
-                      checked={selectedTenant.mobileEnabled}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'mobileEnabled', next)}
-                    />
-                    <SettingsToggleRow
-                      label="QR slide enabled"
-                      checked={selectedTenant.qrSlideEnabled}
-                      onChange={(next) => handleBooleanToggle(selectedTenant, 'qrSlideEnabled', next)}
-                    />
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-end gap-6">
-                    <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
-                    <CarouselBudgetEditor
-                      tenant={selectedTenant}
-                      onSaved={(seconds) => handleCarouselBudgetSaved(selectedTenant.id, seconds)}
-                    />
-                    <AfisoFrequencyEditor
-                      tenant={selectedTenant}
-                      onSaved={(frequency) => handleAfisoFrequencySaved(selectedTenant.id, frequency)}
-                    />
-                    <QnhQfeOffsetEditor
-                      tenant={selectedTenant}
-                      onSaved={(offset) => handleQnhQfeOffsetSaved(selectedTenant.id, offset)}
-                    />
-                    <QrTargetUrlEditor
-                      tenant={selectedTenant}
-                      onSaved={(targetUrl) => handleQrTargetUrlSaved(selectedTenant.id, targetUrl)}
-                    />
-                    <QrCaptionTextEditor
-                      tenant={selectedTenant}
-                      onSaved={(captionText) => handleQrCaptionTextSaved(selectedTenant.id, captionText)}
-                    />
-                    <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
-                    <PrimaryCameraEditor tenant={selectedTenant} />
-                    <Link
-                      to={
-                        selectedTenant.tenantType === 'venue_cafe'
-                          ? `/platform/cafe-carousel-owner-slots?tenantId=${selectedTenant.id}`
-                          : `/platform/tenants/${selectedTenant.id}/carousel-owner-slots`
-                      }
-                      className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10"
-                    >
-                      {selectedTenant.tenantType === 'venue_cafe' ? 'Manage reserved slots →' : 'Manage reserved slots (5/8/12) →'}
-                    </Link>
-                    <RefreshDisplaysButton tenant={selectedTenant} />
-                  </div>
-
-                  <PilotTickerSlotsEditor tenantId={selectedTenant.id} />
-
-                  {/* Suspend + Archive, grouped and visually separated
-                      from the four unrelated checkboxes above - both are
-                      "make this tenant go away" actions (one temporary,
-                      one meant to be permanent), not a settings toggle
-                      like weather/ops/internal/ATC. Once archived, these
-                      two buttons are replaced entirely by an "Archived"
-                      indicator + the hard-delete sub-panel below -
-                      un-archiving isn't part of this round's scope, and
-                      leaving Suspend/Resume live here would let active
-                      get toggled back on while deleted_at stays set, a
-                      genuinely broken half-state (publicly reachable
-                      again per resolveTenantHost.ts's active=1 check,
-                      but still locked out of its own back-office per
-                      requireTenant's deleted_at check, and still hidden
-                      from this very list on next reload). */}
-                  <div className="mt-4 border-t border-border/60 pt-4">
+                  <div className="border-t border-border/60 pt-4">
                     {selectedTenant.deletedAt ? (
                       <>
                         <p className="text-xs text-muted-500">
@@ -2480,7 +2428,186 @@ export default function PlatformTenantsPage(): JSX.Element {
                 </section>
 
                 <section className="rounded-2xl border border-border bg-panel p-5">
-                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Displays</div>
+                  <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Reception Dashboard</div>
+                  <p className="mb-3 text-xs text-muted-500">The TV/clubhouse screen - Airfield Pack, £44/mo.</p>
+                  <div className="overflow-hidden rounded-xl border border-border/60">
+                    <SettingsToggleRow
+                      label="Reception Dashboard enabled"
+                      checked={selectedTenant.dashboardEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'dashboardEnabled', next)}
+                      helper="Turns the TV/clubhouse screen on or off. Off shows a simple locked message on the live display and any named display (/, /d/main) instead of the real dashboard - the café screen is never affected by this."
+                    />
+                    <SettingsToggleRow
+                      label="Reserved AirfieldCentral slots + time budget"
+                      checked={selectedTenant.carouselBudgetEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'carouselBudgetEnabled', next)}
+                      helper="Reserves 3 carousel slots for AirfieldCentral's own ad/marketing content, leaving the tenant's own slides a shared time budget (set below) for the rest."
+                    />
+                    <SettingsToggleRow
+                      label="Full-screen buffering gate on public display"
+                      checked={selectedTenant.fullBufferGateEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'fullBufferGateEnabled', next)}
+                      helper="Shows a brief 'buffering' screen before the display starts, so viewers never see a half-loaded carousel. Cosmetic only - safe to toggle any time."
+                    />
+                    <SettingsToggleRow
+                      label="QR slide enabled"
+                      checked={selectedTenant.qrSlideEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'qrSlideEnabled', next)}
+                      helper="Adds a QR-code slide to the carousel that promotes the Pilot's App, using the target URL/caption/mockup image set below."
+                    />
+                    <SettingsToggleRow
+                      label="Has physical ATC"
+                      checked={selectedTenant.hasPhysicalAtc}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'hasPhysicalAtc', next)}
+                      helper="Offers this tenant's own live weather station as a weather source, on both the dashboard and the Pilot's App."
+                      warning="Only turn this on for an airfield with a real PC2/ATC station. Enabling it for a tenant with no physical station breaks their weather."
+                    />
+                    <SettingsToggleRow
+                      label="AFISO open"
+                      checked={selectedTenant.afisoOpen}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'afisoOpen', next)}
+                      helper="Shows whether the AFISO (radio) service is currently open, on both the dashboard and the Pilot's App. Manual - nothing sets this automatically."
+                    />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-end gap-6">
+                    <div>
+                      <QuotaEditor tenant={selectedTenant} onSaved={(bytes) => handleQuotaSaved(selectedTenant.id, bytes)} />
+                      <p className="mt-1 max-w-[160px] text-[11px] text-muted-500">Total media library storage (images/videos) this tenant can upload.</p>
+                    </div>
+                    <div>
+                      <CarouselBudgetEditor
+                        tenant={selectedTenant}
+                        onSaved={(seconds) => handleCarouselBudgetSaved(selectedTenant.id, seconds)}
+                      />
+                      <p className="mt-1 max-w-[160px] text-[11px] text-muted-500">How much time (MM:SS) the tenant's own slides share, once reserved slots are on.</p>
+                    </div>
+                    <div>
+                      <AfisoFrequencyEditor
+                        tenant={selectedTenant}
+                        onSaved={(frequency) => handleAfisoFrequencySaved(selectedTenant.id, frequency)}
+                      />
+                      <p className="mt-1 max-w-[160px] text-[11px] text-muted-500">Radio frequency shown alongside the AFISO status.</p>
+                    </div>
+                    <div>
+                      <QrTargetUrlEditor
+                        tenant={selectedTenant}
+                        onSaved={(targetUrl) => handleQrTargetUrlSaved(selectedTenant.id, targetUrl)}
+                      />
+                      <p className="mt-1 max-w-[180px] text-[11px] text-muted-500">Where the QR slide's code links to.</p>
+                    </div>
+                    <div>
+                      <QrCaptionTextEditor
+                        tenant={selectedTenant}
+                        onSaved={(captionText) => handleQrCaptionTextSaved(selectedTenant.id, captionText)}
+                      />
+                      <p className="mt-1 max-w-[160px] text-[11px] text-muted-500">Caption shown under the QR code.</p>
+                    </div>
+                    <div>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-400">QR phone mockup</div>
+                      <QrMockupEditor
+                        tenant={selectedTenant}
+                        onSaved={(mockupImageUrl) => handleQrMockupSaved(selectedTenant.id, mockupImageUrl)}
+                      />
+                      <p className="mt-1 max-w-[160px] text-[11px] text-muted-500">Phone-mockup image shown alongside the QR code.</p>
+                    </div>
+                    <div>
+                      <ParentAirfieldEditor tenant={selectedTenant} allTenants={tenants} />
+                      <p className="mt-1 max-w-[180px] text-[11px] text-muted-500">Links this tenant to another tenant's weather/NOTAMs/runway data (a co-located club sharing one real station).</p>
+                    </div>
+                    <Link
+                      to={
+                        selectedTenant.tenantType === 'venue_cafe'
+                          ? `/platform/cafe-carousel-owner-slots?tenantId=${selectedTenant.id}`
+                          : `/platform/tenants/${selectedTenant.id}/carousel-owner-slots`
+                      }
+                      className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10"
+                    >
+                      {selectedTenant.tenantType === 'venue_cafe' ? 'Manage reserved slots →' : 'Manage reserved slots (5/8/12) →'}
+                    </Link>
+                    <RefreshDisplaysButton tenant={selectedTenant} />
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Pilot's App</div>
+                  <p className="mb-3 text-xs text-muted-500">The branded mobile PWA at /pilot - £19.99/mo standalone, or included in the Airfield Pack.</p>
+                  <div className="overflow-hidden rounded-xl border border-border/60">
+                    <SettingsToggleRow
+                      label="Mobile Pilot View enabled"
+                      checked={selectedTenant.mobileEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'mobileEnabled', next)}
+                      helper="The Pilot's App paywall flag itself. Off shows a locked teaser screen at /pilot instead of the real mobile app."
+                    />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-start gap-6">
+                    <PrimaryCameraEditor tenant={selectedTenant} />
+                  </div>
+                  <div className="mt-4">
+                    <PilotTickerSlotsEditor tenantId={selectedTenant.id} />
+                    <p className="mt-1 text-[11px] text-muted-500">Configures the scrolling ticker shown at the bottom of the Pilot's App.</p>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Media Screen</div>
+                  <p className="mb-3 text-xs text-muted-500">The café/clubhouse add-on screen - £29.99/mo, requires the Airfield Pack.</p>
+                  {(() => {
+                    const cafeTvDisplay = selectedTenant.displays.find((d) => d.slug === 'cafe-tv')
+                    return cafeTvDisplay ? (
+                      <MediaScreenEntitlementEditor
+                        tenantId={selectedTenant.id}
+                        display={cafeTvDisplay}
+                        onSaved={(displayId, patch) => handleDisplaySaved(selectedTenant.id, displayId, patch)}
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-500">No café/clubhouse screen display configured for this tenant yet.</span>
+                    )
+                  })()}
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Platform-internal</div>
+                  <p className="mb-3 text-xs text-muted-500">Not customer-facing - developer/support tools only.</p>
+                  <div className="overflow-hidden rounded-xl border border-border/60">
+                    <SettingsToggleRow
+                      label="Weather public"
+                      checked={selectedTenant.weatherPublic}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'weatherPublic', next)}
+                      helper="Includes this tenant in an internal, not-yet-public cross-tenant data API. Has no effect on the tenant's own dashboard or Pilot's App."
+                    />
+                    <SettingsToggleRow
+                      label="Ops public"
+                      checked={selectedTenant.opsPublic}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'opsPublic', next)}
+                      helper="Same, for NOTAMs/ops data. Has no effect on the tenant's own dashboard or Pilot's App."
+                    />
+                    <SettingsToggleRow
+                      label="Internal"
+                      checked={selectedTenant.isInternal}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'isInternal', next)}
+                      helper="Marks this as an internal/test/template tenant (e.g. demo, newcustomer). Excludes it from the public tenant directory API above."
+                    />
+                    <SettingsToggleRow
+                      label="Show live dashboard link on /global"
+                      checked={selectedTenant.globalLinkEnabled}
+                      onChange={(next) => handleBooleanToggle(selectedTenant, 'globalLinkEnabled', next)}
+                      helper="Whether a 'View live dashboard' link appears on this tenant's card on the internal /global showcase page."
+                    />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-end gap-6">
+                    <div>
+                      <QnhQfeOffsetEditor
+                        tenant={selectedTenant}
+                        onSaved={(offset) => handleQnhQfeOffsetSaved(selectedTenant.id, offset)}
+                      />
+                      <p className="mt-1 max-w-[220px] text-[11px] text-muted-500">Fixed pressure-datum correction (hPa) between QNH and QFE, if this airfield's real station always differs by exactly this much. Leave blank otherwise.</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Displays</div>
+                  <p className="mb-3 text-xs text-muted-500">Support/maintenance force-off, per display - independent of billing.</p>
                   {selectedTenant.displays.length === 0 ? (
                     <span className="text-xs text-muted-500">No displays yet</span>
                   ) : (

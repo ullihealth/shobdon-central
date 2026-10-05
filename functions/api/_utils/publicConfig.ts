@@ -283,7 +283,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, full_buffer_gate_enabled AS fullBufferGateEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, overscan_safe_margin_enabled AS overscanSafeMarginEnabled, overscan_safe_margin_percent AS overscanSafeMarginPercent, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, full_buffer_gate_enabled AS fullBufferGateEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, dashboard_enabled AS dashboardEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, overscan_safe_margin_enabled AS overscanSafeMarginEnabled, overscan_safe_margin_percent AS overscanSafeMarginPercent, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -299,6 +299,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         pilotBackgroundOverrideJson: string | null;
         pilotTickerStyleJson: string | null;
         mobileEnabled: number;
+        dashboardEnabled: number;
         windsockBand2Kt: number;
         windsockBand3Kt: number;
         windsockBand4Kt: number;
@@ -817,6 +818,21 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // placeholder-only column, deliberately not read/exposed here - no
   // gating logic depends on it yet.
   const mobileEnabled = !!tenantRow?.mobileEnabled;
+  // Reception Dashboard entitlement (Airfield Pack round, migration
+  // 0106) - DashboardPage.tsx ('/') and TenantDisplayPage.tsx ('/d/:slug',
+  // for any slug whose resolved templateId isn't 'cafe-1') render a
+  // locked-state screen instead of the real TV/clubhouse display when
+  // this is false, same "soft client-side gate, not a 404" posture
+  // mobileEnabled above already established for /pilot - see
+  // DashboardLockedScreen.tsx. Deliberately NOT consulted for the café
+  // template (slug 'cafe-tv', or mainTemplateId/templateId === 'cafe-1')
+  // - that's a different product (Media Screen), already gated by its
+  // own tenant_displays.entitled/entitlement_trial_expires_at mechanism,
+  // which this flag must never interact with. Testing-phase only right
+  // now, same as mobileEnabled: every existing tenant was backfilled to
+  // true by migration 0106, so this isn't yet an active restriction for
+  // anyone.
+  const dashboardEnabled = !!tenantRow?.dashboardEnabled;
   // Runway/Wind widget (RunwayWindWidget.tsx) - 5-tier windsock
   // (migration 0079). Falls back to the same real-world-convention
   // defaults that migration seeds (3/7/11/15kt) if this tenant's row
@@ -1232,6 +1248,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     pilotBackgroundOverride,
     pilotTickerStyle,
     mobileEnabled,
+    dashboardEnabled,
     windsock,
     arrowThresholds,
     displayWidthCm,

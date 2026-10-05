@@ -58,10 +58,21 @@ workers_dev = true
 # The bare apex (airfieldcentral.com) is the one exception, genuinely
 # still Pages-served - this route's leading-label wildcard structurally
 # can't match a zero-label apex. Practical consequence: a change here
-# needs BOTH a Pages deploy (git push, automatic) AND this Worker
-# redeployed (deploy-worker.yml, also automatic on push) to reach any
-# real tenant subdomain - Pages alone is only ever enough for the bare
-# apex.
+# needs BOTH a Pages deploy AND this Worker redeployed (deploy-worker.yml,
+# automatic on push) to reach any real tenant subdomain - Pages alone is
+# only ever enough for the bare apex.
+#
+# Corrected 2026-10-05 (investigation round): the Pages half above is NOT
+# currently automatic, despite what this comment used to say. Cloudflare
+# Pages' own git-integration auto-deploy for the shobdon-central project
+# has been confirmed broken since 2026-09-02 (deployment list shows zero
+# production deploys - not even failed ones - for any commit after
+# ab5f205, while this Worker's own deploy-worker.yml kept succeeding on
+# every single push over the same window, which rules out a GitHub-side
+# cause). Until that's fixed on the Cloudflare dashboard side, reaching
+# the bare apex requires a manual `wrangler pages deploy dist
+# --project-name=shobdon-central --branch=main` after every push - it
+# will NOT happen on its own the way this Worker's own redeploy does.
 [[routes]]
 pattern = "*.airfieldcentral.com/*"
 zone_name = "airfieldcentral.com"
@@ -106,6 +117,16 @@ id = "c5ada3c64f1745509ed0977c0ab0c323"
 
 [vars]
 MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
+
+# Stripe groundwork (Airfield Pack round, Phase B) - test mode only, same
+# non-secret test-mode price ids already declared in wrangler.toml's own
+# [vars] (investigation round found this file was missing them - the
+# Worker, not Pages, is what actually serves every tenant subdomain's
+# checkout traffic, so without these here Phase B's product-mapping
+# would silently fail to resolve a product for every real tenant).
+STRIPE_PRICE_PACK = "price_1UNFGQPidShgOHShVaDq5CzF"
+STRIPE_PRICE_PILOT_APP = "price_1UNFGkPidShgOHSho400RtF5"
+STRIPE_PRICE_MEDIA_SCREEN = "price_1UNFH3PidShgOHShe8svQZ62"
 
 # AUTH_SECRET, MET_OFFICE_API_KEY set via:
 #   npx wrangler secret put AUTH_SECRET --config wrangler.worker.toml

@@ -5,6 +5,7 @@ import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import ClassicTemplate from '../components/displayTemplates/ClassicTemplate'
 import { DEFAULT_PANEL_CONFIG, normalizePanelConfig, type DisplayPanelConfig } from '../components/displayTemplates/panelConfig'
 import TenantUnavailable from '../components/TenantUnavailable'
+import DashboardLockedScreen from '../components/DashboardLockedScreen'
 import FullBufferGate from '../components/FullBufferGate'
 import OverscanSafeFrame from '../components/OverscanSafeFrame'
 import { isTrackedMediaType, type GateAsset } from '../hooks/useVideoDownloadStates'
@@ -68,6 +69,12 @@ export default function TenantDisplayPage(): JSX.Element {
   // displays (/d/:slug) are still the same tenant's own hardware.
   const [overscanSafeMarginEnabled, setOverscanSafeMarginEnabled] = useState(false)
   const [overscanSafeMarginPercent, setOverscanSafeMarginPercent] = useState(4)
+  // Reception Dashboard entitlement (migration 0106) - same flag, same
+  // publicConfig.ts response this page already fetches for airfieldName/
+  // logoUrl/themeOverride below, just read here too. true by default
+  // (pre-fetch), only ever applied to the non-café branch in the render -
+  // see that branch's own comment for why café must stay unaffected.
+  const [dashboardEnabled, setDashboardEnabled] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -85,6 +92,7 @@ export default function TenantDisplayPage(): JSX.Element {
         setOverscanSafeMarginEnabled(!!data?.overscanSafeMarginEnabled)
         if (typeof data?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(data.overscanSafeMarginPercent)
         setFullBufferGateEnabled(!!data?.fullBufferGateEnabled)
+        setDashboardEnabled(!!data?.dashboardEnabled)
         setCarouselSlotsRaw(Array.isArray(data?.carouselSlots) ? data.carouselSlots : [])
         setCafeCarouselSlotsRaw(Array.isArray(data?.cafeCarouselSlots) ? data.cafeCarouselSlots : [])
       })
@@ -137,6 +145,16 @@ export default function TenantDisplayPage(): JSX.Element {
         marginPercent={overscanSafeMarginPercent}
         themeOverride={themeOverride}
       >
+        {/* Reception Dashboard entitlement gate (migration 0106) -
+            deliberately excludes the café template (slug 'cafe-tv' ->
+            templateId 'cafe-1'), which is a separate product with its
+            own entitlement (tenant_displays.entitled) and must never be
+            affected by this flag. Same "outside FullBufferGate, inside
+            OverscanSafeFrame" placement as DashboardPage.tsx's own gate,
+            for the same reasons. */}
+        {display.templateId !== 'cafe-1' && !dashboardEnabled ? (
+          <DashboardLockedScreen airfieldName={airfieldName} logoUrl={logoUrl} themeOverride={themeOverride} />
+        ) : (
         <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
           {display.templateId === 'cafe-1' ? (
             <CafeTemplate
@@ -159,6 +177,7 @@ export default function TenantDisplayPage(): JSX.Element {
             />
           )}
         </FullBufferGate>
+        )}
       </OverscanSafeFrame>
     </WeatherProvider>
   )

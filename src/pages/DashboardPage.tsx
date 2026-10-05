@@ -4,6 +4,7 @@ import Clubhouse1Template from '../components/displayTemplates/Clubhouse1Templat
 import Clubhouse2Template from '../components/displayTemplates/Clubhouse2Template'
 import CafeTemplate from '../components/displayTemplates/CafeTemplate'
 import TenantUnavailable from '../components/TenantUnavailable'
+import DashboardLockedScreen from '../components/DashboardLockedScreen'
 import DashboardLoading from '../components/DashboardLoading'
 import FullBufferGate from '../components/FullBufferGate'
 import OverscanSafeFrame from '../components/OverscanSafeFrame'
@@ -97,6 +98,14 @@ export default function DashboardPage(): JSX.Element {
   // also its correct final template, but the flash was happening for it
   // too the whole time.
   const [loaded, setLoaded] = useState(false)
+  // Reception Dashboard entitlement (Airfield Pack round, migration
+  // 0106) - true by default so the brief pre-fetch window never flashes
+  // the locked screen for a tenant that's actually entitled (same
+  // "default to the common case, correct once real data arrives" stance
+  // every other boolean on this page already takes). Only ever gates the
+  // non-café branches below - see the render's own comment for why café
+  // must never be affected by this.
+  const [dashboardEnabled, setDashboardEnabled] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -123,6 +132,7 @@ export default function DashboardPage(): JSX.Element {
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.mainTemplateId) setMainTemplateId(data.mainTemplateId as string)
+        setDashboardEnabled(!!data?.dashboardEnabled)
         if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
         setOverscanSafeMarginEnabled(!!data?.overscanSafeMarginEnabled)
         if (typeof data?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(data.overscanSafeMarginPercent)
@@ -185,6 +195,20 @@ export default function DashboardPage(): JSX.Element {
         marginPercent={overscanSafeMarginPercent}
         themeOverride={themeOverride}
       >
+        {/* Reception Dashboard entitlement gate - deliberately checked
+            BEFORE FullBufferGate/the template dispatch, not inside any
+            one branch, and deliberately excludes both café paths
+            (cafeFallbackActive and mainTemplateId === 'cafe-1') - Media
+            Screen is a separate product with its own entitlement
+            (tenant_displays.entitled for cafe-tv), and must stay
+            completely unaffected by this flag either way. Still inside
+            OverscanSafeFrame (a kiosk's physical overscan margin is a
+            screen property, not a product entitlement) but outside
+            FullBufferGate (that overlay is tied to real carousel assets
+            actually loading, meaningless for a locked tenant). */}
+        {!cafeFallbackActive && mainTemplateId !== 'cafe-1' && !dashboardEnabled ? (
+          <DashboardLockedScreen airfieldName={airfieldName} logoUrl={logoUrl} themeOverride={themeOverride} />
+        ) : (
         <FullBufferGate enabled={fullBufferGateEnabled} assets={gateAssets} airfieldName={airfieldName} logoUrl={logoUrl}>
           {cafeFallbackActive ? (
             <CafeTemplate
@@ -224,6 +248,7 @@ export default function DashboardPage(): JSX.Element {
             />
           )}
         </FullBufferGate>
+        )}
       </OverscanSafeFrame>
     </WeatherProvider>
   )

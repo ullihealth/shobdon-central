@@ -45,6 +45,7 @@ interface TenantRow {
   afisoOpen: number;
   afisoFrequency: string;
   mobileEnabled: number;
+  dashboardEnabled: number;
   subscriptionStatus: string;
   subscriptionNotes: string;
   qnhQfeOffsetHpa: number | null;
@@ -101,6 +102,13 @@ interface PatchBody {
   // mobile_free_until is a placeholder column for future Stripe billing
   // and deliberately has no field/route here yet - nothing to PATCH.
   mobileEnabled?: boolean;
+  // Reception Dashboard entitlement (Airfield Pack round, migration
+  // 0106) - platform-admin switch for '/' and '/d/:slug' (non-café
+  // templates only - DashboardPage.tsx/TenantDisplayPage.tsx render
+  // DashboardLockedScreen instead when this is false). Same testing-
+  // phase-only posture as mobileEnabled above - every existing tenant
+  // was backfilled to true by that migration.
+  dashboardEnabled?: boolean;
   subscriptionStatus?: string;
   subscriptionNotes?: string;
   // Consistent QNH/QFE rounding round (migration 0074) - null (every
@@ -171,6 +179,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "afisoOpen",
     "afisoFrequency",
     "mobileEnabled",
+    "dashboardEnabled",
     "subscriptionStatus",
     "subscriptionNotes",
     "qnhQfeOffsetHpa",
@@ -197,6 +206,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "globalLinkEnabled",
     "afisoOpen",
     "mobileEnabled",
+    "dashboardEnabled",
     "qrSlideEnabled",
   ] as const) {
     if (body[field] !== undefined && typeof body[field] !== "boolean") {
@@ -246,7 +256,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               full_buffer_gate_enabled AS fullBufferGateEnabled,
               global_link_enabled AS globalLinkEnabled,
               afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency,
-              mobile_enabled AS mobileEnabled,
+              mobile_enabled AS mobileEnabled, dashboard_enabled AS dashboardEnabled,
               subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
               qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
               deleted_at AS deletedAt,
@@ -280,6 +290,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     afisoOpen: body.afisoOpen ?? !!current.afisoOpen,
     afisoFrequency: body.afisoFrequency ?? current.afisoFrequency,
     mobileEnabled: body.mobileEnabled ?? !!current.mobileEnabled,
+    dashboardEnabled: body.dashboardEnabled ?? !!current.dashboardEnabled,
     subscriptionStatus: body.subscriptionStatus ?? current.subscriptionStatus,
     subscriptionNotes: body.subscriptionNotes ?? current.subscriptionNotes,
     // NOT `body.qnhQfeOffsetHpa ?? current.qnhQfeOffsetHpa` - null is a
@@ -305,7 +316,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       `UPDATE tenants SET name = ?, active = ?, weather_public = ?, ops_public = ?, is_internal = ?, has_physical_atc = ?, storage_quota_bytes = ?,
               carousel_budget_seconds = ?, carousel_budget_enabled = ?, full_buffer_gate_enabled = ?, global_link_enabled = ?,
               afiso_open = ?, afiso_frequency = ?,
-              mobile_enabled = ?,
+              mobile_enabled = ?, dashboard_enabled = ?,
               subscription_status = ?, subscription_notes = ?, qnh_qfe_offset_hpa = ?, deleted_at = ?,
               qr_slide_enabled = ?, qr_target_url = ?, qr_caption_text = ?, qr_mockup_r2_key = ?,
               updated_at = ?
@@ -326,6 +337,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.afisoOpen ? 1 : 0,
       next.afisoFrequency,
       next.mobileEnabled ? 1 : 0,
+      next.dashboardEnabled ? 1 : 0,
       next.subscriptionStatus,
       next.subscriptionNotes,
       next.qnhQfeOffsetHpa,

@@ -53,6 +53,23 @@ MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
 
 # AUTH_SECRET is set via: npx wrangler pages secret put AUTH_SECRET
 
+# Stripe groundwork (Airfield Pack round, Phase B) - test mode only,
+# nothing live yet. The three price ids below are TEST-MODE price ids,
+# not secrets (Stripe's own price/product ids are public identifiers -
+# they appear in Checkout URLs and client-side Stripe.js calls), so
+# they're plain [vars] here, same posture as MEDIA_PUBLIC_BASE_URL
+# above. STRIPE_WEBHOOK_SECRET and STRIPE_SECRET_KEY are real secrets
+# and are NOT declared here - set each via:
+#   npx wrangler pages secret put STRIPE_WEBHOOK_SECRET
+#   npx wrangler pages secret put STRIPE_SECRET_KEY
+# (the webhook signing secret comes from the Stripe Dashboard once the
+# test-mode endpoint is registered; the secret key is the test-mode
+# "Secret key" from the same Dashboard's API keys page - see this
+# round's own report for the exact manual steps and ordering.)
+STRIPE_PRICE_PACK = "price_1UNFGQPidShgOHShVaDq5CzF"
+STRIPE_PRICE_PILOT_APP = "price_1UNFGkPidShgOHSho400RtF5"
+STRIPE_PRICE_MEDIA_SCREEN = "price_1UNFH3PidShgOHShe8svQZ62"
+
 # Preview deployments (any git push to a non-production branch) - a
 # dedicated, isolated D1 database (shobdon-central-preview), NOT
 # production's. Cloudflare Pages treats a committed wrangler.toml as
