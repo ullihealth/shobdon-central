@@ -2,6 +2,9 @@
 .dev.vars
 .dev.vars.*
 
+# Local-only Cloudflare account pin (CLOUDFLARE_ACCOUNT_ID) - never commit.
+.env
+
 # Wrangler local state/cache
 .wrangler/
 

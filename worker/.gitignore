@@ -1,0 +1,2 @@
+# Local-only Cloudflare account pin (CLOUDFLARE_ACCOUNT_ID) - never commit.
+.env

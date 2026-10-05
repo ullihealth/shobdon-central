@@ -1,5 +1,10 @@
 name = "shobdon-central-capture"
 main = "src/index.ts"
+# Pinned permanently to the AirfieldCentral Cloudflare account - this
+# project must never deploy against any other account (e.g. ScreenAds),
+# and an explicit account_id here means wrangler never has to guess or
+# prompt when the logged-in CLI user has access to more than one.
+account_id = "ec1676b8ffcf5e85467e3ed04b8fdfef"
 compatibility_date = "2026-07-01"
 
 # Not built or referenced by the Cloudflare Pages project - deployed
