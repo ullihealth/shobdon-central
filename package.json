@@ -6,6 +6,7 @@
     "dev": "node scripts/generate-pilot-version.mjs && vite",
     "build": "node scripts/generate-pilot-version.mjs && vite build",
     "preview": "vite preview",
+    "test": "node --test scripts/*.test.mjs",
     "prepare": "husky"
   },
   "lint-staged": {

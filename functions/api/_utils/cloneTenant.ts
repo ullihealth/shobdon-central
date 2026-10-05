@@ -18,7 +18,12 @@ async function cloneTable(
   sourceOrgId: string,
   targetOrgId: string,
   newIdPrefix: string,
-  idColumn: string | null
+  idColumn: string | null,
+  // Optional per-row fixup, applied after organizationId/idColumn are set
+  // but before the INSERT - only ops_panel_state's own call below passes
+  // one (see cloneOpsPanelRow's comment). Every other cloneTable call
+  // stays a pure blind copy, unaffected.
+  transform?: (row: Record<string, unknown>) => Record<string, unknown>
 ): Promise<void> {
   const { results } = await db
     .prepare(`SELECT * FROM ${table} WHERE organizationId = ?`)
@@ -26,10 +31,11 @@ async function cloneTable(
     .all<Record<string, unknown>>();
 
   for (const row of results) {
-    const next: Record<string, unknown> = { ...row, organizationId: targetOrgId };
+    let next: Record<string, unknown> = { ...row, organizationId: targetOrgId };
     if (idColumn) {
       next[idColumn] = `${newIdPrefix}-${crypto.randomUUID().slice(0, 8)}`;
     }
+    if (transform) next = transform(next);
     const columns = Object.keys(next);
     const placeholders = columns.map(() => "?").join(", ");
     await db
@@ -37,6 +43,67 @@ async function cloneTable(
       .bind(...columns.map((column) => next[column]))
       .run();
   }
+}
+
+// Same limits functions/api/tenant/ops-panel/index.ts enforces on save
+// (SAFETY_NOTICE_MAX_LENGTH/SAFETY_NOTICE_NAME_MAX_LENGTH/
+// AIRFIELD_INFO_MAX_LENGTH) - kept as a small local copy rather than an
+// import, so this generic clone utility doesn't take on a dependency on
+// one specific route's module for three numbers (same "duplicate a small
+// constant across the functions/ boundary rather than import across
+// unrelated modules" posture this codebase already uses elsewhere, e.g.
+// isPagesPlatformHost.ts's own comment). If either file's limit ever
+// changes, update both - there's no single source of truth to keep them
+// in sync automatically, same tradeoff as every other duplicated
+// constant in this codebase.
+const SAFETY_NOTICE_MAX_LENGTH = 40;
+const SAFETY_NOTICE_NAME_MAX_LENGTH = 40;
+const AIRFIELD_INFO_MAX_LENGTH = 60;
+
+// ops_panel_state's own fixup - the ONE table whose seed content
+// (migrations 0026/0031's hardcoded safetyNoticesJson) has ever actually
+// exceeded these limits (confirmed by investigation: a scan of every
+// other cloned table found nothing else). Without this, a future reseed
+// or edit to the template tenant's own notices that happens to land one
+// character over the limit would propagate the same "every Update
+// Dashboard 400s" bug to every tenant cloned afterward, same root cause
+// as the one this round fixed in production. Truncates the same way
+// ops-panel/index.ts's own ensureNoticeShape does (slice then trimEnd,
+// so a cut landing mid-whitespace doesn't leave a trailing space) -
+// deliberately NOT importing ensureNoticeShape itself, since that
+// function also mints ids/names for notices that lack them, behaviour
+// this clone step has no business changing (a template notice's
+// existing id/name must carry over to the new tenant unchanged, same as
+// every other field cloneTable copies blind).
+function truncate(value: unknown, maxLength: number): unknown {
+  return typeof value === "string" ? value.slice(0, maxLength).trimEnd() : value;
+}
+
+function cloneOpsPanelRow(row: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...row };
+  if (typeof next.airfieldInfoText === "string") {
+    next.airfieldInfoText = truncate(next.airfieldInfoText, AIRFIELD_INFO_MAX_LENGTH);
+  }
+  if (typeof next.safetyNoticesJson === "string") {
+    try {
+      const notices = JSON.parse(next.safetyNoticesJson);
+      if (Array.isArray(notices)) {
+        next.safetyNoticesJson = JSON.stringify(
+          notices.map((notice) => ({
+            ...notice,
+            text: truncate(notice?.text, SAFETY_NOTICE_MAX_LENGTH),
+            name: truncate(notice?.name, SAFETY_NOTICE_NAME_MAX_LENGTH),
+          }))
+        );
+      }
+    } catch {
+      // Malformed JSON in the SOURCE row is this clone step's problem to
+      // carry forward unchanged, not to validate or repair - ops-panel/
+      // index.ts's own GET already self-heals shape issues (id/name/
+      // length) the next time either tenant's page loads it.
+    }
+  }
+  return next;
 }
 
 // Deliberately does NOT clone weather_observations/latest_conditions/
@@ -48,7 +115,7 @@ export async function cloneTenantTemplate(db: D1Database, sourceOrgId: string, t
   await cloneTable(db, "club_theme", sourceOrgId, targetOrgId, newSlug, null);
   await cloneTable(db, "runway_groups", sourceOrgId, targetOrgId, newSlug, "id");
   await cloneTable(db, "camera_slots", sourceOrgId, targetOrgId, newSlug, null);
-  await cloneTable(db, "ops_panel_state", sourceOrgId, targetOrgId, newSlug, null);
+  await cloneTable(db, "ops_panel_state", sourceOrgId, targetOrgId, newSlug, null, cloneOpsPanelRow);
   await cloneTable(db, "carousel_slots", sourceOrgId, targetOrgId, newSlug, null);
   // Café Reserved Owner Slots round - the template's own slots 5/8/12
   // (ownerSlotUnlocked=0, empty) carry over the same way carousel_slots'
