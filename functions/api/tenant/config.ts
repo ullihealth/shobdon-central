@@ -461,8 +461,33 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   // recorded" (falls back to weather-default.ts's own structural
   // derivation, same as before this column existed) - anything else must
   // be one of the real provider ids.
+  //
+  // Parent-link weather-sync round - a tenant with a parent airfield has
+  // its provider decided by that link (always 'ingested', set by
+  // functions/api/platform/tenants/[id]/parent-tenant.ts's own PUT), not
+  // a choice this endpoint lets the tenant's own owner override any more
+  // - WeatherSourceSelector.tsx already disables the whole control for
+  // this case, but that's UX, not the real boundary (same "disabled
+  // client control is never the actual gate" posture every other
+  // platform-only field in this codebase already follows). Deliberately
+  // does NOT return early/4xx here: a stale page or a direct API call
+  // sending a non-'ingested' value while linked must still let every
+  // OTHER field in this same request save normally (see this function's
+  // own trailing runwayGroups/theme/cameraSlots/brandDisplay/
+  // savedSwatches blocks, all processed AFTER this one) - only this one
+  // field's write is skipped, surfaced via activeWeatherProviderRejected
+  // on the response rather than aborting the whole PUT.
+  let activeWeatherProviderRejected = false;
   if (body.activeWeatherProvider !== undefined) {
-    if (body.activeWeatherProvider === null) {
+    const parentRow = await env.DB
+      .prepare("SELECT parent_tenant_id AS parentTenantId FROM tenants WHERE organization_id = ?")
+      .bind(organizationId)
+      .first<{ parentTenantId: number | null }>();
+    const hasParent = parentRow?.parentTenantId != null;
+
+    if (hasParent && body.activeWeatherProvider !== "ingested") {
+      activeWeatherProviderRejected = true;
+    } else if (body.activeWeatherProvider === null) {
       await env.DB
         .prepare("UPDATE tenants SET active_weather_provider = NULL, updated_at = ? WHERE organization_id = ?")
         .bind(now, organizationId)
@@ -601,6 +626,13 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
 
   // resolvedLocation only present when this same request just geocoded a
   // postcode - lets AirfieldLocationSection.tsx show "Located near: X"
-  // immediately without a second round trip back to GET.
-  return jsonResponse({ ok: true, ...(resolvedLocation ? { resolvedLocation } : {}) });
+  // immediately without a second round trip back to GET. activeWeatherProviderRejected
+  // only present (true) when this same request asked to change the
+  // weather provider on a parent-linked tenant to something other than
+  // 'ingested' - every other field in this request still saved above.
+  return jsonResponse({
+    ok: true,
+    ...(resolvedLocation ? { resolvedLocation } : {}),
+    ...(activeWeatherProviderRejected ? { activeWeatherProviderRejected: true } : {}),
+  });
 };

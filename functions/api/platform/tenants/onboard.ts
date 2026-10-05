@@ -333,7 +333,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (parentTenantId !== null) {
-    await env.DB.prepare("UPDATE tenants SET parent_tenant_id = ? WHERE id = ?").bind(parentTenantId, tenantId).run();
+    // Mirrors parent-tenant.ts's own weather-source sync exactly (same
+    // round, same reasoning - see that file's top comment): a parent
+    // link IS a weather-source choice, not a second step. No 'atc' guard
+    // needed here - this is a brand-new tenant created moments ago, its
+    // active_weather_provider is guaranteed NULL (nothing in this file or
+    // cloneTenant.ts ever sets it), so there is nothing to clobber.
+    await env.DB
+      .prepare("UPDATE tenants SET parent_tenant_id = ?, active_weather_provider = 'ingested' WHERE id = ?")
+      .bind(parentTenantId, tenantId)
+      .run();
   }
 
   const token = randomToken();

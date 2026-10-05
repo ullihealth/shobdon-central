@@ -202,14 +202,18 @@ export default function ConfigPage(): JSX.Element {
         </div>
       )}
 
-      {/* Read-only - the earlier decision to keep weather-sharing
-          platform-admin-only stands (see functions/api/tenant/weather-
-          share.ts's own comment), this is purely informational. Shown
-          regardless of which provider is currently selected below
-          (Third-Party Station is the one an active share actually
-          overrides - functions/api/public/weather-latest.ts - but the
-          share itself is a standing fact independent of what this
-          tenant's own activeProvider happens to be set to right now). */}
+      {/* Read-only - the parent/sub-tenant LINK itself is platform-admin-
+          only (functions/api/platform/tenants/[id]/parent-tenant.ts,
+          migration 0059 - renamed from the old weather-share.ts/
+          tenant_weather_shares mechanism, migration 0029, which this file
+          no longer has), but which PROVIDER this tenant actually uses is
+          not gated by that at all - the owner can freely pick 'ingested'
+          (or any other provider) below regardless. Shown regardless of
+          which provider is currently selected (the 'ingested' provider is
+          the one an active parent link actually feeds -
+          functions/api/public/weather-latest.ts - but the link itself is
+          a standing fact independent of what this tenant's own
+          activeProvider happens to be set to right now). */}
       {weatherShare && (
         <div className="mb-6 rounded-2xl border border-accent-sky-500/30 bg-accent-sky-500/10 px-6 py-4 text-sm text-slate-200">
           Currently using <span className="font-semibold text-accent-sky-400">{weatherShare.sourceTenantName}</span>&apos;s
@@ -223,7 +227,12 @@ export default function ConfigPage(): JSX.Element {
           one column, same content/behaviour as before either way. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-3xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20">
-          <WeatherSourceSelector value={config.activeProvider} onChange={handleSourceChange} hasPhysicalAtc={hasPhysicalAtc} />
+          <WeatherSourceSelector
+            value={config.activeProvider}
+            onChange={handleSourceChange}
+            hasPhysicalAtc={hasPhysicalAtc}
+            parentAirfieldName={weatherShare?.sourceTenantName ?? null}
+          />
         </div>
 
         <div className="rounded-3xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20">

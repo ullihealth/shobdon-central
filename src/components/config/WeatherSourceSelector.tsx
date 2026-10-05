@@ -15,11 +15,27 @@ interface WeatherSourceSelectorProps {
   // even see the option existed. Always rendered now; only its
   // selectability/styling changes.
   hasPhysicalAtc: boolean
+  // Parent-link weather-sync round - a tenant with a parent airfield has
+  // its weather source decided by that link (always 'ingested', set in
+  // the same operation that sets parent_tenant_id - see functions/api/
+  // platform/tenants/[id]/parent-tenant.ts's own comment), not a
+  // separate choice of its own any more. Non-null (the parent's name)
+  // disables the WHOLE fieldset - reusing the same disabled-option
+  // styling the atc-unavailable case already established, just applied
+  // to every option at once rather than one - with an explanatory line
+  // instead of each option's own "— Unavailable" annotation, since the
+  // reason is the same for all of them. Mirrors the read-only banner
+  // ConfigPage.tsx already shows elsewhere on this page, but THIS is
+  // what actually stops the tenant's own owner from picking a different
+  // provider and silently re-breaking the sync from the other direction.
+  parentAirfieldName: string | null
 }
 
 const PROVIDER_ORDER: WeatherProviderId[] = ['atc', 'internet', 'ingested', 'mock']
 
-export default function WeatherSourceSelector({ value, onChange, hasPhysicalAtc }: WeatherSourceSelectorProps): JSX.Element {
+export default function WeatherSourceSelector({ value, onChange, hasPhysicalAtc, parentAirfieldName }: WeatherSourceSelectorProps): JSX.Element {
+  const lockedByParent = parentAirfieldName !== null
+
   return (
     <fieldset>
       <legend className="mb-4 text-sm font-semibold uppercase tracking-widest text-slate-400">
@@ -31,13 +47,15 @@ export default function WeatherSourceSelector({ value, onChange, hasPhysicalAtc 
           // flag read false transiently, or got flipped false after the
           // fact) - same "don't strand an existing selection" posture
           // the old filter-based version had, just expressed as
-          // disabled-not-hidden now.
+          // disabled-not-hidden now. Irrelevant once lockedByParent is
+          // true - every option is disabled then, this one included.
           const atcDisabled = id === 'atc' && !hasPhysicalAtc && value !== 'atc'
+          const disabled = lockedByParent || atcDisabled
           return (
             <label
               key={id}
               className={`flex items-center gap-3 text-lg text-white ${
-                atcDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
               }`}
             >
               <input
@@ -45,16 +63,21 @@ export default function WeatherSourceSelector({ value, onChange, hasPhysicalAtc 
                 name="weather-source"
                 value={id}
                 checked={value === id}
-                disabled={atcDisabled}
+                disabled={disabled}
                 onChange={() => onChange(id)}
                 className="h-4 w-4 accent-sky-500"
               />
               {WEATHER_PROVIDERS[id].label}
-              {atcDisabled && <span className="text-xs text-muted-400">— Unavailable</span>}
+              {!lockedByParent && atcDisabled && <span className="text-xs text-muted-400">— Unavailable</span>}
             </label>
           )
         })}
       </div>
+      {lockedByParent && (
+        <p className="mt-4 text-sm text-slate-400">
+          Weather source is set by your platform administrator (linked to {parentAirfieldName}).
+        </p>
+      )}
     </fieldset>
   )
 }
