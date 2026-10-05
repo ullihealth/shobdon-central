@@ -27,12 +27,54 @@
          usePilotHomeScreenMeta.ts) with the tenant's own real logo/name
          once branding data resolves - this shared shell has no way to
          know which tenant a request belongs to, so nothing tenant-
-         specific can be baked in here directly. -->
+         specific can be baked in here directly.
+
+         Tiger Helicopters tab-icon override (per-tenant favicon round) -
+         the one deliberate exception. No per-tenant favicon mechanism
+         exists anywhere in this app (confirmed: tenants carry no
+         favicon_url/icon field, only the general brand logo), and this
+         is the only tenant that's asked for its own tab icon so far, so
+         a single-tenant hostname check here is the whole mechanism - not
+         a generic per-tenant favicon system (nothing else needs one yet,
+         and building one now would be speculative). A synchronous inline
+         script (not a React effect) is deliberate: this is a client-
+         rendered SPA with one shared, static <head> across every
+         hostname, so the browser has already started fetching the
+         default PNGs above by the time any JS runs at all - a React
+         effect would wait for the whole bundle to download AND run
+         AFTER first paint, guaranteeing a visible flash of the aeroplane
+         on Tiger's own tab. Running synchronously, inline, immediately
+         after the tags it's replacing is the earliest possible point in
+         a static shared shell - it can't fully eliminate the flash (the
+         default requests are already in flight by the time this
+         executes, same document-order constraint as the comment above),
+         but it minimises the window as much as this architecture allows
+         without server-side per-host HTML, which this app doesn't have.
+         Bare hostname equality (not a slug-splitting helper) deliberately -
+         this is a one-off, single-tenant override, not infrastructure;
+         every other tenant, the bare pages.dev/localhost hosts, and the
+         no-tenant state all fall straight through unchanged. -->
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon/favicon-48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon/favicon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/favicon-180.png" />
+    <script>
+      (function () {
+        if (window.location.hostname !== 'tiger-helicopters.airfieldcentral.com') return;
+        var swaps = [
+          ['link[rel="icon"][sizes="16x16"]', '/favicon/tiger-favicon-16.png'],
+          ['link[rel="icon"][sizes="32x32"]', '/favicon/tiger-favicon-32.png'],
+          ['link[rel="icon"][sizes="48x48"]', '/favicon/tiger-favicon-48.png'],
+          ['link[rel="icon"][sizes="192x192"]', '/favicon/tiger-favicon-192.png'],
+          ['link[rel="apple-touch-icon"]', '/favicon/tiger-favicon-180.png'],
+        ];
+        for (var i = 0; i < swaps.length; i++) {
+          var el = document.querySelector(swaps[i][0]);
+          if (el) el.href = swaps[i][1];
+        }
+      })();
+    </script>
     <!-- Pilot View PWA ("Add to Home Screen") - the manifest link always
          points at the dynamic per-tenant route (functions/api/public/
          manifest.json.ts), which resolves by Host header the same way
