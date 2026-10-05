@@ -609,6 +609,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       .prepare(
         `SELECT cs.slotNumber AS slotNumber, cs.mediaType AS mediaType, cs.mediaLibraryId AS mediaLibraryId,
                 cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerContentAssigned AS ownerContentAssigned,
+                cs.ownerSlotLive AS ownerSlotLive,
                 cs.fitMode AS fitMode, cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
                 cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
                 cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize,
@@ -625,6 +626,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mediaLibraryId: string | null;
         ownerSlotUnlocked: number;
         ownerContentAssigned: number;
+        ownerSlotLive: number;
         fitMode: string;
         cropX: number;
         cropY: number;
@@ -961,14 +963,13 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // ever returns enabled=1 rows (see that query's own WHERE clause), so
   // a reserved slot the owner hasn't touched yet (or a tenant's own
   // pre-existing row, now shadowed - see migration 0064's own comment on
-  // why ownerContentAssigned exists) simply wouldn't appear at all - but
-  // a reserved slot must ALWAYS be in the rotation, 10 seconds, whether
-  // or not the owner has assigned real content yet. Only slotNumbers
-  // still actually reserved for THIS tenant (carouselBudgetEnabled true
-  // AND this specific slot's ownerSlotUnlocked false) get this
-  // treatment; an unlocked reserved slot is deliberately left to flow
-  // through from carouselRows above completely normally, as if it were
-  // never reserved at all.
+  // why ownerContentAssigned exists) simply wouldn't appear at all.
+  // Only slotNumbers still actually reserved for THIS tenant
+  // (carouselBudgetEnabled true AND this specific slot's
+  // ownerSlotUnlocked false) get the treatment below; an unlocked
+  // reserved slot is deliberately left to flow through from
+  // carouselRows above completely normally, as if it were never
+  // reserved at all.
   const carouselBudgetEnabled = !!tenantRow?.carouselBudgetEnabled;
   // Byte-verified buffering gate round (migration 0094) - per-tenant
   // opt-in for DashboardPage.tsx/TenantDisplayPage.tsx's new whole-page
@@ -980,11 +981,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     // Iterate the fixed [5, 8, 12] list, not reservedSlotRows.results -
     // a tenant who has never touched Dashboard Manager at all (or never
     // saved these specific slots) has NO carousel_slots row yet for
-    // 5/8/12, so reservedSlotRows.results would simply omit them
-    // entirely; a reserved slot must still always appear (10s, "Media
-    // Reserved" placeholder) even then - same "row may not exist yet,
-    // fall back to defaults" posture as tenant/carousel/index.ts's own
-    // defaultSlots() fallback.
+    // 5/8/12, so reservedSlotRows.results would simply omit them from a
+    // results-only iteration; explicitly walking the fixed list is what
+    // lets the "no row yet" case fall through to the same skip below as
+    // a real row with nothing resolvable.
     const reservedRowsBySlot = new Map(reservedSlotRows.results.map((row) => [row.slotNumber, row]));
     for (const slotNumber of [5, 8, 12]) {
       const row = reservedRowsBySlot.get(slotNumber);
@@ -992,48 +992,43 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
       const existingIndex = carouselSlots.findIndex((slot) => slot.slotNumber === slotNumber);
       if (existingIndex !== -1) carouselSlots.splice(existingIndex, 1);
 
-      const reservedSlot: CarouselSlotResolvedRow = row?.ownerContentAssigned
-        ? {
-            slotNumber,
-            mediaType: row.mediaType,
-            durationSeconds: 10,
-            mp4DurationSeconds: row.mp4DurationSeconds,
-            fitMode: row.fitMode,
-            cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
-            rotationDegrees: row.rotationDegrees,
-            brightnessPercent: row.brightnessPercent,
-            bannerText: row.bannerText,
-            bannerOpacity: row.bannerOpacity,
-            bannerFontSize: row.bannerFontSize,
-            zone: "both",
-            autoFullscreen: false,
-            websiteFixedCanvas: false,
-            resolvedUrl: row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}` : null,
-            mediaSizeBytes: row.mediaSizeBytes,
-          }
-        : {
-            // No owner content assigned yet (or no row exists for this
-            // slot at all yet - a tenant who's never touched Dashboard
-            // Manager) - "Media Reserved" placeholder (MediaSlotRenderer.
-            // tsx's own 'reserved' case), same no-resolvedUrl-needed shape
-            // as the existing 'gyropedia' sentinel type.
-            slotNumber,
-            mediaType: "reserved",
-            durationSeconds: 10,
-            mp4DurationSeconds: null,
-            fitMode: "contain",
-            cropRect: { x: 0, y: 0, width: 100, height: 100 },
-            rotationDegrees: 0,
-            brightnessPercent: 100,
-            bannerText: "",
-            bannerOpacity: 70,
-            bannerFontSize: "md",
-            zone: "both",
-            autoFullscreen: false,
-            websiteFixedCanvas: false,
-            resolvedUrl: null,
-            mediaSizeBytes: null,
-          };
+      // "When does a reserved slot play" round - a reserved slot now
+      // appears in the live rotation ONLY when all three hold: not
+      // Unlocked (checked above), Live (ownerSlotLive), AND its content
+      // actually resolves to a real, still-existing media_library file.
+      // ownerContentAssigned is deliberately NEVER trusted on its own
+      // here - it only means "a platform admin once assigned something",
+      // not "that something still exists" (a tenant can delete a file
+      // out from under a reserved slot - see carousel-owner-slots.ts's
+      // own comment on today's behaviour). Anything that doesn't clear
+      // all three - Live off, or Live on with nothing real to show - is
+      // skipped entirely: no placeholder, no blank frame, 0 seconds.
+      // MediaSlotRenderer.tsx's own 'reserved' placeholder case is left
+      // in the code but is now permanently unreachable from here - the
+      // public dashboard must never show "Media Reserved" again.
+      if (!row?.ownerSlotLive) continue;
+      const resolvedUrl =
+        row.r2Key && mediaBaseUrl ? `${mediaBaseUrl}/${row.r2Key}${row.mediaUploadedAt ? `?v=${encodeURIComponent(row.mediaUploadedAt)}` : ""}` : null;
+      if (!resolvedUrl) continue;
+
+      const reservedSlot: CarouselSlotResolvedRow = {
+        slotNumber,
+        mediaType: row.mediaType,
+        durationSeconds: 10,
+        mp4DurationSeconds: row.mp4DurationSeconds,
+        fitMode: row.fitMode,
+        cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
+        rotationDegrees: row.rotationDegrees,
+        brightnessPercent: row.brightnessPercent,
+        bannerText: row.bannerText,
+        bannerOpacity: row.bannerOpacity,
+        bannerFontSize: row.bannerFontSize,
+        zone: "both",
+        autoFullscreen: false,
+        websiteFixedCanvas: false,
+        resolvedUrl,
+        mediaSizeBytes: row.mediaSizeBytes,
+      };
       carouselSlots.push(reservedSlot);
     }
     carouselSlots.sort((a, b) => a.slotNumber - b.slotNumber);

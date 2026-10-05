@@ -12,15 +12,32 @@
 // tenant-facing carousel endpoint supports.
 //
 // ownerContentAssigned (not just "does this row have a mediaLibraryId")
-// is what actually marks a slot as "the owner has assigned real
+// is what actually marks a slot as "a platform admin has assigned real
 // content" - see migration 0064's own comment for why the raw
 // mediaLibraryId column alone can't be trusted for this (a tenant's own
 // pre-existing, now-shadowed content would look identical). Set to true
 // only when this PUT assigns a real mediaLibraryId; explicitly cleared
 // back to false when the owner clears the assignment (mediaLibraryId:
-// null), so the slot correctly reverts to the "Media Reserved"
-// placeholder rather than silently keeping a stale "assigned" flag with
-// no content behind it.
+// null). IMPORTANT: this flag alone is NOT proof the content still
+// exists - a tenant can delete the underlying media_library file out
+// from under an assigned slot (see this endpoint's own PUT validation,
+// which only checks existence at assignment time, not afterwards).
+// publicConfig.ts and tenant/carousel/index.ts both re-verify the file
+// still resolves on every read rather than trusting this flag alone -
+// see their own "when does a reserved slot play" comments.
+//
+// ownerSlotLive (migration 0105) - independent of ownerSlotUnlocked and
+// ownerContentAssigned: the platform admin's own decision that this
+// reserved slot SHOULD appear in the live rotation. false means
+// publicConfig.ts skips it entirely (0s, no placeholder - the public
+// dashboard never shows a "Media Reserved" placeholder any more).
+// true only actually plays something if the assigned content also
+// still resolves to a real file - otherwise it's still skipped (0s),
+// just with a warning shown on this admin page instead of silently
+// nothing. Still saved/returned even when ownerSlotUnlocked is true (so
+// flipping Unlocked back off later doesn't silently reset it) - it just
+// has no effect while unlocked, same as mediaType/mediaLibraryId
+// already don't.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -43,6 +60,7 @@ interface OwnerSlotRow {
   mediaLibraryId: string | null;
   ownerSlotUnlocked: number;
   ownerContentAssigned: number;
+  ownerSlotLive: number;
   r2Key: string | null;
   filename: string | null;
   mp4DurationSeconds: number | null;
@@ -53,6 +71,7 @@ interface OwnerSlotInput {
   mediaType: "image" | "mp4" | "pdf";
   mediaLibraryId: string | null;
   ownerSlotUnlocked: boolean;
+  ownerSlotLive: boolean;
 }
 
 interface MediaFileRow {
@@ -75,6 +94,7 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
       .prepare(
         `SELECT cs.slotNumber AS slotNumber, cs.mediaType AS mediaType, cs.mediaLibraryId AS mediaLibraryId,
                 cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerContentAssigned AS ownerContentAssigned,
+                cs.ownerSlotLive AS ownerSlotLive,
                 ml.r2Key AS r2Key, ml.filename AS filename, ml.mp4DurationSeconds AS mp4DurationSeconds
          FROM carousel_slots cs
          LEFT JOIN media_library ml ON ml.id = cs.mediaLibraryId
@@ -97,6 +117,7 @@ async function loadState(db: D1Database, organizationId: string, mediaPublicBase
       mediaLibraryId: row?.mediaLibraryId ?? null,
       ownerSlotUnlocked: !!row?.ownerSlotUnlocked,
       ownerContentAssigned: !!row?.ownerContentAssigned,
+      ownerSlotLive: !!row?.ownerSlotLive,
       filename: row?.filename ?? null,
       resolvedUrl: row?.r2Key && mediaPublicBaseUrl ? `${mediaPublicBaseUrl}/${row.r2Key}` : null,
       mp4DurationSeconds: row?.mp4DurationSeconds ?? null,
@@ -143,6 +164,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
     if (typeof slot.ownerSlotUnlocked !== "boolean") {
       return jsonResponse({ error: "ownerSlotUnlocked must be a boolean" }, 400);
     }
+    if (typeof slot.ownerSlotLive !== "boolean") {
+      return jsonResponse({ error: "ownerSlotLive must be a boolean" }, 400);
+    }
     if (slot.mediaLibraryId) {
       const file = await env.DB
         .prepare("SELECT id FROM media_library WHERE id = ? AND organizationId = ?")
@@ -159,8 +183,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
 
     await env.DB
       .prepare(
-        `INSERT INTO carousel_slots (organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerContentAssigned, updatedAt)
-         VALUES (?, ?, 1, ?, 10, ?, ?, ?, ?)
+        `INSERT INTO carousel_slots (organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, ownerSlotUnlocked, ownerContentAssigned, ownerSlotLive, updatedAt)
+         VALUES (?, ?, 1, ?, 10, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = 1,
            mediaType = excluded.mediaType,
@@ -168,9 +192,10 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
            mediaLibraryId = excluded.mediaLibraryId,
            ownerSlotUnlocked = excluded.ownerSlotUnlocked,
            ownerContentAssigned = excluded.ownerContentAssigned,
+           ownerSlotLive = excluded.ownerSlotLive,
            updatedAt = excluded.updatedAt`
       )
-      .bind(organizationId, slot.slotNumber, slot.mediaType, mediaLibraryId, slot.ownerSlotUnlocked ? 1 : 0, ownerContentAssigned, now)
+      .bind(organizationId, slot.slotNumber, slot.mediaType, mediaLibraryId, slot.ownerSlotUnlocked ? 1 : 0, ownerContentAssigned, slot.ownerSlotLive ? 1 : 0, now)
       .run();
   }
 

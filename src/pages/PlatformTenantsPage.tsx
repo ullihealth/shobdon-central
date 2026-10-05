@@ -2365,7 +2365,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'hasPhysicalAtc', next)}
                     />
                     <SettingsToggleRow
-                      label="Reserved owner slots + time budget"
+                      label="Reserved AirfieldCentral slots + time budget"
                       checked={selectedTenant.carouselBudgetEnabled}
                       onChange={(next) => handleBooleanToggle(selectedTenant, 'carouselBudgetEnabled', next)}
                     />

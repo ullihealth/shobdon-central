@@ -1,18 +1,22 @@
 import { useMemo } from 'react'
 import type { CarouselSlot, MediaLibraryFile } from '../types/mediaLibrary'
 
-// Matches publicConfig.ts's own fixed reserved-slot duration (Reserved
-// Owner Slots & Time Budget round) - a reserved slot (isReserved) is
-// ALWAYS in the live rotation for exactly 10s, regardless of its own
-// `enabled`/durationSeconds column (which may not even be meaningful
-// for it - see that file's own "a reserved slot must ALWAYS be in the
-// rotation" comment). This is deliberately NOT the same number
-// MediaManagerPage.tsx's own computeUsedSeconds/budget feature uses -
-// that one excludes reserved slots entirely, because it's answering
-// "how much of the tenant's OWN controllable budget is used", not
-// "how long is the loop a viewer actually sees". Total loop time needs
-// the latter, so reserved slots count here even though they don't
-// count there.
+// Matches publicConfig.ts's own fixed reserved-slot duration - a
+// reserved slot (isReserved) counts for exactly 10s here only when
+// isReservedLive is also true, which itself is only true when Live is
+// on AND the assigned content still resolves to a real file ("when
+// does a reserved slot play" round, migration 0105 - see
+// rowToApi's own comment in functions/api/tenant/carousel/index.ts for
+// the exact three-part rule). Every other case - Live off, or Live on
+// with nothing real to show - publicConfig.ts skips the slot entirely
+// from the live rotation, so it must contribute 0 seconds here too,
+// matching the `else` branch below. This is deliberately NOT the same
+// number MediaManagerPage.tsx's own computeUsedSeconds/budget feature
+// uses - that one excludes reserved slots entirely, because it's
+// answering "how much of the tenant's OWN controllable budget is
+// used", not "how long is the loop a viewer actually sees". Total loop
+// time needs the latter, so a Live-and-resolved reserved slot counts
+// here even though it never counts there.
 const RESERVED_SLOT_SECONDS = 10
 
 export interface TotalLoopTimeResult {
@@ -55,7 +59,7 @@ export function useTotalLoopTime(slots: CarouselSlot[], files: MediaLibraryFile[
 
     for (const slot of slots) {
       if (slot.isReserved) {
-        totalSeconds += RESERVED_SLOT_SECONDS
+        if (slot.isReservedLive) totalSeconds += RESERVED_SLOT_SECONDS
         continue
       }
       if (!slot.enabled) continue

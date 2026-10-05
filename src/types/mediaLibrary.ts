@@ -122,6 +122,14 @@ export interface CarouselSlot {
   // carousel has no equivalent concept) - CarouselSlotList/
   // CarouselSlotEditor.tsx treat undefined the same as false.
   isReserved?: boolean
+  // Reserved AirfieldCentral Slots "Live" toggle round - only
+  // meaningful when isReserved is true: whether this specific reserved
+  // slot actually counts toward the live rotation (useTotalLoopTime.ts).
+  // Platform-admin-only setting - CarouselSlotEditor.tsx never shows or
+  // edits this, it only informs the total-loop-time number. Optional/
+  // undefined (every non-dashboard-carousel caller) treated as false,
+  // same convention as isReserved itself.
+  isReservedLive?: boolean
   // Per-slot duration cap override (café-only, cafe_carousel_slots -
   // dashboard's own carousel_slots has no equivalent column). NULL/
   // undefined means the platform-wide 20s default cap applies; a real

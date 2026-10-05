@@ -604,9 +604,7 @@ function CarouselSlotEditor({
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber} — Reserved by AirfieldCentral</div>
         <p className="text-sm text-muted-400">
-          This slot is reserved for AirfieldCentral marketing/ad content and isn't editable here. It's always
-          included in the live rotation (10 seconds), showing a "Media Reserved" placeholder until content is
-          assigned.
+          This slot is reserved for AirfieldCentral marketing/ad content and isn't editable here.
         </p>
       </div>
     )

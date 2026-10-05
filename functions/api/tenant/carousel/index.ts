@@ -51,6 +51,15 @@ interface CarouselSlotRow {
   zone: string;
   autoFullscreen: number;
   ownerSlotUnlocked: number;
+  ownerSlotLive: number;
+  // "When does a reserved slot play" round - whether this row's own
+  // mediaLibraryId still resolves to a real, existing media_library
+  // file right now. A correlated EXISTS subquery rather than a JOIN
+  // (see the SELECT below) so a stale/dangling mediaLibraryId - the
+  // file was deleted after being assigned - reads as 0/false here,
+  // same as never having been assigned at all. 1 (true) for a non-null
+  // id that still exists; 0 (false/null) otherwise.
+  ownerContentResolves: number | null;
 }
 
 // Reserved Owner Slots & Time Budget round. Slots 5/8/12 are owner-
@@ -114,6 +123,8 @@ function defaultSlots(): CarouselSlotRow[] {
     zone: "both",
     autoFullscreen: 0,
     ownerSlotUnlocked: 0,
+    ownerSlotLive: 0,
+    ownerContentResolves: 0,
   }));
 }
 
@@ -123,6 +134,20 @@ function defaultSlots(): CarouselSlotRow[] {
 // (the common case for a tenant this feature hasn't reached yet) means
 // every slot's isReserved is always false, regardless of slotNumber or
 // ownerSlotUnlocked - matches "OFF behaves exactly like today" exactly.
+//
+// isReservedLive (Reserved AirfieldCentral Slots "when does a reserved
+// slot play" round, migration 0105) - only meaningful when isReserved
+// is also true; tells useTotalLoopTime.ts whether this reserved slot
+// actually counts toward the live rotation's total loop time (a
+// platform-admin-only decision, never shown or editable from this
+// tenant-facing screen - the tenant only ever sees the generic lock/
+// "Reserved by AirfieldCentral" message regardless of this value, per
+// that round's own requirement). True only when ALL of: Live is on AND
+// the assigned content still resolves to a real file - matches
+// publicConfig.ts's own "never trust ownerContentAssigned alone" rule
+// exactly, so this number never disagrees with what the live dashboard
+// actually plays. Always false when isReserved is false, so a
+// non-reserved slot's own enabled-based accounting is never affected.
 function rowToApi(row: CarouselSlotRow, budgetEnabled: boolean) {
   const isReserved = budgetEnabled && RESERVED_SLOT_NUMBERS.includes(row.slotNumber) && !row.ownerSlotUnlocked;
   return {
@@ -143,6 +168,7 @@ function rowToApi(row: CarouselSlotRow, budgetEnabled: boolean) {
     zone: row.zone,
     autoFullscreen: !!row.autoFullscreen,
     isReserved,
+    isReservedLive: isReserved && !!row.ownerSlotLive && !!row.ownerContentResolves,
   };
 }
 
@@ -154,10 +180,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const [{ results }, tenantRow] = await Promise.all([
     env.DB
       .prepare(
-        `SELECT slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId, fitMode,
-                cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-                bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, ownerSlotUnlocked
-         FROM carousel_slots WHERE organizationId = ? ORDER BY slotNumber`
+        `SELECT cs.slotNumber AS slotNumber, cs.enabled AS enabled, cs.mediaType AS mediaType, cs.durationSeconds AS durationSeconds,
+                cs.mediaLibraryId AS mediaLibraryId, cs.cameraSlotNumber AS cameraSlotNumber, cs.cameraId AS cameraId, cs.fitMode AS fitMode,
+                cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
+                cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
+                cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize,
+                cs.zone AS zone, cs.autoFullscreen AS autoFullscreen, cs.ownerSlotUnlocked AS ownerSlotUnlocked, cs.ownerSlotLive AS ownerSlotLive,
+                (SELECT 1 FROM media_library ml WHERE ml.id = cs.mediaLibraryId) AS ownerContentResolves
+         FROM carousel_slots cs WHERE cs.organizationId = ? ORDER BY cs.slotNumber`
       )
       .bind(organizationId)
       .all<CarouselSlotRow>(),

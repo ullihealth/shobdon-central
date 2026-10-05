@@ -9,6 +9,7 @@ interface OwnerSlot {
   mediaLibraryId: string | null
   ownerSlotUnlocked: boolean
   ownerContentAssigned: boolean
+  ownerSlotLive: boolean
   filename: string | null
   resolvedUrl: string | null
   mp4DurationSeconds: number | null
@@ -37,7 +38,7 @@ export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Reserved Owner Slots — Airfield Central'
+    document.title = 'Reserved AirfieldCentral Slots — AirfieldCentral'
   }, [])
 
   const { id } = useParams<{ id: string }>()
@@ -88,6 +89,7 @@ export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
               mediaType: updated.mediaType,
               mediaLibraryId: updated.mediaLibraryId,
               ownerSlotUnlocked: updated.ownerSlotUnlocked,
+              ownerSlotLive: updated.ownerSlotLive,
             },
           ],
         }),
@@ -148,11 +150,12 @@ export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
       <Link to="/platform/tenants" className="mb-4 inline-block text-xs font-semibold text-accent-sky-400 hover:underline">
         ← Back to Tenants
       </Link>
-      <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Reserved Owner Slots</h1>
+      <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Reserved AirfieldCentral Slots</h1>
       <p className="mb-6 max-w-2xl text-sm text-muted-400">
-        {tenantName ?? `Tenant #${id}`}'s carousel slots 5, 8, and 12 - owner-controlled ad/marketing space, sold
-        directly or leased to the tenant. Assign content and manage the per-slot manual unlock here. Has no effect
-        unless "Reserved owner slots + time budget" is switched on for this tenant (Tenants page).
+        {tenantName ?? `Tenant #${id}`}'s carousel slots 5, 8, and 12 - AirfieldCentral-controlled ad/marketing
+        space, sold directly or leased to the tenant. Assign content, manage the per-slot manual unlock, and control
+        whether each slot is actually Live on the dashboard here. Has no effect unless "Reserved AirfieldCentral
+        slots + time budget" is switched on for this tenant (Tenants page).
       </p>
 
       {uploadError && (
@@ -164,28 +167,52 @@ export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
           const status = saveStatus[slot.slotNumber] ?? 'idle'
           return (
             <section key={slot.slotNumber} className="rounded-2xl border border-border bg-panel p-5">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber}</div>
-                <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-400">
-                  <input
-                    type="checkbox"
-                    checked={slot.ownerSlotUnlocked}
-                    onChange={(event) => saveSlot(slot.slotNumber, { ownerSlotUnlocked: event.target.checked })}
-                    className="h-3.5 w-3.5"
-                  />
-                  Unlocked
-                </label>
+                <div className="flex items-center gap-3">
+                  <label
+                    className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${
+                      slot.ownerSlotUnlocked ? 'text-muted-600' : 'text-muted-400'
+                    }`}
+                    title={slot.ownerSlotUnlocked ? 'Live doesn\'t apply while this slot is Unlocked' : undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={slot.ownerSlotLive}
+                      disabled={slot.ownerSlotUnlocked}
+                      onChange={(event) => saveSlot(slot.slotNumber, { ownerSlotLive: event.target.checked })}
+                      className="h-3.5 w-3.5 disabled:cursor-not-allowed"
+                    />
+                    Live
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-400">
+                    <input
+                      type="checkbox"
+                      checked={slot.ownerSlotUnlocked}
+                      onChange={(event) => saveSlot(slot.slotNumber, { ownerSlotUnlocked: event.target.checked })}
+                      className="h-3.5 w-3.5"
+                    />
+                    Unlocked
+                  </label>
+                </div>
               </div>
 
               {slot.ownerSlotUnlocked ? (
                 <p className="text-xs text-muted-500">
-                  Unlocked - this slot behaves as a normal tenant-controlled slot for this tenant. Uncheck "Unlocked"
-                  to reserve it again.
+                  Unlocked - this slot behaves as a normal tenant-controlled slot for this tenant. The Live toggle
+                  above doesn't apply while unlocked. Uncheck "Unlocked" to reserve it again.
                 </p>
               ) : (
                 <>
+                  {slot.ownerSlotLive && !slot.resolvedUrl && (
+                    <p className="mb-3 rounded-lg border border-status-bad/40 bg-status-bad/10 px-3 py-2 text-xs font-semibold text-status-bad">
+                      Live, but no content - nothing is showing on the dashboard
+                    </p>
+                  )}
                   <div className="mb-3 flex aspect-video items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-slate-950">
-                    {slot.ownerContentAssigned && slot.resolvedUrl ? (
+                    {!slot.ownerSlotLive ? (
+                      <span className="text-xs uppercase tracking-widest text-muted-600">Not live - skipped on the dashboard</span>
+                    ) : slot.resolvedUrl ? (
                       slot.mediaType === 'image' ? (
                         <img src={slot.resolvedUrl} alt="" className="h-full w-full object-contain" />
                       ) : slot.mediaType === 'mp4' ? (
@@ -194,7 +221,7 @@ export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
                         <span className="text-xs text-muted-500">PDF: {slot.filename}</span>
                       )
                     ) : (
-                      <span className="text-xs uppercase tracking-widest text-muted-600">No content assigned - shows "Media Reserved" live</span>
+                      <span className="text-xs uppercase tracking-widest text-muted-600">No content assigned - nothing is showing on the dashboard</span>
                     )}
                   </div>
 
@@ -220,7 +247,7 @@ export default function PlatformCarouselOwnerSlotsPage(): JSX.Element {
                       onChange={(event) => saveSlot(slot.slotNumber, { mediaLibraryId: event.target.value || null })}
                       className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                     >
-                      <option value="">— None (show Media Reserved placeholder) —</option>
+                      <option value="">— None (nothing shown on the dashboard) —</option>
                       {files
                         .filter((f) => f.mediaType === slot.mediaType)
                         .map((f) => (
