@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import type { CropRect } from '../types/mediaLibrary'
+import { PILOT_DISCLAIMER_TEXT, PILOT_DISCLAIMER_LINK_TEXT } from '../content/legalTerms'
 import { buildPilotThemeStyle, type PilotThemeOverride } from '../utils/pilotThemeStyle'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
@@ -173,6 +175,21 @@ function PilotViewContent({
         afisoFrequency={afisoFrequency}
         textColor={pilotBackgroundOverride?.textColor}
       />
+
+      {/* Legal-rollout round (Part C, Pilot's App Terms of Use) -
+          always-visible, in-flow (not a fixed overlay, so it can never
+          cover weather data below it, and doesn't need any change to
+          the fixed-footer pb-20 balance the version stamp/ticker
+          already rely on). Same for every tenant - no per-tenant
+          opt-out, no acceptance checkbox (the Terms of Use document
+          itself says pilots aren't asked to accept anything - this is
+          informational only, matching that). */}
+      <p className="mx-auto mt-2 max-w-lg px-4 text-center text-xs leading-snug text-slate-400">
+        {PILOT_DISCLAIMER_TEXT}{' '}
+        <Link to="/pilot-terms" className="underline hover:text-slate-200">
+          {PILOT_DISCLAIMER_LINK_TEXT}
+        </Link>
+      </p>
 
       {/* Data-freshness safety net (dataStale, WeatherContext.tsx) -
           deliberately independent of the weather status badge's own

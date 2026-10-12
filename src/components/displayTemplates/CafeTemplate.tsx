@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { DASHBOARD_FOOTER_TEXT } from '../../content/legalTerms'
 import MediaPanel, { type MediaPanelSourceData } from '../media/MediaPanel'
 import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../CafeTicker'
 import VenueCornerBadge from '../VenueCornerBadge'
@@ -438,6 +439,23 @@ export default function CafeTemplate({
           />
         </div>
       )}
+      {/* Legal-rollout round - this template has no always-rendered
+          "Powered by" credit line (unlike the three standard templates -
+          see their own comment) to piggyback on, so this is its own
+          small, low-contrast, absolutely-positioned line instead.
+          Anchored just above the ticker (bottom: tickerHeight) when it's
+          on, or the true bottom edge when it's off, using the same
+          tickerHeight this template already measures for the grid's own
+          paddingBottom above - so it can never overlap the ticker in
+          either state, and needs no layout change of its own. z-10 to
+          match the ticker's own stacking level (they never occupy the
+          same vertical space, so no ordering conflict between them). */}
+      <div
+        className="pointer-events-none absolute inset-x-0 z-10 flex justify-center px-2 text-center text-[11px] text-slate-500 opacity-50"
+        style={{ bottom: tickerEnabled ? tickerHeight : 0 }}
+      >
+        {DASHBOARD_FOOTER_TEXT}
+      </div>
     </div>
   )
 }

@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import ScrollGatedViewer from '../components/ScrollGatedViewer'
+import LegalMarkdown from '../components/LegalMarkdown'
 import { TENANT_ONBOARDING_CONTENT_URL, TERMS_ACCEPT_URL } from '../config/publicApi'
+import {
+  CUSTOMER_TERMS_TITLE,
+  customerTermsMarkdown,
+  privacyPolicyMarkdown,
+  TERMS_VERSION,
+  TERMS_EFFECTIVE_DATE,
+} from '../content/legalTerms'
 
 interface VideoSlot {
   id: string
@@ -11,8 +19,6 @@ interface VideoSlot {
 
 interface OnboardingContent {
   videos: VideoSlot[]
-  termsText: string
-  privacyText: string
 }
 
 // Mandatory, no-skip gate - RequireAuth.tsx redirects here from every
@@ -110,8 +116,12 @@ export default function OnboardingTermsPage(): JSX.Element {
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-6 py-10 text-slate-100">
       <div className="mx-auto max-w-5xl">
         <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Before you continue</h1>
-        <p className="mb-8 text-base text-muted-400">
-          A quick orientation, then please read and agree to the Terms & Conditions and Privacy Policy below.
+        <p className="mb-1 text-base text-muted-400">
+          A quick orientation, then please read and agree to the Customer Terms (including the Media Box loan
+          schedule) below.
+        </p>
+        <p className="mb-8 text-sm text-muted-500">
+          Version {TERMS_VERSION} · Effective {TERMS_EFFECTIVE_DATE}
         </p>
 
         {content.videos.length > 0 && (
@@ -135,9 +145,17 @@ export default function OnboardingTermsPage(): JSX.Element {
         )}
 
         <section className="mb-6 rounded-2xl border border-border bg-panel p-6">
-          <div className="mb-1 text-base font-bold uppercase tracking-widest text-accent-sky-400">Terms &amp; Conditions</div>
-          <p className="mb-3 text-sm text-muted-500">Scroll to the bottom to enable the checkbox below.</p>
-          <ScrollGatedViewer text={content.termsText} reachedBottom={termsRead} onReachedBottom={() => setTermsRead(true)} />
+          <div className="mb-1 text-base font-bold uppercase tracking-widest text-accent-sky-400">{CUSTOMER_TERMS_TITLE}</div>
+          <p className="mb-3 text-sm text-muted-500">
+            Includes the Media Box loan schedule. Scroll to the bottom to enable the checkbox below, or{' '}
+            <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">
+              open the full page in a new tab
+            </Link>
+            .
+          </p>
+          <ScrollGatedViewer reachedBottom={termsRead} onReachedBottom={() => setTermsRead(true)}>
+            <LegalMarkdown markdown={customerTermsMarkdown} />
+          </ScrollGatedViewer>
           <label className="mt-4 flex items-center gap-2 text-base">
             <input
               type="checkbox"
@@ -146,14 +164,22 @@ export default function OnboardingTermsPage(): JSX.Element {
               onChange={(event) => setTermsChecked(event.target.checked)}
               className="h-4 w-4"
             />
-            I have read and agree to the Terms &amp; Conditions
+            I have read and agree to the Customer Terms
           </label>
         </section>
 
         <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
           <div className="mb-1 text-base font-bold uppercase tracking-widest text-accent-sky-400">Privacy Policy</div>
-          <p className="mb-3 text-sm text-muted-500">Scroll to the bottom to enable the checkbox below.</p>
-          <ScrollGatedViewer text={content.privacyText} reachedBottom={privacyRead} onReachedBottom={() => setPrivacyRead(true)} />
+          <p className="mb-3 text-sm text-muted-500">
+            Scroll to the bottom to enable the checkbox below, or{' '}
+            <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">
+              open the full page in a new tab
+            </Link>
+            .
+          </p>
+          <ScrollGatedViewer reachedBottom={privacyRead} onReachedBottom={() => setPrivacyRead(true)}>
+            <LegalMarkdown markdown={privacyPolicyMarkdown} />
+          </ScrollGatedViewer>
           <label className="mt-4 flex items-center gap-2 text-base">
             <input
               type="checkbox"

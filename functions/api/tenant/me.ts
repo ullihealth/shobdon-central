@@ -6,6 +6,7 @@
 // what this endpoint tells them.
 
 import { requireTenant, listUserMemberships, jsonResponse, type D1Database } from "../_utils/tenantAuth";
+import { TERMS_VERSION } from "../_utils/termsVersion";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -27,11 +28,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // whatever tenant role the developer's account happens to hold.
   // termsAcceptedAt backs RequireAuth.tsx's mandatory onboarding-terms
   // redirect - per-user, not per-tenant (see migration 0032's own
-  // comment on why).
+  // comment on why). termsAcceptedVersion (migration 0108, terms-
+  // versioning round) is now part of that same check below - accepting
+  // is only "done" if the stored version matches the CURRENT
+  // TERMS_VERSION, so a user who accepted an earlier (or, for every
+  // existing account, the old unversioned placeholder) text is
+  // correctly treated as not-yet-accepted and re-prompted.
   const userRow = await env.DB
-    .prepare("SELECT developer, termsAcceptedAt FROM user WHERE id = ?")
+    .prepare("SELECT developer, termsAcceptedAt, termsAcceptedVersion FROM user WHERE id = ?")
     .bind(result.userId)
-    .first<{ developer: number; termsAcceptedAt: string | null }>();
+    .first<{ developer: number; termsAcceptedAt: string | null; termsAcceptedVersion: string | null }>();
 
   // memberships feeds the account/org switcher (AdminSidebar's
   // OrgSwitcher) - every org this user belongs to, not just the one the
@@ -91,7 +97,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     organizationSlug: result.membership.slug,
     organizationName: result.membership.name,
     isDeveloper: !!userRow?.developer,
-    hasAcceptedTerms: !!userRow?.termsAcceptedAt,
+    hasAcceptedTerms: !!userRow?.termsAcceptedAt && userRow.termsAcceptedVersion === TERMS_VERSION,
     cafeEntitled,
     subdomain: tenantRow?.subdomain ?? null,
     // Defaults to 'airfield' (matching the column's own DEFAULT) rather

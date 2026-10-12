@@ -1,0 +1,21 @@
+-- Terms versioning (legal-rollout round, Oct 2026) - replaces the July
+-- 2026 placeholder Terms/Privacy (onboarding_content, migration 0032)
+-- with the real legal text now committed at src/content/legalTerms.ts.
+--
+-- termsAcceptedAt alone (migration 0032) only ever recorded THAT a user
+-- accepted something, never WHICH version - so a future text change
+-- (like this one) couldn't distinguish "accepted the real terms" from
+-- "accepted July's not-final placeholder" for any existing user, and
+-- editing onboarding_content's text in place (the only mechanism that
+-- existed before) could never trigger re-acceptance for anyone who'd
+-- already clicked through.
+--
+-- Deliberately left NULL for every existing row, no backfill - every
+-- current user accepted the OLD, unversioned placeholder, never a
+-- versioned document, so none of them have genuinely accepted "version
+-- 1.0" of anything yet. RequireAuth.tsx's mandatory gate (updated this
+-- round to check termsAcceptedVersion = TERMS_VERSION, not just
+-- termsAcceptedAt IS NOT NULL) reads this as "needs to accept again" for
+-- every existing user, exactly once, on their next back-office login -
+-- the correct behaviour, not a bug to backfill around.
+ALTER TABLE user ADD COLUMN termsAcceptedVersion TEXT;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { PUBLIC_CHECK_SLUG_URL, PUBLIC_CHECK_POSTCODE_URL, TRIAL_SIGNUP_URL } from '../config/publicApi'
 import { LATEST_READING_URL } from '../config/captureEndpoint'
 
@@ -1027,13 +1028,21 @@ export default function LandingPage(): JSX.Element {
         </section>
       </main>
 
-      {/* FOOTER - Privacy/Terms deliberately non-clickable placeholder
-          text: a real policy document, not built yet, and not needed
-          for tonight per explicit instruction. */}
+      {/* FOOTER - legal-rollout round: Privacy/Terms are now real links
+          to the public legal pages (/privacy, /terms), replacing the
+          previous deliberately non-clickable placeholder text from
+          before those pages existed. */}
       <footer className="border-t border-slate-800 px-6 py-8 text-center text-sm text-slate-500">
         <p>Airfield Central © 2026 · Built for UK airfields and flying clubs</p>
         <p className="mt-2">
-          <span className="text-slate-600">Privacy</span> · <span className="text-slate-600">Terms</span> ·{' '}
+          <Link to="/privacy" className="text-slate-400 hover:text-sky-400 hover:underline">
+            Privacy
+          </Link>{' '}
+          ·{' '}
+          <Link to="/terms" className="text-slate-400 hover:text-sky-400 hover:underline">
+            Terms
+          </Link>{' '}
+          ·{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`} className="text-sky-500 hover:underline">
             {SUPPORT_EMAIL}
           </a>

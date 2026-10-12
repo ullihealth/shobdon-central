@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import CompassPanel from '../CompassPanel'
 import FooterTicker from '../FooterTicker'
+import { DASHBOARD_FOOTER_TEXT } from '../../content/legalTerms'
 import Header from '../Header'
 import LeftInfoPanel from '../LeftInfoPanel'
 import MediaPanel from '../media/MediaPanel'
@@ -166,6 +167,14 @@ export default function ClassicTemplate({
             <img src="/favicon/favicon-32.png" alt="" className="h-3 w-3" />
             <span>Powered by Airfield Central</span>
           </a>
+          {/* Legal-rollout round - small, low-contrast, same line as
+              "Powered by" (shares its existing dynamic height
+              reservation via stackRef/useElementHeight above, so this
+              can't silently overlap the panels grid). No link here,
+              unlike the Pilot's App's own on-screen disclaimer - not
+              specified for this one, and this kiosk display has no
+              pointer/touch interaction to make a link meaningful. */}
+          <span className="ml-2 text-[11px] text-slate-500 opacity-50">· {DASHBOARD_FOOTER_TEXT}</span>
         </div>
         <FooterTicker />
       </div>

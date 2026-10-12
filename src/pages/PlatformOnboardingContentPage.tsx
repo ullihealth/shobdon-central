@@ -9,10 +9,21 @@ interface VideoSlot {
 }
 
 // Platform-admin only: edit the global (not per-tenant) video
-// placeholders and Terms/Privacy plain text shown on the mandatory
-// onboarding gate (OnboardingTermsPage.tsx) and the ongoing Help page.
-// A simple form over a single row, not a new subsystem - matches the
-// "simple admin-only config" scope this was built to.
+// placeholders shown on the mandatory onboarding gate
+// (OnboardingTermsPage.tsx) and the ongoing Help page.
+//
+// Terms-versioning round: the Terms/Privacy EDIT fields that used to
+// live on this page are gone. That text is no longer sourced from this
+// row at all - see src/content/legalTerms.ts's own comment for why
+// (versioning needs the text in the same deploy as the version number,
+// and the real documents need structural rendering a plain textarea
+// can't represent). Editing those two now-dead columns here would be a
+// silent trap: the save would succeed, but nothing live would change,
+// since OnboardingTermsPage.tsx/HelpPage.tsx/the three public legal
+// pages all read the committed content module now, never this table's
+// terms_text/privacy_text. Left in place, unedited, purely as a
+// historical record of the old placeholder (see migrations 0032/0042) -
+// not read anywhere in the running app any more.
 export default function PlatformOnboardingContentPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
@@ -23,8 +34,6 @@ export default function PlatformOnboardingContentPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [videos, setVideos] = useState<VideoSlot[]>([])
-  const [termsText, setTermsText] = useState('')
-  const [privacyText, setPrivacyText] = useState('')
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
@@ -39,8 +48,6 @@ export default function PlatformOnboardingContentPage(): JSX.Element {
       .then((data) => {
         if (data) {
           setVideos(data.videos ?? [])
-          setTermsText(data.termsText ?? '')
-          setPrivacyText(data.privacyText ?? '')
         }
       })
       .finally(() => setLoading(false))
@@ -63,7 +70,7 @@ export default function PlatformOnboardingContentPage(): JSX.Element {
     const response = await fetch(PLATFORM_ONBOARDING_CONTENT_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videos, termsText, privacyText }),
+      body: JSON.stringify({ videos }),
     })
     setSaveStatus(response.ok ? 'saved' : 'error')
   }
@@ -126,25 +133,26 @@ export default function PlatformOnboardingContentPage(): JSX.Element {
             </section>
 
             <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Terms &amp; Conditions</div>
-              <p className="mb-3 text-xs text-muted-500">Plain text — separate paragraphs with a blank line.</p>
-              <textarea
-                value={termsText}
-                onChange={(event) => setTermsText(event.target.value)}
-                rows={12}
-                className="w-full rounded border border-slate-700 bg-slate-900/80 px-3 py-2 font-mono text-xs text-white"
-              />
-            </section>
-
-            <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-              <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Privacy Policy</div>
-              <p className="mb-3 text-xs text-muted-500">Plain text — separate paragraphs with a blank line.</p>
-              <textarea
-                value={privacyText}
-                onChange={(event) => setPrivacyText(event.target.value)}
-                rows={12}
-                className="w-full rounded border border-slate-700 bg-slate-900/80 px-3 py-2 font-mono text-xs text-white"
-              />
+              <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Terms &amp; Privacy</div>
+              <p className="text-sm text-muted-400">
+                No longer edited here. The real Customer Terms, Privacy Policy and Pilot's App Terms of Use are
+                committed source (<code className="text-xs text-muted-300">src/content/legalTerms.ts</code>) so the
+                text, the version number and the clickwrap stay in sync — a text change now means a code change
+                (bump <code className="text-xs text-muted-300">TERMS_VERSION</code> too, to re-prompt everyone).
+                Preview the live pages:{' '}
+                <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">
+                  /terms
+                </Link>
+                ,{' '}
+                <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">
+                  /privacy
+                </Link>
+                ,{' '}
+                <Link to="/pilot-terms" target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">
+                  /pilot-terms
+                </Link>
+                .
+              </p>
             </section>
 
             <button

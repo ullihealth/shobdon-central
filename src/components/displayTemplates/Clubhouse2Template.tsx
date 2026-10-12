@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { DASHBOARD_FOOTER_TEXT } from '../../content/legalTerms'
 import CloudVisibilityChart from '../CloudVisibilityChart'
 import CompassPanel from '../CompassPanel'
 import FooterTicker from '../FooterTicker'
@@ -208,6 +209,10 @@ export default function Clubhouse2Template({
             <img src="/favicon/favicon-32.png" alt="" className="h-3 w-3" />
             <span>Powered by Airfield Central</span>
           </a>
+          {/* Legal-rollout round - small, low-contrast, same line as
+              "Powered by" (shares its existing dynamic height
+              reservation via stackRef/useElementHeight above). */}
+          <span className="ml-2 text-[11px] text-slate-500 opacity-50">· {DASHBOARD_FOOTER_TEXT}</span>
         </div>
         <FooterTicker />
       </div>

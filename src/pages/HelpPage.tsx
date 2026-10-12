@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { TENANT_ONBOARDING_CONTENT_URL } from '../config/publicApi'
-import { splitParagraphs } from '../utils/splitParagraphs'
+import LegalMarkdown from '../components/LegalMarkdown'
+import {
+  CUSTOMER_TERMS_TITLE,
+  customerTermsMarkdown,
+  privacyPolicyMarkdown,
+  TERMS_VERSION,
+  TERMS_EFFECTIVE_DATE,
+} from '../content/legalTerms'
 
 interface VideoSlot {
   id: string
@@ -11,8 +18,6 @@ interface VideoSlot {
 
 interface OnboardingContent {
   videos: VideoSlot[]
-  termsText: string
-  privacyText: string
 }
 
 // Persistent, ongoing access to the same content shown during the
@@ -80,25 +85,31 @@ export default function HelpPage(): JSX.Element {
             <span className="text-sm text-muted-400">View frequently asked questions →</span>
           </Link>
 
+          <p className="mb-4 text-xs text-muted-500">
+            Version {TERMS_VERSION} · Effective {TERMS_EFFECTIVE_DATE}
+          </p>
+
           <section className="mb-6 rounded-2xl border border-border bg-panel p-6">
-            <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Terms &amp; Conditions</div>
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-slate-900/60 p-4 text-sm leading-relaxed text-muted-300">
-              {splitParagraphs(content.termsText).map((paragraph, index) => (
-                <p key={index} className="mb-3 whitespace-pre-wrap last:mb-0">
-                  {paragraph}
-                </p>
-              ))}
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">{CUSTOMER_TERMS_TITLE}</div>
+              <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-xs text-accent-sky-400 hover:underline">
+                Open full page →
+              </Link>
+            </div>
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-slate-900/60 p-4">
+              <LegalMarkdown markdown={customerTermsMarkdown} />
             </div>
           </section>
 
           <section className="mb-8 rounded-2xl border border-border bg-panel p-6">
-            <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Privacy Policy</div>
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-slate-900/60 p-4 text-sm leading-relaxed text-muted-300">
-              {splitParagraphs(content.privacyText).map((paragraph, index) => (
-                <p key={index} className="mb-3 whitespace-pre-wrap last:mb-0">
-                  {paragraph}
-                </p>
-              ))}
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Privacy Policy</div>
+              <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-xs text-accent-sky-400 hover:underline">
+                Open full page →
+              </Link>
+            </div>
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-slate-900/60 p-4">
+              <LegalMarkdown markdown={privacyPolicyMarkdown} />
             </div>
           </section>
 
