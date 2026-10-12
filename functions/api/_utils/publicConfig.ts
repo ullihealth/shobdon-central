@@ -258,7 +258,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // own `organizationId`.
   const effective = await resolveEffectiveTenantByOrganizationId(env.DB, organizationId);
 
-  const [runwayRows, themeRow, tenantRow, effectiveOffsetRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows] = await Promise.all([
+  const [runwayRows, themeRow, tenantRow, effectiveOffsetRow, cameraRows, newCameraRows, carouselRows, cafeCarouselRows, opsPanelRow, mainDisplayRow, cafeDisplayRow, cafeSettingsRow, gasPricesRow, parentOpsPanelRow, ownRunwayRows, ownGasPricesRow, reservedSlotRows, parentCameraSlotRows, parentNewCameraRows, parentCropCarouselRows] = await Promise.all([
     env.DB
       .prepare("SELECT id, endAIdentifier, endBIdentifier, headingDegrees, twin, stripLengthPx, identifierFontSizePx, stripsJson, sortOrder FROM runway_groups WHERE organizationId = ? ORDER BY sortOrder")
       .bind(effective.organizationId)
@@ -283,7 +283,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // right label with no data change needed, the same way
         // parent-tenant.ts's own "Currently using X's weather station"
         // banner already works.
-        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, full_buffer_gate_enabled AS fullBufferGateEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, dashboard_enabled AS dashboardEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, overscan_safe_margin_enabled AS overscanSafeMarginEnabled, overscan_safe_margin_percent AS overscanSafeMarginPercent, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId FROM tenants WHERE organization_id = ?"
+        "SELECT name, logo_r2_key AS logoR2Key, has_physical_atc AS hasPhysicalAtc, brand_display_json AS brandDisplayJson, carousel_budget_enabled AS carouselBudgetEnabled, full_buffer_gate_enabled AS fullBufferGateEnabled, afiso_open AS afisoOpen, afiso_frequency AS afisoFrequency, pilot_ticker_slots_json AS pilotTickerSlotsJson, pilot_background_override_json AS pilotBackgroundOverrideJson, pilot_ticker_style_json AS pilotTickerStyleJson, mobile_enabled AS mobileEnabled, dashboard_enabled AS dashboardEnabled, windsock_band2_kt AS windsockBand2Kt, windsock_band3_kt AS windsockBand3Kt, windsock_band4_kt AS windsockBand4Kt, windsock_band5_kt AS windsockBand5Kt, arrow_tailwind_kt AS arrowTailwindKt, arrow_crosswind_kt AS arrowCrosswindKt, arrow_headwind_kt AS arrowHeadwindKt, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa, active_weather_provider AS activeWeatherProvider, display_width_cm AS displayWidthCm, overscan_safe_margin_enabled AS overscanSafeMarginEnabled, overscan_safe_margin_percent AS overscanSafeMarginPercent, tenants.slug AS slug, (SELECT p.slug FROM tenants p WHERE p.id = tenants.parent_tenant_id) AS parentSlug, qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl, qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key, primary_camera_slot_number AS primaryCameraSlotNumber, primary_camera_id AS primaryCameraId, primary_camera_from_parent AS primaryCameraFromParent FROM tenants WHERE organization_id = ?"
       )
       .bind(organizationId)
       .first<{
@@ -330,6 +330,10 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         // not inferred from either camera table's own contents).
         primaryCameraSlotNumber: number | null;
         primaryCameraId: string | null;
+        // Sub-tenant parent-camera round (migration 0109) - 1 means the
+        // two fields above identify a row on the PARENT's camera_slots/
+        // cameras, not this tenant's own; see the resolution below.
+        primaryCameraFromParent: number;
       }>(),
     // Consistent QNH/QFE rounding round - this is a physical fact about
     // Shobdon's own station (its QFE datum vs QNH sea-level datum), not a
@@ -643,6 +647,36 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mediaUploadedAt: string | null;
         mediaSizeBytes: number | null;
       }>(),
+    // Sub-tenant parent-camera round (migration 0109) - the PARENT's own
+    // camera_slots/cameras/carousel-crop rows, needed only when
+    // tenantRow.primaryCameraFromParent is set (resolved below, after
+    // this Promise.all, same reason ownRunwayRows/ownGasPricesRow can't
+    // gate on tenantRow either - it's resolved in this same batch).
+    // Gated on effective.isInherited (cheap - already computed before
+    // this call) rather than always running, same posture as those two
+    // queries; the common case (no parent, or parent camera never
+    // chosen) costs nothing extra.
+    effective.isInherited
+      ? env.DB
+          .prepare("SELECT slotNumber, url FROM camera_slots WHERE organizationId = ? ORDER BY slotNumber")
+          .bind(effective.organizationId)
+          .all<{ slotNumber: number; url: string }>()
+      : Promise.resolve({ results: [] as { slotNumber: number; url: string }[] }),
+    effective.isInherited
+      ? env.DB
+          .prepare(
+            `SELECT c.id, c.mode, c.youtube_video_id AS youtubeVideoId
+             FROM cameras c WHERE c.tenant_id = ?`
+          )
+          .bind(effective.id)
+          .all<{ id: string; mode: string; youtubeVideoId: string | null }>()
+      : Promise.resolve({ results: [] as { id: string; mode: string; youtubeVideoId: string | null }[] }),
+    effective.isInherited
+      ? env.DB
+          .prepare("SELECT cameraSlotNumber, cameraId, cropX, cropY, cropWidth, cropHeight FROM carousel_slots WHERE organizationId = ? AND enabled = 1")
+          .bind(effective.organizationId)
+          .all<{ cameraSlotNumber: number | null; cameraId: string | null; cropX: number; cropY: number; cropWidth: number; cropHeight: number }>()
+      : Promise.resolve({ results: [] as { cameraSlotNumber: number | null; cameraId: string | null; cropX: number; cropY: number; cropWidth: number; cropHeight: number }[] }),
   ]);
 
   // Parent linked but has zero runway_groups/gas_prices rows of its own
@@ -906,7 +940,26 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // already whatever arbitrary embeddable page was configured (e.g.
   // Shobdon's rtsp.me relay), used as-is.
   let primaryCameraUrl: string | null = null;
-  if (tenantRow?.primaryCameraSlotNumber != null) {
+  if (tenantRow?.primaryCameraFromParent) {
+    // Opt-in only (migration 0109) - resolved against the PARENT's own
+    // camera_slots/cameras, never this tenant's own, and only while the
+    // parent link genuinely still exists. If the parent link was since
+    // removed (effective.isInherited false), primary_camera_slot_number/
+    // primary_camera_id still hold whatever the PARENT's identifiers
+    // were - deliberately NOT reused as if they were this tenant's own
+    // (a coincidentally matching slot number on this tenant's own
+    // camera_slots would otherwise show the wrong camera), so this
+    // falls through to "no camera" instead.
+    if (effective.isInherited) {
+      if (tenantRow.primaryCameraSlotNumber != null) {
+        const slotMatch = parentCameraSlotRows.results.find((row) => row.slotNumber === tenantRow.primaryCameraSlotNumber);
+        primaryCameraUrl = slotMatch?.url ? slotMatch.url : null;
+      } else if (tenantRow.primaryCameraId) {
+        const cameraMatch = parentNewCameraRows.results.find((row) => row.id === tenantRow.primaryCameraId);
+        primaryCameraUrl = cameraMatch ? resolveCameraUrl("stream", cameraMatch.youtubeVideoId, null, cameraMatch.id) : null;
+      }
+    }
+  } else if (tenantRow?.primaryCameraSlotNumber != null) {
     const slotMatch = cameraRows.results.find((row) => row.slotNumber === tenantRow.primaryCameraSlotNumber);
     primaryCameraUrl = slotMatch?.url ? slotMatch.url : null;
   } else if (tenantRow?.primaryCameraId) {
@@ -929,7 +982,17 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
   // like an un-zoomed slide does today, satisfying "no crop configured
   // -> stays raw" without a separate null-vs-identity branch.
   let primaryCameraCropRect = { x: 0, y: 0, width: 100, height: 100 };
-  if (tenantRow?.primaryCameraSlotNumber != null) {
+  if (tenantRow?.primaryCameraFromParent) {
+    if (effective.isInherited) {
+      if (tenantRow.primaryCameraSlotNumber != null) {
+        const cropMatch = parentCropCarouselRows.results.find((row) => row.cameraSlotNumber === tenantRow.primaryCameraSlotNumber);
+        if (cropMatch) primaryCameraCropRect = { x: cropMatch.cropX, y: cropMatch.cropY, width: cropMatch.cropWidth, height: cropMatch.cropHeight };
+      } else if (tenantRow.primaryCameraId) {
+        const cropMatch = parentCropCarouselRows.results.find((row) => row.cameraId === tenantRow.primaryCameraId);
+        if (cropMatch) primaryCameraCropRect = { x: cropMatch.cropX, y: cropMatch.cropY, width: cropMatch.cropWidth, height: cropMatch.cropHeight };
+      }
+    }
+  } else if (tenantRow?.primaryCameraSlotNumber != null) {
     const cropMatch = carouselRows.results.find((row) => row.cameraSlotNumber === tenantRow.primaryCameraSlotNumber);
     if (cropMatch) primaryCameraCropRect = { x: cropMatch.cropX, y: cropMatch.cropY, width: cropMatch.cropWidth, height: cropMatch.cropHeight };
   } else if (tenantRow?.primaryCameraId) {

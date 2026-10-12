@@ -1,0 +1,21 @@
+-- Sub-tenant parent-camera round - lets a sub-tenant's Pilot's App
+-- primary camera point at its PARENT's camera instead of its own
+-- (first use: Tiger Helicopters showing Shobdon's camera). Deliberately
+-- a separate flag column rather than overloading
+-- primary_camera_slot_number/primary_camera_id's existing meaning: both
+-- columns keep storing exactly what they always have (a slot number or
+-- a cameras.id), this just says WHOSE camera_slots/cameras rows those
+-- values resolve against - the tenant's own (flag 0, every existing
+-- row, unchanged behaviour) or its parent's (flag 1, opt-in only, set
+-- exclusively via the admin picker's new "parent-slot:"/"parent-cam:"
+-- refs). Keeping camera inheritance OFF by default (unlike runways/gas/
+-- ops panel, which already inherit unconditionally via
+-- resolveEffectiveTenantByOrganizationId) is deliberate per this
+-- round's own spec - no existing tenant's camera button may change.
+--
+-- No FK to tenants(parent_tenant_id) here - the flag's meaning is only
+-- ever "resolve against whatever this tenant's parent currently is",
+-- re-checked live at read time (publicConfig.ts), not a stored
+-- snapshot; see that file's own comment on the fail-safe if the parent
+-- link is ever removed while this flag is set.
+ALTER TABLE tenants ADD COLUMN primary_camera_from_parent INTEGER NOT NULL DEFAULT 0;

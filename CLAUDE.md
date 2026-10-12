@@ -31,3 +31,10 @@ invisible on a Mac browser). A pre-commit hook (scripts/check-image-color-profil
 wired via husky/lint-staged) checks staged images under public/ automatically -
 but check any new/replaced image asset's ICC profile yourself before committing
 regardless, since the hook only helps on a machine it's actually installed on.
+
+## Existing-design guard (applies to every task)
+
+Before proposing or making any change, first find and report what already exists for this area - including separate or parallel mechanisms (e.g. a route with its own service worker, hook or component), code comments describing deliberate behaviour ("only", "deliberately", "never"), and released items on Developer Updates / Developer Features.
+Treat existing behaviour as intentional unless I say otherwise.
+STOP and ask me before removing, replacing or bypassing anything that is documented as deliberate, or anything that is part of my manual processes (e.g. revision releases, tap-to-update, approval gates).
+Fix only the problem I describe, at the size I describe it - do not extend a fix to other routes, devices or tenants unless I ask.
