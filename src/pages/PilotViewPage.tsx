@@ -310,7 +310,7 @@ function PilotViewContent({
             either way rather than depending on the ticker actually
             rendering. */}
         <PilotVersionStamp />
-        <PilotFooterTicker />
+        <PilotFooterTicker refreshSignal={refreshTick} />
       </div>
     </div>
   )

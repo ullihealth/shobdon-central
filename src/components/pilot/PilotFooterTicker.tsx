@@ -41,7 +41,7 @@ function hasRealContent(slots: TickerSlot[]): boolean {
   return slots.some((slot) => slot.enabled !== false && ((slot.textMode && slot.manualText?.trim()) || (!slot.textMode && slot.type)))
 }
 
-export default function PilotFooterTicker(): JSX.Element | null {
+export default function PilotFooterTicker({ refreshSignal }: { refreshSignal?: number }): JSX.Element | null {
   const { weather, liveDataUnavailable } = useWeather()
   const { hours: visibilityHours } = useVisibilityForecast()
 
@@ -55,6 +55,12 @@ export default function PilotFooterTicker(): JSX.Element | null {
   // already established.
   const [tickerStyle, setTickerStyle] = useState<TickerStyle>(DEFAULT_TICKER_STYLE)
 
+  // Pull-to-refresh round - refetches on every refreshTick bump (pull-to-
+  // refresh or the existing 60s tick, both owned by PilotViewPage), on
+  // top of the original load on mount. Each setter below only ever fires
+  // when that specific field is genuinely present in the response - a
+  // failed fetch (caught below) or a response missing a field never
+  // blanks what's already showing, it just leaves this refresh a no-op.
   useEffect(() => {
     let cancelled = false
     fetch(PUBLIC_CONFIG_URL)
@@ -70,7 +76,7 @@ export default function PilotFooterTicker(): JSX.Element | null {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshSignal])
 
   if (!hasRealContent(tickerSlots)) return null
 
