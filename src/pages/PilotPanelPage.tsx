@@ -5,6 +5,7 @@ import CompassPanel from '../components/CompassPanel'
 import PilotTickerSlotsCards, { PILOT_TICKER_SLOT_COUNT } from '../components/media/PilotTickerSlotsCards'
 import PilotTickerStyleCards from '../components/media/PilotTickerStyleCards'
 import PilotThemeTemplatesCard from '../components/media/PilotThemeTemplatesCard'
+import AutoNotamsScrollPanel from '../components/pilot/AutoNotamsScrollPanel'
 import PilotPreviewFrame from '../components/pilot/PilotPreviewFrame'
 import WeatherStatGrid from '../components/pilot/WeatherStatGrid'
 import { DEFAULT_TICKER_STYLE } from '../components/pilot/PilotFooterTicker'
@@ -177,6 +178,15 @@ function PilotPanelPreview({
             bearingLabelColor={backgroundOverride?.compassBearingLabels}
           />
           <WeatherStatGrid />
+          {/* NOTAM text colour round - reuses the real, self-fetching
+              AutoNotamsScrollPanel directly (same "preview structurally
+              CANNOT drift from the real page" posture as CompassPanel/
+              WeatherStatGrid above), so the toggle's effect shows here
+              immediately, before Save, same as every other field in
+              this preview. */}
+          <div className="mt-2">
+            <AutoNotamsScrollPanel textWhite={backgroundOverride?.notamTextWhite} />
+          </div>
         </div>
         <CafeTicker
           slots={tickerSlots}
@@ -477,6 +487,23 @@ export default function PilotPanelPage(): JSX.Element {
                     onClearSwatch={handleClearSwatch}
                   />
                 </div>
+                {/* NOTAM text colour round - independent of Text colour
+                    above: forces ONLY the NOTAM text on /pilot to pure
+                    white, leaving the card background/border/severity
+                    dot themed exactly as today. Off by default. */}
+                <label className="mt-4 flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!backgroundOverride.notamTextWhite}
+                    onChange={(event) => setBackgroundOverride({ ...backgroundOverride, notamTextWhite: event.target.checked })}
+                    className="h-4 w-4 accent-accent-sky-500"
+                  />
+                  <span className="text-sm font-semibold text-slate-200">NOTAM text: white</span>
+                </label>
+                <p className="mt-1 text-xs text-muted-500">
+                  Forces NOTAM text on /pilot to pure white, independent of the text colour above. The NOTAM card's
+                  background and border stay themed.
+                </p>
               </section>
             )}
 

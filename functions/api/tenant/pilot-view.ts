@@ -72,6 +72,13 @@ interface BackgroundOverrideInput {
   // not the "24"/"30"/"33" NUMBER text just inside them (different
   // hardcoded alpha values, can't safely share one field).
   compassBearingLabels?: string;
+  // NOTAM text colour round - a boolean, not a hex colour, so it's
+  // deliberately NOT in OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS below
+  // (that list is validated/copied via HEX_COLOR_PATTERN, which a
+  // boolean would always fail) - handled by its own explicit checks
+  // everywhere that constant is used instead. See src/utils/
+  // pilotThemeStyle.ts's own PilotThemeOverride.notamTextWhite comment.
+  notamTextWhite?: boolean;
 }
 
 const OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS = [
@@ -200,6 +207,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         for (const key of OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS) {
           if (typeof parsed[key] === "string") backgroundOverride[key] = parsed[key] as string;
         }
+        if (typeof parsed.notamTextWhite === "boolean") backgroundOverride.notamTextWhite = parsed.notamTextWhite;
       }
     } catch {
       backgroundOverride = null;
@@ -271,6 +279,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         return jsonResponse({ error: `backgroundOverride.${key} must be a #rrggbb hex colour` }, 400);
       }
     }
+    if (body.backgroundOverride.notamTextWhite !== undefined && typeof body.backgroundOverride.notamTextWhite !== "boolean") {
+      return jsonResponse({ error: "backgroundOverride.notamTextWhite must be a boolean" }, 400);
+    }
   }
 
   // Same ranges as cafe-settings/index.ts's own ticker* validation,
@@ -323,16 +334,17 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     body.backgroundOverride !== undefined
       ? body.backgroundOverride === null
         ? null
-        : JSON.stringify(
-            OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS.reduce(
+        : JSON.stringify({
+            ...OPTIONAL_BACKGROUND_OVERRIDE_COLOR_FIELDS.reduce(
               (acc, key) => {
                 const value = body.backgroundOverride![key];
                 if (value !== undefined) acc[key] = value;
                 return acc;
               },
               { backgroundColor: body.backgroundOverride.backgroundColor } as BackgroundOverrideInput
-            )
-          )
+            ),
+            ...(body.backgroundOverride.notamTextWhite !== undefined ? { notamTextWhite: body.backgroundOverride.notamTextWhite } : {}),
+          })
       : (existing?.backgroundOverrideJson ?? null);
   const nextTickerStyleJson =
     body.tickerStyle !== undefined

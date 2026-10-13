@@ -784,6 +784,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         cardBg?: string;
         textColor?: string;
         compassBearingLabels?: string;
+        notamTextWhite?: boolean;
       }
     | null = null;
   if (tenantRow?.pilotBackgroundOverrideJson) {
@@ -803,6 +804,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         ] as const) {
           if (typeof parsed[key] === "string") pilotBackgroundOverride[key] = parsed[key] as string;
         }
+        if (typeof parsed.notamTextWhite === "boolean") pilotBackgroundOverride.notamTextWhite = parsed.notamTextWhite;
       }
     } catch {
       pilotBackgroundOverride = null;

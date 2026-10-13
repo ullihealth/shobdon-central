@@ -280,7 +280,7 @@ function PilotViewContent({
             (full)") are separate hardcoded literals in a different
             file, untouched by this. */}
         <PilotCollapsibleSection title="NATS NOTAMs">
-          <AutoNotamsScrollPanel refreshSignal={refreshTick} />
+          <AutoNotamsScrollPanel refreshSignal={refreshTick} textWhite={pilotBackgroundOverride?.notamTextWhite} />
         </PilotCollapsibleSection>
         <PilotCollapsibleSection title="Forecast & Visibility">
           <ForecastCloudbaseCluster />

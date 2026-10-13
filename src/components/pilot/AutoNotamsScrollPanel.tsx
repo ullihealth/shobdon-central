@@ -35,7 +35,17 @@ const SEVERITY_DOT_CLASSES: Record<NotamSeverity, string> = {
 // for NOTAMs, and NOTAMs are safety-relevant, so they always render
 // here regardless of whether a given tenant has chosen to skip them in
 // the TV carousel's own rotation.
-export default function AutoNotamsScrollPanel({ refreshSignal }: { refreshSignal?: number }): JSX.Element {
+export default function AutoNotamsScrollPanel({
+  refreshSignal,
+  textWhite,
+}: {
+  refreshSignal?: number
+  // NOTAM text colour round - forces the text span (only) to pure white
+  // when on; the card's rounded-xl/border/bg-card and the severity dot
+  // are untouched, same as this prop's own PilotThemeOverride.
+  // notamTextWhite comment.
+  textWhite?: boolean
+}): JSX.Element {
   const [notams, setNotams] = useState<AutoNotam[] | null>(null)
 
   useEffect(() => {
@@ -70,7 +80,7 @@ export default function AutoNotamsScrollPanel({ refreshSignal }: { refreshSignal
               sentence-cased for readability. Pilot App only - not
               applied in RightInfoPanel.tsx's own Reception Dashboard/ATC
               NOTAM rendering. */}
-          <span>{formatNotamTextForDisplay(notam.text)}</span>
+          <span className={textWhite ? 'text-white' : undefined}>{formatNotamTextForDisplay(notam.text)}</span>
         </div>
       ))}
     </div>

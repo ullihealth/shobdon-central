@@ -29,6 +29,15 @@ export interface PilotThemeOverride {
   // "Degree Tick Marks" (compassMarkers) was already there but visibly
   // didn't cover this.
   compassBearingLabels?: string
+  // NOTAM text colour round - forces AutoNotamsScrollPanel.tsx's NOTAM
+  // text (only the text span, never the card background/border/severity
+  // dot) to pure white, independent of textColor above. Not a CSS
+  // variable like the fields above - applied as a direct Tailwind class
+  // at AutoNotamsScrollPanel's own call sites, same "explicit prop, not
+  // folded into buildPilotThemeStyle" posture as compassRing/
+  // compassCardinal/compassMarkers already use (see this function's own
+  // comment).
+  notamTextWhite?: boolean
 }
 
 // Compass/info-panel colours (compassDiscBg/panelBg/cardBg) each stay
