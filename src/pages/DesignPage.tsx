@@ -294,9 +294,14 @@ interface BrandDisplaySettings {
   showLogo: boolean
   showName: boolean
   nameFontSize: 'sm' | 'md' | 'lg' | 'xl'
+  // 2026-10-14 - no dedicated UI control here yet; kept on the type so a
+  // save from this page round-trips whatever value the tenant already
+  // has (e.g. Meg's Cafe's showCornerBadge: false) instead of silently
+  // dropping it on the next unrelated branding edit.
+  showCornerBadge: boolean
 }
 
-const DEFAULT_BRAND_DISPLAY_SETTINGS: BrandDisplaySettings = { showLogo: true, showName: true, nameFontSize: 'md' }
+const DEFAULT_BRAND_DISPLAY_SETTINGS: BrandDisplaySettings = { showLogo: true, showName: true, nameFontSize: 'md', showCornerBadge: true }
 
 interface ScreenPreviewProps {
   airfieldName: string | null

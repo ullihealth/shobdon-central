@@ -79,6 +79,10 @@ interface BrandDisplaySettings {
   showLogo: boolean;
   showName: boolean;
   nameFontSize: "sm" | "md" | "lg" | "xl";
+  // See publicConfig.ts's own copy of this shape for the full reasoning
+  // (2026-10-14 addition - whether VenueCornerBadge.tsx renders at all
+  // for the 'cafe' slice). Default true.
+  showCornerBadge: boolean;
 }
 
 interface BrandDisplayConfig {
@@ -87,8 +91,8 @@ interface BrandDisplayConfig {
 }
 
 const DEFAULT_BRAND_DISPLAY: BrandDisplayConfig = {
-  main: { showLogo: true, showName: true, nameFontSize: "md" },
-  cafe: { showLogo: true, showName: true, nameFontSize: "md" },
+  main: { showLogo: true, showName: true, nameFontSize: "md", showCornerBadge: true },
+  cafe: { showLogo: true, showName: true, nameFontSize: "md", showCornerBadge: true },
 };
 
 function parseBrandDisplay(json: string | null | undefined): BrandDisplayConfig {
@@ -109,7 +113,13 @@ const VALID_FONT_SIZES = new Set(["sm", "md", "lg", "xl"]);
 function isValidBrandDisplaySettings(value: unknown): value is BrandDisplaySettings {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
-  return typeof v.showLogo === "boolean" && typeof v.showName === "boolean" && typeof v.nameFontSize === "string" && VALID_FONT_SIZES.has(v.nameFontSize);
+  return (
+    typeof v.showLogo === "boolean" &&
+    typeof v.showName === "boolean" &&
+    typeof v.nameFontSize === "string" &&
+    VALID_FONT_SIZES.has(v.nameFontSize) &&
+    typeof v.showCornerBadge === "boolean"
+  );
 }
 
 // Migration 0040 - up to 5 reusable brand colours, admin-only (never

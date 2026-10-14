@@ -60,8 +60,8 @@ export default function DashboardPage(): JSX.Element {
   // here) during the brief pre-fetch window is already exactly today's
   // unconditional behaviour, not a separate fallback to maintain.
   const [brandDisplay, setBrandDisplay] = useState<{
-    main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
-    cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
+    main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl'; showCornerBadge: boolean }
+    cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl'; showCornerBadge: boolean }
   } | null>(null)
   // Set only on a genuine resolution failure (config.ts 404s - unknown
   // host, or the tenant is paused: tenants.active = 0, see
@@ -218,6 +218,7 @@ export default function DashboardPage(): JSX.Element {
               showLogo={brandDisplay?.cafe.showLogo}
               showName={brandDisplay?.cafe.showName}
               nameFontSize={brandDisplay?.cafe.nameFontSize}
+              showCornerBadge={brandDisplay?.cafe.showCornerBadge}
             />
           ) : mainTemplateId === 'clubhouse-2' ? (
             <Clubhouse2Template
@@ -236,6 +237,7 @@ export default function DashboardPage(): JSX.Element {
               showLogo={brandDisplay?.cafe.showLogo}
               showName={brandDisplay?.cafe.showName}
               nameFontSize={brandDisplay?.cafe.nameFontSize}
+              showCornerBadge={brandDisplay?.cafe.showCornerBadge}
             />
           ) : (
             <Clubhouse1Template

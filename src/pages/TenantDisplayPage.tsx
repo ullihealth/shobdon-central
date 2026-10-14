@@ -51,8 +51,8 @@ export default function TenantDisplayPage(): JSX.Element {
   // true/true/'md' on their own, so undefined during the brief
   // pre-fetch window is already exactly today's unconditional behaviour.
   const [brandDisplay, setBrandDisplay] = useState<{
-    main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
-    cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl' }
+    main: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl'; showCornerBadge: boolean }
+    cafe: { showLogo: boolean; showName: boolean; nameFontSize: 'sm' | 'md' | 'lg' | 'xl'; showCornerBadge: boolean }
   } | null>(null)
   // Byte-verified buffering gate round (migration 0094) - raw slot
   // arrays kept as fetched (not yet mapped to GateAssets), since which
@@ -164,6 +164,7 @@ export default function TenantDisplayPage(): JSX.Element {
               showLogo={brandDisplay?.cafe.showLogo}
               showName={brandDisplay?.cafe.showName}
               nameFontSize={brandDisplay?.cafe.nameFontSize}
+              showCornerBadge={brandDisplay?.cafe.showCornerBadge}
             />
           ) : (
             <ClassicTemplate

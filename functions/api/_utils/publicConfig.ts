@@ -183,6 +183,13 @@ interface BrandDisplaySettings {
   showLogo: boolean;
   showName: boolean;
   nameFontSize: "sm" | "md" | "lg" | "xl";
+  // 2026-10-14 - whether VenueCornerBadge.tsx renders at all for the
+  // 'cafe' slice (irrelevant to 'main', which uses Header.tsx instead -
+  // kept on the shared shape anyway, same as nameFontSize already is,
+  // rather than splitting the type per slice). Default true - every
+  // existing tenant's stored JSON predates this key, so this default is
+  // what they all get via the merge below; no migration needed.
+  showCornerBadge: boolean;
 }
 
 interface BrandDisplayConfig {
@@ -191,8 +198,8 @@ interface BrandDisplayConfig {
 }
 
 const DEFAULT_BRAND_DISPLAY: BrandDisplayConfig = {
-  main: { showLogo: true, showName: true, nameFontSize: "md" },
-  cafe: { showLogo: true, showName: true, nameFontSize: "md" },
+  main: { showLogo: true, showName: true, nameFontSize: "md", showCornerBadge: true },
+  cafe: { showLogo: true, showName: true, nameFontSize: "md", showCornerBadge: true },
 };
 
 // Tolerates a missing/malformed column value (shouldn't happen given

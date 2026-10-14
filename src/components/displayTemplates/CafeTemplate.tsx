@@ -24,6 +24,14 @@ interface CafeTemplateProps {
   showLogo?: boolean
   showName?: boolean
   nameFontSize?: 'sm' | 'md' | 'lg' | 'xl'
+  // 2026-10-14 - whether VenueCornerBadge renders at all (not just its
+  // logo/name contents - showLogo/showName above only control what's
+  // INSIDE the badge). Defaults true - every tenant except Meg's Cafe
+  // relies on this badge as their admin-access click-through when they
+  // have no autoFullscreen carousel slot configured (which is when
+  // PersistentConfigLink's gear icon doesn't render - see
+  // MediaPanel.tsx:640), so this must default to shown.
+  showCornerBadge?: boolean
   // See Clubhouse1Template.tsx's own comment - same preview-mode sizing
   // swap, needed so Screens Design's Dashboard-screen preview can
   // render this exact component when 'cafe-1' is the pending/live main
@@ -132,6 +140,7 @@ export default function CafeTemplate({
   showLogo,
   showName,
   nameFontSize,
+  showCornerBadge = true,
   isPreview = false,
   mediaData,
   safetyNoticesData,
@@ -314,15 +323,17 @@ export default function CafeTemplate({
             all as of this round - see its own comment - so this is now
             the only remaining min-w-0 in this file.) */}
         <div className="relative min-h-0 min-w-0">
-          <div className="absolute left-2 top-2 z-10">
-            <VenueCornerBadge
-              airfieldName={airfieldName}
-              logoUrl={logoUrl}
-              showLogo={showLogo}
-              showName={showName}
-              nameFontSize={nameFontSize}
-            />
-          </div>
+          {showCornerBadge && (
+            <div className="absolute left-2 top-2 z-10">
+              <VenueCornerBadge
+                airfieldName={airfieldName}
+                logoUrl={logoUrl}
+                showLogo={showLogo}
+                showName={showName}
+                nameFontSize={nameFontSize}
+              />
+            </div>
+          )}
           {/* No weather-source badge here, unlike ClassicTemplate/
               Clubhouse1Template/Clubhouse2Template (which render
               WeatherStatusIndicator via Header's rightSlot) - it was
