@@ -48,6 +48,9 @@ tenant - only `tenant-config.txt` differs between Pis.
   permanently hide the mouse pointer on the kiosk display (OS/compositor
   level only - never touches the web app). See "Hiding the mouse cursor"
   below.
+- **`setup-remote-access.sh`** - run this once over SSH on any kiosk Pi
+  to add Raspberry Pi Connect and Tailscale for remote support. See
+  "Remote access" below.
 
 ## One-time master image setup (already done on the current SD card)
 
@@ -238,6 +241,63 @@ Usage (on the Pi, over SSH, same as `personalize-tenant.sh`):
 Reboot (`sudo reboot`) afterwards either way for the change to take
 effect. See the comment block at the top of the script for exactly what
 it changes.
+
+## Remote access
+
+`setup-remote-access.sh` adds two independent ways to reach a kiosk Pi
+remotely, for support once it's installed on-site. Neither one touches
+the kiosk itself (kiosk-wrapper.sh, kiosk.service, kiosk-watchdog.service,
+tenant-config.txt, the nightly reboot, the cursor fix, or WiFi).
+
+- **Raspberry Pi Connect** - open the Pi's actual screen and/or a
+  terminal, in a browser, from `connect.raspberrypi.com`, without any
+  port forwarding or VPN. Good for "what does Jeff actually see on the
+  TV right now."
+- **Tailscale** - puts the Pi on a private network with your other
+  devices, so you (or Claude Code) can `ssh admin@<pi-name>` from
+  anywhere, same as being on the home WiFi.
+
+Run it once over SSH, same as the other scripts here:
+```
+./setup-remote-access.sh
+```
+It installs both, signs them in (prints a link for you to open in a
+browser for each - it never sees or handles your password, only the
+device-linking link), and leaves both running in the background at
+every boot, even with no one logged in. Safe to re-run - it skips
+anything already done, and if you don't finish a sign-in link within 2
+minutes it just tells you to re-run the script once you have.
+
+**To open a Pi's screen once it's signed in**: go to
+`connect.raspberrypi.com`, sign in with your Raspberry Pi ID, find the
+Pi in your device list (it shows up under its hostname, e.g.
+`tiger-helicopters`), and click it to open a remote screen session or a
+terminal, right in the browser.
+
+**To SSH in via Tailscale from your Mac**: make sure Tailscale is
+installed and signed in on your Mac too (same account), then
+`ssh admin@<pi-name>` (e.g. `ssh admin@tiger-helicopters`) or
+`ssh admin@<its 100.x.x.x Tailscale IP>` - `tailscale status` on your
+Mac lists both.
+
+**If SSH-over-Tailscale times out from your Mac but `tailscale ping
+<ip>` gets a reply**: that means Tailscale itself is fine end-to-end -
+something else on your Mac is intercepting the connection before it
+reaches Tailscale's own network interface. A consumer VPN app with a
+"kill switch"/traffic-shield feature (NordVPN's Shield, for one,
+confirmed during this setup) is a common cause, even though your Mac's
+own routing table correctly points that specific IP at Tailscale - the
+VPN's packet filter can still intercept it first. Fix: temporarily
+disable the other VPN, or add Tailscale's IP range (`100.64.0.0/10`) to
+its split-tunnel/exclusion list if it has one.
+
+**Removing a Pi from your accounts** (e.g. a box is being returned or
+decommissioned):
+- Raspberry Pi Connect: sign in at `connect.raspberrypi.com`, find the
+  device under "Devices," and remove it there - works even if the Pi
+  itself is already offline or wiped.
+- Tailscale: sign in at `https://login.tailscale.com/admin/machines`,
+  find the device, and click "Remove" - also works with the Pi offline.
 
 ## Tested
 
