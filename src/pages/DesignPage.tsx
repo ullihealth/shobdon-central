@@ -797,6 +797,12 @@ export default function DesignPage(): JSX.Element {
   // between" reasoning cafeEntitled already uses for an unentitled
   // airfield tenant.
   const [isVenueCafe, setIsVenueCafe] = useState(false)
+  // Layout-card dev-only round (2026-10-14) - same /api/tenant/me field
+  // RequireAuth.tsx's requireDeveloper check and isDeveloper flag use
+  // (not a new check). Fails closed (false) until resolved, same
+  // posture as cafeEntitled/isVenueCafe above - drives showLayoutSection
+  // below, never anything about a tenant's actual active template.
+  const [isDeveloper, setIsDeveloper] = useState(false)
   useEffect(() => {
     let cancelled = false
     fetch('/api/tenant/me')
@@ -805,6 +811,7 @@ export default function DesignPage(): JSX.Element {
         if (cancelled) return
         setCafeEntitled(!!data?.cafeEntitled)
         setIsVenueCafe(data?.tenantType === 'venue_cafe')
+        setIsDeveloper(!!data?.isDeveloper)
       })
       .catch(() => {})
     return () => {
@@ -1013,7 +1020,12 @@ export default function DesignPage(): JSX.Element {
   const availableTemplateCount = TEMPLATE_SLOTS.filter(
     (slot) => slot.category === relevantTemplateCategory && slot.status === 'available'
   ).length
-  const showLayoutSection = availableTemplateCount >= 2
+  // 2026-10-14 - also gated on isDeveloper (above): this card lets you
+  // switch a tenant's live layout template, which only the developer
+  // account should be doing day-to-day. The availableTemplateCount >= 2
+  // rule is unchanged - still hides the card when there's only one
+  // layout, for the developer too.
+  const showLayoutSection = availableTemplateCount >= 2 && isDeveloper
 
   // Selecting a card only updates the pending selection for whichever
   // screen is currently toggled - no confirm(), no network write.
