@@ -27,6 +27,13 @@ interface OnboardingContent {
 // this page at all (bare <RequireAuth>, any role).
 export default function HelpPage(): JSX.Element {
   const [content, setContent] = useState<OnboardingContent | null>(null)
+  // 2026-10-14 - unconfigured video tiles ("Video not yet configured")
+  // are a developer-only reminder, not tenant-facing content. Same
+  // isDeveloper flag/fetch pattern as DesignPage.tsx (commit 2b47148) -
+  // this page has no other reason yet to call /api/tenant/me, so it's a
+  // new call here, not a new endpoint. Fails closed (false) until
+  // resolved, same posture as that page's own fetch.
+  const [isDeveloper, setIsDeveloper] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -36,10 +43,22 @@ export default function HelpPage(): JSX.Element {
         if (!cancelled && data) setContent(data)
       })
       .catch(() => {})
+    fetch('/api/tenant/me')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) setIsDeveloper(!!data?.isDeveloper)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [])
+
+  // Tenants only ever see a tile once it has a real video; the developer
+  // keeps seeing every slot, including unconfigured ones, as a to-do
+  // reminder. Configuring a video later needs no code change - it just
+  // starts passing this filter the moment its url is set.
+  const visibleVideos = content ? (isDeveloper ? content.videos : content.videos.filter((video) => video.url)) : []
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -52,11 +71,11 @@ export default function HelpPage(): JSX.Element {
         <p className="text-sm text-muted-400">Loading…</p>
       ) : (
         <>
-          {content.videos.length > 0 && (
+          {visibleVideos.length > 0 && (
             <section className="mb-8">
               <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Videos</div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {content.videos.map((video) => (
+                {visibleVideos.map((video) => (
                   <div key={video.id} className="flex aspect-video flex-col items-center justify-center rounded-xl border border-border bg-panel p-3 text-center">
                     {video.url ? (
                       <video controls src={video.url} className="h-full w-full rounded-lg object-contain" />
