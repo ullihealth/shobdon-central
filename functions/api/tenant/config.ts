@@ -316,6 +316,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     cafeCarouselSlots: publicConfigData.cafeCarouselSlots,
     opsPanel: publicConfigData.opsPanel,
     gasPrices: publicConfigData.gasPrices,
+    // Per-tenant Gyropedia opt-out (migration 0110) - CafeMediaPage.tsx's
+    // own source for this, since it uses this session-scoped endpoint
+    // rather than the Host-resolved public one. carouselSlots/
+    // cafeCarouselSlots above already have any gyropedia row filtered
+    // out when this is true (buildPublicConfigData's own safety net) -
+    // this just exposes the flag itself so CarouselSlotEditor.tsx can
+    // hide the dropdown option too.
+    gyropediaDisabled: publicConfigData.gyropediaDisabled,
   });
 };
 

@@ -99,6 +99,10 @@ export default function MediaManagerPage(): JSX.Element {
   const [files, setFiles] = useState<MediaLibraryFile[]>([])
   const [slots, setSlots] = useState<CarouselSlot[]>([])
   const [cameraOptions, setCameraOptions] = useState<CameraOption[]>([])
+  // Per-tenant Gyropedia opt-out (migration 0110) - read alongside
+  // cameraOptions below since both come from the same PUBLIC_CONFIG_URL
+  // fetch; false (today's unconditional behaviour) until that resolves.
+  const [gyropediaDisabled, setGyropediaDisabled] = useState(false)
   const [loading, setLoading] = useState(true)
   // selectedSlotNumber: which slot the single shared editor panel is
   // currently showing (defaults to 1, so the panel is never blank).
@@ -183,6 +187,7 @@ export default function MediaManagerPage(): JSX.Element {
           url: c.url,
         }))
         setCameraOptions([...legacy, ...newCameras].filter((c: CameraOption) => c.url))
+        setGyropediaDisabled(!!data?.gyropediaDisabled)
       })
   }
 
@@ -443,6 +448,7 @@ export default function MediaManagerPage(): JSX.Element {
                 onToggleAppearance={() => setAppearanceEditorOpen((prev) => !prev)}
                 onSourceChange={(value) => handleSourceChange(selectedSlot, value)}
                 onChange={(patch) => saveSlot({ ...selectedSlot, ...patch })}
+                gyropediaDisabled={gyropediaDisabled}
               />
             )}
           </div>

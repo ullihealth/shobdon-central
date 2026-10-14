@@ -1,0 +1,20 @@
+-- Per-tenant Gyropedia opt-out (Tiger Helicopters round, 2026-10-14).
+-- Gyropedia Departures/Arrivals (functions/api/public/gyropedia-
+-- departures.ts) has always been a genuinely cross-tenant, ungated data
+-- feed - any tenant could pick "Gyropedia Departures/Arrivals" for any
+-- carousel slot, with no per-tenant setting of any kind controlling it
+-- (confirmed via investigation - see CarouselSlotEditor.tsx's own
+-- "Available to every tenant, not gated by anything" comment). Tiger
+-- Helicopters (tenant id 29) had two old-test-data slots (2 and 6, both
+-- already disabled) left over from before they were a live paying
+-- customer, and must never be able to select, see, or receive this feed
+-- again, on any of their screens, while every other tenant (Shobdon, the
+-- gyroplane tenant, etc.) keeps today's exact behaviour.
+--
+-- DEFAULT 0 (not disabled) on the column itself - true zero-behaviour-
+-- change rollout, same posture as migration 0106's dashboard_enabled:
+-- every existing and future tenant keeps seeing/selecting Gyropedia
+-- exactly as today unless this flag is explicitly set for them. Only
+-- Tiger's own row gets flipped to 1, in a separate data-only statement
+-- after this migration - never bundled into the schema change itself.
+ALTER TABLE tenants ADD COLUMN gyropedia_disabled INTEGER NOT NULL DEFAULT 0;

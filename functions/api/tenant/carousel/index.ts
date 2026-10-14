@@ -221,12 +221,25 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const body = (await request.json().catch(() => null)) as { slots?: CarouselSlotInput[] } | null;
   if (!body || !Array.isArray(body.slots)) return jsonResponse({ error: "Invalid JSON body" }, 400);
 
+  // Per-tenant Gyropedia opt-out (migration 0110) - the real write
+  // boundary behind CarouselSlotEditor.tsx's own dropdown hiding (UX
+  // only, same posture as every other client-side check in this file).
+  // One lookup, reused for every slot in this request.
+  const gyropediaDisabledRow = await env.DB
+    .prepare("SELECT gyropedia_disabled AS gyropediaDisabled FROM tenants WHERE organization_id = ?")
+    .bind(organizationId)
+    .first<{ gyropediaDisabled: number }>();
+  const gyropediaDisabled = !!gyropediaDisabledRow?.gyropediaDisabled;
+
   for (const slot of body.slots) {
     if (!Number.isInteger(slot.slotNumber) || slot.slotNumber < 1 || slot.slotNumber > 12) {
       return jsonResponse({ error: `slotNumber must be 1-12 (got ${slot.slotNumber})` }, 400);
     }
     if (!VALID_MEDIA_TYPES.includes(slot.mediaType)) {
       return jsonResponse({ error: `mediaType must be one of: ${VALID_MEDIA_TYPES.join(", ")}` }, 400);
+    }
+    if (slot.mediaType === "gyropedia" && gyropediaDisabled) {
+      return jsonResponse({ error: "Gyropedia Departures/Arrivals is not available for this tenant." }, 400);
     }
     if (!Number.isFinite(slot.durationSeconds) || slot.durationSeconds <= 0) {
       return jsonResponse({ error: "durationSeconds must be a positive number" }, 400);

@@ -301,6 +301,10 @@ export default function CafeMediaPage(): JSX.Element {
   const [files, setFiles] = useState<MediaLibraryFile[]>([])
   const [cafeSlots, setCafeSlots] = useState<CarouselSlot[]>([])
   const [cameraOptions, setCameraOptions] = useState<CameraOption[]>([])
+  // Per-tenant Gyropedia opt-out (migration 0110) - read alongside
+  // cameraOptions below, from this same TENANT_CONFIG_URL fetch; false
+  // (today's unconditional behaviour) until that resolves.
+  const [gyropediaDisabled, setGyropediaDisabled] = useState(false)
   const [selectedCafeSlotNumber, setSelectedCafeSlotNumber] = useState<number>(1)
   const [cafeAppearanceEditorOpen, setCafeAppearanceEditorOpen] = useState(false)
   const pendingCafeSavesRef = useRef<Map<number, CarouselSlot>>(new Map())
@@ -393,6 +397,7 @@ export default function CafeMediaPage(): JSX.Element {
           }))
           setCameraOptions([...legacy, ...newCameras].filter((c: CameraOption) => c.url))
         }
+        setGyropediaDisabled(!!data.gyropediaDisabled)
         setMediaData({
           cameraSlots: Array.isArray(data.cameraSlots) ? data.cameraSlots : [],
           carouselSlots: Array.isArray(data.carouselSlots) ? data.carouselSlots : [],
@@ -773,6 +778,7 @@ export default function CafeMediaPage(): JSX.Element {
               onChange={(patch) => saveCafeSlot({ ...selectedCafeSlot, ...patch })}
               allowWebsite
               maxDurationSeconds={selectedCafeSlot.durationCapOverrideSeconds ?? DEFAULT_DURATION_CAP_SECONDS}
+              gyropediaDisabled={gyropediaDisabled}
             />
           )}
         </div>

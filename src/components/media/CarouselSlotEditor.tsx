@@ -535,6 +535,7 @@ function CarouselSlotEditor({
   onChange,
   allowWebsite = false,
   maxDurationSeconds,
+  gyropediaDisabled = false,
 }: {
   slot: CarouselSlot
   files: MediaLibraryFile[]
@@ -561,6 +562,12 @@ function CarouselSlotEditor({
   // before passing it in - this component stays context-free, matching
   // its own established "no opinion about which screen it's in" stance.
   maxDurationSeconds?: number
+  // Per-tenant Gyropedia opt-out (migration 0110) - hides the "Data
+  // Feeds" optgroup's Gyropedia option in the Source dropdown below.
+  // Defaults false (every tenant except Tiger Helicopters) - today's
+  // unconditional "available to every tenant" behaviour, unchanged for
+  // everyone else.
+  gyropediaDisabled?: boolean
 }): JSX.Element {
   const file = files.find((f) => f.id === slot.mediaLibraryId)
   const isMp4 = slot.mediaType === 'mp4'
@@ -623,12 +630,16 @@ function CarouselSlotEditor({
         >
           <option value="">— none —</option>
           {/* Zero-config data feed - no file/camera picker needed, unlike
-              every other option here. Available to every tenant, not
-              gated by anything - see this slot type's own investigation
-              report for why. */}
-          <optgroup label="Data Feeds">
-            <option value="gyropedia">Gyropedia Departures/Arrivals</option>
-          </optgroup>
+              every other option here. Available to every tenant except
+              one with gyropediaDisabled set (migration 0110, Tiger
+              Helicopters only) - every other tenant keeps today's
+              unconditional "available to everyone, not gated by
+              anything" behaviour. */}
+          {!gyropediaDisabled && (
+            <optgroup label="Data Feeds">
+              <option value="gyropedia">Gyropedia Departures/Arrivals</option>
+            </optgroup>
+          )}
           {allowWebsite && (
             <optgroup label="Website">
               <option value="website">External Webpage (URL)</option>
