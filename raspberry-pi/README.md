@@ -187,6 +187,23 @@ free - a shrunk+compressed image will likely fall under that entirely.
 Run `./personalize-tenant.sh --help` for the full flag list (`--dry-run`,
 `--yes`, `--no-reboot`).
 
+**If the kiosk doesn't come back after renaming a tenant** (plain Pi
+desktop/blank screen instead of the dashboard, and
+`journalctl --user -u kiosk.service` or
+`sudo journalctl _SYSTEMD_USER_UNIT=kiosk.service` shows "The profile
+appears to be in use by another Chromium process ... on another
+computer"): Chromium's `SingletonLock` is stamped with the hostname that
+was active when it was written, and `kiosk-wrapper.sh`'s double-launch
+pattern `SIGKILL`s the first Chromium launch, which skips the clean
+shutdown that would otherwise remove it - so a lock left over under the
+OLD hostname makes every later launch refuse to start, forever, once the
+hostname changes. `personalize-tenant.sh` now clears
+`~/.config/chromium/SingletonLock`, `SingletonSocket` and
+`SingletonCookie` itself right before it reboots, so this shouldn't come
+up again from a normal rename - but if you ever hit it anyway (e.g. after
+a manual `raspi-config` hostname change outside this script), the fix is
+just to delete those same three files and restart `kiosk.service`.
+
 ## Hiding the mouse cursor
 
 The kiosk display should never show a mouse pointer. `hide-cursor.sh`
