@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { authClient } from '../lib/auth/authClient'
 
 // Confirmed directly against production (2026-07-11): sign-in requests
@@ -54,12 +54,51 @@ async function signInWithRetry(
   return { error: { message: 'Sign in failed' } }
 }
 
+// Post-payment landing round - polling constants for the "Activating
+// your subscription…" state below. 3s * 20 = 60s total, matching the
+// task's own "up to ~60s" budget - long enough to cover the webhook's
+// normal checkout.session.completed -> entitlement latency (seconds,
+// not minutes, per the sandbox round's own evidence) without leaving a
+// genuinely stuck tenant staring at a spinner indefinitely.
+const ACTIVATION_POLL_INTERVAL_MS = 3000
+const ACTIVATION_POLL_MAX_ATTEMPTS = 20
+
+function landingPageForMe(me: { role?: string | null; tenantType?: string | null } | null): string {
+  return me?.role === 'media'
+    ? '/media-manager'
+    : me?.role === 'atc'
+      ? '/atc-control'
+      : me?.role === 'cafe'
+        ? '/cafe-media'
+        : me?.tenantType === 'venue_cafe'
+          ? '/cafe-media'
+          : '/config'
+}
+
 export default function LoginPage(): JSX.Element {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [searchParams] = useSearchParams()
+  // Post-payment landing round - checkout.ts's own success_url sets
+  // both of these (see that file's own comment on why it can't just
+  // land the visitor on an already-authenticated dashboard: the session
+  // cookie set on airfieldcentral.com while filling in the signup form
+  // doesn't carry to the new tenant's own subdomain, and this app
+  // deliberately has no cross-subdomain cookie config - that's real
+  // tenant isolation, not a gap to close). welcome=1 switches this page
+  // into the post-payment copy/prefill/activation-poll below; any other
+  // visit to /login (including one WITHOUT welcome=1, e.g. an existing
+  // tenant's normal day-to-day login) is completely unaffected.
+  const welcome = searchParams.get('welcome') === '1'
+  const prefillEmail = searchParams.get('email') ?? ''
+  const [email, setEmail] = useState(prefillEmail)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // 'idle' - the normal form. 'polling' - signed in, webhook hasn't
+  // landed yet, showing "Activating your subscription…". 'timeout' - 60s
+  // passed with no entitlement; a friendly dead end with support's own
+  // email, not a silent infinite spinner.
+  const [activationState, setActivationState] = useState<'idle' | 'polling' | 'timeout'>('idle')
 
   // Was left at index.html's own generic default (never a real bug per
   // se - the shared shell has no way to bake in a per-route title of its
@@ -103,18 +142,62 @@ export default function LoginPage(): JSX.Element {
       fetch('/api/tenant/me').then((response) => (response.ok ? response.json() : null)),
       5000
     ).catch(() => null)
+
+    // Post-payment landing round - a tenant that just paid but whose
+    // webhook hasn't landed yet still reports subscriptionPending=true
+    // here (same flag RequireAuth.tsx's own gate already reads - see
+    // that file's own comment). Rather than navigate straight into
+    // /config and let that gate immediately bounce them to
+    // /complete-subscription's own "pay again" screen (wrong message -
+    // they already paid), poll right here until it clears.
+    if (me?.subscriptionPending) {
+      setSubmitting(false)
+      setActivationState('polling')
+      for (let attempt = 1; attempt <= ACTIVATION_POLL_MAX_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, ACTIVATION_POLL_INTERVAL_MS))
+        const polled = await fetch('/api/tenant/me')
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null)
+        if (polled && !polled.subscriptionPending) {
+          navigate(landingPageForMe(polled))
+          return
+        }
+      }
+      setActivationState('timeout')
+      return
+    }
+
     setSubmitting(false)
-    const landingPage =
-      me?.role === 'media'
-        ? '/media-manager'
-        : me?.role === 'atc'
-          ? '/atc-control'
-          : me?.role === 'cafe'
-            ? '/cafe-media'
-            : me?.tenantType === 'venue_cafe'
-              ? '/cafe-media'
-              : '/config'
-    navigate(landingPage)
+    navigate(landingPageForMe(me))
+  }
+
+  if (activationState === 'polling') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-center text-slate-100">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20">
+          <h1 className="mb-3 text-xl font-black uppercase tracking-wide text-primary">Activating your subscription…</h1>
+          <p className="text-sm text-muted-400">This usually takes a few seconds. Please don&apos;t close this page.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (activationState === 'timeout') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-page-from via-page-via to-page-to px-4 text-center text-slate-100">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20">
+          <h1 className="mb-3 text-xl font-black uppercase tracking-wide text-primary">Still activating</h1>
+          <p className="text-sm text-muted-400">
+            Your payment went through, but your dashboard is taking longer than usual to activate. Please try
+            reloading this page in a minute, or contact{' '}
+            <a href="mailto:support@airfieldcentral.com" className="text-accent-sky-400 hover:underline">
+              support@airfieldcentral.com
+            </a>{' '}
+            and we&apos;ll sort it out.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -124,6 +207,12 @@ export default function LoginPage(): JSX.Element {
         className="w-full max-w-sm rounded-2xl border border-border bg-panel p-8 shadow-xl shadow-slate-950/20"
       >
         <h1 className="mb-6 text-xl font-black uppercase tracking-wide text-primary">Sign in</h1>
+
+        {welcome && (
+          <p className="mb-6 rounded-lg border border-accent-sky-500/40 bg-accent-sky-500/10 p-3 text-sm text-slate-200">
+            Welcome to Airfield Central — payment received. Log in to set up your dashboard.
+          </p>
+        )}
 
         <label className="mb-4 flex flex-col gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Email</span>

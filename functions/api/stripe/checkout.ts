@@ -136,7 +136,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // the destination too.
   const tenantRow = await env.DB.prepare("SELECT subdomain FROM tenants WHERE organization_id = ?").bind(membership.organizationId).first<{ subdomain: string | null }>();
   const subdomain = tenantRow?.subdomain || `${membership.slug}.airfieldcentral.com`;
-  const successUrl = `https://${subdomain}/?welcome=1`;
+  // Post-payment landing round: NOT the tenant's own "/" - the session
+  // cookie set while filling in this form was scoped to the host the
+  // browser was actually on (airfieldcentral.com for a brand-new paid
+  // signup), and BetterAuth here has no cross-subdomain cookie config
+  // (deliberately - see LoginPage.tsx's own comment on why that stays a
+  // real tenant-isolation boundary, not something to relax). The visitor
+  // genuinely arrives at this NEW subdomain logged out, so land them on
+  // ITS login page instead of a dashboard they can't be authenticated
+  // on - pre-filled email, welcome=1 for the copy/activation-poll
+  // LoginPage.tsx's own welcome branch handles.
+  const successUrl = `https://${subdomain}/login?welcome=1&email=${encodeURIComponent(userRow.email)}`;
   const cancelUrl = `https://${subdomain}/`;
 
   // client_reference_id must be the tenant's own INTEGER id (what

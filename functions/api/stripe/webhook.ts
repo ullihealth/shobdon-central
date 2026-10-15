@@ -226,10 +226,32 @@ async function setSubscriptionStatus(db: D1Database, tenantId: number, status: s
 async function applyEntitlementForProduct(db: D1Database, tenant: TenantRow, product: Product, now: string): Promise<void> {
   if (product === "pack") {
     await db.prepare("UPDATE tenants SET dashboard_enabled = 1, mobile_enabled = 1, updated_at = ? WHERE id = ?").bind(now, tenant.id).run();
+    // Display-gap round: a paid signup (functions/api/public/signup.ts)
+    // creates the 'main' tenant_displays row with active=0 (correctly -
+    // no access before payment), but unlike trial-signup.ts's own
+    // immediate-trial path, nothing had ever flipped it back to 1 once
+    // payment genuinely succeeded - confirmed live, the tenant was stuck
+    // on TenantUnavailable's "isn't currently available" message
+    // forever despite dashboard_enabled now being 1. tenant_displays.
+    // active (migration 0034) is otherwise a developer force-off
+    // switch - trial-signup.ts already treats "1" as this route's own
+    // normal starting state, this just restores it on a genuine Pack
+    // purchase for a tenant that was provisioned with it off. cafe-tv's
+    // own active/entitled rules are untouched - this never runs for
+    // mediaScreen (that branch returns separately below).
+    await db.prepare("UPDATE tenant_displays SET active = 1, updated_at = ? WHERE tenant_id = ? AND slug = 'main'").bind(now, tenant.id).run();
     return;
   }
   if (product === "pilotApp") {
     await db.prepare("UPDATE tenants SET mobile_enabled = 1, updated_at = ? WHERE id = ?").bind(now, tenant.id).run();
+    // Same display-gap fix as the pack branch above, for the same
+    // reason: a Pilot's-App-only tenant never gets dashboard_enabled=1
+    // (correct - they didn't buy the TV dashboard), but 'main' staying
+    // active=0 would still show the generic TenantUnavailable message
+    // instead of DashboardLockedScreen's own, more accurate "not
+    // entitled to this screen" state - the one DashboardPage.tsx already
+    // shows for exactly this distinction (active tenant, !dashboardEnabled).
+    await db.prepare("UPDATE tenant_displays SET active = 1, updated_at = ? WHERE tenant_id = ? AND slug = 'main'").bind(now, tenant.id).run();
     return;
   }
   // mediaScreen
@@ -283,7 +305,14 @@ async function revokeEntitlementForProduct(db: D1Database, tenant: TenantRow, pr
 // against a captured, replayed request outside that window even though
 // this is already HTTPS-only and secret-keyed.
 async function verifyStripeSignature(rawBody: string, signatureHeader: string | null, secret: string): Promise<boolean> {
-  if (!signatureHeader) return false;
+  // Production-crash round: a missing/empty STRIPE_WEBHOOK_SECRET
+  // (confirmed via a live Cloudflare Pages Function tail - the actual
+  // root cause of every live delivery 500ing with error code 1101) must
+  // be an ordinary "not verified" -> 400, never a thrown exception.
+  // crypto.subtle.importKey rejects synchronously for a zero-length raw
+  // HMAC key (an empty-string secret produces exactly that), and nothing
+  // upstream of this function previously caught it.
+  if (!signatureHeader || !secret) return false;
   let timestamp = "";
   const candidateSignatures: string[] = [];
   for (const part of signatureHeader.split(",")) {
@@ -296,11 +325,19 @@ async function verifyStripeSignature(rawBody: string, signatureHeader: string | 
   const timestampSeconds = Number(timestamp);
   if (!Number.isFinite(timestampSeconds) || Math.abs(Date.now() / 1000 - timestampSeconds) > 300) return false;
 
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signatureBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${rawBody}`));
-  const expectedHex = [...new Uint8Array(signatureBuffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-
-  return candidateSignatures.some((candidate) => timingSafeEqual(candidate, expectedHex));
+  // Belt-and-braces round the actual crypto operations too - any other
+  // unanticipated crypto.subtle failure (a malformed signature header
+  // value, for instance) must resolve to "not verified", the same as
+  // every other bad-input case above, never propagate as an uncaught
+  // exception the way the empty-secret case did.
+  try {
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signatureBuffer = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${rawBody}`));
+    const expectedHex = [...new Uint8Array(signatureBuffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    return candidateSignatures.some((candidate) => timingSafeEqual(candidate, expectedHex));
+  } catch {
+    return false;
+  }
 }
 
 // Workers has no Node `crypto.timingSafeEqual` - a manual constant-time
@@ -376,8 +413,24 @@ async function handleCheckoutSessionCompleted(db: D1Database, env: Env, session:
   await setSubscriptionStatus(db, tenant.id, "active", `Stripe: checkout completed for ${product}.`, now);
 }
 
+// dahlia-era API round: a recent Stripe API version restructured
+// Invoice so it can belong to things other than a subscription - the
+// subscription id moved from the invoice's own top-level `subscription`
+// field to `invoice.parent.subscription_details.subscription`. Checks
+// the new location first, falls back to the old one so this keeps
+// working unchanged against whatever API version an endpoint happens to
+// be pinned to (this account's live endpoint is 2026-08-26.dahlia, the
+// new shape; older/test endpoints and the sandbox fixtures this round's
+// own tests build may still send the old one).
+function getInvoiceSubscriptionId(invoice: Record<string, unknown>): string | null {
+  const parent = invoice.parent as { subscription_details?: { subscription?: unknown } } | null | undefined;
+  const newLocation = parent?.subscription_details?.subscription;
+  if (typeof newLocation === "string") return newLocation;
+  return typeof invoice.subscription === "string" ? invoice.subscription : null;
+}
+
 async function handleInvoicePaid(db: D1Database, invoice: Record<string, unknown>, now: string): Promise<void> {
-  const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : null;
+  const subscriptionId = getInvoiceSubscriptionId(invoice);
   const customerId = typeof invoice.customer === "string" ? invoice.customer : null;
   const tenant = await findTenantByStripeIds(db, { subscriptionId, customerId });
   if (!tenant) {
@@ -388,7 +441,7 @@ async function handleInvoicePaid(db: D1Database, invoice: Record<string, unknown
 }
 
 async function handleInvoicePaymentFailed(db: D1Database, invoice: Record<string, unknown>, now: string): Promise<void> {
-  const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : null;
+  const subscriptionId = getInvoiceSubscriptionId(invoice);
   const customerId = typeof invoice.customer === "string" ? invoice.customer : null;
   const tenant = await findTenantByStripeIds(db, { subscriptionId, customerId });
   if (!tenant) {
@@ -444,7 +497,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
 
   // Idempotency (B2) - a second delivery of an event id already seen
-  // changes 0 rows here; still 200, no further processing.
+  // changes 0 rows here; still 200, no further processing. INSERT
+  // (rather than a plain SELECT) first specifically so two near-
+  // simultaneous deliveries of the same event can't both pass a
+  // check-then-act race and both process - D1's own atomic INSERT OR
+  // IGNORE is what actually prevents that, same as before this round.
   const inserted = await env.DB
     .prepare("INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)")
     .bind(event.id, event.type, now)
@@ -453,29 +510,55 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonResponse({ ok: true, duplicate: true });
   }
 
+  // Production-crash round: the handler must never throw an uncaught
+  // exception (a Cloudflare 1101 tells Stripe nothing useful and isn't
+  // even guaranteed to retry the same way a clean 5xx is) - every event-
+  // type handler below is now wrapped. On a genuine processing failure,
+  // the stripe_events row just inserted above is rolled back before
+  // returning 500, so a real Stripe retry gets a genuine second attempt
+  // instead of silently matching the dedup check above and no-op'ing
+  // forever on an event that was never actually applied - the dedup
+  // guarantee this table exists for only ever meant "already SUCCEEDED",
+  // not "already attempted".
   const object = event.data.object;
-  switch (event.type) {
-    case "checkout.session.completed":
-      await handleCheckoutSessionCompleted(env.DB, env, object, now);
-      break;
-    case "invoice.paid":
-      await handleInvoicePaid(env.DB, object, now);
-      break;
-    case "invoice.payment_failed":
-      await handleInvoicePaymentFailed(env.DB, object, now);
-      break;
-    case "customer.subscription.deleted":
-      await handleSubscriptionDeleted(env.DB, env, object as unknown as StripeSubscription, now);
-      break;
-    case "customer.subscription.updated":
-      await handleSubscriptionUpdated(env.DB, object as unknown as StripeSubscription, now);
-      break;
-    default:
-      // Any other event type Stripe might send to this same endpoint
-      // (if Jeff ever subscribes it to more events than the five this
-      // round asks for) - already recorded in stripe_events above, just
-      // not acted on.
-      break;
+  try {
+    switch (event.type) {
+      case "checkout.session.completed":
+        await handleCheckoutSessionCompleted(env.DB, env, object, now);
+        break;
+      case "invoice.paid":
+        await handleInvoicePaid(env.DB, object, now);
+        break;
+      case "invoice.payment_failed":
+        await handleInvoicePaymentFailed(env.DB, object, now);
+        break;
+      case "customer.subscription.deleted":
+        await handleSubscriptionDeleted(env.DB, env, object as unknown as StripeSubscription, now);
+        break;
+      case "customer.subscription.updated":
+        await handleSubscriptionUpdated(env.DB, object as unknown as StripeSubscription, now);
+        break;
+      default:
+        // Any other event type Stripe might send to this same endpoint
+        // (if Jeff ever subscribes it to more events than the five this
+        // round asks for) - already recorded in stripe_events above, just
+        // not acted on.
+        break;
+    }
+  } catch (error) {
+    await env.DB
+      .prepare("DELETE FROM stripe_events WHERE id = ?")
+      .bind(event.id)
+      .run()
+      .catch(() => {
+        // Nothing more to do if even the rollback fails - the outer
+        // catch's own 500 below still fires either way, so Stripe still
+        // retries; worst case is one event that can't be auto-retried
+        // past the dedup check, same category of edge case the pre-
+        // existing single-id-per-tenant schema limitation already is.
+      });
+    console.error(`[stripe-webhook] event ${event.id} (${event.type}) failed:`, error instanceof Error ? error.stack ?? error.message : error);
+    return jsonResponse({ error: "Internal processing error" }, 500);
   }
 
   return jsonResponse({ ok: true });
