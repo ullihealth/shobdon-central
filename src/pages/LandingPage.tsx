@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PUBLIC_CHECK_SLUG_URL, PUBLIC_CHECK_POSTCODE_URL, TRIAL_SIGNUP_URL } from '../config/publicApi'
+import { PUBLIC_CHECK_SLUG_URL, PUBLIC_CHECK_POSTCODE_URL, TRIAL_SIGNUP_URL, SIGNUP_URL, STRIPE_CHECKOUT_URL } from '../config/publicApi'
 import { LATEST_READING_URL } from '../config/captureEndpoint'
+import { PRICING_PLANS, PACK_SAVINGS_GBP, PRICING_TERMS_LINE, formatGBP, type PlanId } from '../config/pricing'
+import { authClient } from '../lib/auth/authClient'
 
 // Public marketing/landing page for Airfield Central, live at the bare
 // airfieldcentral.com root domain (see src/components/RootRoute.tsx for
@@ -64,11 +66,11 @@ const FAQ_ENTRIES: FaqEntry[] = [
   },
   {
     question: 'When do I get charged?',
-    answer: "Nothing for 14 days. You'll get a reminder before your first payment, with clear instructions to cancel if you don't want to continue.",
+    answer: "At checkout, when you set up your plan. Billing is monthly, with a 3-month minimum term, then rolling monthly.",
   },
   {
     question: 'Can I cancel anytime?',
-    answer: 'Yes, monthly plans cancel with one click.',
+    answer: "After the 3-month minimum, yes — 30 days' notice to cancel.",
   },
   {
     question: 'Do I need to install anything?',
@@ -639,6 +641,271 @@ function SignupForm({ signupType, setSignupType }: ProductChoiceProps): JSX.Elem
   )
 }
 
+// Stripe groundwork Part B - paid signup, airfield branch only (see
+// functions/api/public/signup.ts's own top comment for why venue_cafe
+// stays on the trial-signup.ts/SignupForm path above, unchanged). A
+// genuinely separate component and submission path from SignupForm -
+// trial-signup.ts's existing behaviour for its existing callers
+// (venue_cafe signups on this same page) must not change, per the
+// go-ahead's own instruction, so this doesn't touch or reuse that
+// component's own state/fields at all, even though several fields
+// overlap in spirit (business name, location/parent-airfield).
+//
+// On success: creates the real user/account/member row server-side,
+// then signs the new user in immediately (authClient.signIn.email, same
+// call LoginPage.tsx itself makes) so the very next step - starting
+// Stripe Checkout - can hit the authenticated /api/stripe/checkout
+// endpoint without a separate login step the visitor never asked for.
+type PaidSignupStatus = 'idle' | 'submitting' | 'redirecting' | 'error'
+
+function PaidSignupForm(): JSX.Element {
+  const [businessName, setBusinessName] = useState('')
+  const [contactName, setContactName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [slug, setSlug] = useState('')
+  const [parentTenantSlug, setParentTenantSlug] = useState('')
+  const [lat, setLat] = useState('')
+  const [lon, setLon] = useState('')
+  const [plan, setPlan] = useState<PlanId>('pack')
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [status, setStatus] = useState<PaidSignupStatus>('idle')
+  const [errorMessage, setErrorMessage] = useState('')
+
+  const [slugCheck, setSlugCheck] = useState<{ status: 'idle' | 'checking' | 'available' | 'unavailable'; reason?: string }>({
+    status: 'idle',
+  })
+  const slugCheckTimer = useRef<number | undefined>(undefined)
+
+  function handleSlugChange(value: string) {
+    const next = value.trim().toLowerCase()
+    setSlug(next)
+    window.clearTimeout(slugCheckTimer.current)
+    if (!next || !SLUG_FORMAT.test(next)) {
+      setSlugCheck({ status: 'idle' })
+      return
+    }
+    setSlugCheck({ status: 'checking' })
+    slugCheckTimer.current = window.setTimeout(() => {
+      fetch(`${PUBLIC_CHECK_SLUG_URL}?slug=${encodeURIComponent(next)}`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (!data) return
+          setSlugCheck({ status: data.available ? 'available' : 'unavailable', reason: data.reason })
+        })
+        .catch(() => setSlugCheck({ status: 'idle' }))
+    }, SLUG_CHECK_DEBOUNCE_MS)
+  }
+
+  const purchasablePlans = PRICING_PLANS.filter((p) => !p.requiresPack)
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setStatus('submitting')
+    setErrorMessage('')
+
+    const latNum = lat.trim() ? Number(lat) : null
+    const lonNum = lon.trim() ? Number(lon) : null
+
+    const response = await fetch(SIGNUP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessName,
+        contactName,
+        email,
+        password,
+        slug,
+        lat: latNum,
+        lon: lonNum,
+        parentTenantSlug: parentTenantSlug || undefined,
+        plan,
+        termsAccepted,
+      }),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok || !data?.ok) {
+      setStatus('error')
+      setErrorMessage(data?.error ?? 'Signup failed - please try again.')
+      return
+    }
+
+    // Signs the new account in immediately - same call LoginPage.tsx
+    // itself makes - so the checkout request right after this can use
+    // the resulting session. A sign-in failure here is unexpected (the
+    // password just worked server-side) but handled the same honest way
+    // as any other unexpected failure: a clear error, not a silent dead
+    // end.
+    const signInResult = await authClient.signIn.email({ email, password })
+    if (signInResult.error) {
+      setStatus('error')
+      setErrorMessage('Account created, but signing you in failed - please sign in manually and contact support@airfieldcentral.com.')
+      return
+    }
+
+    setStatus('redirecting')
+    const checkoutResponse = await fetch(STRIPE_CHECKOUT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    })
+    const checkoutData = await checkoutResponse.json().catch(() => null)
+    if (!checkoutResponse.ok || !checkoutData?.checkoutUrl) {
+      setStatus('error')
+      setErrorMessage(checkoutData?.error ?? 'Your account was created, but starting checkout failed - please contact support@airfieldcentral.com.')
+      return
+    }
+    window.location.href = checkoutData.checkoutUrl
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-6">
+      <h3 className="mb-4 text-lg font-bold text-slate-100">Create your account</h3>
+
+      <label className="mb-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Business / airfield name</span>
+        <input
+          required
+          value={businessName}
+          onChange={(event) => setBusinessName(event.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+      </label>
+
+      <label className="mb-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Your name</span>
+        <input
+          required
+          value={contactName}
+          onChange={(event) => setContactName(event.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+      </label>
+
+      <label className="mb-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Email</span>
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+      </label>
+
+      <label className="mb-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Password</span>
+        <input
+          type="password"
+          required
+          minLength={8}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+      </label>
+
+      <label className="mb-1 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Your subdomain</span>
+        <div className="flex items-center gap-1">
+          <input
+            required
+            value={slug}
+            onChange={(event) => handleSlugChange(event.target.value)}
+            placeholder="yourclub"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+          />
+          <span className="text-sm text-slate-500">.airfieldcentral.com</span>
+        </div>
+      </label>
+      {slugCheck.status === 'checking' && <p className="mb-3 text-xs text-slate-500">Checking…</p>}
+      {slugCheck.status === 'available' && <p className="mb-3 text-xs text-emerald-400">Available</p>}
+      {slugCheck.status === 'unavailable' && <p className="mb-3 text-xs text-rose-400">{slugCheck.reason ?? 'Not available'}</p>}
+      {slugCheck.status === 'idle' && <div className="mb-3" />}
+
+      <label className="mb-3 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Parent airfield (optional)</span>
+        <input
+          value={parentTenantSlug}
+          onChange={(event) => setParentTenantSlug(event.target.value)}
+          placeholder="e.g. shobdon - leave blank if none"
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        />
+        <span className="text-xs text-slate-500">If set, your weather source links to theirs - same as Decision #12.</span>
+      </label>
+
+      {!parentTenantSlug.trim() && (
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Latitude</span>
+            <input
+              required
+              value={lat}
+              onChange={(event) => setLat(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Longitude</span>
+            <input
+              required
+              value={lon}
+              onChange={(event) => setLon(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            />
+          </label>
+        </div>
+      )}
+
+      <label className="mb-4 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Plan</span>
+        <select
+          value={plan}
+          onChange={(event) => setPlan(event.target.value as PlanId)}
+          className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+        >
+          {purchasablePlans.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} — {formatGBP(p.priceGBP)}/mo{p.highlighted ? ' (recommended)' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="mb-4 flex items-start gap-3 text-sm text-slate-300">
+        <input
+          type="checkbox"
+          required
+          checked={termsAccepted}
+          onChange={(event) => setTermsAccepted(event.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          I agree to the{' '}
+          <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
+            Customer Terms
+          </Link>{' '}
+          (incl. Schedule 1 Media Box loan and card-charge authority up to £99 per incident) and{' '}
+          <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
+            Privacy Policy
+          </Link>
+          .
+        </span>
+      </label>
+
+      {status === 'error' && <p className="mb-4 text-sm font-semibold text-rose-400">{errorMessage}</p>}
+
+      <button
+        type="submit"
+        disabled={status === 'submitting' || status === 'redirecting'}
+        className="w-full rounded-lg bg-sky-500 px-6 py-3 font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-50"
+      >
+        {status === 'submitting' ? 'Creating your account…' : status === 'redirecting' ? 'Taking you to checkout…' : 'Continue to payment'}
+      </button>
+    </form>
+  )
+}
+
 // Live-preview widget for the hero's 16:9 panel. Deliberately does NOT
 // reuse WeatherContext/useWeather (DashboardPage.tsx's own weather
 // plumbing) - that reads its provider choice (ATC station / internet /
@@ -922,37 +1189,43 @@ export default function LandingPage(): JSX.Element {
           </ul>
         </section>
 
-        {/* PRICING - landing-page copy-fix round: replaced the old single
-            "Dashboard + station add-on" pricing (£29/mo dashboard, £20/mo
-            Davis Vantage Pro2 integration) with the three current,
-            separately-billed products, named consistently with how
-            they're named everywhere else in the app (PlatformTenantsPage.
-            tsx's own settings cards, the Stripe entitlement mapping).
-            Monthly GBP prices only, as decided - no annual figures here,
-            since none were given to invent. */}
+        {/* PRICING - Stripe groundwork Part A: 3 plans read from ONE
+            config object (src/config/pricing.ts) instead of being typed
+            out here directly - the figures used to be hardcoded in up to
+            3 places (here, PlatformTenantsPage.tsx's own settings cards),
+            with the Pilot's App figure already stale (£19.99, pre-
+            reprice) in one of them. Airfield Pack highlighted as the
+            recommended, best-value combo per the go-ahead's own
+            instruction - a visually distinct card plus the savings line
+            below it. */}
         <section className="mt-20">
           <h2 className="text-center text-2xl font-bold">Pricing</h2>
           <div className="mx-auto mt-8 max-w-2xl space-y-4">
-            <div className="rounded-xl border border-sky-600/40 bg-slate-900/80 p-6">
-              <div className="text-lg font-semibold text-slate-100">Airfield Pack — £44/month</div>
-              <p className="mt-2 text-slate-400">
-                The Reception Dashboard for your clubhouse screen, plus the Pilot's App — a branded mobile app for
-                members, students and visiting pilots, installable on their phone straight from the browser.
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-6">
-              <div className="text-lg font-semibold text-slate-100">Pilot's App on its own — £19.99/month</div>
-              <p className="mt-2 text-slate-400">
-                Just the branded mobile app for members and visiting pilots, without the clubhouse screen.
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-6">
-              <div className="text-lg font-semibold text-slate-100">Media Screen add-on — £29.99/month</div>
-              <p className="mt-2 text-slate-400">
-                A full-screen advertising display for cafés and similar venues, with an advertising revenue split on
-                slots sold. Requires the Airfield Pack.
-              </p>
-            </div>
+            {PRICING_PLANS.map((plan) => (
+              <div
+                key={plan.id}
+                className={`rounded-xl border p-6 ${
+                  plan.highlighted ? 'border-sky-500 bg-sky-500/10' : 'border-slate-700 bg-slate-900/60'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-lg font-semibold text-slate-100">
+                    {plan.name} — {formatGBP(plan.priceGBP)}/month
+                  </div>
+                  {plan.highlighted && (
+                    <span className="rounded-full bg-sky-500 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-950">
+                      Recommended
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-slate-400">{plan.description}</p>
+                {plan.highlighted && (
+                  <p className="mt-2 text-sm font-semibold text-sky-400">
+                    Save {formatGBP(PACK_SAVINGS_GBP)}/mo vs buying separately
+                  </p>
+                )}
+              </div>
+            ))}
           </div>
           {/* Weather-wording round - must never read as "every customer
               gets live station data". Met Office data is the standard;
@@ -963,9 +1236,18 @@ export default function LandingPage(): JSX.Element {
             Weather is Met Office-based as standard on every plan. Connecting your own weather station is an
             optional, best-effort upgrade, available any time — not guaranteed at every site.
           </p>
+          {/* No-free-trial round - this line replaces the old "14-day
+              free trial" copy (there isn't one on the paid plans below -
+              see PaidSignupForm's own comment on why trial-signup.ts's
+              separate, still-live 14-day trial is a different thing).
+              Terms link added here directly, not just in the footer, per
+              the go-ahead's own instruction. */}
           <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-slate-500">
-            14-day free trial. Card required, nothing charged until day 15 — you'll get a reminder first, and
-            cancelling takes one click.
+            {PRICING_TERMS_LINE}{' '}
+            <Link to="/terms" className="text-slate-400 underline hover:text-sky-400">
+              Read the full Terms
+            </Link>
+            .
           </p>
         </section>
 
@@ -978,14 +1260,21 @@ export default function LandingPage(): JSX.Element {
             reasoning. */}
         <ProductChoiceFork signupType={signupType} setSignupType={setSignupType} />
 
-        {/* CTA FORK */}
+        {/* CTA FORK - Stripe groundwork Part B: button copy changed from
+            "Start Your Free Trial" (go-ahead's own instruction to
+            replace the old free-trial CTA with the paid signup/pricing
+            flow). "Get Started" works for both branches below - the
+            airfield branch now leads to paid signup (PaidSignupForm),
+            the venue_cafe branch is UNCHANGED (still trial-signup.ts's
+            own free trial, via SignupForm) - see PaidSignupForm's own
+            top comment for why venue_cafe wasn't moved too. */}
         <section className="mt-20 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <button
             type="button"
             onClick={scrollToSignup}
             className="w-full rounded-lg bg-sky-500 px-6 py-3 font-semibold text-slate-950 transition hover:bg-sky-400 sm:w-auto"
           >
-            Start Your Free Trial
+            Get Started
           </button>
           <a
             href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Airfield Central consultation request')}`}
@@ -995,23 +1284,23 @@ export default function LandingPage(): JSX.Element {
           </a>
         </section>
 
-        {/* Signup form itself - target of "Start Your Free Trial" above,
-            scrolled to rather than a separate route/modal. signupType is
-            now owned by LandingPage (above) and passed down, not local
-            to SignupForm - see that component's own comment.
-            signupRef sits on its own always-present anchor rather than
-            on this section directly - found in review that mounting
-            SignupForm unconditionally left its own bordered/padded
-            <form> wrapper visibly rendering EMPTY (no fields, since
-            SignupForm's own internal gate already hides those) whenever
-            no choice had been made yet, an awkward blank box sitting
-            between the CTA buttons and the FAQ. Only mounting SignupForm
-            once signupType is set removes that box entirely rather than
-            just hiding its contents, while the anchor keeps
-            scrollToSignup's target stable regardless of selection
-            state. */}
+        {/* Signup form itself - target of "Get Started" above, scrolled
+            to rather than a separate route/modal. signupType is owned by
+            LandingPage and passed down - see ProductChoiceFork's own
+            comment. signupRef sits on its own always-present anchor
+            rather than on this section directly - see this section's
+            own prior comment on why (mounting a form unconditionally
+            leaves an awkward empty box before a choice is made). Forks
+            on signupType: airfield gets the new paid flow
+            (PaidSignupForm), venue_cafe keeps the existing free-trial
+            flow (SignupForm) exactly as before. */}
         <div ref={signupRef} />
-        {signupType && (
+        {signupType === 'airfield' && (
+          <section className="mx-auto mt-12 max-w-md">
+            <PaidSignupForm />
+          </section>
+        )}
+        {signupType === 'venue_cafe' && (
           <section className="mx-auto mt-12 max-w-md">
             <SignupForm signupType={signupType} setSignupType={setSignupType} />
           </section>

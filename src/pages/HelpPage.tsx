@@ -34,6 +34,13 @@ export default function HelpPage(): JSX.Element {
   // new call here, not a new endpoint. Fails closed (false) until
   // resolved, same posture as that page's own fetch.
   const [isDeveloper, setIsDeveloper] = useState(false)
+  // Stripe groundwork Part G - this user's OWN accepted version/date,
+  // from the same /api/tenant/me fetch already made for isDeveloper
+  // above (no new request). null means "not yet fetched" vs "never
+  // accepted" (empty string/undefined from the API) - distinguished so
+  // the page can show nothing rather than a flash of "not yet accepted"
+  // before the real answer arrives.
+  const [termsAcceptance, setTermsAcceptance] = useState<{ at: string | null; version: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -46,7 +53,9 @@ export default function HelpPage(): JSX.Element {
     fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled) setIsDeveloper(!!data?.isDeveloper)
+        if (cancelled) return
+        setIsDeveloper(!!data?.isDeveloper)
+        setTermsAcceptance({ at: data?.termsAcceptedAt ?? null, version: data?.termsAcceptedVersion ?? null })
       })
       .catch(() => {})
     return () => {
@@ -105,7 +114,15 @@ export default function HelpPage(): JSX.Element {
           </Link>
 
           <p className="mb-4 text-xs text-muted-500">
-            Version {TERMS_VERSION} · Effective {TERMS_EFFECTIVE_DATE}
+            Current version {TERMS_VERSION} · Effective {TERMS_EFFECTIVE_DATE}
+            {termsAcceptance && (
+              <>
+                {' · '}
+                {termsAcceptance.at && termsAcceptance.version
+                  ? `You accepted version ${termsAcceptance.version} on ${new Date(termsAcceptance.at).toLocaleDateString('en-GB')}`
+                  : 'You have not yet accepted the current Terms'}
+              </>
+            )}
           </p>
 
           <section className="mb-6 rounded-2xl border border-border bg-panel p-6">

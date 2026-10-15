@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { PLATFORM_CHECK_SLUG_URL, PLATFORM_ONBOARD_TENANT_URL, PLATFORM_GEOCODE_POSTCODE_URL } from '../config/publicApi'
 import type { MemberRole } from '../types/member'
 import PilotTickerSlotsEditor from '../components/platform/PilotTickerSlotsEditor'
+import { findPricingPlan, formatGBP } from '../config/pricing'
 
 const TENANTS_URL = '/api/platform/tenants'
 const REFRESH_DISPLAYS_URL = '/api/platform/refresh-displays'
@@ -824,6 +825,163 @@ function SubscriptionEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSav
           className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
         />
       </label>
+    </div>
+  )
+}
+
+// Stripe groundwork Part C - generates a single-use, expiring
+// /activate/:token link for an EXISTING tenant (Tiger, id 29, is the
+// motivating case) to pay for a plan without going through new-tenant
+// signup/cloning. functions/api/platform/tenants/[id]/activation-link.ts
+// is the real boundary (platform-admin gated, refuses a tenant that
+// already has a live stripe_subscription_id) - this is just the UI
+// around it, same "server is the real guarantee" posture every other
+// control on this page already has.
+function ActivationLinkSection({ tenant }: { tenant: PlatformTenant }): JSX.Element {
+  const [plan, setPlan] = useState<'pack' | 'pilotApp'>('pack')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [link, setLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function handleCreate() {
+    setCreating(true)
+    setError(null)
+    setLink(null)
+    try {
+      const response = await fetch(`${TENANTS_URL}/${tenant.id}/activation-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.activationUrl) {
+        setError(data?.error ?? 'Could not create activation link')
+        return
+      }
+      setLink(data.activationUrl)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function handleCopy() {
+    if (!link) return
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-slate-900/60 p-3">
+      <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">Activation link</div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={plan}
+          onChange={(event) => setPlan(event.target.value as 'pack' | 'pilotApp')}
+          className="rounded border border-slate-700 bg-slate-900/80 px-2 py-1.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+        >
+          <option value="pack">Airfield Pack</option>
+          <option value="pilotApp">Pilot's App</option>
+        </select>
+        <button
+          type="button"
+          disabled={creating}
+          onClick={handleCreate}
+          className="rounded-lg bg-accent-sky-500 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+        >
+          {creating ? 'Creating…' : 'Create activation link'}
+        </button>
+      </div>
+      {error && <p className="mt-2 text-xs font-semibold text-status-bad">{error}</p>}
+      {link && (
+        <div className="mt-2 flex items-center gap-2">
+          <input readOnly value={link} className="w-full rounded border border-slate-700 bg-slate-900/80 px-2 py-1 text-xs text-slate-300" />
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="shrink-0 rounded border border-slate-600 px-2 py-1 text-xs font-semibold text-slate-100 hover:border-slate-400"
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-muted-500">Expires in 7 days. Single-use - refused if {tenant.name} already has an active subscription.</p>
+    </div>
+  )
+}
+
+// Stripe groundwork Part F - developer notification for new paid
+// signups, simplest option first (no email provider wired - see this
+// round's own investigation). Sourced from functions/api/platform/
+// new-signups.ts, which reads subscription_history (already written by
+// the webhook's own checkout.session.completed handler) - no new table.
+interface NewSignup {
+  tenantId: number
+  name: string
+  slug: string
+  firstCheckoutAt: string
+}
+
+function NewSignupsBadge(): JSX.Element | null {
+  const [count, setCount] = useState(0)
+  const [signups, setSignups] = useState<NewSignup[]>([])
+  const [open, setOpen] = useState(false)
+
+  function load() {
+    fetch('/api/platform/new-signups')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!data) return
+        setCount(data.count ?? 0)
+        setSignups(data.signups ?? [])
+      })
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function handleDismiss() {
+    await fetch('/api/platform/new-signups', { method: 'POST' })
+    setOpen(false)
+    load()
+  }
+
+  if (count === 0) return null
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold uppercase tracking-widest text-emerald-400 transition hover:bg-emerald-500/20"
+      >
+        {count} new signup{count === 1 ? '' : 's'}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-10 mt-2 w-72 rounded-lg border border-border bg-panel p-3 shadow-xl">
+          <ul className="max-h-64 space-y-2 overflow-y-auto">
+            {signups.map((signup) => (
+              <li key={signup.tenantId} className="text-sm text-slate-200">
+                <span className="font-semibold">{signup.name}</span>
+                <span className="block text-xs text-muted-500">
+                  {signup.slug} · {formatDate(signup.firstCheckoutAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="mt-3 w-full rounded border border-slate-600 px-2 py-1.5 text-xs font-semibold text-slate-100 hover:border-slate-400"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -1984,6 +2142,7 @@ export default function PlatformTenantsPage(): JSX.Element {
             </Link>
           </h1>
           <div className="flex flex-wrap items-center gap-4">
+            <NewSignupsBadge />
             <button
               type="button"
               onClick={handleRefreshAllDisplays}
@@ -2424,12 +2583,13 @@ export default function PlatformTenantsPage(): JSX.Element {
                         </button>
                       </div>
                     )}
+                    {!selectedTenant.deletedAt && <ActivationLinkSection tenant={selectedTenant} />}
                   </div>
                 </section>
 
                 <section className="rounded-2xl border border-border bg-panel p-5">
                   <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Reception Dashboard</div>
-                  <p className="mb-3 text-xs text-muted-500">The TV/clubhouse screen - Airfield Pack, £44/mo.</p>
+                  <p className="mb-3 text-xs text-muted-500">The TV/clubhouse screen - Airfield Pack, {formatGBP(findPricingPlan('pack')?.priceGBP ?? 44)}/mo.</p>
                   <div className="overflow-hidden rounded-xl border border-border/60">
                     <SettingsToggleRow
                       label="Reception Dashboard enabled"
@@ -2530,7 +2690,10 @@ export default function PlatformTenantsPage(): JSX.Element {
 
                 <section className="rounded-2xl border border-border bg-panel p-5">
                   <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Pilot's App</div>
-                  <p className="mb-3 text-xs text-muted-500">The branded mobile PWA at /pilot - £19.99/mo standalone, or included in the Airfield Pack.</p>
+                  <p className="mb-3 text-xs text-muted-500">
+                    The branded mobile PWA at /pilot - {formatGBP(findPricingPlan('pilotApp')?.priceGBP ?? 29.99)}/mo standalone, or included in
+                    the Airfield Pack.
+                  </p>
                   <div className="overflow-hidden rounded-xl border border-border/60">
                     <SettingsToggleRow
                       label="Mobile Pilot View enabled"
@@ -2550,7 +2713,10 @@ export default function PlatformTenantsPage(): JSX.Element {
 
                 <section className="rounded-2xl border border-border bg-panel p-5">
                   <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Media Screen</div>
-                  <p className="mb-3 text-xs text-muted-500">The café/clubhouse add-on screen - £29.99/mo, requires the Airfield Pack.</p>
+                  <p className="mb-3 text-xs text-muted-500">
+                    The café/clubhouse add-on screen - {formatGBP(findPricingPlan('mediaScreen')?.priceGBP ?? 29.99)}/mo, requires the Airfield
+                    Pack.
+                  </p>
                   {(() => {
                     const cafeTvDisplay = selectedTenant.displays.find((d) => d.slug === 'cafe-tv')
                     return cafeTvDisplay ? (

@@ -98,6 +98,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     organizationName: result.membership.name,
     isDeveloper: !!userRow?.developer,
     hasAcceptedTerms: !!userRow?.termsAcceptedAt && userRow.termsAcceptedVersion === TERMS_VERSION,
+    // Stripe groundwork Part G - raw values (not just the boolean above)
+    // so HelpPage.tsx can show THIS user's own accepted version/date,
+    // including a stale one (accepted an OLDER version, not yet the
+    // current TERMS_VERSION) - the boolean alone can't distinguish
+    // "never accepted" from "accepted an old version".
+    termsAcceptedAt: userRow?.termsAcceptedAt ?? null,
+    termsAcceptedVersion: userRow?.termsAcceptedVersion ?? null,
     cafeEntitled,
     subdomain: tenantRow?.subdomain ?? null,
     // Defaults to 'airfield' (matching the column's own DEFAULT) rather

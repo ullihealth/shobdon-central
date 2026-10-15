@@ -22,6 +22,7 @@ import MediaLibraryPage from './pages/MediaLibraryPage'
 import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
 import OnboardInvitePage from './pages/OnboardInvitePage'
+import ActivationPage from './pages/ActivationPage'
 import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformCamerasPage from './pages/PlatformCamerasPage'
 import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPage'
@@ -96,6 +97,12 @@ export default function App(): JSX.Element {
             new tenant's own (not-yet-DNS-provisioned) subdomain - runs
             entirely on whatever host served this link. */}
         <Route path="/onboard/:token" element={<OnboardInvitePage />} />
+        {/* Stripe groundwork Part C - existing-tenant activation. Bare
+            route, no RequireAuth wrapper: a visitor may not be logged in
+            yet at all (the page itself handles that state and tells them
+            to log in, then return), same "handles its own auth state"
+            posture as OnboardInvitePage.tsx above. */}
+        <Route path="/activate/:token" element={<ActivationPage />} />
         {/* Mandatory terms/privacy gate - reached via RequireAuth.tsx's
             redirect, never linked to directly. Its own RequireAuth carries
             skipTermsGate (must not redirect to itself) but still requires

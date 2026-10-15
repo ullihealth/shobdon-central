@@ -29,6 +29,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 
 const BASE_URL = process.env.OPS_PANEL_TEST_BASE_URL ?? 'http://localhost:8788';
 const TEST_EMAIL = 'jeffthompson@europe.com';
@@ -355,4 +356,216 @@ test('Stripe webhook: Airfield Pack entitlement flow', async (t) => {
     await patchTenant(cookie, { dashboardEnabled: true, mobileEnabled: false, subscriptionStatus: 'trial' });
     await patchCafeTvDisplay(cookie, cafeTv.id, { entitled: false });
   }
+});
+
+// --- Stripe groundwork Parts B/C - paid signup, checkout, activation ---
+// Each scenario below creates its own brand-new tenant via /api/public/
+// signup (unique email/slug per run, via uniqueId()) rather than sharing
+// TEST_TENANT_ID - no reset/cleanup race with the suite above, and
+// "a freshly-signed-up tenant" is exactly the real-world case these
+// endpoints exist for.
+
+async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true } = {}) {
+  const unique = uniqueId('signup');
+  const body = {
+    businessName: `Test Signup Club ${unique}`,
+    contactName: 'Test Contact',
+    email: `${unique}@example.com`,
+    password: 'testpass123',
+    slug: unique.replace(/_/g, '-').toLowerCase(),
+    lat: 52.0,
+    lon: -2.5,
+    plan,
+    termsAccepted,
+  };
+  const response = await request('POST', '/api/public/signup', { body });
+  return { response, body };
+}
+
+async function signInAs(email, password) {
+  const response = await request('POST', '/api/auth/sign-in/email', {
+    headers: { Origin: BASE_URL },
+    body: { email, password },
+  });
+  const setCookie = response.headers['set-cookie'];
+  assert.ok(setCookie, `sign-in failed for ${email}: ${JSON.stringify(response.json)}`);
+  return setCookie[0].split(';')[0];
+}
+
+test('Paid signup (Part B): terms required, duplicate email rejected, no trial entitlement, real account created', async (t) => {
+  await t.test('rejects without termsAccepted', async () => {
+    const { response } = await signUpAirfieldTenant({ termsAccepted: false });
+    assert.equal(response.status, 400);
+    assert.match(response.json.error, /Terms/i);
+  });
+
+  let firstSignupBody;
+  await t.test('successful signup creates a real, zero-entitlement tenant and a working login', async () => {
+    const { response, body } = await signUpAirfieldTenant({ plan: 'pack' });
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+    assert.ok(response.json.tenantId);
+    firstSignupBody = body;
+
+    // The new user can actually sign in - proves the account/credential
+    // row was created correctly (same hashPassword format BetterAuth's
+    // own verify expects), not just a tenant row.
+    const cookie = await signInAs(body.email, body.password);
+    const me = await request('GET', '/api/tenant/me', { headers: { Cookie: cookie } });
+    assert.equal(me.status, 200);
+    assert.equal(me.json.role, 'owner');
+    assert.equal(me.json.organizationSlug, body.slug);
+    // No trial - paid signup grants nothing until the webhook confirms
+    // payment. cafeEntitled is the one entitlement flag /api/tenant/me
+    // itself exposes; dashboardEnabled/mobileEnabled are checked via
+    // the platform list endpoint below (developer-only, more direct).
+    assert.equal(me.json.cafeEntitled, false);
+    assert.equal(me.json.hasAcceptedTerms, true, 'termsAccepted=true at signup should already satisfy the mandatory gate');
+  });
+
+  await t.test('dashboard_enabled/mobile_enabled are both 0, not just cafe-tv', async () => {
+    const devCookie = await login();
+    const tenants = (await request('GET', '/api/platform/tenants', { headers: { Cookie: devCookie } })).json.tenants;
+    const created = tenants.find((tn) => tn.slug === firstSignupBody.slug);
+    assert.ok(created, 'the newly-signed-up tenant should appear in the platform tenant list');
+    assert.equal(created.dashboardEnabled, false);
+    assert.equal(created.mobileEnabled, false);
+  });
+
+  await t.test('rejects a second signup with the same email', async () => {
+    const { response: first, body } = await signUpAirfieldTenant();
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    const second = await request('POST', '/api/public/signup', {
+      body: { ...body, slug: `${body.slug}-again` },
+    });
+    assert.equal(second.status, 409);
+  });
+});
+
+test('Stripe checkout endpoint (Part B/C): auth required, cannot target another tenant via activationToken', async (t) => {
+  await t.test('401 when not authenticated', async () => {
+    const response = await request('POST', '/api/stripe/checkout', { body: { plan: 'pack' } });
+    assert.equal(response.status, 401);
+  });
+
+  await t.test('400 for an invalid plan', async () => {
+    const { body } = await signUpAirfieldTenant();
+    const cookie = await signInAs(body.email, body.password);
+    const response = await request('POST', '/api/stripe/checkout', { headers: { Cookie: cookie }, body: { plan: 'mediaScreen' } });
+    assert.equal(response.status, 400, 'mediaScreen must not be purchasable through this endpoint - see signup.ts/checkout.ts own comments');
+  });
+
+  await t.test('an activation token issued for tenant A is refused when redeemed by tenant B\'s own user', async () => {
+    const tenantA = await signUpAirfieldTenant();
+    const tenantB = await signUpAirfieldTenant();
+
+    const devCookie = await login();
+    const tenantsBefore = (await request('GET', '/api/platform/tenants', { headers: { Cookie: devCookie } })).json.tenants;
+    const tenantARow = tenantsBefore.find((tn) => tn.slug === tenantA.body.slug);
+    assert.ok(tenantARow);
+
+    const linkResponse = await request('POST', `/api/platform/tenants/${tenantARow.id}/activation-link`, {
+      headers: { Cookie: devCookie },
+      body: { plan: 'pack' },
+    });
+    assert.equal(linkResponse.status, 200, JSON.stringify(linkResponse.json));
+    const token = linkResponse.json.token;
+
+    // Validation endpoint (public) correctly reports tenant B's user as
+    // NOT a member of tenant A, before any redemption is even attempted.
+    const checkAsB = await request('GET', `/api/public/activation/${token}`, {
+      headers: { Cookie: await signInAs(tenantB.body.email, tenantB.body.password) },
+    });
+    assert.equal(checkAsB.status, 200);
+    assert.equal(checkAsB.json.isMemberOfTenant, false);
+
+    // The real boundary - checkout.ts itself refuses the mismatch.
+    const cookieB = await signInAs(tenantB.body.email, tenantB.body.password);
+    const redeemAsB = await request('POST', '/api/stripe/checkout', {
+      headers: { Cookie: cookieB },
+      body: { plan: 'pack', activationToken: token },
+    });
+    assert.equal(redeemAsB.status, 403);
+
+    // A failed/mismatched redemption must not consume the token - tenant
+    // A's own user can still use it.
+    const linkStillUnused = await request('GET', `/api/public/activation/${token}`, {
+      headers: { Cookie: await signInAs(tenantA.body.email, tenantA.body.password) },
+    });
+    assert.equal(linkStillUnused.status, 200);
+    assert.equal(linkStillUnused.json.isMemberOfTenant, true);
+  });
+});
+
+test('Activation links (Part C): expired and reused tokens are rejected, by both the validation endpoint and checkout.ts', async (t) => {
+  const tenant = await signUpAirfieldTenant();
+  const devCookie = await login();
+  const tenants = (await request('GET', '/api/platform/tenants', { headers: { Cookie: devCookie } })).json.tenants;
+  const tenantRow = tenants.find((tn) => tn.slug === tenant.body.slug);
+  const cookie = await signInAs(tenant.body.email, tenant.body.password);
+
+  // activation-link.ts always sets a real future (7-day) expiry, and
+  // nothing exposes marking one used without actually redeeming it - a
+  // direct D1 write is the only way to exercise these two paths, same
+  // "shell out to wrangler d1 execute for state no API can set" pattern
+  // scripts/terms-versioning.test.mjs already established.
+  await t.test('expired token is rejected by both the validation endpoint and checkout.ts', async () => {
+    const token = uniqueId('expired-token');
+    execSync(
+      `npx wrangler d1 execute shobdon-central --local --command "INSERT INTO activation_links (token, tenant_id, plan, expires_at, created_by, created_at) VALUES ('${token}', ${tenantRow.id}, 'pack', '2020-01-01T00:00:00.000Z', 'test', datetime('now'))"`,
+      { cwd: process.cwd(), stdio: 'pipe' }
+    );
+
+    const check = await request('GET', `/api/public/activation/${token}`);
+    assert.equal(check.status, 410);
+
+    const redeem = await request('POST', '/api/stripe/checkout', {
+      headers: { Cookie: cookie },
+      body: { plan: 'pack', activationToken: token },
+    });
+    assert.equal(redeem.status, 410);
+  });
+
+  await t.test('already-used token is rejected by both the validation endpoint and checkout.ts', async () => {
+    const token = uniqueId('used-token');
+    execSync(
+      `npx wrangler d1 execute shobdon-central --local --command "INSERT INTO activation_links (token, tenant_id, plan, expires_at, used_at, created_by, created_at) VALUES ('${token}', ${tenantRow.id}, 'pack', '2030-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'test', datetime('now'))"`,
+      { cwd: process.cwd(), stdio: 'pipe' }
+    );
+
+    const check = await request('GET', `/api/public/activation/${token}`);
+    assert.equal(check.status, 409);
+
+    const redeem = await request('POST', '/api/stripe/checkout', {
+      headers: { Cookie: cookie },
+      body: { plan: 'pack', activationToken: token },
+    });
+    assert.equal(redeem.status, 409);
+  });
+
+  await t.test('checkout.ts rejects an unknown/garbage token cleanly', async () => {
+    const response = await request('POST', '/api/stripe/checkout', {
+      headers: { Cookie: cookie },
+      body: { plan: 'pack', activationToken: 'not-a-real-token' },
+    });
+    assert.equal(response.status, 404);
+  });
+
+  assert.ok(tenantRow, 'signed-up tenant should be visible to a developer');
+});
+
+test('New-signup isolation (Part B): tenant B cannot read tenant A\'s config via ?org= override', async () => {
+  const tenantA = await signUpAirfieldTenant();
+  const tenantB = await signUpAirfieldTenant();
+  const cookieB = await signInAs(tenantB.body.email, tenantB.body.password);
+
+  // resolveTenantMembership's explicit-org path (tenantAuth.ts) 403s
+  // for ANY org the caller isn't a member of - this is pre-existing,
+  // whole-app behaviour (confirmed via investigation), exercised here
+  // specifically against a tenant that only exists because of this
+  // round's own new signup endpoint, to prove the new code path doesn't
+  // somehow create a tenant that's reachable cross-tenant.
+  const response = await request('GET', `/api/tenant/config?org=${encodeURIComponent(tenantA.body.slug)}`, {
+    headers: { Cookie: cookieB },
+  });
+  assert.equal(response.status, 403);
 });

@@ -122,6 +122,24 @@ export const PUBLIC_TENANTS_URL = '/api/public/tenants'
 // same reasoning as PUBLIC_TENANTS_URL above.
 export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'
 
+// Stripe groundwork Part B - paid signup, functions/api/public/signup.ts.
+// Deliberately separate from TRIAL_SIGNUP_URL above - see that file's
+// own top comment for why this is a new route, not a retrofit.
+export const SIGNUP_URL = '/api/public/signup'
+
+// Stripe groundwork Parts B/C - functions/api/stripe/checkout.ts. Shared
+// by the new paid-signup flow AND the existing-tenant activation flow
+// (/activate/:token) - both derive their tenant from the caller's own
+// session, never from the browser.
+export const STRIPE_CHECKOUT_URL = '/api/stripe/checkout'
+
+// Stripe groundwork Part C - functions/api/public/activation/[token].ts.
+// Public (no session required to just validate a token), consumed by
+// src/pages/ActivationPage.tsx.
+export function activationCheckUrl(token: string): string {
+  return `/api/public/activation/${encodeURIComponent(token)}`
+}
+
 // Public, unauthenticated, rate-limited live-availability check for the
 // required subdomain field on the same signup form above -
 // functions/api/public/check-slug.ts. Advisory only (fast feedback
