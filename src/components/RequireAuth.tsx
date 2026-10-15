@@ -29,6 +29,12 @@ interface RequireAuthProps {
   // option" - so this prop exists to name the two deliberate exceptions,
   // not as a general-purpose opt-out.
   skipTermsGate?: boolean
+  // Abandoned-checkout round - set only on /complete-subscription itself
+  // (must not redirect to itself), same "name the one deliberate
+  // exception" posture as skipTermsGate above. requireDeveloper routes
+  // are excluded from this gate entirely below, same reasoning as the
+  // terms gate - platform tooling isn't "the tenant's own dashboard".
+  skipSubscriptionGate?: boolean
 }
 
 // Gate for the management pages - redirects to /login when there's no
@@ -37,17 +43,24 @@ interface RequireAuthProps {
 // working at the phase-0 login checkpoint - not a separate, hand-rolled
 // check. Deliberately NOT used on the public dashboard route ("/") -
 // that must stay unauthenticated for everyone.
-export default function RequireAuth({ children, requireRole, requireDeveloper, skipTermsGate }: RequireAuthProps): JSX.Element | null {
+export default function RequireAuth({ children, requireRole, requireDeveloper, skipTermsGate, skipSubscriptionGate }: RequireAuthProps): JSX.Element | null {
   const { data: session, isPending } = authClient.useSession()
   // Unconditional (not gated on requireRole/requireDeveloper being set) -
   // the mandatory terms/privacy gate below needs hasAcceptedTerms on
   // every authenticated route, including bare <RequireAuth> ones like
   // /account that previously never called /api/tenant/me at all.
-  const [meCheck, setMeCheck] = useState<{ loading: boolean; role: string | null; isDeveloper: boolean; hasAcceptedTerms: boolean }>({
+  const [meCheck, setMeCheck] = useState<{
+    loading: boolean
+    role: string | null
+    isDeveloper: boolean
+    hasAcceptedTerms: boolean
+    subscriptionPending: boolean
+  }>({
     loading: true,
     role: null,
     isDeveloper: false,
     hasAcceptedTerms: false,
+    subscriptionPending: false,
   })
 
   useEffect(() => {
@@ -62,11 +75,12 @@ export default function RequireAuth({ children, requireRole, requireDeveloper, s
             role: data?.role ?? null,
             isDeveloper: !!data?.isDeveloper,
             hasAcceptedTerms: !!data?.hasAcceptedTerms,
+            subscriptionPending: !!data?.subscriptionPending,
           })
         }
       })
       .catch(() => {
-        if (!cancelled) setMeCheck({ loading: false, role: null, isDeveloper: false, hasAcceptedTerms: false })
+        if (!cancelled) setMeCheck({ loading: false, role: null, isDeveloper: false, hasAcceptedTerms: false, subscriptionPending: false })
       })
     return () => {
       cancelled = true
@@ -131,6 +145,20 @@ export default function RequireAuth({ children, requireRole, requireDeveloper, s
   // can't gate on redirecting to itself.
   if (!requireDeveloper && !skipTermsGate && !meCheck.hasAcceptedTerms) {
     return <Navigate to="/onboarding/terms" replace />
+  }
+
+  // Abandoned-checkout gate - a tenant created via the new paid-signup
+  // route (functions/api/public/signup.ts) that never completed Stripe
+  // Checkout. subscriptionPending can ONLY be true for one of those
+  // tenants (see tenant/me.ts's own comment - 'pending' is a status
+  // nothing else in this codebase ever writes), so this can never catch
+  // an existing/comped tenant. Checked AFTER the terms gate, same order
+  // those two would naturally happen in for a real new signup (terms
+  // were already accepted at signup time in this flow, so in practice
+  // this rarely matters, but onboarding/terms must still win if both
+  // were somehow true).
+  if (!requireDeveloper && !skipSubscriptionGate && meCheck.subscriptionPending) {
+    return <Navigate to="/complete-subscription" replace />
   }
 
   return <>{children}</>

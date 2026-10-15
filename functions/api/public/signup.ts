@@ -188,6 +188,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // NOT set at all - see the tenant_displays inserts below).
   await cloneTenantTemplate(env.DB, template.organizationId, organizationId, slug);
 
+  // Abandoned-checkout round - explicit 'pending' status (NOT the
+  // column's own 'trial' default every pre-existing/comped tenant
+  // already has - migration 0043's own comment) is what lets
+  // RequireAuth.tsx's new gate distinguish "a brand-new paid signup
+  // that hasn't finished Stripe Checkout yet" from every other tenant
+  // in the system, with zero risk of an existing tenant ever matching
+  // it - nothing else in this codebase writes 'pending' anywhere.
+  // subscription_notes (existing free-text column, otherwise untouched
+  // by this flow) holds the chosen plan id ('pack'/'pilotApp') so the
+  // "Complete your subscription" screen knows what to show/buy without
+  // a new column - safe to reuse here specifically because a 'pending'
+  // tenant is, by construction, one this exact route just created, so
+  // nothing else could have already put different content there.
+  // webhook.ts's own setSubscriptionStatus already flips this to
+  // 'active' on a successful checkout.session.completed - no change
+  // needed there at all.
+  await env.DB.prepare("UPDATE tenants SET subscription_status = 'pending', subscription_notes = ? WHERE id = ?").bind(plan, tenantId).run();
+
   if (parentTenantId !== null) {
     await env.DB
       .prepare("UPDATE tenants SET parent_tenant_id = ?, active_weather_provider = 'ingested' WHERE id = ?")

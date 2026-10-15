@@ -87,10 +87,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // without this addition AND the matching addition to the returned
   // object below. Drives AdminSidebar.tsx's sidebarConfig.ts
   // hideForTenantType gate.
+  // Abandoned-checkout round - subscriptionStatus/pendingPlan back
+  // RequireAuth.tsx's new "Complete your subscription" gate. 'pending'
+  // is a status ONLY functions/api/public/signup.ts ever writes (see
+  // that file's own comment) - no pre-existing/comped tenant can ever
+  // have it, so this gate is airtight without a new column.
   const tenantRow = await env.DB
-    .prepare("SELECT subdomain, tenant_type AS tenantType FROM tenants WHERE organization_id = ?")
+    .prepare("SELECT subdomain, tenant_type AS tenantType, subscription_status AS subscriptionStatus, subscription_notes AS pendingPlan FROM tenants WHERE organization_id = ?")
     .bind(result.membership.organizationId)
-    .first<{ subdomain: string | null; tenantType: string }>();
+    .first<{ subdomain: string | null; tenantType: string; subscriptionStatus: string; pendingPlan: string | null }>();
 
   return jsonResponse({
     role: result.membership.role,
@@ -105,6 +110,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // "never accepted" from "accepted an old version".
     termsAcceptedAt: userRow?.termsAcceptedAt ?? null,
     termsAcceptedVersion: userRow?.termsAcceptedVersion ?? null,
+    subscriptionPending: tenantRow?.subscriptionStatus === "pending",
+    pendingPlan: tenantRow?.subscriptionStatus === "pending" ? tenantRow?.pendingPlan ?? null : null,
     cafeEntitled,
     subdomain: tenantRow?.subdomain ?? null,
     // Defaults to 'airfield' (matching the column's own DEFAULT) rather

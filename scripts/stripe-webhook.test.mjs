@@ -30,14 +30,37 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const BASE_URL = process.env.OPS_PANEL_TEST_BASE_URL ?? 'http://localhost:8788';
 const TEST_EMAIL = 'jeffthompson@europe.com';
 const WEBHOOK_SECRET = 'whsec_local_dev_only_dummy_secret'; // must match .dev.vars
 const STUB_PORT = 8799; // must match .dev.vars' STRIPE_API_BASE_URL
-const STRIPE_PRICE_PACK = 'price_1UNFGQPidShgOHShVaDq5CzF';
-const STRIPE_PRICE_PILOT_APP = 'price_1UNFGkPidShgOHSho400RtF5';
-const STRIPE_PRICE_MEDIA_SCREEN = 'price_1UNFH3PidShgOHShe8svQZ62';
+
+// Sandbox round - read the real price ids straight out of .dev.vars
+// instead of hardcoding them here. This file is never printed/logged
+// (parsed in-process only), and a Node test script has no automatic
+// access to Wrangler's own .dev.vars loading (that only happens inside
+// the Worker runtime `wrangler pages dev` starts) - previously this
+// file hardcoded its own placeholder price ids, which worked only
+// because .dev.vars held the exact same placeholders; now that real
+// sandbox price ids are in .dev.vars, hardcoding would silently
+// desync and break every price-matching assertion below. Falls back to
+// the original placeholders if .dev.vars is missing a key (CI/a fresh
+// checkout before .dev.vars exists at all).
+function readDevVar(key, fallback) {
+  try {
+    const contents = readFileSync('.dev.vars', 'utf8');
+    const match = contents.match(new RegExp(`^${key}=(.*)$`, 'm'));
+    return match ? match[1].trim() : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const STRIPE_PRICE_PACK = readDevVar('STRIPE_PRICE_PACK', 'price_1UNFGQPidShgOHShVaDq5CzF');
+const STRIPE_PRICE_PILOT_APP = readDevVar('STRIPE_PRICE_PILOT_APP', 'price_1UNFGkPidShgOHSho400RtF5');
+const STRIPE_PRICE_MEDIA_SCREEN = readDevVar('STRIPE_PRICE_MEDIA_SCREEN', 'price_1UNFH3PidShgOHShe8svQZ62');
 
 // A dedicated test-only tenant, deliberately NOT 'newcustomer' (which
 // scripts/dashboard-entitlement.test.mjs already mutates) - Node's test
@@ -568,4 +591,42 @@ test('New-signup isolation (Part B): tenant B cannot read tenant A\'s config via
     headers: { Cookie: cookieB },
   });
   assert.equal(response.status, 403);
+});
+
+test('Abandoned checkout: a pending signup is flagged, flips to active once the webhook lands, no existing tenant ever matches', async (t) => {
+  await t.test('a brand-new paid signup reports subscriptionPending=true with the chosen plan, before any webhook arrives', async () => {
+    const { response, body } = await signUpAirfieldTenant({ plan: 'pilotApp' });
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+    const cookie = await signInAs(body.email, body.password);
+    const me = await request('GET', '/api/tenant/me', { headers: { Cookie: cookie } });
+    assert.equal(me.json.subscriptionPending, true);
+    assert.equal(me.json.pendingPlan, 'pilotApp');
+  });
+
+  await t.test('a successful checkout.session.completed flips subscriptionPending back to false - no change needed in webhook.ts itself', async () => {
+    const { body } = await signUpAirfieldTenant({ plan: 'pack' });
+    const cookie = await signInAs(body.email, body.password);
+
+    const devCookie = await login();
+    const tenants = (await request('GET', '/api/platform/tenants', { headers: { Cookie: devCookie } })).json.tenants;
+    const tenantRow = tenants.find((tn) => tn.slug === body.slug);
+    assert.ok(tenantRow);
+
+    const customerId = uniqueId('cus');
+    const subscriptionId = uniqueId('sub');
+    registerStubSubscription(subscriptionId, customerId, STRIPE_PRICE_PACK);
+    const event = checkoutSessionCompletedEvent({ clientReferenceId: tenantRow.id, customerId, subscriptionId });
+    const webhookResponse = await postStripeEvent(event);
+    assert.equal(webhookResponse.status, 200, JSON.stringify(webhookResponse.json));
+
+    const me = await request('GET', '/api/tenant/me', { headers: { Cookie: cookie } });
+    assert.equal(me.json.subscriptionPending, false, 'webhook.ts\'s own existing setSubscriptionStatus(...active...) should already clear this');
+    assert.equal(me.json.pendingPlan, null);
+  });
+
+  await t.test('an existing, pre-existing tenant (test-onboard-weather) never reports subscriptionPending=true, whatever its real subscription_status is', async () => {
+    const cookie = await login();
+    const me = await request('GET', '/api/tenant/me', { headers: { Cookie: cookie } });
+    assert.equal(me.json.subscriptionPending, false, 'only a tenant created by functions/api/public/signup.ts can ever be pending');
+  });
 });

@@ -23,6 +23,7 @@ import MediaManagerPage from './pages/MediaManagerPage'
 import MembersPage from './pages/MembersPage'
 import OnboardInvitePage from './pages/OnboardInvitePage'
 import ActivationPage from './pages/ActivationPage'
+import CompleteSubscriptionPage from './pages/CompleteSubscriptionPage'
 import OnboardingTermsPage from './pages/OnboardingTermsPage'
 import PlatformCamerasPage from './pages/PlatformCamerasPage'
 import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPage'
@@ -103,6 +104,19 @@ export default function App(): JSX.Element {
             to log in, then return), same "handles its own auth state"
             posture as OnboardInvitePage.tsx above. */}
         <Route path="/activate/:token" element={<ActivationPage />} />
+        {/* Abandoned-checkout round - reached only via RequireAuth.tsx's
+            own gate (meCheck.subscriptionPending), never linked to
+            directly. Carries skipSubscriptionGate (must not redirect to
+            itself) but still requires a real session - matches
+            /onboarding/terms's exact same posture one route up. */}
+        <Route
+          path="/complete-subscription"
+          element={
+            <RequireAuth skipSubscriptionGate>
+              <CompleteSubscriptionPage />
+            </RequireAuth>
+          }
+        />
         {/* Mandatory terms/privacy gate - reached via RequireAuth.tsx's
             redirect, never linked to directly. Its own RequireAuth carries
             skipTermsGate (must not redirect to itself) but still requires
