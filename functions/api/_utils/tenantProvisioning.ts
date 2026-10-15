@@ -23,8 +23,15 @@ import type { D1Database } from "./tenantAuth";
 export interface CreateTenantOrganizationParams {
   slug: string;
   name: string;
-  lat: number;
-  lon: number;
+  // Landing-page signup round: nullable now - functions/api/public/
+  // signup.ts's own no-parent-chosen path creates a tenant with no
+  // coordinates on file at all (previously always required there,
+  // backfilled later) rather than forcing a visitor to type coordinates
+  // they may not know. Both other callers (onboard.ts, trial-signup.ts)
+  // are unaffected - they still always pass real numbers, this is a pure
+  // widening of what's accepted, not a behaviour change for them.
+  lat: number | null;
+  lon: number | null;
   // Migration 0046_tenant_subdomain_confirmed.sql - true when a human
   // deliberately chose this slug (both callers' own explicit-slug path),
   // false only for onboard.ts's random tenant-XXXXXXXX fallback, which

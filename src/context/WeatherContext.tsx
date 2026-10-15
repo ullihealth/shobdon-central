@@ -22,6 +22,11 @@ interface WeatherContextValue {
   // "no live reading" instead of rendering the substituted mock numbers
   // as if they were real.
   liveDataUnavailable: boolean
+  // Landing-page signup round - see this context's own computation of
+  // this flag (below) for the full comment. True specifically for "no
+  // weather source was ever configured for this tenant," never for a
+  // real provider that's just temporarily down.
+  weatherLocationNotSet: boolean
   // True when activeProvider is 'atc' but the reading currently on screen
   // actually came from the internet-weather auto-fallback (Open-Meteo,
   // the same fetchInternetWeather() a manually-selected 'internet'
@@ -146,9 +151,10 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   // by this change - confirmed present before this file's rewrite): it's
   // a value COMPUTED below from config + value.source, never itself part
   // of a setValue(...) object literal, same category as usingFallback
-  // which is already excluded.
+  // which is already excluded. weatherLocationNotSet is the same
+  // category too (computed from config alone).
   const [value, setValue] = useState<
-    Omit<WeatherContextValue, 'activeProvider' | 'config' | 'usingFallback' | 'liveDataUnavailable'>
+    Omit<WeatherContextValue, 'activeProvider' | 'config' | 'usingFallback' | 'liveDataUnavailable' | 'weatherLocationNotSet'>
   >({
     weather: null,
     source: 'mock',
@@ -448,6 +454,17 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
   }, [])
 
   const liveDataUnavailable = !!config && config.activeProvider !== 'mock' && value.source === 'mock'
+  // Landing-page signup round: a tenant created with no parent and no
+  // coordinates (functions/api/public/signup.ts's new no-parent path)
+  // resolves to activeProvider 'internet' with weatherConfigStore.ts's
+  // own UNAVAILABLE_COORDINATES sentinel (NaN/NaN) - see that file's own
+  // comment on why that's deliberately NOT the same as a real provider
+  // outage. Narrower than liveDataUnavailable above (which also covers a
+  // genuinely-configured source that's just temporarily down) - this is
+  // specifically "nothing was ever configured," so consumers can show a
+  // "set it in Weather Config" message instead of a generic failure one.
+  const weatherLocationNotSet =
+    !!config && config.activeProvider === 'internet' && Number.isNaN(config.internet.latitude)
   const dataStale = lastUpdatedAt !== null && Date.now() - lastUpdatedAt > STALE_WARNING_THRESHOLD_MS
 
   return (
@@ -457,6 +474,7 @@ export function WeatherProvider({ children, forcedConfig }: WeatherProviderProps
         activeProvider: config?.activeProvider ?? DEFAULT_WEATHER_CONFIG.activeProvider,
         config: config ?? DEFAULT_WEATHER_CONFIG,
         liveDataUnavailable,
+        weatherLocationNotSet,
         usingFallback,
         refetchNow,
         dataStale,

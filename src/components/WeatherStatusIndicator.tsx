@@ -47,12 +47,21 @@ interface WeatherStatusIndicatorProps {
 }
 
 export default function WeatherStatusIndicator({ hideIcon = false, textColorOverride }: WeatherStatusIndicatorProps): JSX.Element {
-  const { activeProvider, weather, config, liveDataUnavailable, usingFallback, internetProviderDisplayName } = useWeather()
+  const { activeProvider, weather, config, liveDataUnavailable, weatherLocationNotSet, usingFallback, internetProviderDisplayName } =
+    useWeather()
 
+  // weatherLocationNotSet (landing-page signup round) is checked ahead of
+  // liveDataUnavailable - it's the more specific, more actionable fact
+  // ("nothing was ever configured for this tenant - go set it") rather
+  // than the generic "a real source failed" message, even though both
+  // currently resolve to the same underlying mock-substitution mechanism.
+  //
   // liveDataUnavailable means the selected source's fetch failed and the
   // numbers on screen are the substituted mock fixture, not real data -
   // that must never be labelled as if it were the selected live source.
-  const { emoji, label } = liveDataUnavailable
+  const { emoji, label } = weatherLocationNotSet
+    ? { emoji: '🔴', label: 'WEATHER LOCATION NOT SET — SET IT IN WEATHER CONFIG' }
+    : liveDataUnavailable
     ? { emoji: '🔴', label: 'NO LIVE READING' }
     : activeProvider === 'atc'
       ? usingFallback

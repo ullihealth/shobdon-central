@@ -1,9 +1,12 @@
 // Public, UNAUTHENTICATED paid signup - POST /api/public/signup. Stripe
 // groundwork Part B. Deliberately a SEPARATE route from trial-signup.ts,
 // not a retrofit of it - the go-ahead is explicit that trial-signup.ts's
-// existing behaviour must not change for its existing callers (the
-// venue_cafe branch on LandingPage.tsx still uses it, unchanged). This
-// route creates a real user/account/member row (trial-signup.ts
+// existing behaviour must not change for its existing callers. (Landing-
+// page signup round: trial-signup.ts's own venue_cafe branch no longer
+// has a landing-page entry point - airfield/clubhouse is the only self-
+// serve path now - but the endpoint itself is untouched, same signature,
+// same behaviour, for any other caller.) This route creates a real
+// user/account/member row (trial-signup.ts
 // deliberately never does, see that file's own comment) and grants NO
 // entitlements at all - dashboard_enabled/mobile_enabled are already 0
 // by default on a brand-new tenants row (migration 0106's own "locked
@@ -31,6 +34,7 @@ import { createTenantOrganization } from "../_utils/tenantProvisioning";
 import { hashPassword } from "../_utils/passwordHash";
 import { jsonResponse, type D1Database } from "../_utils/tenantAuth";
 import { TERMS_VERSION } from "../_utils/termsVersion";
+import { getEligibleParentTenants } from "../_utils/eligibleParents";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -48,23 +52,13 @@ const MIN_PASSWORD_LENGTH = 8;
 const VALID_PLANS = ["pack", "pilotApp"] as const;
 type Plan = (typeof VALID_PLANS)[number];
 
-function isValidLat(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= -90 && value <= 90;
-}
-
-function isValidLon(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= -180 && value <= 180;
-}
-
 interface RequestBody {
   businessName?: unknown;
   contactName?: unknown;
   email?: unknown;
   password?: unknown;
   slug?: unknown;
-  lat?: unknown;
-  lon?: unknown;
-  parentTenantSlug?: unknown;
+  parentTenantId?: unknown;
   plan?: unknown;
   termsAccepted?: unknown;
 }
@@ -122,48 +116,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const existingUser = await env.DB.prepare("SELECT id FROM user WHERE email = ?").bind(email).first<{ id: string }>();
   if (existingUser) return jsonResponse({ error: "An account already exists with this email - please sign in instead" }, 409);
 
-  // Decision #12 - Parent Airfield linking, exact same lookup/validation/
-  // lat-lon-inheritance shape as functions/api/platform/tenants/onboard.ts
-  // (duplicated per this codebase's established functions/-file-local-
-  // helper convention, see tenantProvisioning.ts's own comment on the
-  // same tradeoff - that endpoint's own logic can't be called directly
-  // from here).
-  const parentTenantSlugRaw = typeof body.parentTenantSlug === "string" ? body.parentTenantSlug.trim() : "";
+  // Decision #12 - Parent Airfield linking. Landing-page signup round:
+  // the form now submits a parentTenantId (number) chosen from a
+  // dropdown, not a free-typed slug - this validates it against the
+  // exact same eligible-parent set functions/api/public/parent-
+  // airfields.ts lists (getEligibleParentTenants, shared helper so the
+  // two can never drift apart), rejecting any id that isn't a genuine,
+  // eligible parent (including a syntactically-valid id for a real but
+  // ineligible tenant - demo/newcustomer/etc. - not just a nonexistent
+  // one). No parent chosen is valid too (parentTenantId omitted/null) -
+  // lat/lon are simply left null in that case, see below.
+  const parentTenantIdRaw = body.parentTenantId;
   let parentTenantId: number | null = null;
-  let parentLat: number | null = null;
-  let parentLon: number | null = null;
-  if (parentTenantSlugRaw) {
-    const parentTenant = await env.DB
-      .prepare("SELECT id, lat, lon FROM tenants WHERE slug = ?")
-      .bind(parentTenantSlugRaw)
-      .first<{ id: number; lat: number | null; lon: number | null }>();
-    if (!parentTenant) return jsonResponse({ error: "No tenant found with that Parent Airfield slug" }, 404);
+  let lat: number | null = null;
+  let lon: number | null = null;
+  if (parentTenantIdRaw !== null && parentTenantIdRaw !== undefined) {
+    if (typeof parentTenantIdRaw !== "number" || !Number.isInteger(parentTenantIdRaw)) {
+      return jsonResponse({ error: "parentTenantId must be a whole number" }, 400);
+    }
+    const eligible = await getEligibleParentTenants(env.DB);
+    const parentTenant = eligible.find((tenant) => tenant.id === parentTenantIdRaw);
+    if (!parentTenant) return jsonResponse({ error: "That Parent Airfield is not available to link to" }, 400);
     parentTenantId = parentTenant.id;
-    parentLat = parentTenant.lat;
-    parentLon = parentTenant.lon;
-  }
-
-  const latProvided = body.lat !== null && body.lat !== undefined;
-  const lonProvided = body.lon !== null && body.lon !== undefined;
-
-  let lat: number;
-  if (latProvided) {
-    if (!isValidLat(body.lat)) return jsonResponse({ error: "lat must be a number between -90 and 90" }, 400);
-    lat = body.lat as number;
-  } else if (parentTenantId !== null && isValidLat(parentLat)) {
-    lat = parentLat;
-  } else {
-    return jsonResponse({ error: "lat is required and must be a number between -90 and 90 (or choose a Parent Airfield)" }, 400);
-  }
-
-  let lon: number;
-  if (lonProvided) {
-    if (!isValidLon(body.lon)) return jsonResponse({ error: "lon must be a number between -180 and 180" }, 400);
-    lon = body.lon as number;
-  } else if (parentTenantId !== null && isValidLon(parentLon)) {
-    lon = parentLon;
-  } else {
-    return jsonResponse({ error: "lon is required and must be a number between -180 and 180 (or choose a Parent Airfield)" }, 400);
+    lat = parentTenant.lat;
+    lon = parentTenant.lon;
   }
 
   const created = await createTenantOrganization(env.DB, {

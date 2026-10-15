@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PUBLIC_CHECK_SLUG_URL, PUBLIC_CHECK_POSTCODE_URL, TRIAL_SIGNUP_URL, SIGNUP_URL, STRIPE_CHECKOUT_URL } from '../config/publicApi'
+import { PUBLIC_CHECK_SLUG_URL, PUBLIC_CHECK_POSTCODE_URL, TRIAL_SIGNUP_URL, SIGNUP_URL, STRIPE_CHECKOUT_URL, PARENT_AIRFIELDS_URL } from '../config/publicApi'
 import { LATEST_READING_URL } from '../config/captureEndpoint'
 import { PRICING_PLANS, PACK_SAVINGS_GBP, PRICING_TERMS_LINE, formatGBP, type PlanId } from '../config/pricing'
 import { authClient } from '../lib/auth/authClient'
@@ -135,61 +135,19 @@ function slugifyVenueName(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-// Fork-placement round - this used to be a small toggle bar rendered
-// INSIDE SignupForm, well below the CTA buttons and Pricing section, and
-// styled far more lightly than either. Extracted to its own component
-// and lifted above the CTA buttons in LandingPage's own render order
-// (see that function below) because this decision - which of two
-// completely different forms a visitor fills in - deserves the same
-// visual weight as the Pricing section immediately above it, not the
-// subordinate treatment a form-internal toggle implied. Card
-// width/padding/border (rounded-xl, p-6) and the "Choose your setup"
-// heading (text-2xl font-bold) deliberately mirror the Pricing section's
-// own card/heading treatment exactly, one section up - same visual
-// register, not a redesign of either. The two option cards' own content
-// (label + one-line qualifier) and click behaviour (forced-choice,
-// freely switchable) are unchanged from the previous round - only their
-// container's size and this component's position moved.
+// Landing-page signup round: the "Choose your setup" fork (airfield vs
+// café/venue) that used to live here is gone - airfield/clubhouse is now
+// the ONLY self-serve path (go-ahead's own instruction), so there is
+// nothing left to fork between. SignupForm below (trial-signup.ts, the
+// café branch's own form) is no longer reachable from this page at all -
+// kept in this file, unreferenced, rather than deleted, since the go-
+// ahead was explicit that only the landing-page ENTRY POINT should be
+// removed, not trial-signup.ts or its own form component. ProductChoiceProps
+// stays (SignupForm's own prop type) even though nothing constructs it
+// with a live setSignupType anymore.
 interface ProductChoiceProps {
   signupType: SignupType | null
   setSignupType: (type: SignupType) => void
-}
-
-function ProductChoiceFork({ signupType, setSignupType }: ProductChoiceProps): JSX.Element {
-  return (
-    <section className="mt-20">
-      <h2 className="text-center text-2xl font-bold">Choose your setup</h2>
-      <div className="mx-auto mt-8 max-w-2xl">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setSignupType('airfield')}
-            className={`rounded-xl border p-6 text-left transition ${
-              signupType === 'airfield'
-                ? 'border-sky-500 bg-sky-500/10'
-                : 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
-            }`}
-          >
-            <div className="text-lg font-semibold text-slate-100">Airfield / Clubhouse dashboard</div>
-            <p className="mt-2 text-slate-400">You manage weather, runway status, and NOTAMs for pilots</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSignupType('venue_cafe')}
-            className={`rounded-xl border p-6 text-left transition ${
-              signupType === 'venue_cafe'
-                ? 'border-sky-500 bg-sky-500/10'
-                : 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
-            }`}
-          >
-            <div className="text-lg font-semibold text-slate-100">Café / Venue screen only</div>
-            <p className="mt-2 text-slate-400">You want an ad/media screen - no aviation data needed</p>
-          </button>
-        </div>
-        {!signupType && <p className="mt-6 text-center text-base font-medium text-slate-300">Choose one to continue.</p>}
-      </div>
-    </section>
-  )
 }
 
 // Real provisioning on submit (a genuine organization + tenants row via
@@ -658,15 +616,26 @@ function SignupForm({ signupType, setSignupType }: ProductChoiceProps): JSX.Elem
 // endpoint without a separate login step the visitor never asked for.
 type PaidSignupStatus = 'idle' | 'submitting' | 'redirecting' | 'error'
 
+interface EligibleParentOption {
+  id: number
+  name: string
+}
+
 function PaidSignupForm(): JSX.Element {
   const [businessName, setBusinessName] = useState('')
   const [contactName, setContactName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [slug, setSlug] = useState('')
-  const [parentTenantSlug, setParentTenantSlug] = useState('')
-  const [lat, setLat] = useState('')
-  const [lon, setLon] = useState('')
+  // Landing-page signup round: a dropdown choice now, not free text -
+  // '' means "None" (no parent, no coordinates inherited). Populated
+  // from PARENT_AIRFIELDS_URL below, which only ever lists tenants
+  // functions/api/_utils/eligibleParents.ts considers eligible (today,
+  // just Shobdon) - never demo/newcustomer/test tenants, and the server
+  // re-validates whatever id is submitted against that exact same list
+  // regardless of what this dropdown shows.
+  const [parentTenantId, setParentTenantId] = useState('')
+  const [parentOptions, setParentOptions] = useState<EligibleParentOption[]>([])
   const [plan, setPlan] = useState<PlanId>('pack')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [status, setStatus] = useState<PaidSignupStatus>('idle')
@@ -676,6 +645,23 @@ function PaidSignupForm(): JSX.Element {
     status: 'idle',
   })
   const slugCheckTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(PARENT_AIRFIELDS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.parents)) setParentOptions(data.parents)
+      })
+      .catch(() => {
+        // Silent - an empty dropdown (just "None") is a safe, honest
+        // degraded state if this fetch fails, not a blocking error for
+        // the rest of the form.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function handleSlugChange(value: string) {
     const next = value.trim().toLowerCase()
@@ -704,9 +690,6 @@ function PaidSignupForm(): JSX.Element {
     setStatus('submitting')
     setErrorMessage('')
 
-    const latNum = lat.trim() ? Number(lat) : null
-    const lonNum = lon.trim() ? Number(lon) : null
-
     const response = await fetch(SIGNUP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -716,9 +699,7 @@ function PaidSignupForm(): JSX.Element {
         email,
         password,
         slug,
-        lat: latNum,
-        lon: lonNum,
-        parentTenantSlug: parentTenantSlug || undefined,
+        parentTenantId: parentTenantId ? Number(parentTenantId) : undefined,
         plan,
         termsAccepted,
       }),
@@ -823,39 +804,22 @@ function PaidSignupForm(): JSX.Element {
       {slugCheck.status === 'unavailable' && <p className="mb-3 text-xs text-rose-400">{slugCheck.reason ?? 'Not available'}</p>}
       {slugCheck.status === 'idle' && <div className="mb-3" />}
 
-      <label className="mb-3 flex flex-col gap-1.5">
-        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Parent airfield (optional)</span>
-        <input
-          value={parentTenantSlug}
-          onChange={(event) => setParentTenantSlug(event.target.value)}
-          placeholder="e.g. shobdon - leave blank if none"
+      <label className="mb-4 flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Parent airfield</span>
+        <select
+          value={parentTenantId}
+          onChange={(event) => setParentTenantId(event.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-        />
-        <span className="text-xs text-slate-500">If set, your weather source links to theirs - same as Decision #12.</span>
+        >
+          <option value="">None — my airfield has its own weather station / not listed</option>
+          {parentOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-slate-500">If chosen, your weather source links to theirs - same as Decision #12.</span>
       </label>
-
-      {!parentTenantSlug.trim() && (
-        <div className="mb-3 grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Latitude</span>
-            <input
-              required
-              value={lat}
-              onChange={(event) => setLat(event.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Longitude</span>
-            <input
-              required
-              value={lon}
-              onChange={(event) => setLon(event.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
-            />
-          </label>
-        </div>
-      )}
 
       <label className="mb-4 flex flex-col gap-1.5">
         <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">Plan</span>
@@ -866,7 +830,7 @@ function PaidSignupForm(): JSX.Element {
         >
           {purchasablePlans.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name} — {formatGBP(p.priceGBP)}/mo{p.highlighted ? ' (recommended)' : ''}
+              {p.name} — {formatGBP(p.priceGBP)}/mo{p.highlighted ? " (Recommended — dashboard + Pilot's App)" : ''}
             </option>
           ))}
         </select>
@@ -1076,11 +1040,6 @@ function LiveDashboardPreview(): JSX.Element {
 
 export default function LandingPage(): JSX.Element {
   const signupRef = useRef<HTMLDivElement>(null)
-  // Fork-placement round - lifted from SignupForm's own local state so
-  // ProductChoiceFork (rendered here, above the CTA buttons) and
-  // SignupForm (rendered further down, at signupRef) share one selection
-  // instead of each owning a disconnected copy.
-  const [signupType, setSignupType] = useState<SignupType | null>(null)
 
   function scrollToSignup(): void {
     signupRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1251,23 +1210,14 @@ export default function LandingPage(): JSX.Element {
           </p>
         </section>
 
-        {/* PRODUCT CHOICE - fork-placement round: moved above the CTA
-            buttons (was previously inside SignupForm itself, well below
-            them) so the decision that determines which entire form a
-            visitor sees reads with the same weight as Pricing directly
-            above it, and is made before "Start Your Free Trial" rather
-            than after. See ProductChoiceFork's own comment for the full
-            reasoning. */}
-        <ProductChoiceFork signupType={signupType} setSignupType={setSignupType} />
-
-        {/* CTA FORK - Stripe groundwork Part B: button copy changed from
-            "Start Your Free Trial" (go-ahead's own instruction to
-            replace the old free-trial CTA with the paid signup/pricing
-            flow). "Get Started" works for both branches below - the
-            airfield branch now leads to paid signup (PaidSignupForm),
-            the venue_cafe branch is UNCHANGED (still trial-signup.ts's
-            own free trial, via SignupForm) - see PaidSignupForm's own
-            top comment for why venue_cafe wasn't moved too. */}
+        {/* CTA - landing-page signup round: "Get Started" now scrolls
+            straight to PaidSignupForm, which is unconditionally mounted
+            below (there is no longer a fork to resolve first - see this
+            page's own earlier comment on why the "Choose your setup"
+            step is gone). Previously this scrolled to an always-empty
+            `<div ref={signupRef} />` anchor until a fork choice set
+            signupType, which is exactly why clicking it appeared to "do
+            nothing" before this round. */}
         <section className="mt-20 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <button
             type="button"
@@ -1285,26 +1235,13 @@ export default function LandingPage(): JSX.Element {
         </section>
 
         {/* Signup form itself - target of "Get Started" above, scrolled
-            to rather than a separate route/modal. signupType is owned by
-            LandingPage and passed down - see ProductChoiceFork's own
-            comment. signupRef sits on its own always-present anchor
-            rather than on this section directly - see this section's
-            own prior comment on why (mounting a form unconditionally
-            leaves an awkward empty box before a choice is made). Forks
-            on signupType: airfield gets the new paid flow
-            (PaidSignupForm), venue_cafe keeps the existing free-trial
-            flow (SignupForm) exactly as before. */}
-        <div ref={signupRef} />
-        {signupType === 'airfield' && (
-          <section className="mx-auto mt-12 max-w-md">
-            <PaidSignupForm />
-          </section>
-        )}
-        {signupType === 'venue_cafe' && (
-          <section className="mx-auto mt-12 max-w-md">
-            <SignupForm signupType={signupType} setSignupType={setSignupType} />
-          </section>
-        )}
+            to rather than a separate route/modal. Unconditionally
+            PaidSignupForm now - airfield/clubhouse is the only self-
+            serve path (see this page's own top-of-fork-removal
+            comment). */}
+        <section ref={signupRef} className="mx-auto mt-12 max-w-md">
+          <PaidSignupForm />
+        </section>
 
         {/* FAQ */}
         <section className="mx-auto mt-20 max-w-2xl">

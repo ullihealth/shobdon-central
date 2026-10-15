@@ -388,7 +388,13 @@ test('Stripe webhook: Airfield Pack entitlement flow', async (t) => {
 // "a freshly-signed-up tenant" is exactly the real-world case these
 // endpoints exist for.
 
-async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true } = {}) {
+// Landing-page signup round: no lat/lon fields any more - signup.ts
+// drops them entirely now (functions/api/public/signup.ts no longer
+// accepts them at all), coordinates only ever come from a chosen parent.
+// parentTenantId defaults to undefined (omitted), the "no parent
+// chosen" case, which should succeed with null lat/lon on the created
+// tenant - see the dedicated test below.
+async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true, parentTenantId } = {}) {
   const unique = uniqueId('signup');
   const body = {
     businessName: `Test Signup Club ${unique}`,
@@ -396,10 +402,9 @@ async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true } = {}
     email: `${unique}@example.com`,
     password: 'testpass123',
     slug: unique.replace(/_/g, '-').toLowerCase(),
-    lat: 52.0,
-    lon: -2.5,
     plan,
     termsAccepted,
+    ...(parentTenantId !== undefined ? { parentTenantId } : {}),
   };
   const response = await request('POST', '/api/public/signup', { body });
   return { response, body };
@@ -461,6 +466,83 @@ test('Paid signup (Part B): terms required, duplicate email rejected, no trial e
       body: { ...body, slug: `${body.slug}-again` },
     });
     assert.equal(second.status, 409);
+  });
+});
+
+// --- Landing-page signup round: Parent Airfield dropdown + no-coords signup ---
+
+test('Paid signup: Parent Airfield dropdown/validation and no-coordinates signup', async (t) => {
+  await t.test('GET /api/public/parent-airfields lists only eligible parents (id + name only)', async () => {
+    const response = await request('GET', '/api/public/parent-airfields');
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(response.json.parents));
+    const shobdon = response.json.parents.find((p) => p.name === 'Shobdon Airfield');
+    assert.ok(shobdon, `expected Shobdon Airfield in eligible parents, got ${JSON.stringify(response.json.parents)}`);
+    assert.equal(Object.keys(shobdon).sort().join(','), 'id,name', 'endpoint must return ONLY id + name, nothing else');
+    assert.ok(
+      !response.json.parents.some((p) => p.name === 'Your Airfield Name' || p.name === 'Demo Airfield'),
+      'template/demo tenants must never appear as eligible parents'
+    );
+  });
+
+  await t.test('signup with a valid parent inherits that parent\'s lat/lon, no clone', async () => {
+    const parents = (await request('GET', '/api/public/parent-airfields')).json.parents;
+    const shobdon = parents.find((p) => p.name === 'Shobdon Airfield');
+    assert.ok(shobdon, 'Shobdon must be eligible for this test to mean anything');
+
+    const { response, body } = await signUpAirfieldTenant({ parentTenantId: shobdon.id });
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+
+    const cookie = await signInAs(body.email, body.password);
+    const config = await request('GET', '/api/tenant/config', { headers: { Cookie: cookie } });
+    assert.equal(config.status, 200);
+    assert.ok(typeof config.json.lat === 'number' && typeof config.json.lon === 'number', 'lat/lon should be inherited from the parent, not left null');
+
+    // parentSlug isn't exposed on /api/tenant/config's own response shape
+    // (queried server-side only, for internetProviderDisplayName - see
+    // that file's own comment) - parent_tenant_id itself is checked
+    // directly via D1, same "shell out to wrangler d1 execute for state
+    // no API exposes" pattern this file already uses for activation_links
+    // below.
+    const raw = execSync(
+      `npx wrangler d1 execute shobdon-central --local --json --command "SELECT t.parent_tenant_id AS parentTenantId, t.lat, t.lon, p.lat AS parentLat, p.lon AS parentLon FROM tenants t JOIN tenants p ON p.id = t.parent_tenant_id WHERE t.slug = '${body.slug}'"`,
+      { encoding: 'utf8' }
+    );
+    const row = JSON.parse(raw)[0].results[0];
+    assert.equal(row.parentTenantId, shobdon.id);
+    assert.equal(row.lat, row.parentLat);
+    assert.equal(row.lon, row.parentLon);
+  });
+
+  await t.test('signup with an ineligible parent id (a real but non-eligible tenant) is rejected', async () => {
+    // demo/newcustomer are real tenants but never eligible (template/
+    // unused-as-parent) - find demo's id via the platform list the same
+    // way the dashboard_enabled/mobile_enabled test above already does,
+    // not hardcoded, since local/CI tenant ids can differ.
+    const devCookie = await login();
+    const tenants = (await request('GET', '/api/platform/tenants', { headers: { Cookie: devCookie } })).json.tenants;
+    const demo = tenants.find((tn) => tn.slug === 'demo');
+    assert.ok(demo, 'expected a demo tenant to exist for this test to mean anything');
+
+    const { response } = await signUpAirfieldTenant({ parentTenantId: demo.id });
+    assert.equal(response.status, 400);
+    assert.match(response.json.error, /not available/i);
+  });
+
+  await t.test('signup with a non-existent parent id is rejected', async () => {
+    const { response } = await signUpAirfieldTenant({ parentTenantId: 999999999 });
+    assert.equal(response.status, 400);
+  });
+
+  await t.test('signup with no parent chosen succeeds with no coordinates on file', async () => {
+    const { response, body } = await signUpAirfieldTenant();
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+
+    const cookie = await signInAs(body.email, body.password);
+    const config = await request('GET', '/api/tenant/config', { headers: { Cookie: cookie } });
+    assert.equal(config.status, 200);
+    assert.equal(config.json.lat, null);
+    assert.equal(config.json.lon, null);
   });
 });
 

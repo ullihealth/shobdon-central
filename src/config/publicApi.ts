@@ -127,6 +127,12 @@ export const TRIAL_SIGNUP_URL = '/api/public/trial-signup'
 // own top comment for why this is a new route, not a retrofit.
 export const SIGNUP_URL = '/api/public/signup'
 
+// Landing-page signup round - functions/api/public/parent-airfields.ts.
+// Populates the Parent Airfield dropdown on the paid signup form (id +
+// name only, per that endpoint's own comment on why nothing else is
+// returned here).
+export const PARENT_AIRFIELDS_URL = '/api/public/parent-airfields'
+
 // Stripe groundwork Parts B/C - functions/api/stripe/checkout.ts. Shared
 // by the new paid-signup flow AND the existing-tenant activation flow
 // (/activate/:token) - both derive their tenant from the caller's own
