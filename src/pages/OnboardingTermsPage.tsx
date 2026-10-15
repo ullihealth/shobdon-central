@@ -64,6 +64,10 @@ export default function OnboardingTermsPage(): JSX.Element {
     const me = await fetch('/api/tenant/me')
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
+    // Dashboard-Manager-as-landing round: plain owner/admin now land on
+    // /media-manager, not /config - same destination change, same
+    // isDeveloper carve-out as LoginPage.tsx's own landingPageForMe
+    // (see that function's comment for the full reasoning).
     const landingPage =
       me?.role === 'media'
         ? '/media-manager'
@@ -73,7 +77,9 @@ export default function OnboardingTermsPage(): JSX.Element {
             ? '/cafe-media'
             : me?.tenantType === 'venue_cafe'
               ? '/cafe-media'
-              : '/config'
+              : me?.isDeveloper
+                ? '/config'
+                : '/media-manager'
     navigate(landingPage)
   }
 

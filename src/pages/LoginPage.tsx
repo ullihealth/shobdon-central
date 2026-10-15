@@ -63,7 +63,13 @@ async function signInWithRetry(
 const ACTIVATION_POLL_INTERVAL_MS = 3000
 const ACTIVATION_POLL_MAX_ATTEMPTS = 20
 
-function landingPageForMe(me: { role?: string | null; tenantType?: string | null } | null): string {
+// Dashboard-Manager-as-landing round: plain owner/admin now land on
+// /media-manager, not /config - see dashboardLandingPage.ts's own
+// comment for the full reasoning (same destination change, same
+// isDeveloper carve-out - the real developer account holds role='owner'
+// at Shobdon like any other owner, and this round's own go-ahead was
+// explicit that it must keep landing where it does today).
+function landingPageForMe(me: { role?: string | null; tenantType?: string | null; isDeveloper?: boolean | null } | null): string {
   return me?.role === 'media'
     ? '/media-manager'
     : me?.role === 'atc'
@@ -72,7 +78,9 @@ function landingPageForMe(me: { role?: string | null; tenantType?: string | null
         ? '/cafe-media'
         : me?.tenantType === 'venue_cafe'
           ? '/cafe-media'
-          : '/config'
+          : me?.isDeveloper
+            ? '/config'
+            : '/media-manager'
 }
 
 export default function LoginPage(): JSX.Element {
@@ -127,17 +135,22 @@ export default function LoginPage(): JSX.Element {
     // /config would just show them "Not authorized" with no way forward,
     // so send each straight to the one page they can actually use. admin
     // is a full alias of owner (see requireOwner in tenantAuth.ts) so it
-    // falls through to the same /config default as owner, not the
-    // media-manager-only landing the e5aa79a deploy incorrectly gave it -
-    // admin still has media-manager access too, just isn't defaulted
-    // there anymore, matching owner's own behaviour (owner can already
-    // reach /media-manager via the link on /config, never gets sent
-    // there automatically either). Same timeout protection as sign-in
-    // above, shorter and with no retry - worst case on a hang is landing
-    // on /config instead of the exact right page, same graceful fallback
-    // the existing .catch(() => null) already used for a genuine network
-    // error, just now also covering a hang rather than only an outright
-    // rejection.
+    // falls through to the exact same default landingPageForMe gives
+    // owner, never a separately-maintained admin-specific branch - the
+    // e5aa79a deploy once regressed exactly that (admin defaulted to
+    // /media-manager while owner stayed on /config, two different
+    // answers to "where's my home page"), fixed by making admin always
+    // mirror owner rather than special-casing it again here. Dashboard-
+    // Manager-as-landing round changed what that shared default IS
+    // (/media-manager, not /config - see landingPageForMe's own
+    // comment), not whether admin and owner still agree with each other
+    // - they still do. Same timeout protection as sign-in
+    // above, shorter and with no retry - worst case on a hang is `me`
+    // staying null, which landingPageForMe's own final branch reads as
+    // "not the developer" and sends to /media-manager instead of the
+    // exact right page - same graceful fallback the existing
+    // .catch(() => null) already used for a genuine network error, just
+    // now also covering a hang rather than only an outright rejection.
     const me = await withTimeout(
       fetch('/api/tenant/me').then((response) => (response.ok ? response.json() : null)),
       5000
