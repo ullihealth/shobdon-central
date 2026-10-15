@@ -47,6 +47,13 @@ interface Clubhouse1TemplateProps {
   // Same reasoning as opsPanelData above, scoped to task #42's Gas
   // Prices tile row instead of the Ops Panel's own notices/runway state.
   gasPricesData?: GasPricesPublic | null
+  // Per-tenant Fuel Prices panel toggle (Tiger Helicopters round,
+  // migration 0112) - defaults true (shown), unaffected, for every
+  // existing caller that omits it (Screens Design's own live preview
+  // included - that page doesn't yet read/pass the real per-tenant
+  // value, out of this round's scope). DashboardPage.tsx is the one
+  // real caller that does pass it, from the public config response.
+  fuelPricesEnabled?: boolean
 }
 
 // "Clubhouse Template 1" - the dashboard layout that was DashboardPage.tsx's
@@ -73,6 +80,7 @@ export default function Clubhouse1Template({
   opsPanelData,
   opsPanelChartData,
   gasPricesData,
+  fuelPricesEnabled = true,
 }: Clubhouse1TemplateProps): JSX.Element {
   const detectedDesktop = useIsDesktopLayout()
   const isDesktop = isPreview || detectedDesktop
@@ -205,17 +213,19 @@ export default function Clubhouse1Template({
             <div className={isDesktop ? 'min-h-0 flex-1' : ''}>
               <RightInfoPanel opsPanelData={opsPanelData} onQrSlideChange={setQrSlideActive} />
             </div>
-            {/* Hidden ONLY while the 'qr' slide is showing (see
-                qrSlideActive's own comment above) - removing this from
-                the flex layout entirely (not CSS-hiding it) is what lets
-                RightInfoPanel's own flex-1 sibling above naturally absorb
-                the full column height with zero extra height-forcing
-                logic needed here, same as how this column's flex-col+gap
-                already redistributes space between these two siblings
-                today. Every other rotation state (ops, notamsFull)
-                leaves qrSlideActive false, so Gas Prices renders exactly
-                as it always has then. */}
-            {!qrSlideActive && <GasPricesPanel gasPricesData={gasPricesData} />}
+            {/* Hidden while the 'qr' slide is showing (see qrSlideActive's
+                own comment above) OR when this tenant has Fuel Prices
+                turned off entirely (fuelPricesEnabled, Tiger Helicopters
+                round) - removing this from the flex layout entirely (not
+                CSS-hiding it) is what lets RightInfoPanel's own flex-1
+                sibling above naturally absorb the full column height
+                with zero extra height-forcing logic needed here, same as
+                how this column's flex-col+gap already redistributes
+                space between these two siblings today. Every other
+                tenant (fuelPricesEnabled defaults true) and every other
+                rotation state (ops, notamsFull) renders Gas Prices
+                exactly as it always has. */}
+            {!qrSlideActive && fuelPricesEnabled && <GasPricesPanel gasPricesData={gasPricesData} />}
           </div>
         </div>
 

@@ -20,9 +20,21 @@ interface GasPricesState {
   ul91Price: string
   jetA1Price: string
   currency: string
+  // Tiger Helicopters round (migration 0112) - hides the Fuel Prices
+  // panel on the live dashboard entirely, regardless of what price data
+  // (this tenant's own, or inherited from a weather-parent) would
+  // otherwise show. Defaults true (shown) - every existing tenant is
+  // unaffected until this is explicitly turned off.
+  fuelPricesEnabled: boolean
 }
 
-const DEFAULT_GAS_PRICES_STATE: GasPricesState = { avgasPrice: '', ul91Price: '', jetA1Price: '', currency: '£' }
+const DEFAULT_GAS_PRICES_STATE: GasPricesState = {
+  avgasPrice: '',
+  ul91Price: '',
+  jetA1Price: '',
+  currency: '£',
+  fuelPricesEnabled: true,
+}
 
 // Panel Rotation Timing round - mirrors functions/api/tenant/ops-panel/
 // index.ts's OpsPanelInput shape, duplicated locally per this repo's
@@ -151,6 +163,7 @@ export default function MediaManagerPage(): JSX.Element {
           ul91Price: priceToInputValue(data.ul91Price),
           jetA1Price: priceToInputValue(data.jetA1Price),
           currency: data.currency ?? '£',
+          fuelPricesEnabled: data.fuelPricesEnabled !== false,
         })
       })
   }
@@ -293,6 +306,7 @@ export default function MediaManagerPage(): JSX.Element {
           ul91Price: inputValueToPrice(next.ul91Price),
           jetA1Price: inputValueToPrice(next.jetA1Price),
           currency: next.currency,
+          fuelPricesEnabled: next.fuelPricesEnabled,
         }),
       })
     }, 300)
@@ -594,22 +608,39 @@ export default function MediaManagerPage(): JSX.Element {
 
       {!loading && (
         <section className="mt-8 rounded-2xl border border-border bg-panel p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">Fuel Prices</div>
-            <label className="flex items-center gap-2 text-xs font-semibold text-muted-400">
-              Currency
-              <select
-                value={gasPrices.currency}
-                onChange={(event) => updateGasPrices({ currency: event.target.value })}
-                className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-sm text-white focus:border-sky-500 focus:outline-none"
-              >
-                {CURRENCY_OPTIONS.map((symbol) => (
-                  <option key={symbol} value={symbol}>
-                    {symbol}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="flex items-center gap-4">
+              {/* Tiger Helicopters round (migration 0112) - hides the
+                  whole panel on the live dashboard regardless of price
+                  data (this tenant's own or inherited from a weather-
+                  parent). Unchecking this doesn't clear the prices below
+                  - they're just not shown while off, so switching back
+                  on restores exactly what was there before. */}
+              <label className="flex items-center gap-2 text-xs font-semibold text-muted-400">
+                <input
+                  type="checkbox"
+                  checked={gasPrices.fuelPricesEnabled}
+                  onChange={(event) => updateGasPrices({ fuelPricesEnabled: event.target.checked })}
+                  className="h-4 w-4 rounded border-slate-700 bg-slate-900/80 accent-accent-sky-500"
+                />
+                Show fuel prices
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-muted-400">
+                Currency
+                <select
+                  value={gasPrices.currency}
+                  onChange={(event) => updateGasPrices({ currency: event.target.value })}
+                  className="rounded-lg border border-slate-700 bg-slate-900/80 px-2 py-1 text-sm text-white focus:border-sky-500 focus:outline-none"
+                >
+                  {CURRENCY_OPTIONS.map((symbol) => (
+                    <option key={symbol} value={symbol}>
+                      {symbol}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
           <p className="mb-4 max-w-2xl text-sm text-muted-400">
             Shown as their own compact tile row above the Ops Panel on the live dashboard. Leave a field blank to

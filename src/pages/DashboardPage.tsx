@@ -106,6 +106,13 @@ export default function DashboardPage(): JSX.Element {
   // non-café branches below - see the render's own comment for why café
   // must never be affected by this.
   const [dashboardEnabled, setDashboardEnabled] = useState(true)
+  // Per-tenant Fuel Prices panel toggle (Tiger Helicopters round,
+  // migration 0112) - true by default so the brief pre-fetch window
+  // never flashes the panel away for a tenant that actually has it on
+  // (same stance dashboardEnabled above already takes). Passed down to
+  // Clubhouse1Template so it can gate the right column alongside its
+  // own existing qrSlideActive logic - see that file's own comment.
+  const [fuelPricesEnabled, setFuelPricesEnabled] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -133,6 +140,7 @@ export default function DashboardPage(): JSX.Element {
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.mainTemplateId) setMainTemplateId(data.mainTemplateId as string)
         setDashboardEnabled(!!data?.dashboardEnabled)
+        setFuelPricesEnabled(data?.fuelPricesEnabled !== false)
         if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)
         setOverscanSafeMarginEnabled(!!data?.overscanSafeMarginEnabled)
         if (typeof data?.overscanSafeMarginPercent === 'number') setOverscanSafeMarginPercent(data.overscanSafeMarginPercent)
@@ -247,6 +255,7 @@ export default function DashboardPage(): JSX.Element {
               showLogo={brandDisplay?.main.showLogo}
               showName={brandDisplay?.main.showName}
               nameFontSize={brandDisplay?.main.nameFontSize}
+              fuelPricesEnabled={fuelPricesEnabled}
             />
           )}
         </FullBufferGate>

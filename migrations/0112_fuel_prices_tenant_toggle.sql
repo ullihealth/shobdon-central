@@ -1,0 +1,20 @@
+-- Per-tenant Fuel Prices panel toggle (Tiger Helicopters round,
+-- 2026-10-15). GasPricesPanel.tsx already hides itself when every price
+-- is null (gas_prices has no row for a tenant that's never touched
+-- Dashboard Manager's Fuel Prices container) - but Tiger (tenant id 29)
+-- inherits its weather from Shobdon (parent_tenant_id, same mechanism as
+-- runway groups), and publicConfig.ts's own gas-prices inheritance rides
+-- the exact same "effective organization" lookup, so Tiger's dashboard
+-- currently shows SHOBDON's real fuel prices even though Tiger has never
+-- set any of its own. This flag lets a tenant opt out of the panel
+-- regardless of what price data (own or inherited) would otherwise be
+-- shown, without touching the inheritance mechanism itself - Shobdon's
+-- own dashboard, and every other inheriting tenant, is unaffected.
+--
+-- DEFAULT 1 (shown) on the column itself - zero-behaviour-change
+-- rollout, same posture as migration 0110's gyropedia_disabled: every
+-- existing and future tenant keeps seeing Fuel Prices exactly as today
+-- unless this is explicitly turned off for them. Only Tiger's own row
+-- gets flipped to 0, in a separate data-only statement after this
+-- migration - never bundled into the schema change itself.
+ALTER TABLE tenants ADD COLUMN fuel_prices_enabled INTEGER NOT NULL DEFAULT 1;
