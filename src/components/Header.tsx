@@ -133,7 +133,7 @@ export default function Header({
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return
-        setDashboardLandingPage(resolveDashboardLandingPage(data?.role, data?.tenantType, data?.isDeveloper))
+        setDashboardLandingPage(resolveDashboardLandingPage(data?.role, data?.tenantType))
         setTenantSubdomain(data?.subdomain ?? null)
       })
       .catch(() => {

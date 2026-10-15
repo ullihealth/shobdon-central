@@ -102,10 +102,9 @@ export default function RequireAuth({ children, requireRole, requireDeveloper, s
     // call - only shown when we actually know a real, recognized role
     // to send them to, so this can't itself become a second dead end.
     // Dashboard-Manager-as-landing round: plain owner/admin now sent to
-    // /media-manager, not /config - same destination change, same
-    // isDeveloper carve-out as LoginPage.tsx's own landingPageForMe (see
-    // that function's comment for the full reasoning) - isDeveloper is
-    // already part of meCheck's own state above, no extra fetch needed.
+    // /media-manager, not /config - same destination change as
+    // LoginPage.tsx's own landingPageForMe. No isDeveloper carve-out -
+    // the developer account lands here exactly like any other owner/admin.
     const ownLandingPage =
       meCheck.role === 'atc'
         ? '/atc-control'
@@ -114,9 +113,7 @@ export default function RequireAuth({ children, requireRole, requireDeveloper, s
           : meCheck.role === 'cafe'
             ? '/cafe-media'
             : meCheck.role === 'owner' || meCheck.role === 'admin'
-              ? meCheck.isDeveloper
-                ? '/config'
-                : '/media-manager'
+              ? '/media-manager'
               : null
 
     return (

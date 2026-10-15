@@ -39,7 +39,7 @@ export default function PersistentConfigLink(): JSX.Element | null {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return
-        setHref(resolveDashboardLandingPage(data?.role, data?.tenantType, data?.isDeveloper))
+        setHref(resolveDashboardLandingPage(data?.role, data?.tenantType))
       })
       .catch(() => {
         if (!cancelled) setHref('/login')

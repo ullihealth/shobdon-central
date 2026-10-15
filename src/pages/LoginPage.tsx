@@ -65,11 +65,10 @@ const ACTIVATION_POLL_MAX_ATTEMPTS = 20
 
 // Dashboard-Manager-as-landing round: plain owner/admin now land on
 // /media-manager, not /config - see dashboardLandingPage.ts's own
-// comment for the full reasoning (same destination change, same
-// isDeveloper carve-out - the real developer account holds role='owner'
-// at Shobdon like any other owner, and this round's own go-ahead was
-// explicit that it must keep landing where it does today).
-function landingPageForMe(me: { role?: string | null; tenantType?: string | null; isDeveloper?: boolean | null } | null): string {
+// comment for the full reasoning. No isDeveloper carve-out - the
+// developer account enters a tenant's backend exactly like any other
+// owner/admin, same destination.
+function landingPageForMe(me: { role?: string | null; tenantType?: string | null } | null): string {
   return me?.role === 'media'
     ? '/media-manager'
     : me?.role === 'atc'
@@ -78,9 +77,7 @@ function landingPageForMe(me: { role?: string | null; tenantType?: string | null
         ? '/cafe-media'
         : me?.tenantType === 'venue_cafe'
           ? '/cafe-media'
-          : me?.isDeveloper
-            ? '/config'
-            : '/media-manager'
+          : '/media-manager'
 }
 
 export default function LoginPage(): JSX.Element {
@@ -147,10 +144,10 @@ export default function LoginPage(): JSX.Element {
     // - they still do. Same timeout protection as sign-in
     // above, shorter and with no retry - worst case on a hang is `me`
     // staying null, which landingPageForMe's own final branch reads as
-    // "not the developer" and sends to /media-manager instead of the
-    // exact right page - same graceful fallback the existing
-    // .catch(() => null) already used for a genuine network error, just
-    // now also covering a hang rather than only an outright rejection.
+    // sending to /media-manager instead of the exact right page - same
+    // graceful fallback the existing .catch(() => null) already used
+    // for a genuine network error, just now also covering a hang rather
+    // than only an outright rejection.
     const me = await withTimeout(
       fetch('/api/tenant/me').then((response) => (response.ok ? response.json() : null)),
       5000

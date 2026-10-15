@@ -65,9 +65,9 @@ export default function OnboardingTermsPage(): JSX.Element {
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
     // Dashboard-Manager-as-landing round: plain owner/admin now land on
-    // /media-manager, not /config - same destination change, same
-    // isDeveloper carve-out as LoginPage.tsx's own landingPageForMe
-    // (see that function's comment for the full reasoning).
+    // /media-manager, not /config - same destination change as
+    // LoginPage.tsx's own landingPageForMe. No isDeveloper carve-out -
+    // the developer account lands here exactly like any other owner/admin.
     const landingPage =
       me?.role === 'media'
         ? '/media-manager'
@@ -77,9 +77,7 @@ export default function OnboardingTermsPage(): JSX.Element {
             ? '/cafe-media'
             : me?.tenantType === 'venue_cafe'
               ? '/cafe-media'
-              : me?.isDeveloper
-                ? '/config'
-                : '/media-manager'
+              : '/media-manager'
     navigate(landingPage)
   }
 

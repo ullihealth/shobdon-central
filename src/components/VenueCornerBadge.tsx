@@ -95,9 +95,7 @@ export default function VenueCornerBadge({
                 : role
                   ? data?.tenantType === 'venue_cafe'
                     ? '/cafe-media'
-                    : data?.isDeveloper
-                      ? '/config'
-                      : '/media-manager'
+                    : '/media-manager'
                   : '/login'
         )
       })
