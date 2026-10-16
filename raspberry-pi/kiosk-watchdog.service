@@ -1,0 +1,35 @@
+# Kiosk blank-render watchdog - systemd --user service.
+#
+# Installed at ~/.config/systemd/user/kiosk-watchdog.service on the Pi
+# (user "admin", uid 1000), alongside kiosk.service. See kiosk-watchdog.py's
+# own top comment for the full "why" - in short: kiosk.service's own
+# Restart=always only recovers a Chromium that actually exits, and cannot
+# see a stuck-blank-white-page failure where the process stays alive.
+#
+# Deliberately a SEPARATE unit from kiosk.service, not folded into
+# kiosk-wrapper.sh - that script's own process ends the moment it execs
+# into Chromium (so systemd tracks Chromium's own PID directly), leaving
+# no room for a long-running monitoring loop to share that process. A
+# second, independent unit is the only way for the watchdog to keep
+# running (and be ABLE to issue `systemctl --user restart kiosk.service`)
+# across every restart it triggers on kiosk.service itself - if the two
+# were the same unit, restarting the kiosk would kill the watchdog too,
+# and a second stuck episode right after the first recovery would go
+# undetected.
+#
+# After=kiosk.service (soft ordering hint only, not Requires=/BindsTo=) -
+# starts alongside/after the kiosk normally, but must keep running (and
+# keep retrying its own checks) even if kiosk.service is ever down, since
+# restarting that unit is this service's entire purpose.
+
+[Unit]
+Description=Kiosk blank-render watchdog
+After=default.target kiosk.service
+
+[Service]
+ExecStart=/usr/bin/python3 /home/admin/.config/systemd/user/kiosk-watchdog.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

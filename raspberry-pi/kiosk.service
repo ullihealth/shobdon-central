@@ -1,0 +1,52 @@
+# Kiosk display - systemd --user service.
+#
+# Installed at ~/.config/systemd/user/kiosk.service on the Pi (user
+# "admin", uid 1000). Deliberately a --user service, NOT labwc autostart -
+# autostart was proven unreliable on this Pi/Chromium/Wayland combination:
+# Chromium would launch with an empty/broken environment via autostart and
+# blank out after ~15-45 seconds on a real (unattended) power-cycle boot,
+# even though the exact same launch command always worked fine when
+# triggered manually over SSH. Do not move this back to labwc autostart
+# without re-testing across several real power cycles, not just SSH-
+# triggered launches - that distinction is what made this bug so easy to
+# miss originally.
+#
+# After=default.target, NOT graphical-session.target - graphical-session
+# .target was the actual confirmed root cause of the auto-start failure
+# (hours of live debugging on the real Pi pinned this down specifically).
+# default.target is the tested, working fix - do not "correct" this back
+# to graphical-session.target, it will reintroduce the original bug.
+#
+# The two Environment= lines are required, not redundant with the socket
+# wait below - XDG_RUNTIME_DIR/WAYLAND_DISPLAY must be set explicitly in
+# this unit's own environment for Chromium (launched from this --user
+# service) to find and attach to the same Wayland session labwc created,
+# rather than failing to locate a display at all.
+#
+# ExecStartPre waits for the Wayland socket to actually exist before
+# Chromium is allowed to start - launching before labwc has created it is
+# one of the concrete ways the broken-environment/blank-screen failure
+# mode above was reproduced. The check is specifically `-S` (is this a
+# socket?), not `-e` (does anything exist at this path?) - `-e` would
+# pass on a stale/incomplete non-socket file left at that path and let
+# Chromium launch before the real socket is ready.
+#
+# Restart=always / RestartSec=3 - if Chromium (or the wrapper script)
+# ever exits on its own after the initial double-launch sequence
+# completes, systemd relaunches it after a 3s pause rather than leaving
+# the kiosk dead until the next manual intervention or reboot.
+
+[Unit]
+Description=Kiosk Chromium
+After=default.target
+
+[Service]
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-0
+ExecStartPre=/bin/sh -c 'while [ ! -S /run/user/1000/wayland-0 ]; do sleep 1; done'
+ExecStart=/home/admin/.config/systemd/user/kiosk-wrapper.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
