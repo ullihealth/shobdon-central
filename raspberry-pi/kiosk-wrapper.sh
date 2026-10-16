@@ -99,73 +99,72 @@ fi
 SETUP_SERVER_URL="http://127.0.0.1:8089/"
 SETUP_CONNECTING_FALLBACK="file:///home/admin/.config/wifi-setup-page/connecting.html"
 
-# Confirmation-hold round (2026-10-16): real-hardware testing showed
-# the "Thanks - connecting to your WiFi" confirmation page flashing for
-# under a second before the dashboard appeared, THREE times, despite
-# two earlier attempts to delay it elsewhere (once in comitup-
-# callback.sh with a flat hold after CONNECTED, once with the hold
-# measured from when CONNECTING first started) - both put the delay in
-# comitup-callback.sh, which only owns WHEN kiosk.service gets told to
-# restart, not what actually gets shown once it does. Nothing stops
-# some OTHER trigger (kiosk-watchdog.py, a retry, anything) from
-# restarting kiosk.service independently during that window, racing
-# past the hold entirely - which is almost certainly what kept
-# happening. Moved here instead: this script is the one place EVERY
-# kiosk.service start funnels through, no matter who or what triggered
-# it, so enforcing the hold here - actually showing the confirmation
-# page for the remaining time before ever considering DASHBOARD_URL -
-# cannot be bypassed by a restart racing in from elsewhere. Comitup-
-# callback.sh still stamps CONNECTING_STARTED_FILE the moment
-# CONNECTING first begins (see that file's own comment) - this just
-# reads it instead of using it to compute someone else's delay.
+# Confirmation round, attempt 3 (2026-10-16): the first two attempts
+# both tried to hold the "connecting" message up DURING the hotspot-to-
+# WiFi switch itself (once delaying comitup-callback.sh's own restart
+# call, once delaying the launch here before deciding DASHBOARD_URL) -
+# confirmed live, BOTH lost the race against the browser restart that
+# switch itself requires: the restart wipes whatever's on screen no
+# matter when it's told to happen, and the second attempt's own cleanup
+# step then caused a real outage (see git history on this file for that
+# one - a root-owned file this script, running as admin, couldn't
+# delete, crashing the whole script under `set -e`).
 #
-# OUTAGE ROUND (2026-10-16): the first version of this block left the
-# TV on the bare desktop with no browser at all - worse than the
-# original problem. Root cause: it ended with `rm -f
-# "$CONNECTING_STARTED_FILE"` to consume the stamp once used, but that
-# file is created by comitup-callback.sh running as ROOT (comitup's own
-# user - see that file's own comment), while this script runs as the
-# admin user - admin cannot delete a root-owned file in /run, `rm`
-# failed with Permission Denied, and under this script's own `set -e`
-# that failure exited the ENTIRE script immediately, before it ever
-# reached the real launch logic below. Confirmed directly: `bash -x`
-# on this script reproduced the exact "Permission denied" and the
-# script dying right there.
+# Different approach entirely now: show nothing special during the
+# switch - just let the EXISTING logic below handle it exactly as it
+# always has. Instead, detect a FRESH connected transition (compared
+# against LAST_SEEN_STATE_FILE, which this script - and only this
+# script, always as admin - reads and writes, so there is no cross-user
+# file ownership to get wrong this time) and, if this restart is the
+# first one since that transition, point Chromium at a local
+# "Connected" confirmation page INSTEAD of DASHBOARD_URL for this one
+# launch. That page holds itself up for 10 seconds with a plain client-
+# side timer, then navigates itself to DASHBOARD_URL IN THE SAME
+# browser window - a normal in-page navigation, not a process restart,
+# so nothing can race it away this time. The double-launch launch logic
+# right after this block is completely unchanged either way - it just
+# launches whatever EFFECTIVE_URL ends up being.
 #
-# Fixed two ways, not just the one bug: (1) dropped the rm entirely -
-# it was never actually necessary for correctness, only tidiness; a
-# stale timestamp just makes `remaining` compute as zero or negative
-# below, which already skips the hold - comitup-callback.sh's own
-# cleanup on the next HOTSPOT entry is enough. (2) the whole block now
-# runs with `set +e` restored to `set -e` only once it's fully done, so
-# ANY future failure in here - this one or one not yet discovered -
-# can never again prevent the real launch logic after it from running.
-# This directly satisfies the one rule that actually matters here: the
-# kiosk must always relaunch, no matter what this block does.
-CONNECTING_STARTED_FILE="/run/airfieldcentral-connecting-started"
-MIN_VISIBLE_SECONDS=10
+# Every step below is wrapped so that if ANYTHING here goes wrong - the
+# state file, the template, the write - EFFECTIVE_URL simply stays
+# DASHBOARD_URL and the kiosk launches normally. The confirmation
+# message is a nice-to-have; the dashboard loading is not optional.
+LAST_SEEN_STATE_FILE="/home/admin/.cache/airfieldcentral-last-seen-network-state"
+CONFIRMATION_TEMPLATE="/home/admin/.config/wifi-setup-page/connected-confirmation.html"
+CONFIRMATION_PAGE="/home/admin/.cache/airfieldcentral-connected-confirmation.html"
+CONFIRMATION_URL="file://${CONFIRMATION_PAGE}"
 
-if [ "$NETWORK_STATE" = "CONNECTED" ] && [ -f "$CONNECTING_STARTED_FILE" ]; then
+SHOW_CONFIRMATION=0
+if [ "$NETWORK_STATE" = "CONNECTED" ]; then
   set +e
-  started="$(cat "$CONNECTING_STARTED_FILE" 2>/dev/null)"
-  case "$started" in
-    ''|*[!0-9]*) started=0 ;;
-  esac
-  elapsed=$(( $(date +%s) - started ))
-  remaining=$(( MIN_VISIBLE_SECONDS - elapsed ))
-  if [ "$remaining" -gt 0 ] 2>/dev/null; then
-    echo "kiosk-wrapper: holding on the setup page's confirmation screen for ${remaining}s before the dashboard" >&2
-    "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$SETUP_SERVER_URL" &
-    HOLD_PID=$!
-    sleep "$remaining"
-    kill -9 "$HOLD_PID" 2>/dev/null
-    wait "$HOLD_PID" 2>/dev/null
+  mkdir -p "$(dirname "$LAST_SEEN_STATE_FILE")" 2>/dev/null
+  LAST_SEEN_STATE="$(cat "$LAST_SEEN_STATE_FILE" 2>/dev/null)"
+  if [ -n "$LAST_SEEN_STATE" ] && [ "$LAST_SEEN_STATE" != "CONNECTED" ]; then
+    SHOW_CONFIRMATION=1
   fi
   set -e
 fi
+# Always records the state THIS run saw, regardless of whether a
+# confirmation was shown - admin owns this file end to end, so this
+# plain write can't hit the kind of cross-user permission failure the
+# previous attempt did.
+mkdir -p "$(dirname "$LAST_SEEN_STATE_FILE")" 2>/dev/null || true
+echo "$NETWORK_STATE" > "$LAST_SEEN_STATE_FILE" 2>/dev/null || true
 
 if [ "$NETWORK_STATE" = "CONNECTED" ]; then
   EFFECTIVE_URL="$DASHBOARD_URL"
+  if [ "$SHOW_CONFIRMATION" -eq 1 ]; then
+    set +e
+    sed "s|__DASHBOARD_URL__|${DASHBOARD_URL}|g" "$CONFIRMATION_TEMPLATE" > "$CONFIRMATION_PAGE" 2>/dev/null
+    template_ok=$?
+    set -e
+    if [ "$template_ok" -eq 0 ] && [ -s "$CONFIRMATION_PAGE" ]; then
+      EFFECTIVE_URL="$CONFIRMATION_URL"
+      echo "kiosk-wrapper: fresh connection - showing the Connected confirmation page first" >&2
+    else
+      echo "kiosk-wrapper: could not prepare the confirmation page - launching the dashboard directly" >&2
+    fi
+  fi
 else
   # Blank-screen round (2026-10-16): a real incident showed the TV stuck
   # on a bare blank/white screen during a setup-mode boot - root cause
@@ -239,6 +238,22 @@ if [ "$EFFECTIVE_URL" = "$DASHBOARD_URL" ]; then
     sleep 1
   done
 fi
+
+# White-flash round (2026-10-16): Chromium paints its own default
+# (white) background before any page's own CSS has loaded - confirmed
+# live, a brief white flash was visible on every launch. There's no
+# public command-line flag for this; set-dark-background.py (see its
+# own comment) applies it via Chrome DevTools Protocol instead, polling
+# for a page target to appear. Launched here, backgrounded and
+# disowned, deliberately BEFORE the launches below rather than after -
+# `exec` further down replaces this script's own process entirely, so
+# anything meant to outlive it has to already be an independent
+# background process before that point, not started after it (nothing
+# runs after exec). Purely cosmetic - never allowed to affect whether
+# or what Chromium launches, which is why it's fire-and-forget with no
+# status checked here at all.
+nohup python3 /home/admin/.config/systemd/user/set-dark-background.py >/dev/null 2>&1 < /dev/null &
+disown
 
 "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$EFFECTIVE_URL" &
 FIRST_LAUNCH_PID=$!

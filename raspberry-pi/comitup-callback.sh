@@ -45,7 +45,6 @@ set -euo pipefail
 STATE="${1:-}"
 STATE_FILE=/run/airfieldcentral-network-state
 PREV_BUCKET_FILE=/run/airfieldcentral-network-bucket
-CONNECTING_STARTED_FILE=/run/airfieldcentral-connecting-started
 KIOSK_USER=admin
 KIOSK_UID=1000
 
@@ -63,29 +62,18 @@ bucket() {
 
 echo "$STATE" > "$STATE_FILE"
 
-# Confirmation-hold round (2026-10-16): this script used to compute and
-# enforce the "show the confirmation message for at least 10s" hold
-# itself, by delaying the restart call below. Confirmed on real
-# hardware that this doesn't work: this script only controls WHEN
-# kiosk.service is TOLD to restart, not what gets shown once it does -
-# nothing stops some OTHER trigger (kiosk-watchdog.py, a retry
-# attempt, anything) from restarting kiosk.service independently during
-# that window, racing straight past the hold. The hold itself now lives
-# in kiosk-wrapper.sh (see that file's own comment) - the one place
-# every kiosk.service start funnels through regardless of who triggered
-# it, so it can't be bypassed by a race. This script's only remaining
-# job for the hold is stamping WHEN CONNECTING first began, so
-# kiosk-wrapper.sh can measure elapsed time against it - restarts
-# happen immediately again, same as before any of this.
-case "$STATE" in
-  CONNECTING)
-    [ -f "$CONNECTING_STARTED_FILE" ] || date +%s > "$CONNECTING_STARTED_FILE"
-    ;;
-  HOTSPOT)
-    rm -f "$CONNECTING_STARTED_FILE"
-    ;;
-esac
-
+# Confirmation-message round (2026-10-16): two earlier versions of this
+# script tried to hold the "connecting"/"connected" message up here, by
+# delaying the restart call below, or by stamping a timestamp
+# (CONNECTING_STARTED_FILE) for kiosk-wrapper.sh to measure against.
+# Confirmed on real hardware that delaying a restart from here doesn't
+# work - some OTHER trigger (the watchdog, a retry) can always restart
+# kiosk.service independently during the delay, racing past it. The
+# confirmation message now lives entirely in kiosk-wrapper.sh instead,
+# shown AFTER a fresh connection, not during the switch to it - this
+# script no longer needs any part in that at all. Back to doing exactly
+# what it did before any of those attempts: relay state, restart the
+# kiosk on a real bucket change. Nothing else.
 new_bucket="$(bucket "$STATE")"
 old_bucket="$(cat "$PREV_BUCKET_FILE" 2>/dev/null || echo "")"
 
