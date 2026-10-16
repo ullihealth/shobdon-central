@@ -104,6 +104,9 @@
     color: #38bdf8;
     min-height: 1.4em;
   }
+  #status-line.connecting {
+    color: #fbbf24;
+  }
   #status-line.connected {
     color: #4ade80;
   }
@@ -145,17 +148,29 @@
     // kiosk.service once truly connected - see that script's own
     // comment), which is a hard relaunch onto a different URL, not
     // something this page can or should attempt itself.
+    //
+    // CONNECTING is shown amber, not green - comitup enters this same
+    // state both when a phone has just submitted a real network (what
+    // this page is for) AND on its own periodic background retry of the
+    // last known network while still sitting in HOTSPOT (confirmed on
+    // real hardware, 2026-10-16 test round) - this page has no way to
+    // tell those two apart, so it can't promise "starting your screen"
+    // for a CONNECTING it didn't cause. CONNECTED is the only state that
+    // means a real connection actually succeeded.
     var statusEl = document.getElementById('status-line');
     function poll() {
       fetch('/state', { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.state === 'CONNECTING') {
+          statusEl.classList.remove('connecting', 'connected');
+          if (data.state === 'CONNECTED') {
             statusEl.textContent = 'Connected - starting your screen…';
             statusEl.classList.add('connected');
+          } else if (data.state === 'CONNECTING') {
+            statusEl.textContent = 'Connecting - this may take a couple of minutes…';
+            statusEl.classList.add('connecting');
           } else {
             statusEl.textContent = 'Waiting for a phone to join…';
-            statusEl.classList.remove('connected');
           }
         })
         .catch(function () { /* local server hiccup - try again next tick */ });
