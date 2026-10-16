@@ -23,21 +23,38 @@ needs to be reachable from anywhere but this same Pi's own Chromium):
     already fully templated with the real SSID/password at install time
     (see install-wifi-setup.sh's own comment) - this server does no
     template substitution itself, it just serves bytes.
-  - GET /state -> {"state": "<HOTSPOT|CONNECTING|CONNECTED>"} - reads
-    STATE_FILE, the same file comitup-callback.sh writes on every
-    comitup state transition. index.html's own small polling script
-    reads this to flip its one "waiting.../connected" status line - see
-    that file's own comment. Missing/unreadable state file reads as
-    "HOTSPOT" (the safe, most-likely-truthful default while comitup is
-    still starting up for the first time ever).
+  - GET /state -> {"state": "<HOTSPOT|CONNECTING|CONNECTED>", "recentFailure": bool}
+    - reads STATE_FILE, the same file comitup-callback.sh writes on
+    every comitup state transition. index.html's own small polling
+    script reads this to flip its one "waiting.../connected" status
+    line - see that file's own comment. Missing/unreadable state file
+    reads as "HOTSPOT" (the safe, most-likely-truthful default while
+    comitup is still starting up for the first time ever).
+
+    recentFailure round (2026-10-16): comitup's own phone-side captive
+    portal gives no feedback at all if a submitted password was wrong
+    (or any other connection attempt just failed) - confirmed on real
+    hardware: the person is left looking at an unresponsive page with
+    no idea anything went wrong. This server can't fix the phone-side
+    portal (vendor code, not this project's to patch - see
+    wifi-reconnect-watcher.py's own comment on the same tradeoff), but
+    it CAN tell the TV: a CONNECTING -> HOTSPOT transition (tried,
+    didn't reach CONNECTED) is a failed attempt, tracked here as module
+    state across requests (this server is single-threaded - see main()
+    - so no locking needed) and surfaced for a short window afterwards.
 """
 import http.server
 import json
 import os
+import time
 
 PORT = 8089
 WEB_ROOT = "/home/admin/.config/wifi-setup-page"
 STATE_FILE = "/run/airfieldcentral-network-state"
+RECENT_FAILURE_WINDOW_SECONDS = 20
+
+_last_state = None
+_failed_until = 0.0
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -46,12 +63,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/state":
+            global _last_state, _failed_until
             try:
                 with open(STATE_FILE, "r") as f:
                     state = f.read().strip() or "HOTSPOT"
             except OSError:
                 state = "HOTSPOT"
-            body = json.dumps({"state": state}).encode("utf-8")
+
+            now = time.monotonic()
+            if _last_state == "CONNECTING" and state == "HOTSPOT":
+                _failed_until = now + RECENT_FAILURE_WINDOW_SECONDS
+            _last_state = state
+
+            body = json.dumps({
+                "state": state,
+                "recentFailure": now < _failed_until,
+            }).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

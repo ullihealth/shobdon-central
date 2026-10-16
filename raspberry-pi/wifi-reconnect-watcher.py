@@ -70,6 +70,21 @@ FAST_PERIOD_SECONDS = 600
 # mid-setup moment (phone briefly idle between steps) is never cut off.
 CLIENT_GRACE_SECONDS = 120
 
+# Real-hardware round (2026-10-16): a phone that has ALREADY submitted a
+# network+password through comitup's own captive portal often stays
+# associated with the hotspot radio for several more minutes (iOS
+# doesn't always drop a "known" WiFi network promptly) - confirmed live:
+# a failed submission left this script deferring indefinitely, every
+# single check kept finding "a client", so CLIENT_GRACE_SECONDS's own
+# countdown never even got a chance to start. This caps the TOTAL time
+# spent deferring because of an apparently-still-connected client,
+# regardless of how continuously it keeps appearing connected - past
+# this point it's far more likely a stale/idle association than someone
+# actively mid-setup, and the cost of a rare unwanted interruption is
+# lower than leaving a failed submission stuck for minutes with no
+# retry at all.
+MAX_CLIENT_DEFER_SECONDS = 90
+
 # comitup names its own AP-mode connection profiles with these prefixes
 # (confirmed on AA0001: "AirfieldCentral-Setup-AA0001-0000",
 # "comitup-542-0000") - excluded from the "try to join" candidate list,
@@ -168,6 +183,7 @@ def main() -> None:
     disconnected_since: float | None = None
     last_check: float = 0.0
     last_client_seen: float = 0.0
+    client_present_since: float | None = None
 
     while True:
         state = network_state()
@@ -199,12 +215,19 @@ def main() -> None:
         clients = ap_client_count()
         if clients > 0:
             last_client_seen = now
-            log.info("setup hotspot has %d connected device(s) - skipping this check", clients)
-            continue
-        if last_client_seen and (now - last_client_seen) < CLIENT_GRACE_SECONDS:
-            remaining = CLIENT_GRACE_SECONDS - (now - last_client_seen)
-            log.info("a device left the setup hotspot recently - waiting %ds before checking again", int(remaining))
-            continue
+            if client_present_since is None:
+                client_present_since = now
+            blocked_for = now - client_present_since
+            if blocked_for < MAX_CLIENT_DEFER_SECONDS:
+                log.info("setup hotspot has %d connected device(s) - skipping this check (blocked %ds so far)", clients, int(blocked_for))
+                continue
+            log.info("setup hotspot still shows a connected device after %ds - trying anyway (likely stale, e.g. after a submission)", int(blocked_for))
+        else:
+            client_present_since = None
+            if last_client_seen and (now - last_client_seen) < CLIENT_GRACE_SECONDS:
+                remaining = CLIENT_GRACE_SECONDS - (now - last_client_seen)
+                log.info("a device left the setup hotspot recently - waiting %ds before checking again", int(remaining))
+                continue
 
         log.info("checking for a known network (disconnected %ds, retry every %ds)", int(elapsed), interval)
         try_reconnect()

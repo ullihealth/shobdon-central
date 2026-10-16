@@ -117,6 +117,9 @@
   #status-line.connected {
     color: #4ade80;
   }
+  #status-line.failed {
+    color: #f87171;
+  }
 </style>
 </head>
 <body>
@@ -178,13 +181,23 @@
     // tell those two apart, so it can't promise "starting your screen"
     // for a CONNECTING it didn't cause. CONNECTED is the only state that
     // means a real connection actually succeeded.
+    // recentFailure round (2026-10-16) - comitup's own phone-side portal
+    // gives no feedback if a submitted password was wrong (or any other
+    // attempt just failed) - see wifi-setup-server.py's own comment on
+    // why this server, not that portal, is what surfaces it. Checked
+    // before the normal state branches below so a failure right after a
+    // CONNECTING attempt is never masked by this poll also seeing
+    // HOTSPOT and showing the plain "waiting" text instead.
     var statusEl = document.getElementById('status-line');
     function poll() {
       fetch('/state', { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          statusEl.classList.remove('connecting', 'connected');
-          if (data.state === 'CONNECTED') {
+          statusEl.classList.remove('connecting', 'connected', 'failed');
+          if (data.recentFailure) {
+            statusEl.textContent = "That didn't work - check the password and try again";
+            statusEl.classList.add('failed');
+          } else if (data.state === 'CONNECTED') {
             statusEl.textContent = 'Connected - starting your screen…';
             statusEl.classList.add('connected');
           } else if (data.state === 'CONNECTING') {
