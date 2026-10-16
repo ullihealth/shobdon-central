@@ -105,29 +105,148 @@
     line-height: 1.6;
   }
   .steps b { color: #38bdf8; }
-  #status-line {
-    font-size: 1.4vw;
+
+  /* Failure banner - sits above the QR panel on the waiting view when a
+     submitted attempt has just failed. Large and high-contrast on
+     purpose (2026-10-16 feedback: a thin status line is too easy to
+     miss when the person submitting is looking at their PHONE, not the
+     TV, at the exact moment it would have appeared). */
+  #fail-banner {
+    display: none;
+    font-size: 1.8vw;
+    font-weight: 800;
+    color: #fca5a5;
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: 1vw;
+    padding: 1.6vh 2.4vw;
+    max-width: 60vw;
+  }
+  #fail-banner.show { display: block; }
+
+  /* Full-screen takeover views (connecting / connected) - deliberately
+     a completely different screen, not a subtler color/text change on
+     the same layout, so it reads as unmistakable progress even to
+     someone glancing up briefly from their phone. */
+  .takeover {
+    display: none;
+    height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3vh;
+    text-align: center;
+  }
+  .takeover.show { display: flex; }
+
+  .takeover-brand {
+    font-weight: 800;
+    font-size: 2.6vw;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #f1f5f9;
+    text-shadow: 0 0 40px rgba(56, 189, 248, 0.5);
+  }
+  .takeover-title {
+    margin: 0;
+    font-size: 2.6vw;
     font-weight: 700;
-    color: #38bdf8;
-    min-height: 1.4em;
+    color: #e2e8f0;
   }
-  #status-line.connecting {
-    color: #fbbf24;
+  .takeover-sub {
+    margin: -1.6vh 0 0 0;
+    font-size: 1.3vw;
+    color: #94a3b8;
   }
-  #status-line.connected {
-    color: #4ade80;
+
+  /* Signal rings - a deliberate "sophisticated", not cutesy, motion
+     cue: three rings expanding and fading outward from a solid core,
+     staggered so one is always mid-pulse. Pure CSS, no imagery. */
+  .signal {
+    position: relative;
+    width: 11vw;
+    height: 11vw;
   }
-  #status-line.failed {
-    color: #f87171;
+  .signal-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.4vw;
+    height: 2.4vw;
+    margin: -1.2vw 0 0 -1.2vw;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 0 3vw rgba(56, 189, 248, 0.7);
+  }
+  .signal-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.4vw;
+    height: 2.4vw;
+    margin: -1.2vw 0 0 -1.2vw;
+    border-radius: 50%;
+    border: 0.15vw solid #38bdf8;
+    opacity: 0;
+    animation: signal-pulse 2.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+  }
+  .signal-ring:nth-child(2) { animation-delay: 0.6s; }
+  .signal-ring:nth-child(3) { animation-delay: 1.2s; }
+  @keyframes signal-pulse {
+    0%   { transform: scale(1);   opacity: 0.7; }
+    100% { transform: scale(4.2); opacity: 0; }
+  }
+
+  /* Indeterminate progress bar - no real percentage is available (see
+     wifi-setup-server.py's own comment on why), but a moving fill still
+     reads as "actively working", which is the reassurance being
+     designed for here, not a literal measurement. */
+  .progress-track {
+    width: 26vw;
+    height: 0.5vw;
+    border-radius: 0.5vw;
+    background: #1e293b;
+    overflow: hidden;
+  }
+  .progress-fill {
+    width: 40%;
+    height: 100%;
+    border-radius: 0.5vw;
+    background: linear-gradient(90deg, #38bdf8, #818cf8);
+    animation: progress-sweep 1.6s ease-in-out infinite;
+  }
+  @keyframes progress-sweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  .check {
+    width: 11vw;
+    height: 11vw;
+    border-radius: 50%;
+    background: rgba(74, 222, 128, 0.12);
+    border: 0.2vw solid #4ade80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .check svg { width: 5vw; height: 5vw; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .signal-ring, .progress-fill { animation: none; opacity: 0.4; }
+    .progress-fill { width: 100%; transform: none; }
   }
 </style>
 </head>
 <body>
   <div class="brand">Airfield Central</div>
-  <div class="wrap">
+
+  <div class="wrap" id="waiting-view">
     <h1 id="headline">WiFi not found. Reconnecting automatically.</h1>
     <p class="sub" id="subhead">After a power cut this can take up to 10 minutes. You don't need to do anything.</p>
     <p class="prompt">New WiFi, or the password changed? Scan this code with your phone to set up.</p>
+
+    <div id="fail-banner">That didn't work - check the password and try again</div>
 
     <div class="panel">
       <div class="qr-box">
@@ -146,8 +265,30 @@
       <b>2.</b> Tap the notification that appears to join<br />
       <b>3.</b> Pick your WiFi network from the list and enter its password
     </div>
+  </div>
 
-    <div id="status-line">Waiting for a phone to join&hellip;</div>
+  <div class="wrap takeover" id="connecting-view">
+    <div class="takeover-brand">Airfield Central</div>
+    <div class="signal">
+      <div class="signal-ring"></div>
+      <div class="signal-ring"></div>
+      <div class="signal-ring"></div>
+      <div class="signal-core"></div>
+    </div>
+    <h1 class="takeover-title">Connecting your screen&hellip;</h1>
+    <p class="takeover-sub">This usually takes well under a minute</p>
+    <div class="progress-track"><div class="progress-fill"></div></div>
+  </div>
+
+  <div class="wrap takeover" id="connected-view">
+    <div class="takeover-brand">Airfield Central</div>
+    <div class="check">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h1 class="takeover-title">Connected</h1>
+    <p class="takeover-sub">Starting your screen&hellip;</p>
   </div>
 
   <script>
@@ -164,51 +305,58 @@
     // page with nothing to wait on.
     document.documentElement.dataset.kioskRenderOk = 'true';
 
-    // Polls this same tiny local server's own /state endpoint (served by
-    // wifi-setup-server.py, see that file's own comment) every 2s, purely
-    // to flip this ONE line of text - the page itself never navigates or
-    // reloads on its own. The actual switch to the real dashboard happens
-    // a different way entirely (comitup-callback.sh restarting
-    // kiosk.service once truly connected - see that script's own
-    // comment), which is a hard relaunch onto a different URL, not
-    // something this page can or should attempt itself.
+    // Big-moment round (2026-10-16): a thin one-line status message
+    // (the first version of this page) was confirmed, live, to be
+    // easy to miss - the person who just submitted a password is
+    // looking at their PHONE, not the TV, right when it would have
+    // changed. CONNECTING and CONNECTED now take over the WHOLE
+    // screen instead of just recoloring a line of text, so a glance
+    // up at any point reads as unmistakable progress. The actual
+    // switch to the real dashboard still happens a different way
+    // entirely (comitup-callback.sh restarting kiosk.service once
+    // truly connected), a hard relaunch onto a different URL - this
+    // page never navigates itself, CONNECTED here is shown for the
+    // brief moment before that relaunch happens.
     //
-    // CONNECTING is shown amber, not green - comitup enters this same
-    // state both when a phone has just submitted a real network (what
-    // this page is for) AND on its own periodic background retry of the
+    // CONNECTING is shown as "in progress", not a promise - comitup
+    // enters this same state both when a phone has just submitted a
+    // real network AND on its own periodic background retry of the
     // last known network while still sitting in HOTSPOT (confirmed on
-    // real hardware, 2026-10-16 test round) - this page has no way to
-    // tell those two apart, so it can't promise "starting your screen"
-    // for a CONNECTING it didn't cause. CONNECTED is the only state that
-    // means a real connection actually succeeded.
-    // recentFailure round (2026-10-16) - comitup's own phone-side portal
-    // gives no feedback if a submitted password was wrong (or any other
-    // attempt just failed) - see wifi-setup-server.py's own comment on
-    // why this server, not that portal, is what surfaces it. Checked
-    // before the normal state branches below so a failure right after a
-    // CONNECTING attempt is never masked by this poll also seeing
-    // HOTSPOT and showing the plain "waiting" text instead.
-    var statusEl = document.getElementById('status-line');
+    // real hardware) - this page has no way to tell those two apart.
+    //
+    // recentFailure round (2026-10-16) - comitup's own phone-side
+    // portal gives no feedback if a submitted password was wrong - see
+    // wifi-setup-server.py's own comment on why this server, not that
+    // portal, is what surfaces it.
+    var waitingView = document.getElementById('waiting-view');
+    var connectingView = document.getElementById('connecting-view');
+    var connectedView = document.getElementById('connected-view');
+    var failBanner = document.getElementById('fail-banner');
+
+    function showView(view) {
+      [waitingView, connectingView, connectedView].forEach(function (el) {
+        el.classList.toggle('show', el === view);
+      });
+    }
+
     function poll() {
       fetch('/state', { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          statusEl.classList.remove('connecting', 'connected', 'failed');
-          if (data.recentFailure) {
-            statusEl.textContent = "That didn't work - check the password and try again";
-            statusEl.classList.add('failed');
-          } else if (data.state === 'CONNECTED') {
-            statusEl.textContent = 'Connected - starting your screen…';
-            statusEl.classList.add('connected');
+          if (data.state === 'CONNECTED') {
+            failBanner.classList.remove('show');
+            showView(connectedView);
           } else if (data.state === 'CONNECTING') {
-            statusEl.textContent = 'Connecting - this may take a couple of minutes…';
-            statusEl.classList.add('connecting');
+            failBanner.classList.remove('show');
+            showView(connectingView);
           } else {
-            statusEl.textContent = 'Waiting for a phone to join…';
+            failBanner.classList.toggle('show', !!data.recentFailure);
+            showView(waitingView);
           }
         })
         .catch(function () { /* local server hiccup - try again next tick */ });
     }
+    showView(waitingView);
     poll();
     setInterval(poll, 2000);
   </script>
