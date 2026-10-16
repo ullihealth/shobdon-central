@@ -246,7 +246,7 @@
     <p class="sub" id="subhead">After a power cut this can take up to 10 minutes. You don't need to do anything.</p>
     <p class="prompt">New WiFi, or the password changed? Scan this code with your phone to set up.</p>
 
-    <div id="fail-banner">That didn't work - check the password and try again</div>
+    <div id="fail-banner">That didn't work - please check the WiFi password and scan the code again</div>
 
     <div class="panel">
       <div class="qr-box">
@@ -267,6 +267,18 @@
     </div>
   </div>
 
+  <div class="wrap takeover" id="getting-ready-view">
+    <div class="takeover-brand">Airfield Central</div>
+    <div class="signal">
+      <div class="signal-ring"></div>
+      <div class="signal-ring"></div>
+      <div class="signal-ring"></div>
+      <div class="signal-core"></div>
+    </div>
+    <h1 class="takeover-title" id="getting-ready-title">Getting ready&hellip; please wait</h1>
+    <p class="takeover-sub" id="getting-ready-sub"></p>
+  </div>
+
   <div class="wrap takeover" id="connecting-view">
     <div class="takeover-brand">Airfield Central</div>
     <div class="signal">
@@ -275,8 +287,8 @@
       <div class="signal-ring"></div>
       <div class="signal-core"></div>
     </div>
-    <h1 class="takeover-title">Connecting your screen&hellip;</h1>
-    <p class="takeover-sub">This usually takes well under a minute</p>
+    <h1 class="takeover-title">Thanks - connecting to your WiFi.</h1>
+    <p class="takeover-sub">Your Airfield Central screen will start shortly. Please don't unplug anything.</p>
     <div class="progress-track"><div class="progress-fill"></div></div>
   </div>
 
@@ -328,13 +340,36 @@
     // portal gives no feedback if a submitted password was wrong - see
     // wifi-setup-server.py's own comment on why this server, not that
     // portal, is what surfaces it.
+    //
+    // Getting-ready round (2026-10-16): a phone scanning the QR the
+    // instant it appeared sometimes failed to join - comitup writes
+    // its own "HOTSPOT" state the moment it DECIDES to start the
+    // hotspot, not once the radio has actually finished coming up (see
+    // wifi-setup-server.py's own comment on hotspot_ready() for the
+    // confirmed detail). GETTING_READY_MIN_MS holds a plain "please
+    // wait" screen for the first 60 seconds of any not-connected
+    // episode regardless of readiness (so a visitor always sees
+    // something calm and branded, never a half-ready QR code), timed
+    // from THIS PAGE's own first observation of that episode starting
+    // - reset to null the moment a CONNECTED poll is seen, so a later,
+    // separate episode gets its own fresh 60 seconds, not a stale
+    // leftover timestamp. Past that minimum, the QR only ever appears
+    // once wifi-setup-server.py's own hotspotReady check actually
+    // confirms the radio is live - "Almost ready" (the same view, title
+    // swapped) keeps showing for as long as that takes, with no upper
+    // bound, rather than ever guessing.
     var waitingView = document.getElementById('waiting-view');
+    var gettingReadyView = document.getElementById('getting-ready-view');
+    var gettingReadyTitle = document.getElementById('getting-ready-title');
+    var gettingReadySub = document.getElementById('getting-ready-sub');
     var connectingView = document.getElementById('connecting-view');
     var connectedView = document.getElementById('connected-view');
     var failBanner = document.getElementById('fail-banner');
+    var GETTING_READY_MIN_MS = 60000;
+    var notConnectedSince = null;
 
     function showView(view) {
-      [waitingView, connectingView, connectedView].forEach(function (el) {
+      [waitingView, gettingReadyView, connectingView, connectedView].forEach(function (el) {
         el.classList.toggle('show', el === view);
       });
     }
@@ -344,9 +379,33 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
           if (data.state === 'CONNECTED') {
+            notConnectedSince = null;
             failBanner.classList.remove('show');
             showView(connectedView);
-          } else if (data.state === 'CONNECTING') {
+            return;
+          }
+
+          if (notConnectedSince === null) {
+            notConnectedSince = Date.now();
+          }
+          var elapsed = Date.now() - notConnectedSince;
+
+          if (elapsed < GETTING_READY_MIN_MS) {
+            var remaining = Math.ceil((GETTING_READY_MIN_MS - elapsed) / 1000);
+            gettingReadyTitle.textContent = 'Getting ready… please wait';
+            gettingReadySub.textContent = remaining + 's';
+            showView(gettingReadyView);
+            return;
+          }
+
+          if (!data.hotspotReady) {
+            gettingReadyTitle.textContent = 'Almost ready…';
+            gettingReadySub.textContent = '';
+            showView(gettingReadyView);
+            return;
+          }
+
+          if (data.state === 'CONNECTING') {
             failBanner.classList.remove('show');
             showView(connectingView);
           } else {
@@ -356,9 +415,9 @@
         })
         .catch(function () { /* local server hiccup - try again next tick */ });
     }
-    showView(waitingView);
+    showView(gettingReadyView);
     poll();
-    setInterval(poll, 2000);
+    setInterval(poll, 1000);
   </script>
 </body>
 </html>

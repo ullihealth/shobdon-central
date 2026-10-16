@@ -42,19 +42,52 @@ needs to be reachable from anywhere but this same Pi's own Chromium):
     didn't reach CONNECTED) is a failed attempt, tracked here as module
     state across requests (this server is single-threaded - see main()
     - so no locking needed) and surfaced for a short window afterwards.
+
+    "Getting ready" round (2026-10-16): the /state response also now
+    carries "hotspotReady": bool. STATE_FILE alone isn't enough to know
+    the hotspot is actually broadcasting - comitup writes "HOTSPOT" to
+    it the moment it DECIDES to enter that state and kicks off
+    activation, not once activation has actually finished (confirmed by
+    reading comitup/states.py's own hotspot_start() - it calls
+    activate_connection(), an async NetworkManager call, THEN triggers
+    the callback that writes this file). A phone scanning the QR before
+    the radio has actually finished coming up would fail to join even
+    though the page already looks ready. hotspot_ready() instead asks
+    NetworkManager directly whether wlan0 is genuinely fully activated
+    (GENERAL.STATE 100) while comitup's own state is HOTSPOT - the only
+    connection that would ever be active on wlan0 in that state is
+    comitup's own AP, so this doesn't need to separately match its name.
 """
 import http.server
 import json
 import os
+import subprocess
 import time
 
 PORT = 8089
 WEB_ROOT = "/home/admin/.config/wifi-setup-page"
 STATE_FILE = "/run/airfieldcentral-network-state"
 RECENT_FAILURE_WINDOW_SECONDS = 20
+WIFI_DEVICE = "wlan0"
 
 _last_state = None
 _failed_until = 0.0
+
+
+def hotspot_ready(state: str) -> bool:
+    if state != "HOTSPOT":
+        return False
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "GENERAL.STATE", "device", "show", WIFI_DEVICE],
+            capture_output=True, text=True, timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    device_state = result.stdout.strip()
+    return device_state.startswith("GENERAL.STATE:100")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -78,6 +111,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             body = json.dumps({
                 "state": state,
                 "recentFailure": now < _failed_until,
+                "hotspotReady": hotspot_ready(state),
             }).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
