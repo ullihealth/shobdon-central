@@ -16,7 +16,8 @@
 #      the end so you can copy it onto a sticker.
 #   2. Generates the WiFi-join QR code (qrencode) and the templated TV
 #      setup page (wifi-setup-page/index.html's own __SSID__/__PASSWORD__
-#      placeholders, filled in once here, not at serve time).
+#      placeholders, filled in once here, not at serve time), plus the
+#      zero-dependency connecting.html fallback (no placeholders).
 #   3. Installs comitup (apt, Debian's own repo - no third-party source
 #      needed, confirmed) and writes /etc/comitup.conf: ap_name (this
 #      box's own AirfieldCentral-Setup-<serial> hotspot name),
@@ -33,7 +34,10 @@
 #      restarts kiosk.service/kiosk-watchdog.service so they pick up the
 #      change immediately, without needing a reboot right now (comitup's
 #      own new hotspot config still needs one - see step 6).
-#   6. Enables comitup.service. A reboot is needed for comitup's own
+#   6. Installs wifi-reconnect-watcher.py/.service (a SYSTEM service -
+#      see that file's own comment for why comitup's own retry cadence
+#      alone isn't fast enough) and starts it immediately.
+#   7. Enables comitup.service. A reboot is needed for comitup's own
 #      config to take full effect (same as any config.txt-style change
 #      on this Pi) - this script does NOT reboot automatically; you
 #      choose when.
@@ -114,12 +118,13 @@ echo "(password generated - not shown until the end, same as every other step be
 if [ "$DRY_RUN" -eq 1 ]; then
   echo ""
   echo "--- Would write $PASSWORD_FILE (root:root, 600) ---"
-  echo "--- Would write $WEB_ROOT/index.html and $WEB_ROOT/wifi-qr.png ---"
+  echo "--- Would write $WEB_ROOT/index.html, $WEB_ROOT/connecting.html and $WEB_ROOT/wifi-qr.png ---"
   echo "--- Would write /etc/comitup.conf (ap_name=$AP_NAME, ap_password=<generated>, external_callback=/usr/local/bin/comitup-callback.sh) ---"
   echo "--- Would install/enable comitup, qrencode (apt) ---"
   echo "--- Would install $SYSTEMD_USER_DIR/wifi-setup-server.py + .service, enable + start it ---"
   echo "--- Would copy kiosk-wrapper.sh and kiosk-watchdog.py into $SYSTEMD_USER_DIR, restart kiosk.service + kiosk-watchdog.service ---"
   echo "--- Would copy /usr/local/bin/comitup-callback.sh (root:root, 755) ---"
+  echo "--- Would install /usr/local/bin/wifi-reconnect-watcher.py + /etc/systemd/system/wifi-reconnect-watcher.service, enable + start it ---"
   echo "--- Would enable comitup.service (needs a reboot to fully take effect - not run automatically) ---"
   echo "Dry run complete - nothing was actually changed."
   exit 0
@@ -143,6 +148,13 @@ echo "Wrote $WEB_ROOT/wifi-qr.png"
 sed -e "s/__SSID__/${AP_NAME}/g" -e "s/__PASSWORD__/${PASSWORD}/g" \
   "$SCRIPT_DIR/wifi-setup-page/index.html" > "$WEB_ROOT/index.html"
 echo "Wrote $WEB_ROOT/index.html"
+
+# Blank-screen round (2026-10-16) - zero-dependency fallback
+# kiosk-wrapper.sh points Chromium at (file://, no server needed) for the
+# brief window before wifi-setup-server.service has finished starting.
+# No placeholders to template - copied as-is.
+cp "$SCRIPT_DIR/wifi-setup-page/connecting.html" "$WEB_ROOT/connecting.html"
+echo "Wrote $WEB_ROOT/connecting.html"
 
 # --- comitup-callback.sh (runs as root, comitup's own user) --------------
 
@@ -181,6 +193,16 @@ chmod +x "$SYSTEMD_USER_DIR/kiosk-watchdog.py"
 systemctl --user restart kiosk.service
 systemctl --user restart kiosk-watchdog.service
 echo "Updated kiosk-wrapper.sh and kiosk-watchdog.py in place, restarted both services"
+
+# --- wifi-reconnect-watcher.py/.service (SYSTEM service, see that
+#     file's own comment for why comitup's own retry cadence alone isn't
+#     fast enough) --------------------------------------------------------
+
+sudo install -m 755 -o root -g root "$SCRIPT_DIR/wifi-reconnect-watcher.py" /usr/local/bin/wifi-reconnect-watcher.py
+sudo install -m 644 -o root -g root "$SCRIPT_DIR/wifi-reconnect-watcher.service" /etc/systemd/system/wifi-reconnect-watcher.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now wifi-reconnect-watcher.service
+echo "Installed and started wifi-reconnect-watcher.service"
 
 # --- comitup itself ---------------------------------------------------------
 

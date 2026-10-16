@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Connecting to WiFi</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #020617;
+    color: #f1f5f9;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  .wrap {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2vh;
+    text-align: center;
+  }
+  .brand {
+    position: fixed;
+    top: 3vh;
+    left: 4vw;
+    font-weight: 800;
+    font-size: 1.6vw;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #38bdf8;
+  }
+  .dot {
+    width: 3vw;
+    height: 3vw;
+    border-radius: 50%;
+    border: 0.4vw solid #1e293b;
+    border-top-color: #38bdf8;
+    animation: spin 1s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dot { animation: none; }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  h1 {
+    margin: 0;
+    font-size: 2.2vw;
+    font-weight: 800;
+  }
+</style>
+</head>
+<body>
+  <div class="brand">Airfield Central</div>
+  <div class="wrap">
+    <div class="dot"></div>
+    <h1>Connecting to WiFi&hellip;</h1>
+  </div>
+  <script>
+    // Blank-screen round (2026-10-16) - this is the zero-dependency
+    // fallback kiosk-wrapper.sh points Chromium at (as a file:// URL, no
+    // server, no network of any kind needed) for the brief window where
+    // wifi-setup-server.py might not have finished starting yet - see
+    // that script's own comment. Sets the same render marker as the real
+    // setup page and the dashboard app, so kiosk-watchdog.py's render
+    // check still recognises this moment as "rendered fine", not stuck.
+    document.documentElement.dataset.kioskRenderOk = 'true';
+  </script>
+</body>
+</html>

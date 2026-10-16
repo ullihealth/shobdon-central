@@ -59,11 +59,42 @@ NETWORK_STATE="CONNECTED"
 if [ -f "$NETWORK_STATE_FILE" ]; then
   NETWORK_STATE="$(cat "$NETWORK_STATE_FILE" 2>/dev/null || echo "CONNECTED")"
 fi
+SETUP_SERVER_URL="http://127.0.0.1:8089/"
+SETUP_CONNECTING_FALLBACK="file:///home/admin/.config/wifi-setup-page/connecting.html"
+
 if [ "$NETWORK_STATE" = "CONNECTED" ]; then
   EFFECTIVE_URL="$DASHBOARD_URL"
 else
-  EFFECTIVE_URL="http://127.0.0.1:8089/"
-  echo "kiosk-wrapper: network state is $NETWORK_STATE - showing the local WiFi setup page instead of $DASHBOARD_URL" >&2
+  # Blank-screen round (2026-10-16): a real incident showed the TV stuck
+  # on a bare blank/white screen during a setup-mode boot - root cause
+  # was kiosk-watchdog.py skipping its render check entirely while not
+  # CONNECTED (fixed separately, see that file's own comment), but belt-
+  # and-braces here too: wifi-setup-server.py is a separate --user unit
+  # with no explicit startup ordering against this one, so briefly wait
+  # for it to actually answer before pointing Chromium at it, same
+  # "poll for the actual precondition" idiom as the DASHBOARD_URL wait
+  # below - just much shorter, since this is loopback-only and normally
+  # answers in milliseconds. If it still isn't up by SETUP_SERVER_WAIT_
+  # TIMEOUT_SECONDS, fall back to a static file:// page (connecting.html)
+  # that needs no server, no network, nothing - it can never fail to
+  # load, so Chromium always has SOMETHING to paint rather than a
+  # connection-refused error page while the real setup page catches up.
+  SETUP_SERVER_WAIT_TIMEOUT_SECONDS=5
+  setup_wait_start=$(date +%s)
+  until curl --silent --output /dev/null --max-time 2 "$SETUP_SERVER_URL"; do
+    elapsed=$(( $(date +%s) - setup_wait_start ))
+    if [ "$elapsed" -ge "$SETUP_SERVER_WAIT_TIMEOUT_SECONDS" ]; then
+      break
+    fi
+    sleep 1
+  done
+  if curl --silent --output /dev/null --max-time 2 "$SETUP_SERVER_URL"; then
+    EFFECTIVE_URL="$SETUP_SERVER_URL"
+  else
+    EFFECTIVE_URL="$SETUP_CONNECTING_FALLBACK"
+    echo "kiosk-wrapper: local WiFi setup server not responding after ${SETUP_SERVER_WAIT_TIMEOUT_SECONDS}s - showing the static connecting.html fallback instead" >&2
+  fi
+  echo "kiosk-wrapper: network state is $NETWORK_STATE - showing $EFFECTIVE_URL instead of $DASHBOARD_URL" >&2
 fi
 
 # Boot-timing round (2026-08-29): kiosk.service's own ExecStartPre already
@@ -88,12 +119,12 @@ fi
 # forever. --max-time bounds each individual attempt so one hung request
 # can't itself consume the whole budget in one shot.
 #
-# WiFi setup round - only waits at all when actually about to show the
-# real dashboard. The local setup page is served from 127.0.0.1, always
-# instantly reachable with zero network of any kind - waiting up to 30s
+# WiFi setup round - this specific 30s wait only applies when actually
+# about to show the real dashboard (the setup page/fallback has its own
+# much shorter wait above, resolved by this point) - waiting up to 30s
 # for DASHBOARD_URL first would just be dead time in front of a visitor
 # staring at a blank screen during the one moment (no known WiFi at all)
-# this page exists to help with.
+# the setup page exists to help with.
 if [ "$EFFECTIVE_URL" = "$DASHBOARD_URL" ]; then
   NETWORK_WAIT_TIMEOUT_SECONDS=30
   network_wait_start=$(date +%s)

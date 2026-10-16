@@ -1,0 +1,25 @@
+# Adaptive WiFi reconnect watcher - SYSTEM service (needs root for `iw`/
+# `nmcli`), installed at /etc/systemd/system/wifi-reconnect-watcher.service,
+# alongside comitup.service. See wifi-reconnect-watcher.py's own top
+# comment for the full "why" - in short, comitup's own retry backoff
+# after a failed attempt is a fixed 360s with no config to change it,
+# confirmed too slow on real hardware (a ~7.5 minute reconnect after a
+# simulated router outage, 2026-10-16) - this fills the gap with a much
+# faster cadence for the first 10 minutes of any outage, pausing
+# whenever a phone is actively using the setup hotspot.
+#
+# Independent of comitup.service and the kiosk --user units - a restart
+# of any one of these must never take the others down.
+
+[Unit]
+Description=Adaptive WiFi reconnect watcher (fills the gap in comitup's own retry backoff)
+After=comitup.service
+Wants=comitup.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/wifi-reconnect-watcher.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -365,16 +365,28 @@ def _read_dashboard_url() -> str | None:
 
 # WiFi setup round (2026-10-16) - same shared state file kiosk-wrapper.sh
 # itself reads (see that file's own comment) and comitup-callback.sh
-# writes. While a box is genuinely showing the local setup page instead
-# of DASHBOARD_URL (no known WiFi yet), this check's own origin-matching
-# would correctly, but uselessly, keep finding "no page target matches
-# the kiosk's own origin" and eventually restart kiosk.service - not a
-# bug, just the wrong response to a DELIBERATE, expected state this
-# watchdog had no way to know about before this file existed. Missing
-# state file (comitup not installed on this box) reads as CONNECTED,
-# same default kiosk-wrapper.sh itself uses - this function changes
-# nothing for a box that's never had this feature installed.
+# writes. Missing state file (comitup not installed on this box) reads
+# as CONNECTED, same default kiosk-wrapper.sh itself uses - this
+# function changes nothing for a box that's never had this feature
+# installed.
+#
+# BLANK-SCREEN ROUND (2026-10-16): the first version of this check
+# skipped render-checking ENTIRELY whenever not CONNECTED, reasoning
+# that the dashboard-specific origin/marker check would always
+# (correctly but uselessly) read as "failed" against the setup page's
+# different origin and content. That was too blunt - confirmed on real
+# hardware: with checking fully suppressed, a genuinely stuck/blank
+# setup-mode screen had no safety net at all for as long as the box
+# stayed disconnected (which, per comitup's own fixed retry backoff,
+# can be several minutes). Fixed properly instead: _expected_origin()
+# below picks DASHBOARD_URL's origin when CONNECTED (unchanged) or the
+# local setup page's own origin otherwise, and both the real setup page
+# (wifi-setup-page/index.html) and its zero-dependency connecting.html
+# fallback now set the SAME DOM marker KioskRenderMarker.tsx sets on the
+# real dashboard - so is_render_ok() needs no changes at all, and every
+# mode gets genuine, equal watchdog coverage.
 _NETWORK_STATE_FILE = "/run/airfieldcentral-network-state"
+_SETUP_PAGE_ORIGIN = "http://127.0.0.1:8089"
 
 
 def _network_state() -> str:
@@ -383,6 +395,13 @@ def _network_state() -> str:
             return f.read().strip() or "CONNECTED"
     except OSError:
         return "CONNECTED"
+
+
+def _expected_origin(network_state: str) -> str | None:
+    if network_state != "CONNECTED":
+        return _SETUP_PAGE_ORIGIN
+    dashboard_url = _read_dashboard_url()
+    return _origin(dashboard_url) if dashboard_url else None
 
 
 def _origin(url: str) -> str:
@@ -420,14 +439,12 @@ def _list_page_targets() -> list[dict]:
     return [t for t in targets if t.get("type") == "page"]
 
 
-def _get_page_target() -> dict:
+def _get_page_target(expected_origin: str | None) -> dict:
     pages = _list_page_targets()
     if not pages:
         raise RuntimeError("no CDP 'page' target found")
 
-    dashboard_url = _read_dashboard_url()
-    if dashboard_url:
-        expected_origin = _origin(dashboard_url)
+    if expected_origin:
         match = _find_matching_page(pages, expected_origin)
         if match:
             return match
@@ -470,8 +487,8 @@ def _get_page_target() -> dict:
     return pages[0]
 
 
-def is_render_ok() -> bool:
-    target = _get_page_target()
+def is_render_ok(expected_origin: str | None) -> bool:
+    target = _get_page_target(expected_origin)
     ws_url = target["webSocketDebuggerUrl"]
     request = json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": RENDER_CHECK_EXPRESSION, "returnByValue": True}})
     raw_response = _ws_request(ws_url, request)
@@ -531,21 +548,10 @@ def main() -> None:
         failure_threshold = BOOT_PHASE_FAILURE_THRESHOLD if boot_phase else FAILURE_THRESHOLD
 
         network_state = _network_state()
-        if network_state != "CONNECTED":
-            # WiFi setup round - see _network_state()'s own comment.
-            # Deliberately skips the check entirely rather than counting
-            # it as either an "ok" or a failure - neither accounting
-            # would mean anything while the kiosk is intentionally
-            # showing a different page, and skipping keeps
-            # consecutive_failures from drifting during a setup session
-            # that could reasonably run longer than FAILURE_THRESHOLD *
-            # CHECK_INTERVAL_SECONDS.
-            log.info("render check skipped - network state is %s, not CONNECTED", network_state)
-            time.sleep(check_interval)
-            continue
+        expected_origin = _expected_origin(network_state)
 
         try:
-            ok = is_render_ok()
+            ok = is_render_ok(expected_origin)
         except (urllib.error.URLError, OSError, ConnectionError, RuntimeError, ValueError, KeyError, *_WS_EXCEPTIONS) as error:
             ok = False
             log.warning("render check failed (%s: %s)", type(error).__name__, error)

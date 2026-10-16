@@ -51,6 +51,13 @@
     color: #94a3b8;
     max-width: 60vw;
   }
+  .prompt {
+    margin: 0.4vh 0 0 0;
+    font-size: 1.5vw;
+    font-weight: 700;
+    color: #38bdf8;
+    max-width: 60vw;
+  }
   .panel {
     display: flex;
     align-items: center;
@@ -115,8 +122,9 @@
 <body>
   <div class="brand">Airfield Central</div>
   <div class="wrap">
-    <h1 id="headline">Let's get your screen online</h1>
-    <p class="sub" id="subhead">This screen will show your dashboard as soon as it's connected to your WiFi.</p>
+    <h1 id="headline">WiFi not found. Reconnecting automatically.</h1>
+    <p class="sub" id="subhead">After a power cut this can take up to 10 minutes. You don't need to do anything.</p>
+    <p class="prompt">New WiFi, or the password changed? Scan this code with your phone to set up.</p>
 
     <div class="panel">
       <div class="qr-box">
@@ -140,6 +148,19 @@
   </div>
 
   <script>
+    // Blank-screen round (2026-10-16): sets the SAME DOM marker
+    // KioskRenderMarker.tsx sets on the real dashboard app
+    // (document.documentElement.dataset.kioskRenderOk), so
+    // kiosk-watchdog.py's existing render check - previously skipped
+    // entirely while showing this page (see that file's own comment on
+    // why, and on the real incident that showed skipping entirely was
+    // too blunt) - can now verify THIS page rendered too, using the
+    // exact same check it already uses for the dashboard. Set
+    // unconditionally and immediately, mirroring that component's own
+    // "the instant anything has mounted" philosophy - this is a static
+    // page with nothing to wait on.
+    document.documentElement.dataset.kioskRenderOk = 'true';
+
     // Polls this same tiny local server's own /state endpoint (served by
     // wifi-setup-server.py, see that file's own comment) every 2s, purely
     // to flip this ONE line of text - the page itself never navigates or
