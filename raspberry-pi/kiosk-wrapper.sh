@@ -27,6 +27,43 @@ set -euo pipefail
 CONFIG_FILE="/home/admin/tenant-config.txt"
 CHROMIUM_BIN="chromium"
 
+# --disable-accelerated-video-decode is REQUIRED, not a tuning knob -
+# hardware video decode causes video playback to freeze permanently a
+# few seconds in on this Pi/Chromium combination (confirmed via CPU/GPU
+# load testing); software decode fixed it completely, and the CPU
+# headroom cost is a non-issue (~20% CPU, ~35-40C case temp under
+# sustained playback - well within safe range for a Pi 4).
+# --password-store=basic stops a GNOME Keyring password prompt from
+# stealing focus and blanking the kiosk.
+#
+# Blank-render watchdog round - --remote-debugging-port=9222 exposes
+# Chrome DevTools Protocol so kiosk-watchdog.py can ask the page "did you
+# actually render" (via the KioskRenderMarker.tsx DOM marker) instead of
+# only checking whether the Chromium process is alive, which can't see
+# the diagnosed failure mode (process stable, CPU/GPU idle, blank white
+# page that never recovers). --remote-allow-origins=* is required on
+# current Chromium - without it, DevTools rejects the watchdog's own
+# WebSocket connection outright, since Chromium now treats a bare
+# 127.0.0.1 WebSocket client as an untrusted origin by default. NOT
+# adding --remote-debugging-address - Chromium's default bind is loopback
+# (127.0.0.1) only, and that's deliberate: DevTools grants full JS
+# execution in this browser, so it must never be reachable from the LAN.
+#
+# Defined up here, not just before its first use lower down, because
+# the confirmation-hold block further down (see its own comment) also
+# needs to launch Chromium, before DASHBOARD_URL is even decided.
+CHROMIUM_FLAGS=(
+  --password-store=basic
+  --kiosk
+  --autoplay-policy=no-user-gesture-required
+  --noerrdialogs
+  --disable-infobars
+  --disable-accelerated-video-decode
+  --check-for-update-interval=31536000
+  --remote-debugging-port=9222
+  --remote-allow-origins=*
+)
+
 if [ ! -f "$CONFIG_FILE" ]; then
   echo "kiosk-wrapper: $CONFIG_FILE not found - this Pi hasn't been personalized yet." >&2
   echo "kiosk-wrapper: run ~/personalize-tenant.sh over SSH, then reboot." >&2
@@ -61,6 +98,71 @@ if [ -f "$NETWORK_STATE_FILE" ]; then
 fi
 SETUP_SERVER_URL="http://127.0.0.1:8089/"
 SETUP_CONNECTING_FALLBACK="file:///home/admin/.config/wifi-setup-page/connecting.html"
+
+# Confirmation-hold round (2026-10-16): real-hardware testing showed
+# the "Thanks - connecting to your WiFi" confirmation page flashing for
+# under a second before the dashboard appeared, THREE times, despite
+# two earlier attempts to delay it elsewhere (once in comitup-
+# callback.sh with a flat hold after CONNECTED, once with the hold
+# measured from when CONNECTING first started) - both put the delay in
+# comitup-callback.sh, which only owns WHEN kiosk.service gets told to
+# restart, not what actually gets shown once it does. Nothing stops
+# some OTHER trigger (kiosk-watchdog.py, a retry, anything) from
+# restarting kiosk.service independently during that window, racing
+# past the hold entirely - which is almost certainly what kept
+# happening. Moved here instead: this script is the one place EVERY
+# kiosk.service start funnels through, no matter who or what triggered
+# it, so enforcing the hold here - actually showing the confirmation
+# page for the remaining time before ever considering DASHBOARD_URL -
+# cannot be bypassed by a restart racing in from elsewhere. Comitup-
+# callback.sh still stamps CONNECTING_STARTED_FILE the moment
+# CONNECTING first begins (see that file's own comment) - this just
+# reads it instead of using it to compute someone else's delay.
+#
+# OUTAGE ROUND (2026-10-16): the first version of this block left the
+# TV on the bare desktop with no browser at all - worse than the
+# original problem. Root cause: it ended with `rm -f
+# "$CONNECTING_STARTED_FILE"` to consume the stamp once used, but that
+# file is created by comitup-callback.sh running as ROOT (comitup's own
+# user - see that file's own comment), while this script runs as the
+# admin user - admin cannot delete a root-owned file in /run, `rm`
+# failed with Permission Denied, and under this script's own `set -e`
+# that failure exited the ENTIRE script immediately, before it ever
+# reached the real launch logic below. Confirmed directly: `bash -x`
+# on this script reproduced the exact "Permission denied" and the
+# script dying right there.
+#
+# Fixed two ways, not just the one bug: (1) dropped the rm entirely -
+# it was never actually necessary for correctness, only tidiness; a
+# stale timestamp just makes `remaining` compute as zero or negative
+# below, which already skips the hold - comitup-callback.sh's own
+# cleanup on the next HOTSPOT entry is enough. (2) the whole block now
+# runs with `set +e` restored to `set -e` only once it's fully done, so
+# ANY future failure in here - this one or one not yet discovered -
+# can never again prevent the real launch logic after it from running.
+# This directly satisfies the one rule that actually matters here: the
+# kiosk must always relaunch, no matter what this block does.
+CONNECTING_STARTED_FILE="/run/airfieldcentral-connecting-started"
+MIN_VISIBLE_SECONDS=10
+
+if [ "$NETWORK_STATE" = "CONNECTED" ] && [ -f "$CONNECTING_STARTED_FILE" ]; then
+  set +e
+  started="$(cat "$CONNECTING_STARTED_FILE" 2>/dev/null)"
+  case "$started" in
+    ''|*[!0-9]*) started=0 ;;
+  esac
+  elapsed=$(( $(date +%s) - started ))
+  remaining=$(( MIN_VISIBLE_SECONDS - elapsed ))
+  if [ "$remaining" -gt 0 ] 2>/dev/null; then
+    echo "kiosk-wrapper: holding on the setup page's confirmation screen for ${remaining}s before the dashboard" >&2
+    "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$SETUP_SERVER_URL" &
+    HOLD_PID=$!
+    sleep "$remaining"
+    kill -9 "$HOLD_PID" 2>/dev/null
+    wait "$HOLD_PID" 2>/dev/null
+  fi
+  set -e
+fi
 
 if [ "$NETWORK_STATE" = "CONNECTED" ]; then
   EFFECTIVE_URL="$DASHBOARD_URL"
@@ -137,39 +239,6 @@ if [ "$EFFECTIVE_URL" = "$DASHBOARD_URL" ]; then
     sleep 1
   done
 fi
-
-# --disable-accelerated-video-decode is REQUIRED, not a tuning knob -
-# hardware video decode causes video playback to freeze permanently a
-# few seconds in on this Pi/Chromium combination (confirmed via CPU/GPU
-# load testing); software decode fixed it completely, and the CPU
-# headroom cost is a non-issue (~20% CPU, ~35-40C case temp under
-# sustained playback - well within safe range for a Pi 4).
-# --password-store=basic stops a GNOME Keyring password prompt from
-# stealing focus and blanking the kiosk.
-#
-# Blank-render watchdog round - --remote-debugging-port=9222 exposes
-# Chrome DevTools Protocol so kiosk-watchdog.py can ask the page "did you
-# actually render" (via the KioskRenderMarker.tsx DOM marker) instead of
-# only checking whether the Chromium process is alive, which can't see
-# the diagnosed failure mode (process stable, CPU/GPU idle, blank white
-# page that never recovers). --remote-allow-origins=* is required on
-# current Chromium - without it, DevTools rejects the watchdog's own
-# WebSocket connection outright, since Chromium now treats a bare
-# 127.0.0.1 WebSocket client as an untrusted origin by default. NOT
-# adding --remote-debugging-address - Chromium's default bind is loopback
-# (127.0.0.1) only, and that's deliberate: DevTools grants full JS
-# execution in this browser, so it must never be reachable from the LAN.
-CHROMIUM_FLAGS=(
-  --password-store=basic
-  --kiosk
-  --autoplay-policy=no-user-gesture-required
-  --noerrdialogs
-  --disable-infobars
-  --disable-accelerated-video-decode
-  --check-for-update-interval=31536000
-  --remote-debugging-port=9222
-  --remote-allow-origins=*
-)
 
 "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$EFFECTIVE_URL" &
 FIRST_LAUNCH_PID=$!
