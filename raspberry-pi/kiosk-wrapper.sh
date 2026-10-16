@@ -41,6 +41,31 @@ if [ -z "${DASHBOARD_URL:-}" ]; then
   exit 1
 fi
 
+# WiFi setup round (2026-10-16) - comitup-callback.sh (see that file's
+# own comment) writes the Pi's current network state to this one shared
+# file on every comitup state transition, and restarts kiosk.service on
+# an actual connected/not-connected change - which is what gets THIS
+# script re-run with the now-current value. HOTSPOT and CONNECTING both
+# mean "not connected yet" here (same coarse bucket comitup-callback.sh
+# itself uses to decide whether to restart at all) - the brief
+# HOTSPOT->CONNECTING distinction only matters to wifi-setup-server.py's
+# own status-line poll, not to which URL Chromium gets handed. Missing
+# state file (comitup not installed on this box, or a box that's never
+# gone through a WiFi transition since boot) reads as CONNECTED - the
+# existing, unmodified behaviour for every box that doesn't have this
+# feature installed at all.
+NETWORK_STATE_FILE="/run/airfieldcentral-network-state"
+NETWORK_STATE="CONNECTED"
+if [ -f "$NETWORK_STATE_FILE" ]; then
+  NETWORK_STATE="$(cat "$NETWORK_STATE_FILE" 2>/dev/null || echo "CONNECTED")"
+fi
+if [ "$NETWORK_STATE" = "CONNECTED" ]; then
+  EFFECTIVE_URL="$DASHBOARD_URL"
+else
+  EFFECTIVE_URL="http://127.0.0.1:8089/"
+  echo "kiosk-wrapper: network state is $NETWORK_STATE - showing the local WiFi setup page instead of $DASHBOARD_URL" >&2
+fi
+
 # Boot-timing round (2026-08-29): kiosk.service's own ExecStartPre already
 # waits for the Wayland SOCKET to exist, but nothing here previously
 # waited for the NETWORK to actually be usable - on a real cold boot,
@@ -62,16 +87,25 @@ fi
 # the existing double-launch/watchdog machinery take over, not hang here
 # forever. --max-time bounds each individual attempt so one hung request
 # can't itself consume the whole budget in one shot.
-NETWORK_WAIT_TIMEOUT_SECONDS=30
-network_wait_start=$(date +%s)
-until curl --silent --output /dev/null --max-time 3 "$DASHBOARD_URL"; do
-  elapsed=$(( $(date +%s) - network_wait_start ))
-  if [ "$elapsed" -ge "$NETWORK_WAIT_TIMEOUT_SECONDS" ]; then
-    echo "kiosk-wrapper: network not reachable after ${NETWORK_WAIT_TIMEOUT_SECONDS}s - launching anyway (double-launch/watchdog will retry)" >&2
-    break
-  fi
-  sleep 1
-done
+#
+# WiFi setup round - only waits at all when actually about to show the
+# real dashboard. The local setup page is served from 127.0.0.1, always
+# instantly reachable with zero network of any kind - waiting up to 30s
+# for DASHBOARD_URL first would just be dead time in front of a visitor
+# staring at a blank screen during the one moment (no known WiFi at all)
+# this page exists to help with.
+if [ "$EFFECTIVE_URL" = "$DASHBOARD_URL" ]; then
+  NETWORK_WAIT_TIMEOUT_SECONDS=30
+  network_wait_start=$(date +%s)
+  until curl --silent --output /dev/null --max-time 3 "$DASHBOARD_URL"; do
+    elapsed=$(( $(date +%s) - network_wait_start ))
+    if [ "$elapsed" -ge "$NETWORK_WAIT_TIMEOUT_SECONDS" ]; then
+      echo "kiosk-wrapper: network not reachable after ${NETWORK_WAIT_TIMEOUT_SECONDS}s - launching anyway (double-launch/watchdog will retry)" >&2
+      break
+    fi
+    sleep 1
+  done
+fi
 
 # --disable-accelerated-video-decode is REQUIRED, not a tuning knob -
 # hardware video decode causes video playback to freeze permanently a
@@ -106,7 +140,7 @@ CHROMIUM_FLAGS=(
   --remote-allow-origins=*
 )
 
-"$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$DASHBOARD_URL" &
+"$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$EFFECTIVE_URL" &
 FIRST_LAUNCH_PID=$!
 sleep 15
 kill -9 "$FIRST_LAUNCH_PID" 2>/dev/null || true
@@ -115,4 +149,4 @@ wait "$FIRST_LAUNCH_PID" 2>/dev/null || true
 # exec, not another backgrounded launch + wait - replaces this wrapper
 # process with Chromium itself, so systemd tracks Chromium's own PID
 # directly as the service's main process from here on.
-exec "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$DASHBOARD_URL"
+exec "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$EFFECTIVE_URL"

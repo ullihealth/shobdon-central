@@ -363,6 +363,28 @@ def _read_dashboard_url() -> str | None:
     return match.group(1)
 
 
+# WiFi setup round (2026-10-16) - same shared state file kiosk-wrapper.sh
+# itself reads (see that file's own comment) and comitup-callback.sh
+# writes. While a box is genuinely showing the local setup page instead
+# of DASHBOARD_URL (no known WiFi yet), this check's own origin-matching
+# would correctly, but uselessly, keep finding "no page target matches
+# the kiosk's own origin" and eventually restart kiosk.service - not a
+# bug, just the wrong response to a DELIBERATE, expected state this
+# watchdog had no way to know about before this file existed. Missing
+# state file (comitup not installed on this box) reads as CONNECTED,
+# same default kiosk-wrapper.sh itself uses - this function changes
+# nothing for a box that's never had this feature installed.
+_NETWORK_STATE_FILE = "/run/airfieldcentral-network-state"
+
+
+def _network_state() -> str:
+    try:
+        with open(_NETWORK_STATE_FILE, encoding="utf-8") as f:
+            return f.read().strip() or "CONNECTED"
+    except OSError:
+        return "CONNECTED"
+
+
 def _origin(url: str) -> str:
     parsed = urlparse(url)
     return f"{parsed.scheme}://{parsed.netloc}"
@@ -507,6 +529,20 @@ def main() -> None:
     while True:
         check_interval = BOOT_PHASE_CHECK_INTERVAL_SECONDS if boot_phase else CHECK_INTERVAL_SECONDS
         failure_threshold = BOOT_PHASE_FAILURE_THRESHOLD if boot_phase else FAILURE_THRESHOLD
+
+        network_state = _network_state()
+        if network_state != "CONNECTED":
+            # WiFi setup round - see _network_state()'s own comment.
+            # Deliberately skips the check entirely rather than counting
+            # it as either an "ok" or a failure - neither accounting
+            # would mean anything while the kiosk is intentionally
+            # showing a different page, and skipping keeps
+            # consecutive_failures from drifting during a setup session
+            # that could reasonably run longer than FAILURE_THRESHOLD *
+            # CHECK_INTERVAL_SECONDS.
+            log.info("render check skipped - network state is %s, not CONNECTED", network_state)
+            time.sleep(check_interval)
+            continue
 
         try:
             ok = is_render_ok()

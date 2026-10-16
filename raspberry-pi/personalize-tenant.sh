@@ -8,9 +8,7 @@
 #      hostname you want this Pi to have on the network.
 #   2. Shows you a summary and asks you to confirm.
 #   3. Writes /home/admin/tenant-config.txt - kiosk-wrapper.sh reads this
-#      on every boot to know which dashboard to show. This is the ONLY
-#      thing that makes one Pi different from another; nothing else on
-#      the SD card changes between tenants.
+#      on every boot to know which dashboard to show.
 #   4. Sets the Pi's hostname via raspi-config.
 #   5. Clears Chromium's SingletonLock/SingletonSocket/SingletonCookie
 #      files, if present, from the kiosk's Chromium profile (2026-10-14 -
@@ -24,7 +22,30 @@
 #      - because it can't tell the stale local lock apart from a real
 #      remote one. Harmless to delete unconditionally; Chromium just
 #      recreates them on its next successful launch.
-#   6. Reboots. The kiosk starts showing the new tenant's dashboard
+#   6. Identity round (2026-10-16) - fixes a real gap this same script
+#      left open: steps 3/4 above were never the ONLY thing that made one
+#      Pi different from another, they were just the only thing this
+#      script touched. AA0001 and AA0003 were both made by `dd`-cloning
+#      Meg's Cafe's live card directly, then running (only) this script -
+#      which changes the hostname and tenant-config.txt, but leaves
+#      /etc/machine-id, the SSH host keys, and any already-registered
+#      Tailscale/Raspberry Pi Connect identity exactly as they were on
+#      the source card. Two Pis can pass as hostname-different but still
+#      be indistinguishable underneath - a real risk once more than one
+#      box exists. This step now also:
+#        - Regenerates /etc/machine-id (systemd-machine-id-setup) and the
+#          SSH host keys (ssh-keygen -A) - cheap, unconditional, every run
+#          from now on, not just when a clone is suspected.
+#        - Logs this box out of Tailscale and Raspberry Pi Connect if
+#          either is currently signed in (clearing whatever identity the
+#          source card's disk carried), then calls setup-remote-access.sh
+#          (same directory, left completely unchanged - see that file's
+#          own comment) so the box re-registers as a brand-new device
+#          under its NEW hostname. That script's own interactive sign-in
+#          links are printed here exactly as it already prints them -
+#          THIS script makes no attempt to complete them; only a human
+#          can click a sign-in link.
+#   7. Reboots. The kiosk starts showing the new tenant's dashboard
 #      automatically from here on - nothing else to do.
 #
 # Usage:
@@ -47,6 +68,14 @@
 #       are valid before committing, or for testing this script itself
 #       off a real Pi.
 #
+#   ./personalize-tenant.sh --url ... --hostname ... --skip-remote-access
+#       Same as the normal run, but skips the Tailscale/Raspberry Pi
+#       Connect logout+re-registration step entirely (identity still
+#       gets regenerated - machine-id, SSH host keys). Use this if you
+#       want to do the hostname/identity work now and the remote-access
+#       sign-in dance later, rather than being asked to click links right
+#       away.
+#
 # Safe to re-run if you make a mistake - it just overwrites
 # tenant-config.txt and re-sets the hostname; there's no state from a
 # previous run that needs cleaning up first.
@@ -58,11 +87,15 @@ set -euo pipefail
 # never set in production, where CONFIG_FILE is always the real path.
 CONFIG_FILE="${TENANT_CONFIG_FILE_OVERRIDE:-/home/admin/tenant-config.txt}"
 CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR_OVERRIDE:-$HOME/.config/chromium}"
+# Identity round - same off-Pi-testing escape hatch as CONFIG_FILE/
+# CHROMIUM_PROFILE_DIR above, never set in production.
+SETUP_REMOTE_ACCESS_SCRIPT="${SETUP_REMOTE_ACCESS_SCRIPT_OVERRIDE:-$(dirname "$0")/setup-remote-access.sh}"
 DASHBOARD_URL=""
 TENANT_HOSTNAME=""
 DRY_RUN=0
 ASSUME_YES=0
 SKIP_REBOOT=0
+SKIP_REMOTE_ACCESS=0
 
 print_usage() {
   grep '^#' "$0" | sed '1d;s/^# \{0,1\}//'
@@ -88,6 +121,10 @@ while [ $# -gt 0 ]; do
       ;;
     --no-reboot)
       SKIP_REBOOT=1
+      shift
+      ;;
+    --skip-remote-access)
+      SKIP_REMOTE_ACCESS=1
       shift
       ;;
     -h|--help)
@@ -183,6 +220,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "$CONFIG_CONTENTS"
   echo "--- Would run: sudo raspi-config nonint do_hostname $TENANT_HOSTNAME ---"
   echo "--- Would remove (if present): $CHROMIUM_PROFILE_DIR/SingletonLock, SingletonSocket, SingletonCookie ---"
+  echo "--- Would run: sudo rm -f /etc/machine-id && sudo systemd-machine-id-setup ---"
+  echo "--- Would run: sudo rm -f /etc/ssh/ssh_host_* && sudo ssh-keygen -A ---"
+  if [ "$SKIP_REMOTE_ACCESS" -ne 1 ]; then
+    echo "--- Would log out of Tailscale/Raspberry Pi Connect if currently signed in, then run: $SETUP_REMOTE_ACCESS_SCRIPT --tailscale-hostname $TENANT_HOSTNAME ---"
+  fi
   if [ "$SKIP_REBOOT" -ne 1 ]; then
     echo "--- Would run: sudo reboot ---"
   fi
@@ -213,6 +255,59 @@ fi
 # the profile (history, cookies, cache, etc).
 rm -f "$CHROMIUM_PROFILE_DIR/SingletonLock" "$CHROMIUM_PROFILE_DIR/SingletonSocket" "$CHROMIUM_PROFILE_DIR/SingletonCookie"
 echo "Cleared any stale Chromium SingletonLock/SingletonSocket/SingletonCookie in $CHROMIUM_PROFILE_DIR"
+
+# --- Fresh machine-id and SSH host keys (identity round, 2026-10-16) ------
+
+# See this file's own top comment for the full "why" - a dd-cloned card
+# carries the source Pi's machine-id and SSH host keys unless something
+# explicitly regenerates them; hostname alone doesn't touch either.
+# command -v guards (same posture as the raspi-config check above) so
+# this script still runs cleanly when tested off a real Pi.
+if command -v systemd-machine-id-setup >/dev/null 2>&1; then
+  sudo rm -f /etc/machine-id
+  sudo systemd-machine-id-setup
+  echo "Regenerated /etc/machine-id"
+else
+  echo "systemd-machine-id-setup not found - skipping machine-id regeneration." >&2
+  echo "(This is expected if you're testing this script somewhere other than the Pi itself.)" >&2
+fi
+
+if command -v ssh-keygen >/dev/null 2>&1 && [ -d /etc/ssh ]; then
+  sudo rm -f /etc/ssh/ssh_host_*
+  sudo ssh-keygen -A >/dev/null
+  echo "Regenerated SSH host keys"
+else
+  echo "ssh-keygen or /etc/ssh not found - skipping SSH host key regeneration." >&2
+  echo "(This is expected if you're testing this script somewhere other than the Pi itself.)" >&2
+fi
+
+# --- Re-register remote access under the new identity ----------------------
+
+# A box whose disk came from an already-signed-in Pi (dd-clone) may
+# already be logged in under the SOURCE Pi's own Tailscale/Raspberry Pi
+# Connect identity - logging out first (only if actually signed in, so a
+# genuinely fresh box is a silent no-op here) is what makes the
+# subsequent setup-remote-access.sh call register a truly NEW device
+# under this box's own new hostname, not resume the old one's session.
+if [ "$SKIP_REMOTE_ACCESS" -eq 1 ]; then
+  echo "Skipping remote-access re-registration (--skip-remote-access) - run setup-remote-access.sh yourself when ready."
+elif [ ! -x "$SETUP_REMOTE_ACCESS_SCRIPT" ]; then
+  echo "setup-remote-access.sh not found at $SETUP_REMOTE_ACCESS_SCRIPT - skipping remote-access re-registration." >&2
+  echo "(This is expected if you're testing this script somewhere other than the Pi itself.)" >&2
+else
+  if command -v tailscale >/dev/null 2>&1 && sudo tailscale status >/dev/null 2>&1 && ! sudo tailscale status 2>&1 | grep -q 'Logged out'; then
+    echo "Logging out of Tailscale (currently signed in, possibly under the source card's own identity)..."
+    sudo tailscale logout
+  fi
+  if command -v rpi-connect >/dev/null 2>&1 && rpi-connect status 2>/dev/null | grep -q '^Signed in: yes'; then
+    echo "Signing out of Raspberry Pi Connect (currently signed in, possibly under the source card's own identity)..."
+    rpi-connect signout
+  fi
+  echo ""
+  echo "Re-registering remote access as a new device ($TENANT_HOSTNAME) - this needs you to click two sign-in links, see below."
+  echo ""
+  "$SETUP_REMOTE_ACCESS_SCRIPT" --tailscale-hostname "$TENANT_HOSTNAME"
+fi
 
 # --- Reboot ---------------------------------------------------------------
 

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Set up WiFi</title>
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #020617;
+    color: #f1f5f9;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  .wrap {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2.2vh;
+    text-align: center;
+    padding: 4vh 4vw;
+  }
+  .brand {
+    position: fixed;
+    top: 3vh;
+    left: 4vw;
+    font-weight: 800;
+    font-size: 1.6vw;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #38bdf8;
+  }
+  h1 {
+    margin: 0;
+    font-size: 3.4vw;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  .sub {
+    margin: 0;
+    font-size: 1.6vw;
+    color: #94a3b8;
+    max-width: 60vw;
+  }
+  .panel {
+    display: flex;
+    align-items: center;
+    gap: 3.5vw;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 1.4vw;
+    padding: 3vh 3.5vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .qr-box {
+    background: #f1f5f9;
+    padding: 1vw;
+    border-radius: 0.8vw;
+    line-height: 0;
+  }
+  .qr-box img {
+    width: 18vw;
+    height: 18vw;
+    display: block;
+  }
+  .creds {
+    text-align: left;
+  }
+  .creds .label {
+    font-size: 1.1vw;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .creds .value {
+    font-size: 2.6vw;
+    font-weight: 800;
+    color: #f1f5f9;
+    margin: 0.2vh 0 1.6vh 0;
+    letter-spacing: 0.02em;
+    word-break: break-word;
+  }
+  .steps {
+    margin-top: 1vh;
+    font-size: 1.3vw;
+    color: #cbd5e1;
+    max-width: 50vw;
+    line-height: 1.6;
+  }
+  .steps b { color: #38bdf8; }
+  #status-line {
+    font-size: 1.4vw;
+    font-weight: 700;
+    color: #38bdf8;
+    min-height: 1.4em;
+  }
+  #status-line.connected {
+    color: #4ade80;
+  }
+</style>
+</head>
+<body>
+  <div class="brand">Airfield Central</div>
+  <div class="wrap">
+    <h1 id="headline">Let's get your screen online</h1>
+    <p class="sub" id="subhead">This screen will show your dashboard as soon as it's connected to your WiFi.</p>
+
+    <div class="panel">
+      <div class="qr-box">
+        <img src="/wifi-qr.png" alt="WiFi QR code" />
+      </div>
+      <div class="creds">
+        <div class="label">Network name</div>
+        <div class="value" id="ssid-value">__SSID__</div>
+        <div class="label">Password</div>
+        <div class="value" id="password-value">__PASSWORD__</div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <b>1.</b> Open your phone's camera and point it at the QR code above<br />
+      <b>2.</b> Tap the notification that appears to join<br />
+      <b>3.</b> Pick your WiFi network from the list and enter its password
+    </div>
+
+    <div id="status-line">Waiting for a phone to join&hellip;</div>
+  </div>
+
+  <script>
+    // Polls this same tiny local server's own /state endpoint (served by
+    // wifi-setup-server.py, see that file's own comment) every 2s, purely
+    // to flip this ONE line of text - the page itself never navigates or
+    // reloads on its own. The actual switch to the real dashboard happens
+    // a different way entirely (comitup-callback.sh restarting
+    // kiosk.service once truly connected - see that script's own
+    // comment), which is a hard relaunch onto a different URL, not
+    // something this page can or should attempt itself.
+    var statusEl = document.getElementById('status-line');
+    function poll() {
+      fetch('/state', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.state === 'CONNECTING') {
+            statusEl.textContent = 'Connected - starting your screen…';
+            statusEl.classList.add('connected');
+          } else {
+            statusEl.textContent = 'Waiting for a phone to join…';
+            statusEl.classList.remove('connected');
+          }
+        })
+        .catch(function () { /* local server hiccup - try again next tick */ });
+    }
+    poll();
+    setInterval(poll, 2000);
+  </script>
+</body>
+</html>
