@@ -129,6 +129,17 @@ SETUP_CONNECTING_FALLBACK="file:///home/admin/.config/wifi-setup-page/connecting
 # state file, the template, the write - EFFECTIVE_URL simply stays
 # DASHBOARD_URL and the kiosk launches normally. The confirmation
 # message is a nice-to-have; the dashboard loading is not optional.
+# Single-confirmation round (2026-10-17): the "Connected" message was
+# showing TWICE - once on each of the double-launch's two launches
+# below, since both were previously handed the same EFFECTIVE_URL.
+# Fixed by giving the FIRST (deliberately throwaway, killed after 15s)
+# launch a separate, plain "Starting your screen..." page instead
+# (starting-screen.html - nothing to confirm, nothing to click) -
+# FIRST_LAUNCH_URL defaults to the same as EFFECTIVE_URL and is only
+# overridden below in the one case that needs it to differ. The
+# double-launch mechanism itself is completely unchanged - this only
+# changes which URL each of its two launches is given.
+STARTING_SCREEN_URL="file:///home/admin/.config/wifi-setup-page/starting-screen.html"
 LAST_SEEN_STATE_FILE="/home/admin/.cache/airfieldcentral-last-seen-network-state"
 CONFIRMATION_TEMPLATE="/home/admin/.config/wifi-setup-page/connected-confirmation.html"
 CONFIRMATION_PAGE="/home/admin/.cache/airfieldcentral-connected-confirmation.html"
@@ -153,6 +164,7 @@ echo "$NETWORK_STATE" > "$LAST_SEEN_STATE_FILE" 2>/dev/null || true
 
 if [ "$NETWORK_STATE" = "CONNECTED" ]; then
   EFFECTIVE_URL="$DASHBOARD_URL"
+  FIRST_LAUNCH_URL="$DASHBOARD_URL"
   if [ "$SHOW_CONFIRMATION" -eq 1 ]; then
     set +e
     sed "s|__DASHBOARD_URL__|${DASHBOARD_URL}|g" "$CONFIRMATION_TEMPLATE" > "$CONFIRMATION_PAGE" 2>/dev/null
@@ -160,7 +172,8 @@ if [ "$NETWORK_STATE" = "CONNECTED" ]; then
     set -e
     if [ "$template_ok" -eq 0 ] && [ -s "$CONFIRMATION_PAGE" ]; then
       EFFECTIVE_URL="$CONFIRMATION_URL"
-      echo "kiosk-wrapper: fresh connection - showing the Connected confirmation page first" >&2
+      FIRST_LAUNCH_URL="$STARTING_SCREEN_URL"
+      echo "kiosk-wrapper: fresh connection - final launch will show the Connected confirmation page" >&2
     else
       echo "kiosk-wrapper: could not prepare the confirmation page - launching the dashboard directly" >&2
     fi
@@ -195,6 +208,7 @@ else
     EFFECTIVE_URL="$SETUP_CONNECTING_FALLBACK"
     echo "kiosk-wrapper: local WiFi setup server not responding after ${SETUP_SERVER_WAIT_TIMEOUT_SECONDS}s - showing the static connecting.html fallback instead" >&2
   fi
+  FIRST_LAUNCH_URL="$EFFECTIVE_URL"
   echo "kiosk-wrapper: network state is $NETWORK_STATE - showing $EFFECTIVE_URL instead of $DASHBOARD_URL" >&2
 fi
 
@@ -255,7 +269,7 @@ fi
 nohup python3 /home/admin/.config/systemd/user/set-dark-background.py >/dev/null 2>&1 < /dev/null &
 disown
 
-"$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$EFFECTIVE_URL" &
+"$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$FIRST_LAUNCH_URL" &
 FIRST_LAUNCH_PID=$!
 sleep 15
 kill -9 "$FIRST_LAUNCH_PID" 2>/dev/null || true

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Starting</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #020617;
+    color: #94a3b8;
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  .wrap {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5vh;
+  }
+  .brand {
+    font-weight: 800;
+    font-size: 2.6vw;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #38bdf8;
+  }
+  p {
+    margin: 0;
+    font-size: 1.6vw;
+  }
+</style>
+</head>
+<body>
+  <!--
+    Single-confirmation round (2026-10-17): the "Connected" message was
+    showing TWICE - once on each of kiosk-wrapper.sh's own deliberate
+    double-launch's two Chromium launches, since both were previously
+    handed the SAME EFFECTIVE_URL (see that file's own comment). Fixed
+    by giving each launch its own URL instead: this plain page, with
+    nothing to confirm and nothing to click, is what the FIRST
+    (deliberately throwaway, killed after 15s) launch shows now - the
+    SECOND (exec'd, the one that actually persists) launch is the only
+    one that ever shows connected-confirmation.html. The double-launch
+    mechanism itself - why it exists, why it's load-bearing - is
+    completely untouched; this only changes which URL each of its two
+    launches is given.
+  -->
+  <div class="wrap">
+    <div class="brand">Airfield Central</div>
+    <p>Starting your screen&hellip;</p>
+  </div>
+  <script>
+    document.documentElement.dataset.kioskRenderOk = 'true';
+  </script>
+</body>
+</html>
