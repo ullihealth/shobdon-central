@@ -33,6 +33,16 @@ interface PiUnitRow {
   status: string;
   createdAt: string;
   updatedAt: string;
+  // TV wake/sleep schedule round (migration 0114) - see
+  // [id]/tv-schedule-override.ts's own comment for the override fields.
+  tvScheduleEnabled: number;
+  tvScheduleJson: string | null;
+  tvScheduleOverrideState: string | null;
+  tvScheduleOverrideUntil: string | null;
+  tvScheduleLastSeenAt: string | null;
+  tvScheduleLastCommand: string | null;
+  tvScheduleLastCommandAt: string | null;
+  tvScheduleLastError: string | null;
 }
 
 interface PiUnitNoteRow {
@@ -46,7 +56,11 @@ const UNIT_COLUMNS = `id, serial_number AS serialNumber, tenant_name AS tenantNa
    contact_name AS contactName, contact_email AS contactEmail, contact_phone AS contactPhone,
    wifi_network_name AS wifiNetworkName, date_issued AS dateIssued, hostname, dashboard_url AS dashboardUrl,
    master_image_version AS masterImageVersion, image_source_link AS imageSourceLink, status,
-   created_at AS createdAt, updated_at AS updatedAt`;
+   created_at AS createdAt, updated_at AS updatedAt,
+   tv_schedule_enabled AS tvScheduleEnabled, tv_schedule_json AS tvScheduleJson,
+   tv_schedule_override_state AS tvScheduleOverrideState, tv_schedule_override_until AS tvScheduleOverrideUntil,
+   tv_schedule_last_seen_at AS tvScheduleLastSeenAt, tv_schedule_last_command AS tvScheduleLastCommand,
+   tv_schedule_last_command_at AS tvScheduleLastCommandAt, tv_schedule_last_error AS tvScheduleLastError`;
 
 export const STATUS_OPTIONS = ["active", "spare", "faulty", "retired"] as const;
 
@@ -75,9 +89,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     notesByUnit.set(row.piUnitId, list);
   }
 
+  const now = Date.now();
+
   return jsonResponse({
     units: units.map((unit) => ({
       ...unit,
+      tvScheduleEnabled: !!unit.tvScheduleEnabled,
+      tvSchedule: unit.tvScheduleJson ? JSON.parse(unit.tvScheduleJson) : null,
+      // Display convenience only - the real expiry/clearing happens
+      // server-side on the box's own poll check-in (functions/api/
+      // public/pi-units/tv-schedule.ts), which lazily clears a stale
+      // override in D1 the next time the box actually checks in. This
+      // flag just lets the card show "active until HH:MM" vs. nothing
+      // without the admin needing to wait for that next poll first.
+      tvScheduleOverrideActive: !!(unit.tvScheduleOverrideUntil && new Date(unit.tvScheduleOverrideUntil).getTime() > now),
       notes: (notesByUnit.get(unit.id) ?? []).map((note) => ({
         id: note.id,
         noteText: note.noteText,
@@ -126,5 +151,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(`SELECT ${UNIT_COLUMNS} FROM pi_units WHERE serial_number = ?`)
     .bind(serialNumber)
     .first<PiUnitRow>();
-  return jsonResponse({ ...created, notes: [] }, 201);
+  return jsonResponse(
+    { ...created, tvScheduleEnabled: false, tvSchedule: null, tvScheduleOverrideActive: false, notes: [] },
+    201
+  );
 };

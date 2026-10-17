@@ -38,6 +38,39 @@ interface PiUnit {
   createdAt: string
   updatedAt: string
   notes: PiUnitNote[]
+  // TV wake/sleep schedule round (migration 0114).
+  tvScheduleEnabled: boolean
+  tvSchedule: TvSchedule | null
+  tvScheduleOverrideState: 'wake' | 'sleep' | null
+  tvScheduleOverrideUntil: string | null
+  tvScheduleOverrideActive: boolean
+  tvScheduleLastSeenAt: string | null
+  tvScheduleLastCommand: string | null
+  tvScheduleLastCommandAt: string | null
+  tvScheduleLastError: string | null
+}
+
+const WEEKDAYS: { key: keyof TvSchedule; label: string }[] = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+]
+
+interface TvDaySchedule {
+  wake: string
+  sleep: string
+  off: boolean
+}
+
+type TvSchedule = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', TvDaySchedule>
+
+function defaultTvSchedule(): TvSchedule {
+  const day: TvDaySchedule = { wake: '07:00', sleep: '22:00', off: false }
+  return { mon: { ...day }, tue: { ...day }, wed: { ...day }, thu: { ...day }, fri: { ...day }, sat: { ...day }, sun: { ...day } }
 }
 
 function formatDateTime(iso: string): string {
@@ -91,6 +124,200 @@ function StatusBadge({ status }: { status: string }): JSX.Element {
   )
 }
 
+function formatTimeAgo(iso: string | null): string {
+  if (!iso) return 'never'
+  const ms = Date.now() - new Date(iso).getTime()
+  if (ms < 0) return 'just now'
+  const minutes = Math.floor(ms / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 48) return `${hours}h ago`
+  return formatDateTime(iso)
+}
+
+// TV wake/sleep schedule round (migration 0114) - HDMI-CEC, per-box
+// (not per-tenant, same posture as the rest of this table - see
+// migration's own comment). requirePlatformAdmin-only, same as every
+// other control on this page; tenants never see this at all.
+//
+// Keyed by unit.id in UnitDetail below (same remount-on-switch pattern
+// TextField's own comment documents) so switching units always starts
+// from that unit's own saved schedule, not a stale draft.
+function TvScheduleCard({
+  unit,
+  onSave,
+  onOverride,
+}: {
+  unit: PiUnit
+  onSave: (patch: { tvScheduleEnabled: boolean; tvSchedule: TvSchedule }) => Promise<void>
+  onOverride: (action: 'wake' | 'sleep' | 'clear') => Promise<void>
+}): JSX.Element {
+  const [enabled, setEnabled] = useState(unit.tvScheduleEnabled)
+  const [schedule, setSchedule] = useState<TvSchedule>(unit.tvSchedule ?? defaultTvSchedule())
+  const [saving, setSaving] = useState(false)
+  const [overrideBusy, setOverrideBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  function updateDay(key: keyof TvSchedule, patch: Partial<TvDaySchedule>) {
+    setSchedule((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+    setSaved(false)
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+    try {
+      await onSave({ tvScheduleEnabled: enabled, tvSchedule: schedule })
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save schedule')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleOverride(action: 'wake' | 'sleep' | 'clear') {
+    setOverrideBusy(true)
+    setError(null)
+    try {
+      await onOverride(action)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set override')
+    } finally {
+      setOverrideBusy(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-border bg-panel p-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">TV schedule (HDMI-CEC)</div>
+        <label className="flex items-center gap-2 text-sm text-muted-300">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => {
+              setEnabled(e.target.checked)
+              setSaved(false)
+            }}
+          />
+          Enabled
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        {WEEKDAYS.map(({ key, label }) => {
+          const day = schedule[key]
+          return (
+            <div key={key} className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
+              <span className="w-24 shrink-0 text-sm text-muted-300">{label}</span>
+              <label className="flex items-center gap-1.5 text-xs text-muted-400">
+                <input type="checkbox" checked={day.off} onChange={(e) => updateDay(key, { off: e.target.checked })} />
+                Off all day
+              </label>
+              {!day.off && (
+                <>
+                  <label className="flex items-center gap-1.5 text-xs text-muted-400">
+                    Wake
+                    <input
+                      type="time"
+                      value={day.wake}
+                      onChange={(e) => updateDay(key, { wake: e.target.value })}
+                      className="rounded border border-slate-700 bg-slate-900/80 px-2 py-1 text-sm text-white focus:border-sky-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs text-muted-400">
+                    Sleep
+                    <input
+                      type="time"
+                      value={day.sleep}
+                      onChange={(e) => updateDay(key, { sleep: e.target.value })}
+                      className="rounded border border-slate-700 bg-slate-900/80 px-2 py-1 text-sm text-white focus:border-sky-500 focus:outline-none"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-lg bg-accent-sky-500 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white hover:bg-accent-sky-400 disabled:opacity-40"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span className="text-xs text-status-good">Saved</span>}
+        {error && <span className="text-xs text-status-bad">{error}</span>}
+      </div>
+
+      <div className="mt-4 border-t border-border/60 pt-3">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-400">Test</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleOverride('wake')}
+            disabled={overrideBusy}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-muted-300 hover:border-slate-500 hover:text-white disabled:opacity-40"
+          >
+            Wake now
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOverride('sleep')}
+            disabled={overrideBusy}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-muted-300 hover:border-slate-500 hover:text-white disabled:opacity-40"
+          >
+            Sleep now
+          </button>
+          {unit.tvScheduleOverrideActive && (
+            <>
+              <span className="text-xs text-accent-sky-400">
+                Override: {unit.tvScheduleOverrideState} until{' '}
+                {unit.tvScheduleOverrideUntil ? formatDateTime(unit.tvScheduleOverrideUntil) : '—'}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleOverride('clear')}
+                disabled={overrideBusy}
+                className="rounded-lg border border-status-bad px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-status-bad hover:bg-status-bad/10 disabled:opacity-40"
+              >
+                Clear override
+              </button>
+            </>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-muted-500">
+          Picked up on the box's next check (within a minute), not instantly - the box only polls, there's no live push to it.
+        </p>
+      </div>
+
+      <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-500">
+        <div>Last seen: {formatTimeAgo(unit.tvScheduleLastSeenAt)}</div>
+        <div>
+          Last command: {unit.tvScheduleLastCommand ?? '—'}
+          {unit.tvScheduleLastCommandAt ? ` (${formatTimeAgo(unit.tvScheduleLastCommandAt)})` : ''}
+        </div>
+        {unit.tvScheduleLastError && <div className="text-status-bad">Last error: {unit.tvScheduleLastError}</div>}
+      </div>
+
+      <p className="mt-4 rounded-lg bg-slate-900/60 px-3 py-2 text-xs text-muted-500">
+        Install checklist: enable HDMI-CEC in the TV's own menu first - Samsung: Anynet+, LG: SimpLink, Sony: Bravia Sync
+        (other brands: look for "HDMI-CEC" or "Consumer Electronics Control"). Times are UK local (Europe/London) -
+        BST/GMT handled automatically. Overnight schedules (sleep after midnight) aren't supported - sleep must be later
+        than wake on the same day.
+      </p>
+    </section>
+  )
+}
+
 // Full detail/edit view for one unit - four separate labeled cards
 // (Unit, Deployment, Network, Notes log), deliberately not one long
 // undifferentiated box (that's the exact density problem /platform/
@@ -99,10 +326,14 @@ function UnitDetail({
   unit,
   onPatch,
   onAddNote,
+  onSaveTvSchedule,
+  onOverrideTvSchedule,
 }: {
   unit: PiUnit
   onPatch: (patch: Partial<PiUnit>) => void
   onAddNote: (noteText: string) => void
+  onSaveTvSchedule: (patch: { tvScheduleEnabled: boolean; tvSchedule: TvSchedule }) => Promise<void>
+  onOverrideTvSchedule: (action: 'wake' | 'sleep' | 'clear') => Promise<void>
 }): JSX.Element {
   const [noteDraft, setNoteDraft] = useState('')
 
@@ -170,6 +401,8 @@ function UnitDetail({
           Network name only - the password is set directly on the device via SSH/nmcli and is never stored here.
         </p>
       </section>
+
+      <TvScheduleCard key={unit.id} unit={unit} onSave={onSaveTvSchedule} onOverride={onOverrideTvSchedule} />
 
       <section className="rounded-2xl border border-border bg-panel p-5">
         <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Notes log</div>
@@ -274,6 +507,39 @@ export default function PlatformPiFleetPage(): JSX.Element {
       .then((json) => {
         if (json?.notes) setUnits((prev) => prev.map((u) => (u.id === unitId ? { ...u, notes: json.notes } : u)))
       })
+  }
+
+  // TV wake/sleep schedule round - deliberately NOT the generic
+  // optimistic patchUnit() above: this has real server-side validation
+  // (e.g. overnight-schedule rejection) the card needs to surface
+  // inline, so it awaits the response and throws on failure instead of
+  // firing-and-forgetting.
+  async function saveTvSchedule(unitId: number, patch: { tvScheduleEnabled: boolean; tvSchedule: TvSchedule }) {
+    const response = await fetch(`${PI_UNITS_URL}/${unitId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    const json = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(json?.error ?? 'Failed to save schedule')
+    setUnits((prev) => prev.map((u) => (u.id === unitId ? { ...u, ...json } : u)))
+  }
+
+  async function overrideTvSchedule(unitId: number, action: 'wake' | 'sleep' | 'clear') {
+    const response = await fetch(`${PI_UNITS_URL}/${unitId}/tv-schedule-override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    })
+    const json = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(json?.error ?? 'Failed to set override')
+    setUnits((prev) =>
+      prev.map((u) =>
+        u.id === unitId
+          ? { ...u, tvScheduleOverrideState: json.overrideState, tvScheduleOverrideUntil: json.overrideUntil, tvScheduleOverrideActive: json.overrideActive }
+          : u
+      )
+    )
   }
 
   async function createUnit() {
@@ -484,6 +750,8 @@ export default function PlatformPiFleetPage(): JSX.Element {
                     unit={selectedUnit}
                     onPatch={(patch) => patchUnit(selectedUnit.id, patch)}
                     onAddNote={(noteText) => addNote(selectedUnit.id, noteText)}
+                    onSaveTvSchedule={(patch) => saveTvSchedule(selectedUnit.id, patch)}
+                    onOverrideTvSchedule={(action) => overrideTvSchedule(selectedUnit.id, action)}
                   />
                 </>
               )}
