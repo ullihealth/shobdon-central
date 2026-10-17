@@ -159,6 +159,12 @@ def fetch_schedule(serial, key, last_command, last_error, now):
             "X-Pi-Serial": serial,
             "X-Pi-Fleet-Key": key,
             "Content-Type": "application/json",
+            # Confirmed on real hardware (AA0003): Cloudflare's own bot
+            # protection 403s urllib's default "Python-urllib/3.x" User-
+            # Agent before the request ever reaches our route - it never
+            # even gets a chance to check X-Pi-Fleet-Key. A plain,
+            # identifiable UA (not spoofing a browser) is enough to pass.
+            "User-Agent": f"AirfieldCentral-PiFleet/1.0 ({serial})",
         },
         data=json.dumps({"lastCommand": last_command, "lastError": last_error}).encode(),
     )
@@ -306,7 +312,27 @@ def run(simulate_schedule_path, now_override):
 
     try:
         data = fetch_schedule(config["serial"], config["key"], last_commanded.get("command"), last_commanded.get("error"), now_utc)
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
+    except urllib.error.HTTPError as exc:
+        # Our own route (functions/api/public/pi-units/tv-schedule.ts)
+        # never returns 403 itself - only 401 (bad/missing key), 400
+        # (missing serial), 404 (unknown serial), or 503 (key not
+        # configured). A 403 here means something in FRONT of the app
+        # blocked the request before it ever reached that code -
+        # confirmed on real hardware (AA0003): Cloudflare's own bot
+        # protection, triggered by urllib's default User-Agent (see
+        # fetch_schedule's own comment - the fix is already applied
+        # there, this is just so a FUTURE edge/WAF block of some other
+        # kind is obvious from the log instead of looking identical to
+        # our own server saying no).
+        if exc.code == 403:
+            log.warning("blocked before reaching the server (403) - check User-Agent/WAF, not X-Pi-Fleet-Key - falling back to last cached schedule, if any")
+        else:
+            log.warning("poll rejected (HTTP %s) - falling back to last cached schedule, if any", exc.code)
+        data = read_json_file(CACHE_FILE)
+        if not data:
+            log.warning("no cached schedule available either - doing nothing")
+            return 0
+    except (urllib.error.URLError, TimeoutError) as exc:
         log.warning("poll failed (%s) - falling back to last cached schedule, if any", exc)
         data = read_json_file(CACHE_FILE)
         if not data:

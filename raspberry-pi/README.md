@@ -312,6 +312,13 @@ server for that box's own schedule and sends the TV a CEC command only
 when the desired state actually changes (never on every tick, never by
 re-checking the TV's own power state).
 
+**Pi scripts that call the live server must send a custom User-Agent** -
+confirmed on AA0003: Cloudflare's own bot protection 403s the default
+"Python-urllib/3.x" UA before the request ever reaches the app (see
+`tv-schedule-check.py`'s own comment); any future script added here that
+makes a real outbound HTTPS call to `airfieldcentral.com` needs the same
+treatment, not just this one.
+
 **Server secret - must be set in BOTH places, not just one.** The poll
 route (`functions/api/public/pi-units/tv-schedule.ts`) is served by the
 `shobdon-central` Cloudflare Pages project, but the apex domain
