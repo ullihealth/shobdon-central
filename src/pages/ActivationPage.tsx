@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { activationCheckUrl, STRIPE_CHECKOUT_URL, TERMS_ACCEPT_URL } from '../config/publicApi'
+import { activationCheckUrl, STRIPE_CHECKOUT_URL, TERMS_ACCEPT_URL, MEDIA_BOX_CONSENT_ACCEPT_URL } from '../config/publicApi'
 import { findPricingPlan } from '../config/pricing'
 
 // Stripe groundwork Part C - existing-tenant activation. Public route
@@ -19,6 +19,8 @@ interface ActivationState {
   loggedIn: boolean
   isMemberOfTenant: boolean
   hasAcceptedCurrentTerms: boolean
+  includesMediaBox: boolean
+  hasMediaBoxConsent: boolean
 }
 
 type LoadStatus = 'loading' | 'ready' | 'error'
@@ -30,6 +32,8 @@ export default function ActivationPage(): JSX.Element {
   const [state, setState] = useState<ActivationState | null>(null)
   const [acceptingTerms, setAcceptingTerms] = useState(false)
   const [termsChecked, setTermsChecked] = useState(false)
+  const [acceptingMediaBoxConsent, setAcceptingMediaBoxConsent] = useState(false)
+  const [mediaBoxChecked, setMediaBoxChecked] = useState(false)
   const [startingCheckout, setStartingCheckout] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
 
@@ -66,6 +70,16 @@ export default function ActivationPage(): JSX.Element {
       if (response.ok) load()
     } finally {
       setAcceptingTerms(false)
+    }
+  }
+
+  async function handleAcceptMediaBoxConsent() {
+    setAcceptingMediaBoxConsent(true)
+    try {
+      const response = await fetch(MEDIA_BOX_CONSENT_ACCEPT_URL, { method: 'POST' })
+      if (response.ok) load()
+    } finally {
+      setAcceptingMediaBoxConsent(false)
     }
   }
 
@@ -166,7 +180,37 @@ export default function ActivationPage(): JSX.Element {
               </div>
             )}
 
-            {state.loggedIn && state.isMemberOfTenant && state.hasAcceptedCurrentTerms && (
+            {state.loggedIn && state.isMemberOfTenant && state.hasAcceptedCurrentTerms && state.includesMediaBox && !state.hasMediaBoxConsent && (
+              <div className="rounded-lg border border-border bg-slate-900/60 p-4">
+                <label className="flex items-start gap-3 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={mediaBoxChecked}
+                    onChange={(event) => setMediaBoxChecked(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    I agree to the{' '}
+                    <Link to="/terms#schedule-1" target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">
+                      Media Box loan terms (Schedule 1)
+                    </Link>
+                    : the box remains Airfield Central's property, and I authorise Airfield Central to charge my saved card up to £99 per
+                    incident if it is lost, damaged beyond normal use, or not returned within 14 days of my subscription ending. I'll be
+                    emailed first and given 7 days to respond. Nothing is charged or held today.
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  disabled={!mediaBoxChecked || acceptingMediaBoxConsent}
+                  onClick={handleAcceptMediaBoxConsent}
+                  className="mt-4 w-full rounded-lg bg-accent-sky-500 px-4 py-2 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+                >
+                  {acceptingMediaBoxConsent ? 'Saving…' : 'Agree and continue'}
+                </button>
+              </div>
+            )}
+
+            {state.loggedIn && state.isMemberOfTenant && state.hasAcceptedCurrentTerms && (!state.includesMediaBox || state.hasMediaBoxConsent) && (
               <>
                 <button
                   type="button"

@@ -163,6 +163,18 @@ interface PlatformTenant {
   qrTargetUrl: string
   qrCaptionText: string
   qrMockupImageUrl: string | null
+  // Media Box consent round (migration 0113) - mediaBoxConsentAt is set
+  // once by either the activation or paid-signup consent checkbox (see
+  // functions/api/tenant/media-box-consent/accept.ts and signup.ts's own
+  // comments), never edited here. The three "issued" fields below ARE
+  // editable here (MediaBoxIssuedEditor) - no real Pi Fleet<->tenant link
+  // exists to reuse (pi_units.tenant_name is deliberately free text, not
+  // a FK - see migration 0098's own comment), so these are simple,
+  // independent fields.
+  mediaBoxConsentAt: string | null
+  mediaBoxIdentifier: string | null
+  mediaBoxIssuedDate: string | null
+  mediaBoxReturnedDate: string | null
   usedBytes: number
   logoUrl: string | null
   createdAt: string
@@ -393,6 +405,105 @@ function AfisoFrequencyEditor({ tenant, onSaved }: { tenant: PlatformTenant; onS
         placeholder="122.250"
         className="mt-1 w-24 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
       />
+    </div>
+  )
+}
+
+// Media Box consent round, Step 4 - simple "box issued/returned"
+// tracking (migration 0113). Same save-on-blur pattern as
+// AfisoFrequencyEditor above, for the three independent
+// media_box_identifier/issued_date/returned_date fields - no real Pi
+// Fleet<->tenant link exists to reuse (see PlatformTenant's own comment
+// on mediaBoxIdentifier). Dates are plain free-text (yyyy-mm-dd via a
+// native date input), not validated server-side beyond string-or-null.
+function MediaBoxIssuedEditor({
+  tenant,
+  onSaved,
+}: {
+  tenant: PlatformTenant
+  onSaved: (fields: { mediaBoxIdentifier: string | null; mediaBoxIssuedDate: string | null; mediaBoxReturnedDate: string | null }) => void
+}): JSX.Element {
+  const [identifier, setIdentifier] = useState(tenant.mediaBoxIdentifier ?? '')
+  const [issuedDate, setIssuedDate] = useState(tenant.mediaBoxIssuedDate ?? '')
+  const [returnedDate, setReturnedDate] = useState(tenant.mediaBoxReturnedDate ?? '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setIdentifier(tenant.mediaBoxIdentifier ?? '')
+    setIssuedDate(tenant.mediaBoxIssuedDate ?? '')
+    setReturnedDate(tenant.mediaBoxReturnedDate ?? '')
+  }, [tenant.mediaBoxIdentifier, tenant.mediaBoxIssuedDate, tenant.mediaBoxReturnedDate])
+
+  async function commit() {
+    const nextIdentifier = identifier.trim() || null
+    const nextIssuedDate = issuedDate || null
+    const nextReturnedDate = returnedDate || null
+    if (
+      nextIdentifier === (tenant.mediaBoxIdentifier ?? null) &&
+      nextIssuedDate === (tenant.mediaBoxIssuedDate ?? null) &&
+      nextReturnedDate === (tenant.mediaBoxReturnedDate ?? null)
+    ) {
+      return
+    }
+    setSaving(true)
+    const updated = await patchTenant(tenant.id, {
+      mediaBoxIdentifier: nextIdentifier,
+      mediaBoxIssuedDate: nextIssuedDate,
+      mediaBoxReturnedDate: nextReturnedDate,
+    })
+    setSaving(false)
+    if (updated) {
+      onSaved({
+        mediaBoxIdentifier: updated.mediaBoxIdentifier,
+        mediaBoxIssuedDate: updated.mediaBoxIssuedDate,
+        mediaBoxReturnedDate: updated.mediaBoxReturnedDate,
+      })
+    } else {
+      setIdentifier(tenant.mediaBoxIdentifier ?? '')
+      setIssuedDate(tenant.mediaBoxIssuedDate ?? '')
+      setReturnedDate(tenant.mediaBoxReturnedDate ?? '')
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-3">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">Box identifier</div>
+        <input
+          type="text"
+          value={identifier}
+          disabled={saving}
+          onChange={(event) => setIdentifier(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+          }}
+          placeholder="AA0001"
+          className="mt-1 w-28 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+        />
+      </div>
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">Issued</div>
+        <input
+          type="date"
+          value={issuedDate}
+          disabled={saving}
+          onChange={(event) => setIssuedDate(event.target.value)}
+          onBlur={commit}
+          className="mt-1 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+        />
+      </div>
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-widest text-muted-400">Returned</div>
+        <input
+          type="date"
+          value={returnedDate}
+          disabled={saving}
+          onChange={(event) => setReturnedDate(event.target.value)}
+          onBlur={commit}
+          className="mt-1 rounded border border-slate-700 bg-slate-900/80 px-1.5 py-0.5 text-xs text-white focus:border-sky-500 focus:outline-none"
+        />
+      </div>
     </div>
   )
 }
@@ -839,6 +950,10 @@ function SubscriptionEditor({ tenant, onSaved }: { tenant: PlatformTenant; onSav
 // control on this page already has.
 function ActivationLinkSection({ tenant }: { tenant: PlatformTenant }): JSX.Element {
   const [plan, setPlan] = useState<'pack' | 'pilotApp'>('pack')
+  // Media Box consent round - "default ON when I create the link" per
+  // the go-ahead, mirroring the server's own default (activation-link.ts's
+  // own `includesMediaBox = body?.includesMediaBox === false ? false : true`).
+  const [includesMediaBox, setIncludesMediaBox] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [link, setLink] = useState<string | null>(null)
@@ -852,7 +967,7 @@ function ActivationLinkSection({ tenant }: { tenant: PlatformTenant }): JSX.Elem
       const response = await fetch(`${TENANTS_URL}/${tenant.id}/activation-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, includesMediaBox }),
       })
       const data = await response.json().catch(() => null)
       if (!response.ok || !data?.activationUrl) {
@@ -885,6 +1000,14 @@ function ActivationLinkSection({ tenant }: { tenant: PlatformTenant }): JSX.Elem
           <option value="pack">Airfield Pack</option>
           <option value="pilotApp">Pilot's App</option>
         </select>
+        <label className="flex items-center gap-1.5 text-xs text-slate-300">
+          <input
+            type="checkbox"
+            checked={includesMediaBox}
+            onChange={(event) => setIncludesMediaBox(event.target.checked)}
+          />
+          Includes Media Box loan
+        </label>
         <button
           type="button"
           disabled={creating}
@@ -1754,6 +1877,13 @@ export default function PlatformTenantsPage(): JSX.Element {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, logoUrl } : t)))
   }
 
+  function handleMediaBoxFieldsSaved(
+    tenantId: number,
+    fields: { mediaBoxIdentifier: string | null; mediaBoxIssuedDate: string | null; mediaBoxReturnedDate: string | null }
+  ) {
+    setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, ...fields } : t)))
+  }
+
   function handleQrTargetUrlSaved(tenantId: number, qrTargetUrl: string) {
     setTenants((prev) => prev.map((t) => (t.id === tenantId ? { ...t, qrTargetUrl } : t)))
   }
@@ -2584,6 +2714,21 @@ export default function PlatformTenantsPage(): JSX.Element {
                       </div>
                     )}
                     {!selectedTenant.deletedAt && <ActivationLinkSection tenant={selectedTenant} />}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-border bg-panel p-5">
+                  <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Media Box loan</div>
+                  <p className="text-xs text-muted-500">
+                    Media Box consent:{' '}
+                    {selectedTenant.mediaBoxConsentAt ? (
+                      <span className="font-semibold text-status-good">given {formatDateTime(selectedTenant.mediaBoxConsentAt)}</span>
+                    ) : (
+                      <span className="font-semibold text-muted-400">not given</span>
+                    )}
+                  </p>
+                  <div className="mt-3">
+                    <MediaBoxIssuedEditor tenant={selectedTenant} onSaved={(fields) => handleMediaBoxFieldsSaved(selectedTenant.id, fields)} />
                   </div>
                 </section>
 

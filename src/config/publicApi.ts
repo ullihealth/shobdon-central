@@ -197,6 +197,13 @@ export const onboardInviteSubdomainUrl = (token: string): string => `/api/public
 // tenant/terms/accept.ts. Consumed by OnboardingTermsPage.tsx.
 export const TERMS_ACCEPT_URL = '/api/tenant/terms/accept'
 
+// Authenticated: Media Box loan consent round - functions/api/tenant/
+// media-box-consent/accept.ts. A separate consent from TERMS_ACCEPT_URL
+// above (recorded on the tenant, not the user) - see that endpoint's own
+// comment for why. Consumed by ActivationPage.tsx and LandingPage.tsx's
+// paid signup form.
+export const MEDIA_BOX_CONSENT_ACCEPT_URL = '/api/tenant/media-box-consent/accept'
+
 // Authenticated, any role: read-only global onboarding content (video
 // placeholders + Terms/Privacy text) - functions/api/tenant/
 // onboarding-content/index.ts. Consumed by both OnboardingTermsPage.tsx

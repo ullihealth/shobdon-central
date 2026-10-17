@@ -363,6 +363,16 @@ interface StripeSubscription {
   customer: string;
   status: string;
   items: { data: StripeSubscriptionItem[] };
+  // Media Box consent round - Stripe Checkout (mode=subscription) already
+  // attaches the card collected at checkout to the subscription as its
+  // default_payment_method automatically (confirmed against Stripe's own
+  // docs - this is NOT something this project's code sets). What it does
+  // NOT do is propagate that onto the CUSTOMER's own invoice_settings.
+  // default_payment_method, which is what a later off-session, non-
+  // subscription Invoice (the Schedule 1 £99 charge, billed outside this
+  // subscription entirely) actually reads to pick a card. Read here so
+  // handleCheckoutSessionCompleted below can copy it across.
+  default_payment_method?: string | null;
 }
 
 // The one outbound Stripe call this route makes - see the Env.
@@ -374,6 +384,31 @@ async function retrieveSubscription(subscriptionId: string, env: Env): Promise<S
   });
   if (!response.ok) return null;
   return response.json();
+}
+
+// Media Box consent round - copies the subscription's own default_
+// payment_method (already set by Checkout - see StripeSubscription's
+// own comment) onto the CUSTOMER, so a later off-session invoice not
+// tied to this subscription (the Schedule 1 £99 charge) has a default
+// card to use. Idempotent: setting the same value Stripe may already
+// have on the customer is a harmless no-op update, not a special-cased
+// skip - safe to call on every checkout.session.completed without first
+// checking the customer's current value.
+async function setCustomerDefaultPaymentMethod(customerId: string, paymentMethodId: string, env: Env): Promise<void> {
+  const base = env.STRIPE_API_BASE_URL || "https://api.stripe.com";
+  const form = new URLSearchParams();
+  form.set("invoice_settings[default_payment_method]", paymentMethodId);
+  const response = await fetch(`${base}/v1/customers/${encodeURIComponent(customerId)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form.toString(),
+  });
+  if (!response.ok) {
+    console.log(`[stripe-webhook] setCustomerDefaultPaymentMethod: failed to update customer ${customerId}`);
+  }
 }
 
 async function handleCheckoutSessionCompleted(db: D1Database, env: Env, session: Record<string, unknown>, now: string): Promise<void> {
@@ -397,6 +432,9 @@ async function handleCheckoutSessionCompleted(db: D1Database, env: Env, session:
   if (subscriptionId) {
     const subscription = await retrieveSubscription(subscriptionId, env);
     product = productForLineItems(subscription?.items.data, env);
+    if (customerId && subscription?.default_payment_method) {
+      await setCustomerDefaultPaymentMethod(customerId, subscription.default_payment_method, env);
+    }
   }
 
   if (!product) {

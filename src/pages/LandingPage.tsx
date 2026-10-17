@@ -638,6 +638,16 @@ function PaidSignupForm(): JSX.Element {
   const [parentOptions, setParentOptions] = useState<EligibleParentOption[]>([])
   const [plan, setPlan] = useState<PlanId>('pack')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  // Media Box consent round - a second, separate, mandatory checkbox
+  // from termsAccepted above, only shown/required when the chosen plan
+  // actually includes a Media Box (today, only 'pack' - see src/config/
+  // pricing.ts's own description). Defaults ON for Pack per the
+  // go-ahead's own instruction - most Pack signups genuinely are
+  // getting a box, so defaulting to the common case (still a real,
+  // separate checkbox the visitor must leave checked, not a hidden
+  // assumption) reduces friction over defaulting off.
+  const [mediaBoxConsent, setMediaBoxConsent] = useState(true)
+  const includesMediaBox = plan === 'pack'
   const [status, setStatus] = useState<PaidSignupStatus>('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -702,6 +712,7 @@ function PaidSignupForm(): JSX.Element {
         parentTenantId: parentTenantId ? Number(parentTenantId) : undefined,
         plan,
         termsAccepted,
+        mediaBoxConsent: includesMediaBox ? mediaBoxConsent : undefined,
       }),
     })
     const data = await response.json().catch(() => null)
@@ -856,6 +867,27 @@ function PaidSignupForm(): JSX.Element {
           .
         </span>
       </label>
+
+      {includesMediaBox && (
+        <label className="mb-4 flex items-start gap-3 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            required
+            checked={mediaBoxConsent}
+            onChange={(event) => setMediaBoxConsent(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            I agree to the{' '}
+            <Link to="/terms#schedule-1" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
+              Media Box loan terms (Schedule 1)
+            </Link>
+            : the box remains Airfield Central's property, and I authorise Airfield Central to charge my saved card up to £99 per
+            incident if it is lost, damaged beyond normal use, or not returned within 14 days of my subscription ending. I'll be
+            emailed first and given 7 days to respond. Nothing is charged or held today.
+          </span>
+        </label>
+      )}
 
       {status === 'error' && <p className="mb-4 text-sm font-semibold text-rose-400">{errorMessage}</p>}
 

@@ -67,6 +67,11 @@ interface TenantRow {
   qrTargetUrl: string;
   qrCaptionText: string;
   qrMockupR2Key: string | null;
+  // Media Box consent round - see migration 0113's own comment.
+  mediaBoxConsentAt: string | null;
+  mediaBoxIdentifier: string | null;
+  mediaBoxIssuedDate: string | null;
+  mediaBoxReturnedDate: string | null;
 }
 
 interface UsageRow {
@@ -128,7 +133,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                 organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt,
                 subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
                 qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl,
-                qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key
+                qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key,
+                media_box_consent_at AS mediaBoxConsentAt, media_box_identifier AS mediaBoxIdentifier,
+                media_box_issued_date AS mediaBoxIssuedDate, media_box_returned_date AS mediaBoxReturnedDate
          FROM tenants WHERE deleted_at IS NULL ORDER BY created_at`
       )
       .all<TenantRow>(),
@@ -240,6 +247,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       qrCaptionText: tenant.qrCaptionText,
       qrMockupImageUrl:
         tenant.qrMockupR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${tenant.qrMockupR2Key}` : null,
+      mediaBoxConsentAt: tenant.mediaBoxConsentAt,
+      mediaBoxIdentifier: tenant.mediaBoxIdentifier,
+      mediaBoxIssuedDate: tenant.mediaBoxIssuedDate,
+      mediaBoxReturnedDate: tenant.mediaBoxReturnedDate,
       createdAt: tenant.createdAt,
       displays: (displaysByTenant.get(tenant.id) ?? []).map((display) => ({
         id: display.id,

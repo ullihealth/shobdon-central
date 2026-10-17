@@ -42,17 +42,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
     return jsonResponse({ error: `${tenant.name} already has an active Stripe subscription - activation would create a second one.` }, 409);
   }
 
-  const body = (await request.json().catch(() => null)) as { plan?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { plan?: unknown; includesMediaBox?: unknown } | null;
   const plan = typeof body?.plan === "string" && (VALID_PLANS as readonly string[]).includes(body.plan) ? body.plan : null;
   if (!plan) return jsonResponse({ error: `plan must be one of: ${VALID_PLANS.join(", ")}` }, 400);
+
+  // Media Box consent round - "default ON" per the go-ahead: an omitted
+  // or non-boolean value reads as true, same as every tenant receiving
+  // a Media Box unless this platform admin explicitly says otherwise
+  // when creating the link.
+  const includesMediaBox = body?.includesMediaBox === false ? false : true;
 
   const token = crypto.randomUUID();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + EXPIRY_DAYS * DAY_MS).toISOString();
 
   await env.DB
-    .prepare("INSERT INTO activation_links (token, tenant_id, plan, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(token, tenantId, plan, expiresAt, result.userId, now)
+    .prepare(
+      "INSERT INTO activation_links (token, tenant_id, plan, expires_at, created_by, created_at, includes_media_box) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(token, tenantId, plan, expiresAt, result.userId, now, includesMediaBox ? 1 : 0)
     .run();
 
   return jsonResponse({ ok: true, token, expiresAt, activationUrl: `https://airfieldcentral.com/activate/${token}` });

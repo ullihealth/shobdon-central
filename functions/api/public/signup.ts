@@ -61,7 +61,14 @@ interface RequestBody {
   parentTenantId?: unknown;
   plan?: unknown;
   termsAccepted?: unknown;
+  mediaBoxConsent?: unknown;
 }
+
+// Media Box consent round - only the Pack plan includes the physical
+// Reception Dashboard screen/Media Box (see src/config/pricing.ts's own
+// description: "The Reception Dashboard for your clubhouse screen...");
+// Pilot's App alone has no box, so no separate consent applies to it.
+const PLANS_WITH_MEDIA_BOX: readonly string[] = ["pack"];
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const template = await env.DB
@@ -102,6 +109,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const plan = typeof body.plan === "string" && (VALID_PLANS as readonly string[]).includes(body.plan) ? (body.plan as Plan) : null;
   if (!plan) {
     return jsonResponse({ error: `plan must be one of: ${VALID_PLANS.join(", ")}` }, 400);
+  }
+
+  // Media Box consent round - a second, separate, mandatory checkbox
+  // (distinct from termsAccepted above) only required when this plan
+  // actually includes a Media Box. Server-side gate, independent of
+  // whatever the form does/doesn't show - a request that omits the
+  // field (or sends anything other than literal true) is rejected the
+  // same way termsAccepted already is.
+  const mediaBoxApplies = PLANS_WITH_MEDIA_BOX.includes(plan);
+  if (mediaBoxApplies && body.mediaBoxConsent !== true) {
+    return jsonResponse({ error: "You must agree to the Media Box loan terms (Schedule 1) to continue" }, 400);
   }
 
   const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : "";
@@ -233,6 +251,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     )
     .bind(userId, contactName, email, now, now, now, TERMS_VERSION, ip)
     .run();
+
+  // Media Box consent round - recorded against the TENANT (not the user
+  // row above, unlike termsAccepted*) - see migration 0113's own comment
+  // on why. Same now/ip this request already resolved for the user row,
+  // just a separate write since it's a separate consent with its own
+  // audit trail. Only written when it actually applies - a Pilot's-App-
+  // only signup leaves these columns null, same as every tenant that
+  // predates this feature.
+  if (mediaBoxApplies) {
+    await env.DB
+      .prepare("UPDATE tenants SET media_box_consent_at = ?, media_box_consent_version = ?, media_box_consent_ip = ? WHERE id = ?")
+      .bind(now, TERMS_VERSION, ip, tenantId)
+      .run();
+  }
 
   await env.DB
     .prepare("INSERT INTO account (id, userId, accountId, providerId, password, createdAt, updatedAt) VALUES (?, ?, ?, 'credential', ?, ?, ?)")

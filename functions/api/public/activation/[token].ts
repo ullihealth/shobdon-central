@@ -28,7 +28,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
   const link = await env.DB
     .prepare(
       `SELECT al.tenant_id AS tenantId, al.plan AS plan, al.expires_at AS expiresAt, al.used_at AS usedAt,
-              t.name AS tenantName, t.slug AS tenantSlug, t.stripe_subscription_id AS stripeSubscriptionId
+              al.includes_media_box AS includesMediaBox,
+              t.name AS tenantName, t.slug AS tenantSlug, t.stripe_subscription_id AS stripeSubscriptionId,
+              t.media_box_consent_version AS mediaBoxConsentVersion
        FROM activation_links al JOIN tenants t ON t.id = al.tenant_id
        WHERE al.token = ?`
     )
@@ -38,9 +40,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
       plan: string;
       expiresAt: string;
       usedAt: string | null;
+      includesMediaBox: number;
       tenantName: string;
       tenantSlug: string;
       stripeSubscriptionId: string | null;
+      mediaBoxConsentVersion: string | null;
     }>();
 
   if (!link) return jsonResponse({ error: "This activation link is not valid" }, 404);
@@ -75,5 +79,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, params })
     loggedIn,
     isMemberOfTenant,
     hasAcceptedCurrentTerms,
+    // Media Box consent round - includesMediaBox is this LINK's own
+    // flag (set when a platform admin created it); hasMediaBoxConsent
+    // mirrors hasAcceptedCurrentTerms's own "matches the current
+    // version, not just non-null" check, but reads the TENANT's own
+    // consent (media_box_consent_version), not the user's - correct
+    // even for a second member who never personally accepted, since
+    // consent here belongs to the tenant.
+    includesMediaBox: !!link.includesMediaBox,
+    hasMediaBoxConsent: link.mediaBoxConsentVersion === TERMS_VERSION,
   });
 };

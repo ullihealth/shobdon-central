@@ -34,6 +34,15 @@ interface Env {
 const VALID_PLANS = ["pack", "pilotApp"] as const;
 type Plan = (typeof VALID_PLANS)[number];
 
+// Media Box consent round - same PLANS_WITH_MEDIA_BOX set as
+// functions/api/public/signup.ts (only Pack includes the physical
+// Reception Dashboard screen/Media Box). Duplicated rather than
+// imported - no cross-boundary imports between functions/ and src/ or
+// even between separate functions/ routes beyond shared _utils, per
+// this project's existing convention (see e.g. TERMS_VERSION's own
+// mirrored-constant pattern).
+const PLANS_WITH_MEDIA_BOX: readonly string[] = ["pack"];
+
 function priceEnvKeyForPlan(plan: Plan, env: Env): string {
   return plan === "pack" ? env.STRIPE_PRICE_PACK : env.STRIPE_PRICE_PILOT_APP;
 }
@@ -57,6 +66,7 @@ async function createCheckoutSession(
     customerEmail: string;
     successUrl: string;
     cancelUrl: string;
+    includesMediaBox: boolean;
   }
 ): Promise<StripeCheckoutSession | { error: string }> {
   const base = env.STRIPE_API_BASE_URL || "https://api.stripe.com";
@@ -69,6 +79,15 @@ async function createCheckoutSession(
   form.set("allow_promotion_codes", "true");
   form.set("success_url", params.successUrl);
   form.set("cancel_url", params.cancelUrl);
+  // Media Box consent round - only shown when this checkout actually
+  // includes a Media Box; a Pilot's-App-only checkout has no Schedule 1
+  // card-charge authority to flag here.
+  if (params.includesMediaBox) {
+    form.set(
+      "custom_text[submit][message]",
+      "Your card will be saved for your subscription and, under the Media Box loan terms you accepted, for any Schedule 1 charge (max £99, with notice)."
+    );
+  }
 
   const response = await fetch(`${base}/v1/checkout/sessions`, {
     method: "POST",
@@ -119,15 +138,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // someone logged in as tenant Y's own member must fail, not silently
   // activate the wrong tenant.
   let activationLinkTenantId: number | null = null;
+  // Media Box consent round - for a brand-new paid signup (no
+  // activationToken) this defaults from the plan itself (PLANS_WITH_
+  // MEDIA_BOX, same as signup.ts); for an existing-tenant activation it
+  // instead takes the LINK's own includes_media_box flag (set by the
+  // platform admin who created it - see activation-link.ts's own
+  // comment), since an activation link's Media Box status is decided
+  // per-link, not purely by plan.
+  let includesMediaBox = PLANS_WITH_MEDIA_BOX.includes(plan);
   if (activationToken) {
     const link = await env.DB
-      .prepare("SELECT tenant_id AS tenantId, expires_at AS expiresAt, used_at AS usedAt FROM activation_links WHERE token = ?")
+      .prepare("SELECT tenant_id AS tenantId, expires_at AS expiresAt, used_at AS usedAt, includes_media_box AS includesMediaBox FROM activation_links WHERE token = ?")
       .bind(activationToken)
-      .first<{ tenantId: number; expiresAt: string; usedAt: string | null }>();
+      .first<{ tenantId: number; expiresAt: string; usedAt: string | null; includesMediaBox: number }>();
     if (!link) return jsonResponse({ error: "This activation link is not valid" }, 404);
     if (link.usedAt) return jsonResponse({ error: "This activation link has already been used" }, 409);
     if (new Date(link.expiresAt).getTime() < Date.now()) return jsonResponse({ error: "This activation link has expired" }, 410);
     activationLinkTenantId = link.tenantId;
+    includesMediaBox = !!link.includesMediaBox;
   }
 
   // Tenant's own real subdomain, resolved server-side - never a
@@ -166,6 +194,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     customerEmail: userRow.email,
     successUrl,
     cancelUrl,
+    includesMediaBox,
   });
 
   if ("error" in session) return jsonResponse({ error: session.error }, 502);

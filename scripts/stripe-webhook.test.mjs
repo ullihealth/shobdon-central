@@ -140,26 +140,80 @@ function subscriptionDeletedEvent({ subscriptionId, customerId, priceId }) {
 const subscriptionsByid = new Map(); // subscriptionId -> { id, customer, status, items: { data: [{ price: { id } }] } }
 let stubServer;
 
-function registerStubSubscription(subscriptionId, customerId, priceId) {
-  subscriptionsByid.set(subscriptionId, {
+function registerStubSubscription(subscriptionId, customerId, priceId, defaultPaymentMethodId) {
+  const subscription = {
     id: subscriptionId,
     customer: customerId,
     status: 'active',
     items: { data: [{ price: { id: priceId } }] },
-  });
+  };
+  // Media Box consent round - Checkout (mode=subscription) attaches the
+  // collected card to the SUBSCRIPTION as its own default_payment_method
+  // automatically (see webhook.ts's StripeSubscription comment) - only
+  // set here when a test is specifically exercising the "copy it onto
+  // the customer too" webhook behaviour; every pre-existing test
+  // omitting this fourth argument keeps subscriptions with no such field
+  // at all, same as before this round.
+  if (defaultPaymentMethodId) subscription.default_payment_method = defaultPaymentMethodId;
+  subscriptionsByid.set(subscriptionId, subscription);
 }
+
+// Media Box consent round - records of calls this suite can assert
+// against. checkoutSessionRequests captures every POST /v1/checkout/
+// sessions body (so a test can confirm checkout.ts's own custom_text
+// field was/wasn't sent); customerUpdateRequests captures every POST
+// /v1/customers/:id body (so a test can confirm webhook.ts's
+// setCustomerDefaultPaymentMethod actually ran). Neither existed before
+// this round - the stub previously only ever answered GET /v1/
+// subscriptions/:id, since no test exercised checkout.ts's own
+// create-session call or the webhook's new customer-update call.
+const checkoutSessionRequests = [];
+const customerUpdateRequests = [];
 
 before(async () => {
   stubServer = http.createServer((req, res) => {
-    const match = req.url?.match(/^\/v1\/subscriptions\/([^/?]+)/);
-    const subscription = match ? subscriptionsByid.get(decodeURIComponent(match[1])) : null;
-    if (!subscription) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'No such subscription' } }));
+    if (req.method === 'GET') {
+      const match = req.url?.match(/^\/v1\/subscriptions\/([^/?]+)/);
+      const subscription = match ? subscriptionsByid.get(decodeURIComponent(match[1])) : null;
+      if (!subscription) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'No such subscription' } }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(subscription));
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(subscription));
+
+    if (req.method === 'POST') {
+      let raw = '';
+      req.on('data', (chunk) => (raw += chunk));
+      req.on('end', () => {
+        const params = new URLSearchParams(raw);
+
+        if (req.url === '/v1/checkout/sessions') {
+          checkoutSessionRequests.push(params);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: uniqueId('cs'), url: 'https://stub-checkout.test/session' }));
+          return;
+        }
+
+        const customerMatch = req.url?.match(/^\/v1\/customers\/([^/?]+)/);
+        if (customerMatch) {
+          customerUpdateRequests.push({ customerId: decodeURIComponent(customerMatch[1]), params });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ id: decodeURIComponent(customerMatch[1]) }));
+          return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Not found' } }));
+      });
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'Not found' } }));
   });
   await new Promise((resolve) => stubServer.listen(STUB_PORT, resolve));
 });
@@ -249,6 +303,23 @@ test('Stripe webhook: Airfield Pack entitlement flow', async (t) => {
       assert.equal(tenant.dashboardEnabled, true, 'Pack must enable dashboardEnabled');
       assert.equal(tenant.mobileEnabled, true, 'Pack must enable mobileEnabled');
       assert.equal(tenant.subscriptionStatus, 'active');
+    });
+
+    await t.test('checkout.session.completed copies the subscription default_payment_method onto the Stripe customer', async () => {
+      await resetBaseline(cookie, cafeTv.id);
+      const subscriptionId = uniqueId('sub');
+      const customerId = uniqueId('cus');
+      const paymentMethodId = uniqueId('pm');
+      registerStubSubscription(subscriptionId, customerId, STRIPE_PRICE_PACK, paymentMethodId);
+      const response = await postStripeEvent(checkoutSessionCompletedEvent({ clientReferenceId: TEST_TENANT_ID, customerId, subscriptionId }));
+      assert.equal(response.status, 200, JSON.stringify(response.json));
+      const update = customerUpdateRequests.find((u) => u.customerId === customerId);
+      assert.ok(update, 'expected a POST /v1/customers/:id call copying the subscription\'s own default_payment_method onto the customer');
+      assert.equal(
+        update.params.get('invoice_settings[default_payment_method]'),
+        paymentMethodId,
+        'so a later off-session invoice (the Schedule 1 charge) not tied to this subscription has a default card to use'
+      );
     });
 
     await t.test("checkout.session.completed: Pilot's App grants mobileEnabled only, dashboardEnabled untouched", async () => {
@@ -394,7 +465,7 @@ test('Stripe webhook: Airfield Pack entitlement flow', async (t) => {
 // parentTenantId defaults to undefined (omitted), the "no parent
 // chosen" case, which should succeed with null lat/lon on the created
 // tenant - see the dedicated test below.
-async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true, parentTenantId } = {}) {
+async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true, parentTenantId, mediaBoxConsent = plan === 'pack' } = {}) {
   const unique = uniqueId('signup');
   const body = {
     businessName: `Test Signup Club ${unique}`,
@@ -404,6 +475,12 @@ async function signUpAirfieldTenant({ plan = 'pack', termsAccepted = true, paren
     slug: unique.replace(/_/g, '-').toLowerCase(),
     plan,
     termsAccepted,
+    // Media Box consent round - every pre-existing call site in this
+    // file signs up for 'pack' expecting success, so this defaults to
+    // true for 'pack' (where signup.ts now requires it) and is simply
+    // ignored by signup.ts for any other plan - no pre-existing test
+    // below needed to change just because this field now exists.
+    mediaBoxConsent,
     ...(parentTenantId !== undefined ? { parentTenantId } : {}),
   };
   const response = await request('POST', '/api/public/signup', { body });
@@ -598,6 +675,52 @@ test('Stripe checkout endpoint (Part B/C): auth required, cannot target another 
     });
     assert.equal(linkStillUnused.status, 200);
     assert.equal(linkStillUnused.json.isMemberOfTenant, true);
+  });
+});
+
+test('Stripe checkout endpoint: custom_text present only when the checkout actually includes a Media Box', async (t) => {
+  await t.test('Airfield Pack checkout includes the Media Box custom_text', async () => {
+    const { body } = await signUpAirfieldTenant({ plan: 'pack', mediaBoxConsent: true });
+    const cookie = await signInAs(body.email, body.password);
+    const response = await request('POST', '/api/stripe/checkout', { headers: { Cookie: cookie }, body: { plan: 'pack' } });
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+    const lastRequest = checkoutSessionRequests[checkoutSessionRequests.length - 1];
+    assert.ok(lastRequest.get('custom_text[submit][message]'), 'Pack checkout must mention the Media Box card-charge authority');
+  });
+
+  await t.test("Pilot's App checkout (no Media Box) has no custom_text", async () => {
+    const { body } = await signUpAirfieldTenant({ plan: 'pilotApp' });
+    const cookie = await signInAs(body.email, body.password);
+    const response = await request('POST', '/api/stripe/checkout', { headers: { Cookie: cookie }, body: { plan: 'pilotApp' } });
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+    const lastRequest = checkoutSessionRequests[checkoutSessionRequests.length - 1];
+    assert.equal(lastRequest.get('custom_text[submit][message]'), null, "Pilot's App alone must never mention the Media Box");
+  });
+
+  await t.test('an activation-link checkout follows the LINK\'s own includesMediaBox flag, not the plan', async () => {
+    const { body } = await signUpAirfieldTenant({ plan: 'pilotApp' });
+    const devCookie = await login();
+    const tenants = (await request('GET', '/api/platform/tenants', { headers: { Cookie: devCookie } })).json.tenants;
+    const tenantRow = tenants.find((tn) => tn.slug === body.slug);
+    assert.ok(tenantRow);
+    const cookie = await signInAs(body.email, body.password);
+
+    const linkResponse = await request('POST', `/api/platform/tenants/${tenantRow.id}/activation-link`, {
+      headers: { Cookie: devCookie },
+      body: { plan: 'pilotApp', includesMediaBox: true },
+    });
+    assert.equal(linkResponse.status, 200, JSON.stringify(linkResponse.json));
+
+    const response = await request('POST', '/api/stripe/checkout', {
+      headers: { Cookie: cookie },
+      body: { plan: 'pilotApp', activationToken: linkResponse.json.token },
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.json));
+    const lastRequest = checkoutSessionRequests[checkoutSessionRequests.length - 1];
+    assert.ok(
+      lastRequest.get('custom_text[submit][message]'),
+      "an activation link explicitly marked includesMediaBox:true must show the custom_text even for Pilot's App"
+    );
   });
 });
 

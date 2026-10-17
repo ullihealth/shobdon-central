@@ -60,6 +60,17 @@ interface TenantRow {
   qrTargetUrl: string;
   qrCaptionText: string;
   qrMockupR2Key: string | null;
+  // Media Box consent round, Step 4 - simple "box issued/returned"
+  // tracking (migration 0113). pi_units (migration 0098) was checked
+  // first for a real tenant<->box link to reuse instead - its own
+  // tenant_name column is deliberately free text, not a FK to tenants
+  // (that migration's own comment), so there's no existing real link to
+  // reuse. These three are independent fields, same null-is-meaningful
+  // pattern as qrMockupR2Key above (an issued box can later be returned/
+  // cleared without a second endpoint).
+  mediaBoxIdentifier: string | null;
+  mediaBoxIssuedDate: string | null;
+  mediaBoxReturnedDate: string | null;
 }
 
 interface PatchBody {
@@ -144,6 +155,14 @@ interface PatchBody {
   // (there's no "show archived tenants" view in this round) - it exists
   // so undoing an archive never requires a second endpoint later.
   archived?: boolean;
+  // Media Box consent round, Step 4 - see TenantRow's own comment above.
+  // Not mediaBoxConsentAt/Version/Ip - those are consent-flow-only writes
+  // (functions/api/tenant/media-box-consent/accept.ts and signup.ts),
+  // deliberately absent from this PATCH's own field list, same posture
+  // as termsAcceptedAt being absent here too.
+  mediaBoxIdentifier?: string | null;
+  mediaBoxIssuedDate?: string | null;
+  mediaBoxReturnedDate?: string | null;
 }
 
 // Migration 0043 - keep this list small and meaningful rather than
@@ -188,6 +207,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     "qrTargetUrl",
     "qrCaptionText",
     "qrMockupR2Key",
+    "mediaBoxIdentifier",
+    "mediaBoxIssuedDate",
+    "mediaBoxReturnedDate",
   ];
   if (!fields.some((field) => body[field] !== undefined)) {
     return jsonResponse({ error: `Provide at least one of: ${fields.join(", ")}` }, 400);
@@ -225,6 +247,15 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.qrMockupR2Key !== undefined && body.qrMockupR2Key !== null && typeof body.qrMockupR2Key !== "string") {
     return jsonResponse({ error: "qrMockupR2Key must be a string or null" }, 400);
   }
+  if (body.mediaBoxIdentifier !== undefined && body.mediaBoxIdentifier !== null && typeof body.mediaBoxIdentifier !== "string") {
+    return jsonResponse({ error: "mediaBoxIdentifier must be a string or null" }, 400);
+  }
+  if (body.mediaBoxIssuedDate !== undefined && body.mediaBoxIssuedDate !== null && typeof body.mediaBoxIssuedDate !== "string") {
+    return jsonResponse({ error: "mediaBoxIssuedDate must be a string or null" }, 400);
+  }
+  if (body.mediaBoxReturnedDate !== undefined && body.mediaBoxReturnedDate !== null && typeof body.mediaBoxReturnedDate !== "string") {
+    return jsonResponse({ error: "mediaBoxReturnedDate must be a string or null" }, 400);
+  }
   // null is a valid, meaningful value here (explicitly clears the fixed
   // offset, reverting to independent rounding) - unlike storageQuotaBytes
   // below, this field's "unset" state is a real state a platform admin
@@ -261,7 +292,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
               deleted_at AS deletedAt,
               qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl,
-              qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key
+              qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key,
+              media_box_identifier AS mediaBoxIdentifier, media_box_issued_date AS mediaBoxIssuedDate,
+              media_box_returned_date AS mediaBoxReturnedDate
        FROM tenants WHERE id = ?`
     )
     .bind(tenantId)
@@ -309,6 +342,12 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     // qnhQfeOffsetHpa above. Only an actually-omitted field (undefined)
     // falls back to current.
     qrMockupR2Key: body.qrMockupR2Key !== undefined ? body.qrMockupR2Key : current.qrMockupR2Key,
+    // Media Box consent round, Step 4 - same null-is-meaningful pattern
+    // as qrMockupR2Key above (explicitly clearing the identifier/dates
+    // back to "no box issued" is a real, deliberate state).
+    mediaBoxIdentifier: body.mediaBoxIdentifier !== undefined ? body.mediaBoxIdentifier : current.mediaBoxIdentifier,
+    mediaBoxIssuedDate: body.mediaBoxIssuedDate !== undefined ? body.mediaBoxIssuedDate : current.mediaBoxIssuedDate,
+    mediaBoxReturnedDate: body.mediaBoxReturnedDate !== undefined ? body.mediaBoxReturnedDate : current.mediaBoxReturnedDate,
   };
 
   await env.DB
@@ -319,6 +358,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
               mobile_enabled = ?, dashboard_enabled = ?,
               subscription_status = ?, subscription_notes = ?, qnh_qfe_offset_hpa = ?, deleted_at = ?,
               qr_slide_enabled = ?, qr_target_url = ?, qr_caption_text = ?, qr_mockup_r2_key = ?,
+              media_box_identifier = ?, media_box_issued_date = ?, media_box_returned_date = ?,
               updated_at = ?
        WHERE id = ?`
     )
@@ -346,6 +386,9 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       next.qrTargetUrl,
       next.qrCaptionText,
       next.qrMockupR2Key,
+      next.mediaBoxIdentifier,
+      next.mediaBoxIssuedDate,
+      next.mediaBoxReturnedDate,
       now,
       tenantId
     )

@@ -14,6 +14,23 @@ import type { JSX } from 'react'
 // GitHub-style pipe tables (Part B's data-use table). Nothing else -
 // this is intentionally narrow, not a general CommonMark implementation.
 
+// Media Box consent round - headings previously rendered with no `id`
+// at all (confirmed before this change: a /terms#schedule-1 deep link
+// matched nothing). "Schedule N: ..." headings get the exact slug
+// `schedule-N` (what the new Media Box consent checkboxes link to,
+// and what a future second schedule would predictably get too) -
+// everything else gets a generic slug of its own full heading text,
+// which doesn't need to match anything precisely, just be a stable,
+// unique anchor.
+function slugifyHeading(text: string): string {
+  const scheduleMatch = text.match(/^Schedule\s+(\d+)/i)
+  if (scheduleMatch) return `schedule-${scheduleMatch[1]}`
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 function renderInline(text: string, keyPrefix: string): (string | JSX.Element)[] {
   const parts = text.split(/(\*\*[^*]+\*\*)/g)
   return parts.map((part, i) => {
@@ -147,14 +164,14 @@ export default function LegalMarkdown({ markdown }: { markdown: string }): JSX.E
         const key = `block-${i}`
         if (block.type === 'h2') {
           return (
-            <h2 key={key} className="mt-8 text-xl font-bold text-slate-100 first:mt-0">
+            <h2 key={key} id={slugifyHeading(block.text ?? '')} className="mt-8 text-xl font-bold text-slate-100 first:mt-0 scroll-mt-20">
               {renderInline(block.text ?? '', key)}
             </h2>
           )
         }
         if (block.type === 'h3') {
           return (
-            <h3 key={key} className="mt-6 text-base font-bold text-slate-100 first:mt-0">
+            <h3 key={key} id={slugifyHeading(block.text ?? '')} className="mt-6 text-base font-bold text-slate-100 first:mt-0 scroll-mt-20">
               {renderInline(block.text ?? '', key)}
             </h3>
           )
