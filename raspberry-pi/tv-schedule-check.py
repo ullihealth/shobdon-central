@@ -50,8 +50,10 @@ Usage:
 import argparse
 import json
 import logging
+import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -61,8 +63,31 @@ from zoneinfo import ZoneInfo
 CONFIG_FILE = Path("/etc/airfieldcentral/tv-schedule.conf")
 LAST_COMMANDED_FILE = Path("/run/airfieldcentral-tv-schedule-last-commanded.json")
 CACHE_FILE = Path("/var/cache/airfieldcentral-tv-schedule.json")
-API_URL = "https://airfieldcentral.com/api/public/pi-units/tv-schedule"
+# shobdon.airfieldcentral.com, not the bare apex - verified directly:
+# both currently return 401 to an unauthenticated POST (PI_FLEET_KEY is
+# set on both the shobdon-central Pages project AND the separate
+# airfield-central Worker that owns the apex route), but this route
+# itself is served by the Pages project (it isn't tenant-scoped - it
+# looks a box up by serial_number globally, the Host header is never
+# read), so a tenant subdomain is the more direct, unambiguous target -
+# the apex going through a different service (the Worker) first is one
+# more hop that isn't needed here and isn't guaranteed to stay wired to
+# the same PI_FLEET_KEY in future the way the Pages project's own
+# binding is.
+API_URL = "https://shobdon.airfieldcentral.com/api/public/pi-units/tv-schedule"
 CEC_DEVICE = Path("/dev/cec0")
+# cec-ctl needs -d0 (the device index) passed EXPLICITLY on every
+# invocation on this hardware - confirmed via real-hardware testing on
+# the Tiger box (AA0003, a Samsung UE22F5410): omitting it was part of
+# why the original, unverified command guesses below didn't work.
+CEC_ADAPTER = "-d0"
+# Used only if cec-ctl -d0's own "Physical Address" line can't be parsed
+# (get_physical_address() below) - 1.0.0.0 is what the Pi reports as a
+# playback device connected directly to the TV's HDMI1 in the real test
+# that confirmed these commands, so it's a reasonable single-box-setup
+# fallback, not a guess pulled from documentation.
+FALLBACK_PHYS_ADDR = "1.0.0.0"
+PHYSICAL_ADDRESS_RE = re.compile(r"Physical Address\s*:\s*([0-9a-fA-F]\.[0-9a-fA-F]\.[0-9a-fA-F]\.[0-9a-fA-F])")
 
 # Explicit, not the Pi's own system timezone - requirement #5. The Pi's
 # system clock/timezone could be anything (UTC is actually the more
@@ -174,31 +199,80 @@ def compute_desired_state(data, now_utc):
     return "wake" if wake_minutes <= now_minutes < sleep_minutes else "sleep"
 
 
-# The two CEC actions this round needs - "power on + make the Pi the
-# active source" (so the TV both wakes AND switches to the Pi's input,
-# not just wakes showing whatever input it last had) and "standby".
-# Exact flags TO BE CONFIRMED against a real TV (Jeff's own, with the
-# Tiger box, this weekend) - these are the commands intended, not yet
-# verified on real hardware, which this script has no way to do on its
-# own.
-def cec_command_for(desired):
+# The two CEC actions this round needs - CONFIRMED on real hardware
+# (Tiger box AA0003, Samsung UE22F5410, Anynet+ on, Auto Turn Off = Yes -
+# see the install checklist/README for why both of those TV-side
+# settings matter). IMPORTANT, learned from that same test: cec-ctl
+# returning exit code 0 does NOT prove the TV actually obeyed - before
+# "Auto Turn Off" was enabled, --standby reported success every time
+# while the TV stayed on. Exit code is still the only signal this script
+# can act on (there is no generic "did the TV actually turn off" query
+# over CEC), so a wrong TV-side setting shows up as a silently-ignored
+# command, not a logged error - that's exactly what the install
+# checklist/README note exists to head off at setup time, not something
+# this script can detect for itself.
+#
+# ON:  claim the playback role, tell the TV to wake (image-view-on),
+#      then claim active source (so it also switches to the Pi's input,
+#      not just wakes showing whatever input it last had).
+# OFF: claim the playback role, claim active source FIRST (some TVs only
+#      honour an unsolicited standby from the device they consider the
+#      active source), pause briefly to let that land on the bus, then
+#      send standby.
+def cec_command_sequence_for(desired, phys_addr):
+    playback = ["cec-ctl", CEC_ADAPTER, "--playback"]
+    active_source = ["cec-ctl", CEC_ADAPTER, "--active-source", f"phys-addr={phys_addr}"]
     if desired == "wake":
-        return [["cec-ctl", "--playback"], ["cec-ctl", "--image-view-on", "-t", "0"], ["cec-ctl", "--active-source", "-t", "0"]]
-    return [["cec-ctl", "--standby", "-t", "0"]]
+        return [
+            ("cmd", playback),
+            ("cmd", ["cec-ctl", CEC_ADAPTER, "--to", "0", "--image-view-on"]),
+            ("cmd", active_source),
+        ]
+    return [
+        ("cmd", playback),
+        ("cmd", active_source),
+        ("sleep", 2),
+        ("cmd", ["cec-ctl", CEC_ADAPTER, "--to", "0", "--standby"]),
+    ]
+
+
+# Reads the Pi's own CEC physical address from `cec-ctl -d0`'s own
+# output at run time, rather than hardcoding it - a box moved to a
+# different HDMI input, or a different TV/AV receiver's own HDMI
+# topology, can give the Pi a different physical address than
+# 1.0.0.0 (confirmed on AA0003's own direct-to-TV HDMI1 setup) - falls
+# back to that known-good value only when parsing fails, not as the
+# primary source of truth.
+def get_physical_address():
+    try:
+        result = subprocess.run(["cec-ctl", CEC_ADAPTER], capture_output=True, text=True, timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return FALLBACK_PHYS_ADDR
+    match = PHYSICAL_ADDRESS_RE.search(result.stdout)
+    return match.group(1) if match else FALLBACK_PHYS_ADDR
 
 
 def send_cec(desired, simulate):
+    phys_addr = FALLBACK_PHYS_ADDR if simulate else get_physical_address()
+    sequence = cec_command_sequence_for(desired, phys_addr)
+
     if simulate:
-        for cmd in cec_command_for(desired):
-            log.info("[simulate] would run: %s", " ".join(cmd))
+        for kind, value in sequence:
+            if kind == "sleep":
+                log.info("[simulate] would wait %ss", value)
+            else:
+                log.info("[simulate] would run: %s", " ".join(value))
         return None  # no error
 
     if not CEC_DEVICE.exists():
         return "no CEC hardware - /dev/cec0 not found (check dtoverlay=vc4-kms-v3d is enabled and the TV is on HDMI0)"
 
-    for cmd in cec_command_for(desired):
+    for kind, value in sequence:
+        if kind == "sleep":
+            time.sleep(value)
+            continue
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(value, capture_output=True, text=True, timeout=10)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
             return f"cec-ctl failed: {exc}"
         if result.returncode != 0:

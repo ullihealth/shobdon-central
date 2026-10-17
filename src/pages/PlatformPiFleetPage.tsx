@@ -310,9 +310,10 @@ function TvScheduleCard({
 
       <p className="mt-4 rounded-lg bg-slate-900/60 px-3 py-2 text-xs text-muted-500">
         Install checklist: enable HDMI-CEC in the TV's own menu first - Samsung: Anynet+, LG: SimpLink, Sony: Bravia Sync
-        (other brands: look for "HDMI-CEC" or "Consumer Electronics Control"). Times are UK local (Europe/London) -
-        BST/GMT handled automatically. Overnight schedules (sleep after midnight) aren't supported - sleep must be later
-        than wake on the same day.
+        (other brands: look for "HDMI-CEC" or "Consumer Electronics Control"). Confirmed on a real Samsung TV: Anynet+
+        alone isn't enough - "Auto Turn Off" must also be set to Yes, or standby commands are silently ignored (cec-ctl
+        itself still reports success either way). Times are UK local (Europe/London) - BST/GMT handled automatically.
+        Overnight schedules (sleep after midnight) aren't supported - sleep must be later than wake on the same day.
       </p>
     </section>
   )

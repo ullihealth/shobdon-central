@@ -51,6 +51,10 @@ tenant - only `tenant-config.txt` differs between Pis.
 - **`setup-remote-access.sh`** - run this once over SSH on any kiosk Pi
   to add Raspberry Pi Connect and Tailscale for remote support. See
   "Remote access" below.
+- **`tv-schedule-check.py`** / **`tv-schedule-check.service`** /
+  **`tv-schedule-check.timer`** / **`install-tv-schedule.sh`** - per-box
+  TV wake/sleep schedule (HDMI-CEC), set from the Pi Fleet admin card.
+  See "TV wake/sleep schedule (HDMI-CEC)" below.
 
 ## One-time master image setup (already done on the current SD card)
 
@@ -298,6 +302,58 @@ decommissioned):
   itself is already offline or wiped.
 - Tailscale: sign in at `https://login.tailscale.com/admin/machines`,
   find the device, and click "Remove" - also works with the Pi offline.
+
+## TV wake/sleep schedule (HDMI-CEC)
+
+Per-box weekly wake/sleep schedule, set by a platform admin on the Pi
+Fleet card (`/platform/pi-fleet`) - never by tenants. `tv-schedule-
+check.timer` runs `tv-schedule-check.py` once a minute; it polls the
+server for that box's own schedule and sends the TV a CEC command only
+when the desired state actually changes (never on every tick, never by
+re-checking the TV's own power state).
+
+**Server secret - must be set in BOTH places, not just one.** The poll
+route (`functions/api/public/pi-units/tv-schedule.ts`) is served by the
+`shobdon-central` Cloudflare Pages project, but the apex domain
+(`airfieldcentral.com`) is routed through a separate `airfield-central`
+Worker first - confirmed by testing both directly. `PI_FLEET_KEY` has to
+exist as a secret on whichever one a box's `API_URL` actually points at
+(currently `shobdon.airfieldcentral.com`, the Pages project):
+```
+npx wrangler pages secret put PI_FLEET_KEY --project-name=shobdon-central
+```
+and, if the apex/Worker route is ever used instead:
+```
+npx wrangler secret put PI_FLEET_KEY --config wrangler.worker.toml
+```
+Verify with a plain unauthenticated POST - it must return `401`, not
+`503` ("Fleet key not configured" = the secret isn't set on whichever
+service actually answered):
+```
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://shobdon.airfieldcentral.com/api/public/pi-units/tv-schedule
+```
+
+**TV-side settings - confirmed on a real Samsung UE22F5410 (the Tiger
+box, AA0003).** HDMI-CEC itself must be on (Samsung: Anynet+, LG:
+SimpLink, Sony: Bravia Sync, other brands: look for "HDMI-CEC"/"Consumer
+Electronics Control") - but on this Samsung set, Anynet+ alone was NOT
+enough: standby commands were silently ignored (`cec-ctl` itself still
+reported exit code 0 - a successful CEC transmission is not the same as
+the TV actually obeying it) until **"Auto Turn Off" was also set to
+Yes**. Check both settings before assuming the schedule itself is
+broken if a TV doesn't respond.
+
+Install (once per box, over SSH/Pi Connect/Tailscale - same pattern as
+`install-wifi-setup.sh`):
+```
+cd raspberry-pi
+./install-tv-schedule.sh --serial AA0003 --dry-run   # review first
+./install-tv-schedule.sh --serial AA0003              # prompts for
+                                                        # PI_FLEET_KEY,
+                                                        # hidden input
+systemctl list-timers tv-schedule-check.timer
+sudo journalctl -u tv-schedule-check.service -n 20 --no-pager
+```
 
 ## Tested
 
