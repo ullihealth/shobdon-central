@@ -77,6 +77,21 @@ function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// TV wake/sleep schedule round - "Last seen"/"Last command" need
+// second-level precision and an explicit timezone name (e.g. "18 Oct
+// 2026, 11:52:02 BST"), unlike every other timestamp on this page -
+// explicit `timeZone: 'Europe/London'` so this is correct regardless of
+// which timezone the viewing admin's own browser happens to be in, same
+// reasoning as the box's own schedule logic using zoneinfo Europe/London
+// explicitly rather than trusting an ambient timezone.
+function formatDateTimeWithSeconds(iso: string): string {
+  return new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    timeZone: 'Europe/London', timeZoneName: 'short',
+  })
+}
+
 // Generic single-field text editor - save on blur (not per-keystroke),
 // matching this app's established "local state updates synchronously,
 // the network write fires on blur/debounce" convention elsewhere (e.g.
@@ -300,10 +315,12 @@ function TvScheduleCard({
       </div>
 
       <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-500">
-        <div>Last seen: {formatTimeAgo(unit.tvScheduleLastSeenAt)}</div>
+        <div>
+          Last seen: {unit.tvScheduleLastSeenAt ? `${formatDateTimeWithSeconds(unit.tvScheduleLastSeenAt)} (${formatTimeAgo(unit.tvScheduleLastSeenAt)})` : 'never'}
+        </div>
         <div>
           Last command: {unit.tvScheduleLastCommand ?? '—'}
-          {unit.tvScheduleLastCommandAt ? ` (${formatTimeAgo(unit.tvScheduleLastCommandAt)})` : ''}
+          {unit.tvScheduleLastCommandAt ? ` - ${formatDateTimeWithSeconds(unit.tvScheduleLastCommandAt)} (${formatTimeAgo(unit.tvScheduleLastCommandAt)})` : ''}
         </div>
         {unit.tvScheduleLastError && <div className="text-status-bad">Last error: {unit.tvScheduleLastError}</div>}
       </div>

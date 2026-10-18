@@ -55,6 +55,11 @@ tenant - only `tenant-config.txt` differs between Pis.
   **`tv-schedule-check.timer`** / **`install-tv-schedule.sh`** - per-box
   TV wake/sleep schedule (HDMI-CEC), set from the Pi Fleet admin card.
   See "TV wake/sleep schedule (HDMI-CEC)" below.
+- **`install-branding.sh`** - run this once over SSH on any kiosk Pi to
+  install the dark branded wallpaper and the Chromium white-flash fix
+  shown during a kiosk restart (`generate-wallpaper.py`,
+  `set-dark-background.py`). See "Branding (wallpaper + white-flash
+  fix)" below.
 
 ## One-time master image setup (already done on the current SD card)
 
@@ -190,6 +195,10 @@ free - a shrunk+compressed image will likely fall under that entirely.
 4. Confirm the summary it prints, and it reboots automatically. The
    kiosk comes up already showing the new tenant's dashboard - nothing
    else to do.
+5. Run `./install-branding.sh` once (branded wallpaper + Chromium
+   white-flash fix during kiosk restarts - see "Branding (wallpaper +
+   white-flash fix)" below). Not yet part of the master image itself, so
+   every freshly flashed card needs this run once.
 
 Run `./personalize-tenant.sh --help` for the full flag list (`--dry-run`,
 `--yes`, `--no-reboot`).
@@ -361,6 +370,52 @@ cd raspberry-pi
 systemctl list-timers tv-schedule-check.timer
 sudo journalctl -u tv-schedule-check.service -n 20 --no-pager
 ```
+
+## Branding (wallpaper + white-flash fix)
+
+`install-branding.sh` installs two cosmetic fixes for the brief gap that
+shows whenever `kiosk.service` restarts (see commit b90f9c9's own
+message for the original incident): a dark, branded wallpaper
+(`generate-wallpaper.py`, 1920x1080) so pcmanfm's own stock Raspberry Pi
+wallpaper never shows through, and `set-dark-background.py` (launched by
+`kiosk-wrapper.sh` itself, no separate service) to stop Chromium's own
+white first-paint background flashing before any page loads.
+
+**Gap found 2026-10-18**: both were only ever applied by hand on AA0001
+during that original round - no installer ever copied them to a new
+box, so every other box (Meg's live AA0002, Tiger's AA0003, and the
+master image itself) never got either fix. Not yet folded into the
+master image - run this once per box until it is:
+```
+./install-branding.sh --dry-run   # review first
+./install-branding.sh
+systemctl --user restart kiosk.service   # or just wait for the next restart
+```
+Safe to re-run; never touches kiosk.service itself, kiosk-watchdog,
+comitup, WiFi, the nightly reboot, or tenant-config.txt.
+
+## Known gotchas
+
+- **Raspberry Pi Connect can be blocked by some home broadband
+  filters/routers** - confirmed live: the sign-in/connection attempt
+  silently resets the TLS connection to Pi Connect's own API, with no
+  useful error on either end. A phone hotspot worked immediately on the
+  same box, confirming it's the home network's own filtering, not the Pi
+  or the account. If Pi Connect won't sign in or connect from a
+  particular site, use Tailscale instead (`setup-remote-access.sh`
+  installs both - Tailscale as the reliable fallback, not just a backup
+  for redundancy's own sake).
+- **The saved WiFi connection's own NAME differs between boxes** - not
+  always the plain SSID. A box provisioned via Raspberry Pi Imager's own
+  WiFi presets (the normal flashing flow - see "Onboarding a new
+  tenant" above) can end up with a netplan-generated name instead, e.g.
+  `netplan-wlan0-TP-Link_5C6E` rather than `TP-Link_5C6E` (confirmed on
+  AA0003). Any script or command that needs to name a specific saved
+  WiFi profile should look it up (`nmcli -t -f NAME,DEVICE,TYPE
+  connection show --active`, filtered to `wlan0`) rather than assuming a
+  fixed name - `test-no-home-wifi.sh` does this automatically as of
+  2026-10-18, after an earlier hardcoded name silently blocked nothing
+  on AA0003.
 
 ## Tested
 

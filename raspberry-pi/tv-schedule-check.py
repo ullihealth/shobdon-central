@@ -352,6 +352,22 @@ def run(simulate_schedule_path, now_override):
     if error:
         log.error(error)
     write_json_file(LAST_COMMANDED_FILE, {"command": desired, "error": error, "commandedAtUtc": now_utc.isoformat()})
+
+    # Report it back to the server NOW, not on next minute's poll - a
+    # real test found Pi Fleet's "Last command" still showing "-"
+    # shortly after Wake now/Sleep now had already switched the TV: the
+    # normal poll above only ever sends what was recorded as of the
+    # START of ITS OWN run (last_commanded, read before this decision
+    # was even made), so the command just sent here would otherwise sit
+    # unreported until the NEXT scheduled poll, up to a minute later.
+    # One extra lightweight check-in, only on an actual state change
+    # (never in the steady-state "nothing to do" case above), closes
+    # that gap - failure here is non-fatal, the next normal poll will
+    # pick it up anyway.
+    try:
+        fetch_schedule(config["serial"], config["key"], desired, error, now_utc)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        log.warning("could not report the just-sent command immediately (%s) - the next normal poll will still pick it up", exc)
     return 0
 
 
