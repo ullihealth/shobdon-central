@@ -6,6 +6,7 @@ import PilotViewPage from './pages/PilotViewPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import PilotTermsPage from './pages/PilotTermsPage'
+import PilotHelpPage from './pages/PilotHelpPage'
 import RunwayWidgetTestPage from './pages/RunwayWidgetTestPage'
 import ConfigPage from './pages/ConfigPage'
 import TvSchedulePage from './pages/TvSchedulePage'
@@ -85,6 +86,9 @@ export default function App(): JSX.Element {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/pilot-terms" element={<PilotTermsPage />} />
+        {/* Public Pilot's App help for visiting pilots - linked from the bottom
+            of /pilot, same no-RequireAuth posture as /pilot-terms above. */}
+        <Route path="/pilot-help" element={<PilotHelpPage />} />
         {/* Standalone, unlinked prototype for RunwayWindWidget.tsx - not in
             any nav, not wired into /pilot or the dashboard yet. Same bare
             "no RequireAuth" posture as /checklist above. */}

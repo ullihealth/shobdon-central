@@ -185,10 +185,7 @@ function PilotViewContent({
           itself says pilots aren't asked to accept anything - this is
           informational only, matching that). */}
       <p className="mx-auto mt-2 max-w-lg px-4 text-center text-xs leading-snug text-slate-400">
-        {PILOT_DISCLAIMER_TEXT}{' '}
-        <Link to="/pilot-terms" className="underline hover:text-slate-200">
-          {PILOT_DISCLAIMER_LINK_TEXT}
-        </Link>
+        Information only — not for flight planning.
       </p>
 
       {/* Data-freshness safety net (dataStale, WeatherContext.tsx) -
@@ -297,6 +294,23 @@ function PilotViewContent({
         <PilotCollapsibleSection title="Fuel Prices">
           <GasPricesPanel hideTitle largeText />
         </PilotCollapsibleSection>
+
+        {/* Full disclaimer + Terms of use + Help, moved here from the top
+            of the page: always the very last thing in the scroll, below
+            Fuel Prices when shown and below the last card when not. The
+            root's pb-20 (plus this block's own pb-6) keeps it clear of
+            the fixed version stamp/ticker. */}
+        <div className="flex flex-col items-center gap-3 px-2 pb-6 pt-2 text-center text-base leading-snug text-slate-400">
+          <p>{PILOT_DISCLAIMER_TEXT}</p>
+          <div className="flex items-center gap-6">
+            <Link to="/pilot-terms" className="underline hover:text-slate-200">
+              {PILOT_DISCLAIMER_LINK_TEXT}
+            </Link>
+            <Link to="/pilot-help" className="underline hover:text-slate-200">
+              Help
+            </Link>
+          </div>
+        </div>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
