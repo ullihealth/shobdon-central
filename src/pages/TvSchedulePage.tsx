@@ -52,6 +52,42 @@ function formatDateTime(iso: string): string {
   })
 }
 
+// Plain-English override time - "today at 7:00am" / "tomorrow at
+// 10:00pm" / "Tue 20 Oct at 7:00am" - 12-hour, no seconds, no year, no
+// BST/GMT (still computed in Europe/London, just not shown - customers
+// don't need to see a timezone abbreviation for "later today").
+// today/tomorrow is a pure Europe/London CALENDAR-day comparison (via
+// Intl.formatToParts, not "within 24h of now"), same technique
+// functions/api/_utils/tvSchedule.mjs's own computeNextTransition uses
+// for its day-stepping - avoids being off by a day right around the UK
+// clock-change.
+function londonDateParts(date: Date): { year: number; month: number; day: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value])
+  )
+  return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) }
+}
+
+function formatOverrideTime(iso: string): string {
+  const target = new Date(iso)
+  const todayParts = londonDateParts(new Date())
+  const targetParts = londonDateParts(target)
+  const todayCalendarUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day)
+  const targetCalendarUtc = Date.UTC(targetParts.year, targetParts.month - 1, targetParts.day)
+  const dayDiff = Math.round((targetCalendarUtc - todayCalendarUtc) / 86400000)
+
+  const timeStr = target
+    .toLocaleString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Europe/London' })
+    .replace(/\s/g, '')
+
+  if (dayDiff === 0) return `today at ${timeStr}`
+  if (dayDiff === 1) return `tomorrow at ${timeStr}`
+  const weekdayMonth = target.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' })
+  return `${weekdayMonth} at ${timeStr}`
+}
+
 function formatTimeAgo(iso: string | null): string {
   if (!iso) return 'never'
   const ms = Date.now() - new Date(iso).getTime()
@@ -129,20 +165,18 @@ function BoxCard({ box, onChange }: { box: TvScheduleBox; onChange: (patch: Part
 
   return (
     <section key={box.id} className="rounded-2xl border border-border bg-panel p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-bold uppercase tracking-widest text-accent-sky-400">{box.serialNumber}</div>
-        <label className="flex items-center gap-2 text-sm text-muted-300">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => {
-              setEnabled(e.target.checked)
-              setSaved(false)
-            }}
-          />
-          Enabled
-        </label>
-      </div>
+      <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{box.serialNumber}</div>
+      <label className="mb-3 flex items-center gap-2 text-base text-slate-100">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => {
+            setEnabled(e.target.checked)
+            setSaved(false)
+          }}
+        />
+        Turn the TV on and off automatically at these times
+      </label>
 
       <div className="flex flex-col gap-1.5">
         {WEEKDAYS.map(({ key, label }) => {
@@ -195,7 +229,6 @@ function BoxCard({ box, onChange }: { box: TvScheduleBox; onChange: (patch: Part
       </div>
 
       <div className="mt-4 border-t border-border/60 pt-3">
-        <div className="mb-2 text-sm font-semibold uppercase tracking-widest text-muted-300">Test</div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -203,7 +236,7 @@ function BoxCard({ box, onChange }: { box: TvScheduleBox; onChange: (patch: Part
             disabled={overrideBusy}
             className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-muted-300 hover:border-slate-500 hover:text-white disabled:opacity-40"
           >
-            Wake now
+            Turn TV on now
           </button>
           <button
             type="button"
@@ -211,27 +244,24 @@ function BoxCard({ box, onChange }: { box: TvScheduleBox; onChange: (patch: Part
             disabled={overrideBusy}
             className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-muted-300 hover:border-slate-500 hover:text-white disabled:opacity-40"
           >
-            Sleep now
+            Turn TV off now
           </button>
-          {box.overrideActive && (
-            <>
-              <span className="text-sm text-accent-sky-300">
-                Override: {box.overrideState} until {box.overrideUntil ? formatDateTime(box.overrideUntil) : '—'}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleOverride('clear')}
-                disabled={overrideBusy}
-                className="rounded-lg border border-status-bad px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-status-bad hover:bg-status-bad/10 disabled:opacity-40"
-              >
-                Clear override
-              </button>
-            </>
-          )}
         </div>
+        {/* Clear-override button deliberately removed from THIS page only
+            (customer-facing UX fix) - confusing alongside the automatic-
+            times tick box. The API route is untouched and Pi Fleet keeps
+            its own button; an active override here still expires on its
+            own at the time shown below regardless. */}
+        {box.overrideActive && box.overrideUntil && (
+          <p className="mt-3 text-base text-slate-100">
+            {box.overrideState === 'wake' ? 'You turned the TV on.' : 'You turned the TV off.'}
+            {box.enabled && ` It will go back to its normal times ${formatOverrideTime(box.overrideUntil)}.`}
+          </p>
+        )}
         <p className="mt-2 text-sm text-muted-300">
-          Picked up on the box's next check (within a minute), not instantly.
+          Use these for one-off changes. The TV goes back to its normal times by itself at the next scheduled on or off time.
         </p>
+        <p className="mt-1 text-sm text-muted-300">Changes reach the TV within about a minute.</p>
       </div>
 
       <div className="mt-4 border-t border-border/60 pt-3 text-sm">
