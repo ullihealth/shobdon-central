@@ -205,6 +205,52 @@ def compute_desired_state(data, now_utc):
     return "wake" if wake_minutes <= now_minutes < sleep_minutes else "sleep"
 
 
+def override_is_active(data, now_utc):
+    override_state = data.get("overrideState")
+    override_until = data.get("overrideUntil")
+    if not (override_state and override_until):
+        return False
+    return now_utc < datetime.fromisoformat(override_until.replace("Z", "+00:00"))
+
+
+# The per-press marker the server stamps on every Wake now/Sleep now
+# (migration 0116) - only meaningful while that override is active.
+# Older servers don't send it (None), which keeps the old behaviour.
+def active_override_marker(data, now_utc):
+    if override_is_active(data, now_utc):
+        return data.get("overrideIssuedAt") or None
+    return None
+
+
+# What to record in the last-commanded file as "the newest override press
+# already acted on": the active press if there is one, otherwise whatever
+# was recorded before (so a press is never re-sent after it expires and
+# the box falls back to the schedule).
+def handled_override_marker(data, now_utc, last_commanded):
+    return active_override_marker(data, now_utc) or last_commanded.get("overrideIssuedAt")
+
+
+# Decides whether to send a CEC command, and why. Returns
+# (desired, reason) - reason is None for "nothing to send".
+#   - A NEW manual override press (overrideIssuedAt differs from the last
+#     one acted on) always sends once, even if the box already believes
+#     the TV is in that state - someone may have used the TV's own remote
+#     since. The same press seen on later polls does not re-send.
+#   - Otherwise edge-triggered exactly as before: send only when the
+#     desired state differs from what was last commanded (scheduled
+#     transitions, first run after boot, override expiry changing state).
+def decide_action(data, now_utc, last_commanded):
+    desired = compute_desired_state(data, now_utc)
+    if desired is None:
+        return None, None
+    marker = active_override_marker(data, now_utc)
+    if marker and marker != last_commanded.get("overrideIssuedAt"):
+        return desired, "manual override (new)"
+    if last_commanded.get("command") != desired:
+        return desired, "state change"
+    return desired, None
+
+
 # The two CEC actions this round needs - CONFIRMED on real hardware
 # (Tiger box AA0003, Samsung UE22F5410, Anynet+ on, Auto Turn Off = Yes -
 # see the install checklist/README for why both of those TV-side
@@ -339,19 +385,30 @@ def run(simulate_schedule_path, now_override):
             log.warning("no cached schedule available either - doing nothing")
             return 0
 
-    desired = compute_desired_state(data, now_utc)
+    desired, reason = decide_action(data, now_utc, last_commanded)
     if desired is None:
         log.info("no schedule applies right now - doing nothing")
         return 0
 
-    if last_commanded.get("command") == desired:
+    if reason is None:
         return 0  # steady state - the whole point of this file: no command, no spam
 
-    log.info("state change: %s -> %s - sending CEC command", last_commanded.get("command") or "(unknown, e.g. just booted)", desired)
+    if reason == "manual override (new)":
+        log.info("manual override (new): sending CEC %s", desired)
+    else:
+        log.info("state change: %s -> %s - sending CEC command", last_commanded.get("command") or "(unknown, e.g. just booted)", desired)
     error = send_cec(desired, simulate=False)
     if error:
         log.error(error)
-    write_json_file(LAST_COMMANDED_FILE, {"command": desired, "error": error, "commandedAtUtc": now_utc.isoformat()})
+    write_json_file(
+        LAST_COMMANDED_FILE,
+        {
+            "command": desired,
+            "error": error,
+            "commandedAtUtc": now_utc.isoformat(),
+            "overrideIssuedAt": handled_override_marker(data, now_utc, last_commanded),
+        },
+    )
 
     # Report it back to the server NOW, not on next minute's poll - a
     # real test found Pi Fleet's "Last command" still showing "-"

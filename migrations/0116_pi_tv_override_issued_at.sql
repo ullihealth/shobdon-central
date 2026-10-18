@@ -1,0 +1,16 @@
+-- Manual-override "press" marker for the TV schedule box (follow-up to
+-- 0114). The box (raspberry-pi/tv-schedule-check.py) is edge-triggered: it
+-- only sends a CEC command when its desired state CHANGES, so if someone
+-- switched the TV off with the TV's own remote, "Turn TV on now" / "Wake
+-- now" changed nothing the box could see (same override state, and the
+-- same override_until - that is always the next scheduled transition, so
+-- two presses of the same button are byte-identical in the poll response).
+--
+-- Set to the current ISO timestamp by BOTH override routes (tenant
+-- tv-schedule/[id]/override.ts and platform pi-units/[id]/
+-- tv-schedule-override.ts) every time wake/sleep is pressed, NULLed on
+-- clear. The box sends one CEC command per NEW value, and never re-sends
+-- for the same value. NULL = no press recorded (old behaviour).
+-- Nothing else reads or clears it: the poll route only returns it while
+-- an override is actually active.
+ALTER TABLE pi_units ADD COLUMN tv_schedule_override_issued_at TEXT;

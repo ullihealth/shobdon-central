@@ -41,6 +41,7 @@ interface UnitRow {
   tvScheduleJson: string | null;
   tvScheduleOverrideState: string | null;
   tvScheduleOverrideUntil: string | null;
+  tvScheduleOverrideIssuedAt: string | null;
   tvScheduleLastCommand: string | null;
   tvScheduleLastError: string | null;
 }
@@ -63,6 +64,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT id, tv_schedule_enabled AS tvScheduleEnabled, tv_schedule_json AS tvScheduleJson,
               tv_schedule_override_state AS tvScheduleOverrideState, tv_schedule_override_until AS tvScheduleOverrideUntil,
+              tv_schedule_override_issued_at AS tvScheduleOverrideIssuedAt,
               tv_schedule_last_command AS tvScheduleLastCommand, tv_schedule_last_error AS tvScheduleLastError
        FROM pi_units WHERE serial_number = ?`
     )
@@ -81,6 +83,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const overrideExpired = !!unit.tvScheduleOverrideUntil && new Date(unit.tvScheduleOverrideUntil).getTime() <= now.getTime();
   const overrideState = overrideExpired ? null : unit.tvScheduleOverrideState;
   const overrideUntil = overrideExpired ? null : unit.tvScheduleOverrideUntil;
+  // Per-press marker so the box can tell a NEW press of the same button
+  // from the same override it already acted on (see migration 0116).
+  const overrideIssuedAt = overrideState ? unit.tvScheduleOverrideIssuedAt : null;
 
   // One UPDATE per check-in (never two), per the round's own "keep it to
   // one small update, or only on change" instruction - last_seen_at is
@@ -114,5 +119,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     schedule: unit.tvScheduleJson ? JSON.parse(unit.tvScheduleJson) : null,
     overrideState,
     overrideUntil,
+    overrideIssuedAt,
   });
 };

@@ -62,7 +62,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   if (body.action === "clear") {
     await env.DB
-      .prepare("UPDATE pi_units SET tv_schedule_override_state = NULL, tv_schedule_override_until = NULL, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE pi_units SET tv_schedule_override_state = NULL, tv_schedule_override_until = NULL, tv_schedule_override_issued_at = NULL, updated_at = ? WHERE id = ?")
       .bind(now, unitId)
       .run();
     return jsonResponse({ overrideState: null, overrideUntil: null, overrideActive: false });
@@ -73,8 +73,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
   const overrideUntil = (nextTransition ?? new Date(Date.now() + FALLBACK_OVERRIDE_MS)).toISOString();
 
   await env.DB
-    .prepare("UPDATE pi_units SET tv_schedule_override_state = ?, tv_schedule_override_until = ?, updated_at = ? WHERE id = ?")
-    .bind(body.action, overrideUntil, now, unitId)
+    .prepare("UPDATE pi_units SET tv_schedule_override_state = ?, tv_schedule_override_until = ?, tv_schedule_override_issued_at = ?, updated_at = ? WHERE id = ?")
+    .bind(body.action, overrideUntil, now, now, unitId)
     .run();
 
   return jsonResponse({ overrideState: body.action, overrideUntil, overrideActive: true });
