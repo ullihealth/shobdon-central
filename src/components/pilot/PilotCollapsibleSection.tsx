@@ -8,6 +8,12 @@ interface PilotCollapsibleSectionProps {
   titleClassName?: string
   chevronClassName?: string
   defaultExpanded?: boolean
+  // Opt-in controlled mode (used by the Pilot's App help page to keep one
+  // section open at a time). When `expanded` is passed, the parent owns
+  // the state and `onToggle` is called on each tap; every other caller
+  // omits both and keeps today's self-managed behaviour exactly.
+  expanded?: boolean
+  onToggle?: () => void
 }
 
 // Same collapsed-by-default accordion pattern TickerSettingsCards.tsx's
@@ -31,14 +37,18 @@ export default function PilotCollapsibleSection({
   titleClassName = 'text-xl font-semibold uppercase tracking-[0.25em] text-muted-400',
   chevronClassName = 'text-muted-400',
   defaultExpanded = false,
+  expanded: expandedProp,
+  onToggle,
 }: PilotCollapsibleSectionProps): JSX.Element {
-  const [expanded, setExpanded] = useState(defaultExpanded)
+  const [internalExpanded, setInternalExpanded] = useState(defaultExpanded)
+  const isControlled = expandedProp !== undefined
+  const expanded = isControlled ? expandedProp : internalExpanded
 
   return (
     <section className={sectionClassName}>
       <button
         type="button"
-        onClick={() => setExpanded((prev) => !prev)}
+        onClick={() => (isControlled ? onToggle?.() : setInternalExpanded((prev) => !prev))}
         className="flex w-full items-center justify-between"
         aria-expanded={expanded}
       >

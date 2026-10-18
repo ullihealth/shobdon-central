@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
-import { PILOT_DISCLAIMER_LINK_TEXT, PILOT_DISCLAIMER_TEXT } from '../content/legalTerms'
+import PilotInfoFooter from '../components/pilot/PilotInfoFooter'
 import {
   D,
   FAQ_CLOUD_BASE,
@@ -81,10 +82,40 @@ function Items({ items }: { items: FaqItemData[] }) {
   )
 }
 
+const SECTIONS: { key: string; title: string; content: () => ReactNode }[] = [
+  { key: 'read', title: 'How to read the screen', content: () => WIND_COMPASS_ENTRY.answer },
+  { key: 'weather', title: 'Weather', content: () => <Items items={WEATHER_ITEMS} /> },
+  { key: 'app', title: "Using the Pilot's App", content: () => <Items items={APP_ITEMS} /> },
+  { key: 'planning', title: 'Flight planning', content: () => <Items items={[FAQ_FLIGHT_PLANNING]} /> },
+  { key: 'problems', title: 'Problems with the app', content: () => <Items items={PROBLEM_ITEMS} /> },
+]
+
 export default function PilotHelpPage() {
   useEffect(() => {
     document.title = `Pilot's App Help — AirfieldCentral`
   }, [])
+
+  // One section open at a time: opening one closes any other, tapping the
+  // open one closes it. Uses PilotCollapsibleSection's opt-in controlled mode.
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  // After a section opens, a section above it may just have closed and
+  // pulled the opened heading off-screen - bring it back smoothly
+  // (scroll-mt-4 on the wrapper leaves a little room above it). Only
+  // scrolls when the heading isn't already comfortably in view.
+  useEffect(() => {
+    if (!openKey) return
+    const frame = window.requestAnimationFrame(() => {
+      const element = sectionRefs.current[openKey]
+      if (!element) return
+      const rect = element.getBoundingClientRect()
+      if (rect.top < 8 || rect.top > window.innerHeight - 80) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [openKey])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-4 pb-10 pt-6 text-slate-100">
@@ -96,34 +127,28 @@ export default function PilotHelpPage() {
         <p className="mb-6 text-sm text-muted-400">How to read the screen, where the weather comes from, and how to get the most from the app.</p>
 
         <div className="flex flex-col gap-4">
-          <PilotCollapsibleSection title="How to read the screen" sectionClassName={SECTION_CLASS} titleClassName={SECTION_TITLE_CLASS}>
-            {WIND_COMPASS_ENTRY.answer}
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection title="Weather" sectionClassName={SECTION_CLASS} titleClassName={SECTION_TITLE_CLASS}>
-            <Items items={WEATHER_ITEMS} />
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection title="Using the Pilot's App" sectionClassName={SECTION_CLASS} titleClassName={SECTION_TITLE_CLASS}>
-            <Items items={APP_ITEMS} />
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection title="Flight planning" sectionClassName={SECTION_CLASS} titleClassName={SECTION_TITLE_CLASS}>
-            <Items items={[FAQ_FLIGHT_PLANNING]} />
-          </PilotCollapsibleSection>
-          <PilotCollapsibleSection title="Problems with the app" sectionClassName={SECTION_CLASS} titleClassName={SECTION_TITLE_CLASS}>
-            <Items items={PROBLEM_ITEMS} />
-          </PilotCollapsibleSection>
+          {SECTIONS.map((section) => (
+            <div
+              key={section.key}
+              ref={(element) => {
+                sectionRefs.current[section.key] = element
+              }}
+              className="scroll-mt-4"
+            >
+              <PilotCollapsibleSection
+                title={section.title}
+                sectionClassName={SECTION_CLASS}
+                titleClassName={SECTION_TITLE_CLASS}
+                expanded={openKey === section.key}
+                onToggle={() => setOpenKey((current) => (current === section.key ? null : section.key))}
+              >
+                {section.content()}
+              </PilotCollapsibleSection>
+            </div>
+          ))}
         </div>
 
-        <div className="mt-8 flex flex-col items-center gap-3 text-center text-base leading-snug text-slate-400">
-          <p>{PILOT_DISCLAIMER_TEXT}</p>
-          <div className="flex items-center gap-6">
-            <Link to="/pilot-terms" className="underline hover:text-slate-200">
-              {PILOT_DISCLAIMER_LINK_TEXT}
-            </Link>
-            <Link to="/pilot" className="underline hover:text-slate-200">
-              Back to Pilot&apos;s App
-            </Link>
-          </div>
-        </div>
+        <PilotInfoFooter primaryTo="/pilot" primaryLabel="Back to Pilot's App" />
       </div>
     </div>
   )

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link } from 'react-router-dom'
 import type { CropRect } from '../types/mediaLibrary'
-import { PILOT_DISCLAIMER_TEXT, PILOT_DISCLAIMER_LINK_TEXT } from '../content/legalTerms'
 import { buildPilotThemeStyle, type PilotThemeOverride } from '../utils/pilotThemeStyle'
 import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
@@ -26,7 +24,8 @@ import PilotRunwayWindPanel from '../components/pilot/PilotRunwayWindPanel'
 import PilotWindCard from '../components/pilot/PilotWindCard'
 import PilotCameraView from '../components/pilot/PilotCameraView'
 import CompassPanel from '../components/CompassPanel'
-import GasPricesPanel from '../components/GasPricesPanel'
+import GasPricesPanel, { type GasPricesPublic } from '../components/GasPricesPanel'
+import PilotInfoFooter from '../components/pilot/PilotInfoFooter'
 
 const REFRESH_INTERVAL_MS = 60_000
 
@@ -44,6 +43,16 @@ const REFRESH_INTERVAL_MS = 60_000
 // override, rather than a second hand-maintained copy that could drift.
 type PilotBackgroundOverride = PilotThemeOverride
 
+// Fuel Prices card gate: the tenant's own toggle must not be off (public
+// config's fuelPricesEnabled - defaults to on when absent, same default the
+// dashboard uses) AND there must be at least one real price, matching the
+// tiles GasPricesPanel itself would draw. Anything else hides the whole card.
+function shouldShowFuelPrices(fuelPricesEnabled: unknown, gasPrices: GasPricesPublic | null | undefined): boolean {
+  if (fuelPricesEnabled === false) return false
+  if (!gasPrices) return false
+  return [gasPrices.avgasPrice, gasPrices.ul91Price, gasPrices.jetA1Price].some((price) => typeof price === 'number')
+}
+
 interface PilotViewContentProps {
   airfieldName: string | null
   logoUrl: string | null
@@ -54,6 +63,10 @@ interface PilotViewContentProps {
   pilotBackgroundOverride: PilotBackgroundOverride | null
   primaryCameraUrl: string | null
   onOpenCamera: () => void
+  // Whether the Fuel Prices card renders at all: the tenant's own toggle
+  // (public config's fuelPricesEnabled, off for Tiger) AND at least one
+  // real price to show. Decided by the parent from the same config fetch.
+  showFuelPrices: boolean
 }
 
 // Everything that used to render directly inside PilotViewPage's own
@@ -75,6 +88,7 @@ function PilotViewContent({
   pilotBackgroundOverride,
   primaryCameraUrl,
   onOpenCamera,
+  showFuelPrices,
 }: PilotViewContentProps): JSX.Element {
   const { refetchNow, dataStale } = useWeather()
   usePilotDataFreshnessGuard()
@@ -291,26 +305,17 @@ function PilotViewContent({
         <PilotCollapsibleSection title="Club & Safety Notices">
           <PilotNoticesPanel refreshSignal={refreshTick} />
         </PilotCollapsibleSection>
-        <PilotCollapsibleSection title="Fuel Prices">
-          <GasPricesPanel hideTitle largeText />
-        </PilotCollapsibleSection>
+        {showFuelPrices && (
+          <PilotCollapsibleSection title="Fuel Prices">
+            <GasPricesPanel hideTitle largeText />
+          </PilotCollapsibleSection>
+        )}
 
-        {/* Full disclaimer + Terms of use + Help, moved here from the top
-            of the page: always the very last thing in the scroll, below
-            Fuel Prices when shown and below the last card when not. The
-            root's pb-20 (plus this block's own pb-6) keeps it clear of
-            the fixed version stamp/ticker. */}
-        <div className="flex flex-col items-center gap-3 px-2 pb-6 pt-2 text-center text-base leading-snug text-slate-400">
-          <p>{PILOT_DISCLAIMER_TEXT}</p>
-          <div className="flex items-center gap-6">
-            <Link to="/pilot-terms" className="underline hover:text-slate-200">
-              {PILOT_DISCLAIMER_LINK_TEXT}
-            </Link>
-            <Link to="/pilot-help" className="underline hover:text-slate-200">
-              Help
-            </Link>
-          </div>
-        </div>
+        {/* Footer: divider, Help + Terms of use buttons, full disclaimer.
+            Always the very last thing in the scroll - below Fuel Prices
+            when shown, below the last card when not. The root's pb-20 keeps
+            it clear of the fixed version stamp/ticker. */}
+        <PilotInfoFooter primaryTo="/pilot-help" primaryLabel="Help" />
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10">
@@ -385,6 +390,7 @@ export default function PilotViewPage(): JSX.Element {
   // EVERYTHING (header, footer ticker, the lot), not just within
   // whichever card the tap originated from.
   const [primaryCameraUrl, setPrimaryCameraUrl] = useState<string | null>(null)
+  const [showFuelPrices, setShowFuelPrices] = useState(false)
   // Crop consistency round - the same crop the dashboard carousel slide
   // for this camera already uses (publicConfig.ts's own
   // primaryCameraCropRect), defaults to identity (a no-op transform,
@@ -413,6 +419,7 @@ export default function PilotViewPage(): JSX.Element {
           setAfisoFrequency(data.afiso.frequency ?? '')
         }
         if (typeof data.mobileEnabled === 'boolean') setMobileEnabled(data.mobileEnabled)
+        setShowFuelPrices(shouldShowFuelPrices(data.fuelPricesEnabled, data.gasPrices))
         if (data.theme) setThemeOverride(data.theme as CSSProperties)
         if (data.pilotBackgroundOverride) setPilotBackgroundOverride(data.pilotBackgroundOverride)
         // Unconditional, unlike the falsy-skips-update fields above -
@@ -481,6 +488,7 @@ export default function PilotViewPage(): JSX.Element {
         pilotBackgroundOverride={pilotBackgroundOverride}
         primaryCameraUrl={primaryCameraUrl}
         onOpenCamera={() => setCameraViewOpen(true)}
+        showFuelPrices={showFuelPrices}
       />
       {cameraViewOpen && primaryCameraUrl && (
         <PilotCameraView url={primaryCameraUrl} cropRect={primaryCameraCropRect} onClose={() => setCameraViewOpen(false)} />
