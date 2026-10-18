@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PilotCollapsibleSection from '../components/pilot/PilotCollapsibleSection'
 
@@ -365,6 +366,32 @@ const FAQ_ENTRIES: FaqEntry[] = [
 // support-page redesign is expected later; this is a starting point,
 // not the final shape.
 export default function HelpFaqPage(): JSX.Element {
+  // One section open at a time, same behaviour as the Pilot's App help page:
+  // opening a section closes any other, tapping the open one closes it
+  // (PilotCollapsibleSection's opt-in controlled mode - its default
+  // behaviour for every other caller is untouched).
+  const [openQuestion, setOpenQuestion] = useState<string | null>(null)
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  // After a section opens, a longer one above it may just have closed and
+  // pulled the opened heading out of view (or under the layout's sticky
+  // banner) - bring it back smoothly. The wrapper's scroll-margin-top is
+  // the room left above it, and also the threshold used to decide whether
+  // the heading is still comfortably in view.
+  useEffect(() => {
+    if (!openQuestion) return
+    const frame = window.requestAnimationFrame(() => {
+      const element = sectionRefs.current[openQuestion]
+      if (!element) return
+      const rect = element.getBoundingClientRect()
+      const topMargin = parseFloat(window.getComputedStyle(element).scrollMarginTop) || 0
+      if (rect.top < topMargin - 4 || rect.top > window.innerHeight - 80) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [openQuestion])
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <Link to="/help" className="mb-4 inline-block text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
@@ -375,14 +402,23 @@ export default function HelpFaqPage(): JSX.Element {
 
       <div className="flex flex-col gap-4">
         {FAQ_ENTRIES.map((entry) => (
-          <PilotCollapsibleSection
+          <div
             key={entry.question}
-            title={entry.question}
-            sectionClassName="rounded-2xl border border-border bg-panel p-6"
-            titleClassName="text-left text-sm font-bold uppercase tracking-widest text-accent-sky-400"
+            ref={(element) => {
+              sectionRefs.current[entry.question] = element
+            }}
+            className="scroll-mt-20"
           >
-            {entry.answer}
-          </PilotCollapsibleSection>
+            <PilotCollapsibleSection
+              title={entry.question}
+              sectionClassName="rounded-2xl border border-border bg-panel p-6"
+              titleClassName="text-left text-sm font-bold uppercase tracking-widest text-accent-sky-400"
+              expanded={openQuestion === entry.question}
+              onToggle={() => setOpenQuestion((current) => (current === entry.question ? null : entry.question))}
+            >
+              {entry.answer}
+            </PilotCollapsibleSection>
+          </div>
         ))}
       </div>
     </div>
