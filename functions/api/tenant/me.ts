@@ -93,9 +93,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // that file's own comment) - no pre-existing/comped tenant can ever
   // have it, so this gate is airtight without a new column.
   const tenantRow = await env.DB
-    .prepare("SELECT subdomain, tenant_type AS tenantType, subscription_status AS subscriptionStatus, subscription_notes AS pendingPlan FROM tenants WHERE organization_id = ?")
+    .prepare("SELECT id, subdomain, tenant_type AS tenantType, subscription_status AS subscriptionStatus, subscription_notes AS pendingPlan FROM tenants WHERE organization_id = ?")
     .bind(result.membership.organizationId)
-    .first<{ subdomain: string | null; tenantType: string; subscriptionStatus: string; pendingPlan: string | null }>();
+    .first<{ id: number; subdomain: string | null; tenantType: string; subscriptionStatus: string; pendingPlan: string | null }>();
+
+  // Tenant-facing TV schedule round (migration 0115) - drives
+  // sidebarConfig.ts's own requireTvScheduleBox gate (same pattern
+  // cafeEntitled already establishes above): the sidebar item is hidden
+  // entirely unless this tenant has at least one box a platform admin
+  // has explicitly linked (pi_units.tenant_id) AND that box has checked
+  // in at least once (tv_schedule_last_seen_at IS NOT NULL) - a linked
+  // box that's never actually polled yet has nothing to show.
+  const hasTvScheduleBox = tenantRow
+    ? !!(await env.DB
+        .prepare("SELECT 1 FROM pi_units WHERE tenant_id = ? AND tv_schedule_last_seen_at IS NOT NULL LIMIT 1")
+        .bind(tenantRow.id)
+        .first())
+    : false;
 
   return jsonResponse({
     role: result.membership.role,
@@ -118,6 +132,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // than null - AdminSidebar.tsx's TenantType is a plain two-value
     // union with no "unknown" state to represent a genuinely-missing row.
     tenantType: tenantRow?.tenantType === "venue_cafe" ? "venue_cafe" : "airfield",
+    hasTvScheduleBox,
     memberships,
   });
 };

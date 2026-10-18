@@ -8,6 +8,7 @@ import PrivacyPage from './pages/PrivacyPage'
 import PilotTermsPage from './pages/PilotTermsPage'
 import RunwayWidgetTestPage from './pages/RunwayWidgetTestPage'
 import ConfigPage from './pages/ConfigPage'
+import TvSchedulePage from './pages/TvSchedulePage'
 import CafeMediaPage from './pages/CafeMediaPage'
 import DesignPage from './pages/DesignPage'
 import DeveloperToolsPage from './pages/DeveloperToolsPage'
@@ -226,6 +227,23 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin']}>
                 <ConfigPage />
+              </RequireAuth>
+            }
+          />
+          {/* Tenant-facing TV schedule round (migration 0115) - same
+              owner/admin gate as /config above. The sidebar item itself
+              (sidebarConfig.ts's requireTvScheduleBox) is hidden unless
+              this tenant has a linked, checked-in box, but the route
+              stays reachable directly either way - RequireAuth's own
+              requireRole is the real client-side gate here, same as
+              every other route in this group; the server-side routes
+              (functions/api/tenant/tv-schedule/*.ts) are the real
+              boundary regardless of what this page shows. */}
+          <Route
+            path="/tv-schedule"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <TvSchedulePage />
               </RequireAuth>
             }
           />

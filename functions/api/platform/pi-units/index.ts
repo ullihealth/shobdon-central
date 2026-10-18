@@ -1,10 +1,20 @@
 // Platform-admin only: GET/POST /api/platform/pi-units - the Pi Fleet
 // inventory (migration 0098). Backs /platform/pi-fleet
-// (src/pages/PlatformPiFleetPage.tsx). No tenant-facing surface, no
-// data-isolation concerns - requirePlatformAdmin is the only gate,
-// same reasoning as tenants/index.ts's own comment (org-independent by
-// design, since a Pi unit's tenant_name is plain free text, not a real
-// tenant link - see the migration's own comment for why).
+// (src/pages/PlatformPiFleetPage.tsx). requirePlatformAdmin remains the
+// ONLY gate on every route in this file - Pi Fleet itself stays
+// developer-only, same reasoning as tenants/index.ts's own comment
+// (org-independent by design, since a Pi unit's tenant_name is plain
+// free text, not a real tenant link - see the migration's own comment
+// for why).
+//
+// Tenant-facing TV schedule round (migration 0115) - a deliberate,
+// narrow exception to the "no tenant-facing surface" premise above:
+// pi_units.tenant_id is now a real, nullable link a platform admin sets
+// explicitly here (the "Linked tenant" picker on the Pi Fleet card).
+// Tenant-facing access exists ONLY for a box with tenant_id actually
+// set - see functions/api/tenant/tv-schedule/*.ts, which are the only
+// other routes that ever read/write pi_units at all, and which check
+// THIS column (never tenant_name) as their real security boundary.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 
 type PagesFunction<Env = unknown> = (context: {
@@ -43,6 +53,9 @@ interface PiUnitRow {
   tvScheduleLastCommand: string | null;
   tvScheduleLastCommandAt: string | null;
   tvScheduleLastError: string | null;
+  // Tenant-facing TV schedule round (migration 0115).
+  tenantId: number | null;
+  linkedTenantName: string | null;
 }
 
 interface PiUnitNoteRow {
@@ -60,7 +73,8 @@ const UNIT_COLUMNS = `id, serial_number AS serialNumber, tenant_name AS tenantNa
    tv_schedule_enabled AS tvScheduleEnabled, tv_schedule_json AS tvScheduleJson,
    tv_schedule_override_state AS tvScheduleOverrideState, tv_schedule_override_until AS tvScheduleOverrideUntil,
    tv_schedule_last_seen_at AS tvScheduleLastSeenAt, tv_schedule_last_command AS tvScheduleLastCommand,
-   tv_schedule_last_command_at AS tvScheduleLastCommandAt, tv_schedule_last_error AS tvScheduleLastError`;
+   tv_schedule_last_command_at AS tvScheduleLastCommandAt, tv_schedule_last_error AS tvScheduleLastError,
+   tenant_id AS tenantId`;
 
 export const STATUS_OPTIONS = ["active", "spare", "faulty", "retired"] as const;
 
@@ -72,7 +86,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // one query for every unit, one for every note (newest-first, matching
   // the notes log's own reverse-chronological display), grouped into a
   // Map by pi_unit_id rather than a per-unit round trip.
-  const [{ results: units }, { results: noteRows }] = await Promise.all([
+  // Tenant-facing TV schedule round - a plain id->name Map rather than a
+  // JOIN in UNIT_COLUMNS, so that one shared column list stays safe to
+  // reuse everywhere it already is (POST's own single-row SELECT below,
+  // [id].ts's PATCH) without needing a join at every call site. The
+  // tenants table is small; fetching every id+name is cheap next to the
+  // per-unit/per-note queries already running here.
+  const [{ results: units }, { results: noteRows }, { results: tenantRows }] = await Promise.all([
     env.DB.prepare(`SELECT ${UNIT_COLUMNS} FROM pi_units ORDER BY updated_at DESC`).all<PiUnitRow>(),
     env.DB
       .prepare(
@@ -80,6 +100,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
          FROM pi_unit_notes ORDER BY created_at DESC`
       )
       .all<PiUnitNoteRow>(),
+    env.DB.prepare(`SELECT id, name FROM tenants WHERE deleted_at IS NULL ORDER BY name`).all<{ id: number; name: string }>(),
   ]);
 
   const notesByUnit = new Map<number, PiUnitNoteRow[]>();
@@ -88,12 +109,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     list.push(row);
     notesByUnit.set(row.piUnitId, list);
   }
+  const tenantNameById = new Map(tenantRows.map((t) => [t.id, t.name]));
 
   const now = Date.now();
 
   return jsonResponse({
     units: units.map((unit) => ({
       ...unit,
+      linkedTenantName: unit.tenantId != null ? (tenantNameById.get(unit.tenantId) ?? null) : null,
       tvScheduleEnabled: !!unit.tvScheduleEnabled,
       tvSchedule: unit.tvScheduleJson ? JSON.parse(unit.tvScheduleJson) : null,
       // Display convenience only - the real expiry/clearing happens
@@ -109,6 +132,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         createdAt: note.createdAt,
       })),
     })),
+    // Options for the "Linked tenant" picker - returned alongside the
+    // units themselves (not a separate /api/platform/tenants fetch) so
+    // this one already-admin-gated call is self-contained.
+    tenants: tenantRows,
   });
 };
 
@@ -152,7 +179,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     .bind(serialNumber)
     .first<PiUnitRow>();
   return jsonResponse(
-    { ...created, tvScheduleEnabled: false, tvSchedule: null, tvScheduleOverrideActive: false, notes: [] },
+    { ...created, linkedTenantName: null, tvScheduleEnabled: false, tvSchedule: null, tvScheduleOverrideActive: false, notes: [] },
     201
   );
 };

@@ -1,0 +1,22 @@
+-- Tenant-facing TV schedule round - a deliberate, narrow exception to
+-- Pi Fleet's own "no tenant-facing surface, no data isolation" design
+-- premise (see migration 0098's own comment on tenant_name, and
+-- functions/api/platform/pi-units/index.ts's own header comment - both
+-- state that premise explicitly). Jeff's own decision: let a tenant
+-- manage their OWN box's TV wake/sleep schedule from their own
+-- Settings, but ONLY for a box a platform admin has explicitly linked.
+--
+-- tenant_name (migration 0098) is UNCHANGED and remains free text, for
+-- exactly the reason that migration gives - a box can be recorded
+-- before its tenant exists. tenant_id is a SEPARATE, real link an admin
+-- sets explicitly once both the box and the tenant exist - nullable, no
+-- default, no backfill, so every existing pi_units row (and every new
+-- one created the normal way) stays unlinked, and therefore invisible
+-- to any tenant, until a platform admin deliberately links it via the
+-- new picker on the Pi Fleet card.
+--
+-- This is the ONLY place pi_units gains a real tenant boundary -
+-- requirePlatformAdmin remains the sole gate on every existing Pi Fleet
+-- route; the new tenant-facing TV schedule routes are the one place
+-- that reads/writes THIS column as a security check, never tenant_name.
+ALTER TABLE pi_units ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);

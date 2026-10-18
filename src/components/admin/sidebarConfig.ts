@@ -37,6 +37,13 @@ export interface SidebarItem {
   requireDeveloper?: boolean
   requireCafeEntitlement?: boolean
   hideForTenantType?: TenantType[]
+  // Tenant-facing TV schedule round (migration 0115) - same orthogonal,
+  // combinable posture as requireCafeEntitlement above (a live fact
+  // from pi_units, not a role): hidden entirely unless this tenant has
+  // at least one box a platform admin has explicitly linked AND that
+  // box has checked in at least once - see /api/tenant/me's own
+  // hasTvScheduleBox comment for the exact query.
+  requireTvScheduleBox?: boolean
 }
 
 export interface SidebarGroupConfig {
@@ -112,6 +119,12 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       // hiding it would leave that tenant with no way to change their
       // one product's own colours/branding.
       { to: '/config', label: 'Weather Config', allowedRoles: ['owner', 'admin'], hideForTenantType: ['venue_cafe'] },
+      // Tenant-facing TV schedule round (migration 0115) - same role
+      // gate as Weather Config above (owner/admin only), not hidden for
+      // venue_cafe (a café's own box is just as plausible a TV schedule
+      // candidate as an airfield's - this isn't an aviation-specific
+      // product the way Runways/Pilot Panel are).
+      { to: '/tv-schedule', label: 'TV Schedule', allowedRoles: ['owner', 'admin'], requireTvScheduleBox: true },
       { to: '/design', label: 'Screens Design', allowedRoles: ['owner', 'admin'] },
       { to: '/runways', label: 'Runways', allowedRoles: ['owner', 'admin'], hideForTenantType: ['venue_cafe'] },
       // Pilot Panel round - configures /pilot's own ticker + background

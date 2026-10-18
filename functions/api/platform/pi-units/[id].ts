@@ -40,11 +40,18 @@ interface PiUnitRow {
   tvScheduleJson: string | null;
   tvScheduleOverrideState: string | null;
   tvScheduleOverrideUntil: string | null;
+  tenantId: number | null;
 }
 
 interface PatchBody {
   serialNumber?: string;
   tenantName?: string | null;
+  // Tenant-facing TV schedule round (migration 0115) - the real link,
+  // separate from tenantName above (which stays free text, untouched -
+  // see that migration's own comment). null explicitly unlinks the box
+  // (the "None" option in the picker); omitted means no change, same
+  // nullable-field convention as every other field on this route.
+  tenantId?: number | null;
   physicalAddress?: string | null;
   contactName?: string | null;
   contactEmail?: string | null;
@@ -77,7 +84,8 @@ const UNIT_COLUMNS = `id, serial_number AS serialNumber, tenant_name AS tenantNa
    tv_schedule_enabled AS tvScheduleEnabled, tv_schedule_json AS tvScheduleJson,
    tv_schedule_override_state AS tvScheduleOverrideState, tv_schedule_override_until AS tvScheduleOverrideUntil,
    tv_schedule_last_seen_at AS tvScheduleLastSeenAt, tv_schedule_last_command AS tvScheduleLastCommand,
-   tv_schedule_last_command_at AS tvScheduleLastCommandAt, tv_schedule_last_error AS tvScheduleLastError`;
+   tv_schedule_last_command_at AS tvScheduleLastCommandAt, tv_schedule_last_error AS tvScheduleLastError,
+   tenant_id AS tenantId`;
 
 // Nullable free-text fields: an omitted field (undefined) means "no
 // change"; an explicitly-sent empty string means "clear it" (a plain
@@ -109,6 +117,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   if (body.tvSchedule !== undefined && body.tvSchedule !== null) {
     const scheduleError = validateSchedule(body.tvSchedule);
     if (scheduleError) return jsonResponse({ error: scheduleError }, 400);
+  }
+  if (body.tenantId !== undefined && body.tenantId !== null && !Number.isInteger(body.tenantId)) {
+    return jsonResponse({ error: "tenantId must be an integer or null" }, 400);
+  }
+  if (body.tenantId !== undefined && body.tenantId !== null) {
+    const tenantExists = await env.DB.prepare("SELECT 1 FROM tenants WHERE id = ?").bind(body.tenantId).first();
+    if (!tenantExists) return jsonResponse({ error: "No tenant with that id exists" }, 400);
   }
 
   const current = await env.DB.prepare(`SELECT ${UNIT_COLUMNS} FROM pi_units WHERE id = ?`).bind(unitId).first<PiUnitRow>();
@@ -160,6 +175,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     tvScheduleJson: nextTvScheduleJsonRaw,
     tvScheduleOverrideState: clearsOverride ? null : current.tvScheduleOverrideState,
     tvScheduleOverrideUntil: clearsOverride ? null : current.tvScheduleOverrideUntil,
+    tenantId: body.tenantId !== undefined ? body.tenantId : current.tenantId,
   };
 
   try {
@@ -169,7 +185,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
                 contact_phone = ?, wifi_network_name = ?, date_issued = ?, hostname = ?, dashboard_url = ?,
                 master_image_version = ?, image_source_link = ?, status = ?,
                 tv_schedule_enabled = ?, tv_schedule_json = ?,
-                tv_schedule_override_state = ?, tv_schedule_override_until = ?, updated_at = ?
+                tv_schedule_override_state = ?, tv_schedule_override_until = ?, tenant_id = ?, updated_at = ?
          WHERE id = ?`
       )
       .bind(
@@ -190,6 +206,7 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         next.tvScheduleJson,
         next.tvScheduleOverrideState,
         next.tvScheduleOverrideUntil,
+        next.tenantId,
         new Date().toISOString(),
         unitId
       )
@@ -204,8 +221,13 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
   const updated = await env.DB.prepare(`SELECT ${UNIT_COLUMNS} FROM pi_units WHERE id = ?`).bind(unitId).first<Record<string, unknown>>();
   const nowMs = Date.now();
   const overrideUntil = updated?.tvScheduleOverrideUntil as string | null;
+  const updatedTenantId = updated?.tenantId as number | null;
+  const linkedTenant = updatedTenantId != null
+    ? await env.DB.prepare("SELECT name FROM tenants WHERE id = ?").bind(updatedTenantId).first<{ name: string }>()
+    : null;
   return jsonResponse({
     ...updated,
+    linkedTenantName: linkedTenant?.name ?? null,
     tvScheduleEnabled: !!updated?.tvScheduleEnabled,
     tvSchedule: updated?.tvScheduleJson ? JSON.parse(updated.tvScheduleJson as string) : null,
     tvScheduleOverrideActive: !!(overrideUntil && new Date(overrideUntil).getTime() > nowMs),

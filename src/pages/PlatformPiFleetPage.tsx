@@ -24,6 +24,10 @@ interface PiUnit {
   id: number
   serialNumber: string
   tenantName: string | null
+  // Tenant-facing TV schedule round (migration 0115) - the real link,
+  // separate from tenantName above (which stays free text, untouched).
+  tenantId: number | null
+  linkedTenantName: string | null
   physicalAddress: string | null
   contactName: string | null
   contactEmail: string | null
@@ -397,12 +401,14 @@ function TvScheduleCard({
 // tenants' own detail pane has - see this page's own design notes).
 function UnitDetail({
   unit,
+  tenantOptions,
   onPatch,
   onAddNote,
   onSaveTvSchedule,
   onOverrideTvSchedule,
 }: {
   unit: PiUnit
+  tenantOptions: { id: number; name: string }[]
   onPatch: (patch: Partial<PiUnit>) => void
   onAddNote: (noteText: string) => void
   onSaveTvSchedule: (patch: { tvScheduleEnabled: boolean; tvSchedule: TvSchedule }) => Promise<void>
@@ -458,6 +464,26 @@ function UnitDetail({
         <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Deployment</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextField label="Tenant name" value={unit.tenantName} placeholder="— unassigned —" onSave={(v) => onPatch({ tenantName: v })} />
+          <label className="flex flex-col gap-1 text-sm text-muted-400">
+            Linked tenant
+            <select
+              value={unit.tenantId ?? ''}
+              onChange={(e) => onPatch({ tenantId: e.target.value ? Number(e.target.value) : null })}
+              className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+            >
+              <option value="">None</option>
+              {tenantOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {/* Real security link (migration 0115) - separate from the free-text
+                "Tenant name" field above, which stays untouched. Linking here is
+                what makes this box's TV schedule reachable from that tenant's own
+                Settings - see functions/api/tenant/tv-schedule/*.ts. */}
+            {unit.linkedTenantName && <span className="text-xs text-accent-sky-300">Linked to: {unit.linkedTenantName}</span>}
+          </label>
           <TextField label="Date issued" value={unit.dateIssued} type="date" onSave={(v) => onPatch({ dateIssued: v })} />
           <TextField label="Physical address" value={unit.physicalAddress} onSave={(v) => onPatch({ physicalAddress: v })} />
           <div />
@@ -526,6 +552,11 @@ export default function PlatformPiFleetPage(): JSX.Element {
   }, [])
 
   const [units, setUnits] = useState<PiUnit[]>([])
+  // Tenant-facing TV schedule round (migration 0115) - options for the
+  // "Linked tenant" picker, returned alongside units by this same
+  // already-admin-gated GET (see that route's own comment on why, not a
+  // separate /api/platform/tenants fetch).
+  const [tenantOptions, setTenantOptions] = useState<{ id: number; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null)
@@ -547,6 +578,7 @@ export default function PlatformPiFleetPage(): JSX.Element {
       .then((json) => {
         if (json) {
           setUnits(json.units ?? [])
+          setTenantOptions(json.tenants ?? [])
           if (json.units?.length > 0) setSelectedUnitId(json.units[0].id)
         }
       })
@@ -821,6 +853,7 @@ export default function PlatformPiFleetPage(): JSX.Element {
                   </div>
                   <UnitDetail
                     unit={selectedUnit}
+                    tenantOptions={tenantOptions}
                     onPatch={(patch) => patchUnit(selectedUnit.id, patch)}
                     onAddNote={(noteText) => addNote(selectedUnit.id, noteText)}
                     onSaveTvSchedule={(patch) => saveTvSchedule(selectedUnit.id, patch)}

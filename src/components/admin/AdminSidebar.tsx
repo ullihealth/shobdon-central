@@ -23,7 +23,8 @@ function isItemVisible(
   role: MemberRole | null,
   isDeveloper: boolean,
   cafeEntitled: boolean,
-  tenantType: TenantType
+  tenantType: TenantType,
+  hasTvScheduleBox: boolean
 ): boolean {
   // Venue/café onboarding round - checked first and independently of
   // every other gate below (same "combinable, not mutually exclusive"
@@ -32,6 +33,7 @@ function isItemVisible(
   // regardless of role/developer/entitlement.
   if (item.hideForTenantType?.includes(tenantType)) return false
   if (item.requireCafeEntitlement && !cafeEntitled) return false
+  if (item.requireTvScheduleBox && !hasTvScheduleBox) return false
   if (item.requireDeveloper) return isDeveloper
   if (item.allowedRoles) return !!role && item.allowedRoles.includes(role)
   return true
@@ -52,6 +54,10 @@ export default function AdminSidebar(): JSX.Element {
   // gates the Cafe Media item below. Fails closed (false) until the
   // fetch resolves, same as role/isDeveloper above.
   const [cafeEntitled, setCafeEntitled] = useState(false)
+  // Tenant-facing TV schedule round (migration 0115) - gates the TV
+  // Schedule item below. Fails closed (false) until the fetch resolves,
+  // same posture as cafeEntitled above.
+  const [hasTvScheduleBox, setHasTvScheduleBox] = useState(false)
   // Venue/café onboarding round - defaults to 'airfield' (matching
   // tenants.tenant_type's own column default), not null/undefined -
   // nothing in <nav> renders until !loading below anyway, so there's no
@@ -89,6 +95,7 @@ export default function AdminSidebar(): JSX.Element {
         setRole(data?.role ?? null)
         setIsDeveloper(!!data?.isDeveloper)
         setCafeEntitled(!!data?.cafeEntitled)
+        setHasTvScheduleBox(!!data?.hasTvScheduleBox)
         if (data?.tenantType === 'venue_cafe') setTenantType('venue_cafe')
         if (data?.organizationName) setOrganizationName(data.organizationName)
         setTenantSubdomain(data?.subdomain ?? null)
@@ -135,10 +142,10 @@ export default function AdminSidebar(): JSX.Element {
 
   const visibleGroups = SIDEBAR_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled, tenantType)),
+    items: group.items.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled, tenantType, hasTvScheduleBox)),
   })).filter((group) => group.items.length > 0)
 
-  const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled, tenantType))
+  const visibleStandalone = STANDALONE_ITEMS.filter((item) => isItemVisible(item, role, isDeveloper, cafeEntitled, tenantType, hasTvScheduleBox))
 
   return (
     <aside className="sticky top-0 flex h-screen w-64 flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
