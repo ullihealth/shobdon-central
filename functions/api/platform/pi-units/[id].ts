@@ -38,6 +38,8 @@ interface PiUnitRow {
   status: string;
   tvScheduleEnabled: number;
   tvScheduleJson: string | null;
+  tvScheduleOverrideState: string | null;
+  tvScheduleOverrideUntil: string | null;
 }
 
 interface PatchBody {
@@ -127,6 +129,19 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     return jsonResponse({ error: "Cannot enable the TV schedule without a saved schedule" }, 400);
   }
 
+  // Real-use finding, 2026-10-18 (AA0003): a Wake now override holding
+  // from BEFORE a schedule was enabled/saved kept the TV on regardless
+  // of what the newly-saved schedule said, since nothing cleared it -
+  // the admin had to separately notice and click Clear override. Saving
+  // either the schedule or the Enabled toggle now clears any active
+  // override itself, so the saved schedule is what actually takes
+  // effect at the box's next check - matching what "Save" visibly
+  // implies it does. Only touched when this PATCH is actually the Save
+  // button (either field present); a PATCH touching unrelated fields
+  // (tenant name, status, etc.) must never silently cancel a running
+  // Wake now/Sleep now test.
+  const clearsOverride = body.tvScheduleEnabled !== undefined || body.tvSchedule !== undefined;
+
   const next = {
     serialNumber,
     tenantName: nextNullable(body.tenantName, current.tenantName),
@@ -143,6 +158,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
     status: body.status ?? current.status,
     tvScheduleEnabled: nextTvScheduleEnabled,
     tvScheduleJson: nextTvScheduleJsonRaw,
+    tvScheduleOverrideState: clearsOverride ? null : current.tvScheduleOverrideState,
+    tvScheduleOverrideUntil: clearsOverride ? null : current.tvScheduleOverrideUntil,
   };
 
   try {
@@ -151,7 +168,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         `UPDATE pi_units SET serial_number = ?, tenant_name = ?, physical_address = ?, contact_name = ?, contact_email = ?,
                 contact_phone = ?, wifi_network_name = ?, date_issued = ?, hostname = ?, dashboard_url = ?,
                 master_image_version = ?, image_source_link = ?, status = ?,
-                tv_schedule_enabled = ?, tv_schedule_json = ?, updated_at = ?
+                tv_schedule_enabled = ?, tv_schedule_json = ?,
+                tv_schedule_override_state = ?, tv_schedule_override_until = ?, updated_at = ?
          WHERE id = ?`
       )
       .bind(
@@ -170,6 +188,8 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
         next.status,
         next.tvScheduleEnabled ? 1 : 0,
         next.tvScheduleJson,
+        next.tvScheduleOverrideState,
+        next.tvScheduleOverrideUntil,
         new Date().toISOString(),
         unitId
       )

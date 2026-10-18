@@ -174,6 +174,16 @@ function TvScheduleCard({
   const [overrideBusy, setOverrideBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [showChecklist, setShowChecklist] = useState(false)
+
+  useEffect(() => {
+    if (!showChecklist) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowChecklist(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [showChecklist])
 
   function updateDay(key: keyof TvSchedule, patch: Partial<TvDaySchedule>) {
     setSchedule((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
@@ -294,7 +304,7 @@ function TvScheduleCard({
           </button>
           {unit.tvScheduleOverrideActive && (
             <>
-              <span className="text-xs text-accent-sky-400">
+              <span className="text-sm text-accent-sky-300">
                 Override: {unit.tvScheduleOverrideState} until{' '}
                 {unit.tvScheduleOverrideUntil ? formatDateTime(unit.tvScheduleOverrideUntil) : '—'}
               </span>
@@ -309,29 +319,74 @@ function TvScheduleCard({
             </>
           )}
         </div>
-        <p className="mt-2 text-xs text-muted-500">
+        <p className="mt-2 text-sm text-muted-300">
           Picked up on the box's next check (within a minute), not instantly - the box only polls, there's no live push to it.
         </p>
       </div>
 
-      <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-500">
+      <div className="mt-4 flex flex-col gap-1 border-t border-border/60 pt-3 text-sm">
         <div>
-          Last seen: {unit.tvScheduleLastSeenAt ? `${formatDateTimeWithSeconds(unit.tvScheduleLastSeenAt)} (${formatTimeAgo(unit.tvScheduleLastSeenAt)})` : 'never'}
+          <span className="text-muted-400">Last seen: </span>
+          <span className="text-white">
+            {unit.tvScheduleLastSeenAt ? `${formatDateTimeWithSeconds(unit.tvScheduleLastSeenAt)} (${formatTimeAgo(unit.tvScheduleLastSeenAt)})` : 'never'}
+          </span>
         </div>
         <div>
-          Last command: {unit.tvScheduleLastCommand ?? '—'}
-          {unit.tvScheduleLastCommandAt ? ` - ${formatDateTimeWithSeconds(unit.tvScheduleLastCommandAt)} (${formatTimeAgo(unit.tvScheduleLastCommandAt)})` : ''}
+          <span className="text-muted-400">Last command: </span>
+          <span className="text-white">
+            {unit.tvScheduleLastCommand ?? '—'}
+            {unit.tvScheduleLastCommandAt ? ` - ${formatDateTimeWithSeconds(unit.tvScheduleLastCommandAt)} (${formatTimeAgo(unit.tvScheduleLastCommandAt)})` : ''}
+          </span>
         </div>
-        {unit.tvScheduleLastError && <div className="text-status-bad">Last error: {unit.tvScheduleLastError}</div>}
+        {unit.tvScheduleLastError && (
+          <div>
+            <span className="text-muted-400">Last error: </span>
+            <span className="text-status-bad">{unit.tvScheduleLastError}</span>
+          </div>
+        )}
       </div>
 
-      <p className="mt-4 rounded-lg bg-slate-900/60 px-3 py-2 text-xs text-muted-500">
-        Install checklist: enable HDMI-CEC in the TV's own menu first - Samsung: Anynet+, LG: SimpLink, Sony: Bravia Sync
-        (other brands: look for "HDMI-CEC" or "Consumer Electronics Control"). Confirmed on a real Samsung TV: Anynet+
-        alone isn't enough - "Auto Turn Off" must also be set to Yes, or standby commands are silently ignored (cec-ctl
-        itself still reports success either way). Times are UK local (Europe/London) - BST/GMT handled automatically.
-        Overnight schedules (sleep after midnight) aren't supported - sleep must be later than wake on the same day.
-      </p>
+      <button
+        type="button"
+        onClick={() => setShowChecklist(true)}
+        className="mt-4 text-sm font-semibold text-accent-sky-400 hover:underline"
+      >
+        ⓘ Install checklist
+      </button>
+
+      {showChecklist && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4"
+          onClick={() => setShowChecklist(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="TV schedule install checklist"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-panel p-6 shadow-2xl"
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <h2 className="text-lg font-black uppercase tracking-wide text-primary">Install checklist</h2>
+              <button
+                type="button"
+                onClick={() => setShowChecklist(false)}
+                aria-label="Close"
+                className="text-2xl leading-none text-muted-400 hover:text-white"
+              >
+                ×
+              </button>
+            </div>
+            <ul className="list-disc space-y-3 pl-5 text-base text-muted-100">
+              <li>Enable HDMI-CEC in the TV's own menu first - Samsung: Anynet+ AND Auto Turn Off = Yes (Anynet+ alone silently ignores standby); LG: SimpLink; Sony: Bravia Sync; other brands: look for "HDMI-CEC" or "Consumer Electronics Control".</li>
+              <li>Times are UK local (Europe/London) - BST/GMT handled automatically.</li>
+              <li>Overnight schedules (sleep after midnight) aren't supported - sleep must be later than wake on the same day.</li>
+              <li>Changes reach the box within about a minute - it only polls, there's no live push to it.</li>
+              <li>Wake now/Sleep now hold until the next scheduled change; Clear override returns control to the schedule immediately.</li>
+            </ul>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -415,7 +470,7 @@ function UnitDetail({
       <section className="rounded-2xl border border-border bg-panel p-5">
         <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Network</div>
         <TextField label="WiFi network name" value={unit.wifiNetworkName} placeholder="SSID only" onSave={(v) => onPatch({ wifiNetworkName: v })} />
-        <p className="mt-2 text-xs text-muted-500">
+        <p className="mt-2 text-sm text-muted-300">
           Network name only - the password is set directly on the device via SSH/nmcli and is never stored here.
         </p>
       </section>

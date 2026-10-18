@@ -405,3 +405,71 @@ test('Platform Pi Fleet routes: requirePlatformAdmin gate', async (t) => {
     assert.equal(response.status, 401);
   });
 });
+
+test('Saving the schedule or toggling Enabled clears any active override', async (t) => {
+  const devCookie = await login();
+  const serialNumber = uniqueId('TVSCHED-OVERRIDE-CLEAR');
+  const createResponse = await request('POST', '/api/platform/pi-units', {
+    headers: { Cookie: devCookie },
+    body: { serialNumber },
+  });
+  assert.equal(createResponse.status, 201, JSON.stringify(createResponse.json));
+  const unitId = createResponse.json.id;
+
+  const schedule = makeSchedule();
+
+  await t.test('saving the schedule clears a Wake now override set while the schedule was disabled', async () => {
+    // Real-use finding, 2026-10-18 (AA0003): "Wake now" clicked while
+    // disabled (no weekly schedule to bound it by) falls back to the
+    // 1-hour default - confirmed below - then enabling + saving a real
+    // schedule must release that override immediately, not leave the
+    // TV stuck on it for up to the next hour.
+    const overrideResponse = await request('POST', `/api/platform/pi-units/${unitId}/tv-schedule-override`, {
+      headers: { Cookie: devCookie },
+      body: { action: 'wake' },
+    });
+    assert.equal(overrideResponse.status, 200, JSON.stringify(overrideResponse.json));
+    assert.equal(overrideResponse.json.overrideActive, true);
+
+    const saveResponse = await request('PATCH', `/api/platform/pi-units/${unitId}`, {
+      headers: { Cookie: devCookie },
+      body: { tvScheduleEnabled: true, tvSchedule: schedule },
+    });
+    assert.equal(saveResponse.status, 200, JSON.stringify(saveResponse.json));
+    assert.equal(saveResponse.json.tvScheduleOverrideActive, false, 'saving the schedule must clear the pre-existing override');
+    assert.equal(saveResponse.json.tvScheduleOverrideState, null);
+    assert.equal(saveResponse.json.tvScheduleOverrideUntil, null);
+  });
+
+  await t.test('toggling Enabled (with no other field change) also clears an active override', async () => {
+    await request('POST', `/api/platform/pi-units/${unitId}/tv-schedule-override`, {
+      headers: { Cookie: devCookie },
+      body: { action: 'sleep' },
+    });
+    const saveResponse = await request('PATCH', `/api/platform/pi-units/${unitId}`, {
+      headers: { Cookie: devCookie },
+      body: { tvScheduleEnabled: false, tvSchedule: schedule },
+    });
+    assert.equal(saveResponse.status, 200, JSON.stringify(saveResponse.json));
+    assert.equal(saveResponse.json.tvScheduleOverrideActive, false);
+  });
+
+  await t.test('an unrelated PATCH (not touching the schedule at all) must NOT clear a running override', async () => {
+    await request('PATCH', `/api/platform/pi-units/${unitId}`, {
+      headers: { Cookie: devCookie },
+      body: { tvScheduleEnabled: true, tvSchedule: schedule },
+    });
+    const overrideResponse = await request('POST', `/api/platform/pi-units/${unitId}/tv-schedule-override`, {
+      headers: { Cookie: devCookie },
+      body: { action: 'wake' },
+    });
+    assert.equal(overrideResponse.status, 200, JSON.stringify(overrideResponse.json));
+
+    const unrelatedPatch = await request('PATCH', `/api/platform/pi-units/${unitId}`, {
+      headers: { Cookie: devCookie },
+      body: { hostname: 'unrelated-field-change' },
+    });
+    assert.equal(unrelatedPatch.status, 200, JSON.stringify(unrelatedPatch.json));
+    assert.equal(unrelatedPatch.json.tvScheduleOverrideActive, true, 'a PATCH that never touches tvScheduleEnabled/tvSchedule must leave an active override alone');
+  });
+});
