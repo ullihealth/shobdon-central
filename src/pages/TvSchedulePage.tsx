@@ -315,7 +315,7 @@ export default function TvSchedulePage(): JSX.Element {
     <div className="mx-auto max-w-7xl px-6 pb-10 pt-10">
       <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">TV Schedule</h1>
       <p className="mb-6 max-w-2xl text-sm text-muted-300">
-        Your TV must support HDMI-CEC. Changes reach the box within about a minute.
+        Your TV must support HDMI-CEC.
       </p>
 
       {loading ? (

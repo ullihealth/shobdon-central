@@ -20,6 +20,8 @@ interface OnboardingContent {
   videos: VideoSlot[]
 }
 
+const CONTENT_REQUEST_TIMEOUT_MS = 10_000
+
 // Persistent, ongoing access to the same content shown during the
 // mandatory onboarding gate (OnboardingTermsPage.tsx) - re-surfaced here
 // so it isn't only reachable during first-time onboarding. Read-only:
@@ -27,6 +29,12 @@ interface OnboardingContent {
 // this page at all (bare <RequireAuth>, any role).
 export default function HelpPage(): JSX.Element {
   const [content, setContent] = useState<OnboardingContent | null>(null)
+  // The onboarding-content request only feeds the Videos area - it must
+  // never gate the rest of the page (FAQ link, Terms, Privacy, support
+  // email). contentLoading ends on success, a non-OK response, a thrown
+  // error, or the timeout below; contentFailed drives the small notice.
+  const [contentLoading, setContentLoading] = useState(true)
+  const [contentFailed, setContentFailed] = useState(false)
   // 2026-10-14 - unconfigured video tiles ("Video not yet configured")
   // are a developer-only reminder, not tenant-facing content. Same
   // isDeveloper flag/fetch pattern as DesignPage.tsx (commit 2b47148) -
@@ -44,12 +52,23 @@ export default function HelpPage(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    fetch(TENANT_ONBOARDING_CONTENT_URL)
+    // 10s ceiling so a hung request behaves exactly like a failed one.
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), CONTENT_REQUEST_TIMEOUT_MS)
+    fetch(TENANT_ONBOARDING_CONTENT_URL, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled && data) setContent(data)
+        if (cancelled) return
+        if (data) setContent(data)
+        else setContentFailed(true)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setContentFailed(true)
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId)
+        if (!cancelled) setContentLoading(false)
+      })
     fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
@@ -60,6 +79,8 @@ export default function HelpPage(): JSX.Element {
       .catch(() => {})
     return () => {
       cancelled = true
+      window.clearTimeout(timeoutId)
+      controller.abort()
     }
   }, [])
 
@@ -67,7 +88,8 @@ export default function HelpPage(): JSX.Element {
   // keeps seeing every slot, including unconfigured ones, as a to-do
   // reminder. Configuring a video later needs no code change - it just
   // starts passing this filter the moment its url is set.
-  const visibleVideos = content ? (isDeveloper ? content.videos : content.videos.filter((video) => video.url)) : []
+  const videos = content?.videos ?? []
+  const visibleVideos = isDeveloper ? videos : videos.filter((video) => video.url)
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
@@ -76,10 +98,13 @@ export default function HelpPage(): JSX.Element {
         Getting-started videos and the legal documents you agreed to when setting up your account.
       </p>
 
-      {!content ? (
+      {contentLoading ? (
         <p className="text-sm text-muted-400">Loading…</p>
       ) : (
         <>
+          {contentFailed && (
+            <p className="mb-6 text-sm text-muted-400">Some help content couldn&apos;t load. Refresh to try again.</p>
+          )}
           {visibleVideos.length > 0 && (
             <section className="mb-8">
               <div className="mb-3 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Videos</div>

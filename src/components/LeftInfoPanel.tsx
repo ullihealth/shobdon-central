@@ -211,7 +211,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
         : `${Math.round(weather.qfe)} hPa`
 
   // qualifier split out from label (was inline in the label string, e.g.
-  // "Cloud Base (Shobdon Calculated)") so it can be rendered at its own
+  // "Cloud Base (Calculated)") so it can be rendered at its own
   // smaller size/colour - see STAT_QUALIFIER_FONT above.
   const data = [
     {
@@ -244,7 +244,7 @@ export default function LeftInfoPanel({ disableChartFlip, compactStats, opsPanel
       // internet/mock equivalent) - N/A whenever that's not genuinely the
       // live source in use, rather than a calculation from substituted data.
       label: 'Cloud Base',
-      qualifier: '(Shobdon Calculated)',
+      qualifier: '(Calculated)',
       value: cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`,
     },
     { label: 'Temperature', qualifier: null, value: !weather || liveDataUnavailable ? 'N/A' : `${weather.temperature}°C` },

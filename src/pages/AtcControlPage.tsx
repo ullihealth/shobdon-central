@@ -696,7 +696,7 @@ export default function AtcControlPage(): JSX.Element {
               Weather Summary Chart
             </div>
             <p className="mb-4 text-xs text-muted-500">
-              A second, rotating state for Weather Summary showing Shobdon's calculated cloud base and a Met Office
+              A second, rotating state for Weather Summary showing the calculated cloud base and a Met Office
               visibility trend as a chart. Off by default - today's 5 cards stay static until this is turned on.
             </p>
             <div className="flex flex-wrap items-end gap-6">

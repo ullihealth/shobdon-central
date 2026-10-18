@@ -108,7 +108,7 @@ export default function WeatherStatGrid(): JSX.Element {
     },
     {
       label: 'Cloud Base',
-      qualifier: 'Shobdon Calculated',
+      qualifier: 'Calculated',
       value: cloudBaseFt === null ? 'N/A' : `${cloudBaseFt} ft AGL`,
     },
     {
@@ -126,7 +126,7 @@ export default function WeatherStatGrid(): JSX.Element {
             {/* Title and qualifier each on their own row now (was one
                 inline row, tracking dropped to normal to fit the
                 abbreviated qualifier on one line) - restored to the full
-                qualifier text ("Shobdon Calculated"/"Met Office Forecast")
+                qualifier text ("Calculated"/"Met Office Forecast")
                 per request, which no longer fits alongside the title on
                 this card's ~145px width at the title's own font size, so
                 it gets its own row between title and value instead. Same
