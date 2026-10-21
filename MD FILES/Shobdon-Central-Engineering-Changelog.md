@@ -75,3 +75,9 @@ Full `functions/api/` tree (40 files) compiled cleanly into a Workers-compatible
 **CI follow-up (`.github/workflows/deploy-worker.yml`):** since this exact gap (Pages-only deploy, Worker silently stale) had already bitten this session multiple times before it was understood, added a GitHub Actions workflow that runs the same build+deploy steps for the Worker automatically. Shipped in a deliberately inert state — `workflow_dispatch` only, no `push` trigger yet — pending Jeff adding a `CLOUDFLARE_API_TOKEN` repo secret (Workers Scripts:Edit, scoped to this account/zone only) and a first manual test run confirming it actually redeploys correctly before the automatic-on-push trigger gets enabled.
 
 **CI confirmed working, `push` trigger enabled (2026-07-27):** after the secret was added, triggered a manual `workflow_dispatch` test run (run #1) — all steps (checkout, `npm ci`, `npm run build`, `wrangler pages functions build`, `wrangler deploy --config wrangler.worker.toml`) completed successfully. Verified the actual effect, not just a green checkmark: the Worker's own `wrangler deployments list` showed a new deployment timestamped to match the run, and `gyroplane.airfieldcentral.com` (both `/` and `/onboarding/terms`) kept serving 200 with the correct bundle afterward. `on: push: branches: [main]` uncommented in the workflow immediately after — every push to `main` now redeploys both Pages (its own existing auto-deploy, unchanged) and the standalone Worker.
+
+---
+
+## Per-tenant QR / Pilot's App view duration (`59c9d6a`, migration 0118)
+
+Per-tenant QR / Pilot's App view duration (5–300 s) in Dashboard Manager → Panel Rotation Timing, separate from ops cards (2–30 s); default 10 = previous behaviour. Pointer line on Pilot Panel.
