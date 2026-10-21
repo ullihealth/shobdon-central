@@ -103,6 +103,9 @@ function resolveSlotVisual(
     bannerOpacity: slot.bannerOpacity,
     bannerFontSize: slot.bannerFontSize,
     websiteFixedCanvas: slot.websiteFixedCanvas,
+    // Carried for completeness only: this preview never passes allowSound to
+    // MediaSlotRenderer, so it always plays muted whatever this says.
+    playSound: slot.playSound,
   }
 }
 
@@ -742,6 +745,24 @@ function CarouselSlotEditor({
           />
         )}
       </label>
+
+      {isMp4 && (
+        <label className="mt-3 flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={!!slot.playSound}
+            onChange={(event) => onChange({ playSound: event.target.checked })}
+            className="mt-0.5 h-4 w-4"
+          />
+          <span className="text-sm text-muted-300">
+            Play sound
+            <span className="block text-xs text-muted-500">
+              Plays this video's audio on the TV. Off by default. Browsers (and the Pilot's App) don't allow sound to
+              start by itself, so there the video still plays, silently. This preview is always silent.
+            </span>
+          </span>
+        </label>
+      )}
 
       {showFitMode && (
         <label className="mt-3 flex flex-col gap-1.5">

@@ -6,6 +6,7 @@
 // editing), so what an editor sees while adjusting a slot is a genuine
 // match for what goes live - not a similar-looking approximation.
 import { useEffect, useRef, useState } from 'react'
+import { playWithOptionalSound, stopVideoSound } from '../../utils/videoSound'
 import type { CropRect } from '../../types/mediaLibrary'
 import { AIRFIELD_TIMEZONE, GYROPEDIA_DEPARTURES_URL } from '../../config/publicApi'
 import { useVideoDownloadStates, isTrackedMediaType } from '../../hooks/useVideoDownloadStates'
@@ -27,6 +28,11 @@ export interface MediaSlotVisual {
   // reserved-slot branches hardcode it, since neither has this column
   // at all).
   websiteFixedCanvas: boolean
+  // Per-slot "Play sound" (migration 0117, default off). Optional so every
+  // other producer of this shape - filler slots, owner-reserved slots, admin
+  // previews - needs no change and reads as muted. Only honoured on a live
+  // screen (allowSound below); see utils/videoSound.ts.
+  playSound?: boolean
 }
 
 // Deliberately NOT reusing NOTAMS' sm/md/lg -> text-base/lg/xl scale
@@ -302,12 +308,21 @@ export default function MediaSlotRenderer({
   slot,
   isActive = true,
   isUpNext = false,
+  allowSound = false,
 }: {
   slot: MediaSlotVisual
   isActive?: boolean
   isUpNext?: boolean
+  // true only for the real, live dashboard/café screen (MediaPanel passes
+  // !isPreview). Admin previews, the Pilot's App and thumbnails leave it
+  // false, so they always stay muted whatever the slot's own setting is.
+  allowSound?: boolean
 }): JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null)
+  // Read inside the activation effect below without making a change to the
+  // sound setting re-run it (which would restart the video mid-play).
+  const wantsSoundRef = useRef(false)
+  wantsSoundRef.current = allowSound && slot.playSound === true
 
   // Byte-verified readiness round - registering this slot's own url
   // here (a single-element array) is enough to make it eligible for
@@ -383,10 +398,15 @@ export default function MediaSlotRenderer({
     if (!videoEl) return
     if (isActive) {
       videoEl.currentTime = 0
-      videoEl.play().catch(() => {})
+      // Muted exactly as before unless this slot has sound on (and this is a
+      // live screen); a refused unmuted start retries muted straight away.
+      void playWithOptionalSound(videoEl, wantsSoundRef.current)
     } else {
       videoEl.pause()
+      stopVideoSound(videoEl)
     }
+    // Leaving (unmount) also hands the sound back.
+    return () => stopVideoSound(videoEl)
   }, [isActive])
 
   // Video-loop-flash round - pre-seeks this slot's video back to frame

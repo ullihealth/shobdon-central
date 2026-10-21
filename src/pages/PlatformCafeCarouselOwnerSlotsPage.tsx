@@ -36,6 +36,10 @@ interface CafeOwnerSlot {
   // reason as cameraSlotNumber/cameraId/autoFullscreen above.
   externalUrl: string | null
   websiteFixedCanvas: boolean
+  // Tenant-side "Play sound" switch (migration 0117) - never applies to this
+  // AirfieldCentral-owned content, so always false; present only for the same
+  // structural-typing reason as the fields above.
+  playSound: boolean
   // Per-tenant Reserved Slot round (migration 0102) - is THIS slot
   // number currently designated Airfield-Central-controlled for THIS
   // tenant. Replaces the old fixed-to-5/8/12 ownerSlotUnlocked toggle;
@@ -81,6 +85,7 @@ function toVisual(slot: CafeOwnerSlot): MediaSlotVisual {
     bannerOpacity: slot.bannerOpacity,
     bannerFontSize: slot.bannerFontSize,
     websiteFixedCanvas: false,
+    playSound: false,
   }
 }
 

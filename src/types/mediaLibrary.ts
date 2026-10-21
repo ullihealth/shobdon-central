@@ -85,6 +85,11 @@ export interface CarouselSlot {
   // reflows correctly to whatever container size it's given and needs
   // no such trick.
   websiteFixedCanvas: boolean
+  // "Play sound" for an mp4 slot (migration 0117, both slot tables). Off by
+  // default: every existing slot stays muted. Only a live screen honours it, and
+  // a browser that blocks unmuted autoplay falls back to muted - see
+  // utils/videoSound.ts. Meaningless for non-video slot types.
+  playSound: boolean
   // 'fill' = object-fit: cover (crops to fill the box); 'contain' =
   // object-fit: contain (always shows the whole image/video, letterboxed
   // if the aspect ratio doesn't match). Only meaningful for image/mp4 -

@@ -39,6 +39,7 @@ interface CarouselSlotRow {
   cameraSlotNumber: number | null;
   cameraId: string | null;
   fitMode: string;
+  playSound: number;
   cropX: number;
   cropY: number;
   cropWidth: number;
@@ -80,6 +81,7 @@ interface CarouselSlotInput {
   cameraSlotNumber?: number | null;
   cameraId?: string | null;
   fitMode?: "fill" | "contain";
+  playSound?: boolean;
   cropRect?: CropRectInput;
   rotationDegrees?: number;
   brightnessPercent?: number;
@@ -111,6 +113,7 @@ function defaultSlots(): CarouselSlotRow[] {
     cameraSlotNumber: null,
     cameraId: null,
     fitMode: "contain",
+    playSound: false,
     cropX: 0,
     cropY: 0,
     cropWidth: 100,
@@ -159,6 +162,7 @@ function rowToApi(row: CarouselSlotRow, budgetEnabled: boolean) {
     cameraSlotNumber: row.cameraSlotNumber,
     cameraId: row.cameraId,
     fitMode: row.fitMode,
+    playSound: !!row.playSound,
     cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
     rotationDegrees: row.rotationDegrees,
     brightnessPercent: row.brightnessPercent,
@@ -181,7 +185,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     env.DB
       .prepare(
         `SELECT cs.slotNumber AS slotNumber, cs.enabled AS enabled, cs.mediaType AS mediaType, cs.durationSeconds AS durationSeconds,
-                cs.mediaLibraryId AS mediaLibraryId, cs.cameraSlotNumber AS cameraSlotNumber, cs.cameraId AS cameraId, cs.fitMode AS fitMode,
+                cs.mediaLibraryId AS mediaLibraryId, cs.cameraSlotNumber AS cameraSlotNumber, cs.cameraId AS cameraId, cs.fitMode AS fitMode, cs.playSound AS playSound,
                 cs.cropX AS cropX, cs.cropY AS cropY, cs.cropWidth AS cropWidth, cs.cropHeight AS cropHeight,
                 cs.rotationDegrees AS rotationDegrees, cs.brightnessPercent AS brightnessPercent,
                 cs.bannerText AS bannerText, cs.bannerOpacity AS bannerOpacity, cs.bannerFontSize AS bannerFontSize,
@@ -243,6 +247,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     }
     if (!Number.isFinite(slot.durationSeconds) || slot.durationSeconds <= 0) {
       return jsonResponse({ error: "durationSeconds must be a positive number" }, 400);
+    }
+    if (slot.playSound !== undefined && typeof slot.playSound !== "boolean") {
+      return jsonResponse({ error: "playSound must be a boolean" }, 400);
     }
     if (slot.fitMode !== undefined && !VALID_FIT_MODES.includes(slot.fitMode)) {
       return jsonResponse({ error: `fitMode must be one of: ${VALID_FIT_MODES.join(", ")}` }, 400);
@@ -413,15 +420,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     const bannerFontSize = slot.bannerFontSize ?? "md";
     const zone = slot.zone ?? "both";
     const autoFullscreen = slot.autoFullscreen ? 1 : 0;
+    // Sound only means anything for a video; any other type stores 0 so a stale
+    // "on" can't come back if the slot is later switched to video again.
+    const playSound = slot.mediaType === "mp4" && slot.playSound === true ? 1 : 0;
 
     await env.DB
       .prepare(
         `INSERT INTO carousel_slots (
            organizationId, slotNumber, enabled, mediaType, durationSeconds, mediaLibraryId, cameraSlotNumber, cameraId,
            fitMode, cropX, cropY, cropWidth, cropHeight, rotationDegrees, brightnessPercent,
-           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, updatedAt
+           bannerText, bannerOpacity, bannerFontSize, zone, autoFullscreen, playSound, updatedAt
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(organizationId, slotNumber) DO UPDATE SET
            enabled = excluded.enabled,
            mediaType = excluded.mediaType,
@@ -441,6 +451,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
            bannerFontSize = excluded.bannerFontSize,
            zone = excluded.zone,
            autoFullscreen = excluded.autoFullscreen,
+           playSound = excluded.playSound,
            updatedAt = excluded.updatedAt`
       )
       .bind(
@@ -464,6 +475,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         bannerFontSize,
         zone,
         autoFullscreen,
+        playSound,
         now
       )
       .run();

@@ -105,6 +105,9 @@ interface CarouselSlotResolvedRow {
   mp4DurationSeconds: number | null;
   resolvedUrl: string | null;
   fitMode: string;
+  // Per-slot "Play sound" (migration 0117). Optional: filler and owner-reserved
+  // slots never set it and read as muted.
+  playSound?: boolean;
   cropRect: { x: number; y: number; width: number; height: number };
   rotationDegrees: number;
   brightnessPercent: number;
@@ -390,6 +393,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            cs.mediaType AS mediaType,
            cs.durationSeconds AS durationSeconds,
            cs.fitMode AS fitMode,
+           cs.playSound AS playSound,
            cs.cropX AS cropX,
            cs.cropY AS cropY,
            cs.cropWidth AS cropWidth,
@@ -425,6 +429,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mediaType: string;
         durationSeconds: number;
         fitMode: string;
+        playSound: number;
         cropX: number;
         cropY: number;
         cropWidth: number;
@@ -463,6 +468,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
            cs.mediaType AS mediaType,
            cs.durationSeconds AS durationSeconds,
            cs.fitMode AS fitMode,
+           cs.playSound AS playSound,
            cs.cropX AS cropX,
            cs.cropY AS cropY,
            cs.cropWidth AS cropWidth,
@@ -499,6 +505,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         mediaType: string;
         durationSeconds: number;
         fitMode: string;
+        playSound: number;
         cropX: number;
         cropY: number;
         cropWidth: number;
@@ -1038,6 +1045,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     durationSeconds: row.durationSeconds,
     mp4DurationSeconds: row.mp4DurationSeconds,
     fitMode: row.fitMode,
+    playSound: !!row.playSound,
     cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
     rotationDegrees: row.rotationDegrees,
     brightnessPercent: row.brightnessPercent,
@@ -1133,6 +1141,9 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         durationSeconds: 10,
         mp4DurationSeconds: row.mp4DurationSeconds,
         fitMode: row.fitMode,
+        // Owner-reserved (AirfieldCentral) content stays muted - the tenant's sound switch
+        // never applies to it.
+        playSound: false,
         cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
         rotationDegrees: row.rotationDegrees,
         brightnessPercent: row.brightnessPercent,
@@ -1157,6 +1168,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
     durationSeconds: row.durationSeconds,
     mp4DurationSeconds: row.mp4DurationSeconds,
     fitMode: row.fitMode,
+    playSound: !!row.playSound,
     cropRect: { x: row.cropX, y: row.cropY, width: row.cropWidth, height: row.cropHeight },
     rotationDegrees: row.rotationDegrees,
     brightnessPercent: row.brightnessPercent,

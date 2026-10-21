@@ -473,7 +473,7 @@ export default function MediaPanel({
               const isUpNext = bufferingDone && slot.slotNumber === upcomingSlotNumber
               return (
                 <div key={slot.slotNumber} className={`absolute inset-0 ${isActive ? '' : 'invisible'}`}>
-                  <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
+                  <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} allowSound={!isPreview} />
                 </div>
               )
             })
@@ -624,7 +624,7 @@ export default function MediaPanel({
                 return (
                   <div key={slot.slotNumber} className={`fixed inset-0 z-50 overflow-hidden bg-black ${isActive ? '' : 'invisible'}`}>
                     <div className="h-full w-full" style={{ transform: `scale(${fullscreenScale})`, transformOrigin: 'center center' }}>
-                      <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} />
+                      <MediaSlotRenderer slot={slot} isActive={isActive} isUpNext={isUpNext} allowSound={!isPreview} />
                     </div>
                   </div>
                 )
