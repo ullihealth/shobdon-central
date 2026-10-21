@@ -4,6 +4,7 @@ import type { RunwayGroup } from '../types/clubProfile'
 import RunwayStripPreview from '../components/RunwayStripPreview'
 import { useCompassMode, CompassModeButtons, CompassModeNotice } from '../components/CompassModeToggle'
 import { resolveActiveRunwayHeading } from '../utils/windCalculations'
+import { runwayStripCount, withStripCount, type RunwayStripCount } from '../utils/runwayStrips'
 
 const MAX_GROUPS = 3
 
@@ -180,15 +181,11 @@ export default function RunwaysPage(): JSX.Element {
     updateSelectedGroup({ identifierFontSizePx })
   }
 
-  function handleTwinChange(twin: boolean) {
-    const group = selectedGroup
-    const strips = twin
-      ? [
-          group.strips[0] ?? { colour: '#4caf50', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
-          group.strips[1] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true },
-        ]
-      : [group.strips[0] ?? { colour: '#a8b4c4', widthPx: DEFAULT_STRIP_WIDTH_PX, hasThresholdMarkings: false, showIdentifierLabel: true, showCenterline: true }]
-    updateSelectedGroup({ twin, strips })
+  // Number of parallel strips (1, 2 or 3). Maps straight onto the stored
+  // twin flag + strips array: 1 = twin off, 2 = twin on, 3 = twin on with a
+  // third strip. Existing strips are kept; only newly added ones get defaults.
+  function handleStripCountChange(count: RunwayStripCount) {
+    updateSelectedGroup(withStripCount(selectedGroup, count, DEFAULT_STRIP_WIDTH_PX))
   }
 
   function handleStripColourChange(stripIndex: number, colour: string) {
@@ -466,14 +463,17 @@ export default function RunwaysPage(): JSX.Element {
                 something this page prevents.
               </p>
 
-              <label className="mt-4 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selectedGroup.twin}
-                  onChange={(event) => handleTwinChange(event.target.checked)}
-                  className="h-4 w-4"
-                />
-                <span className="text-sm text-muted-300">Twin runway (two parallel strips, e.g. grass + tarmac)</span>
+              <label className="mt-4 flex max-w-xs flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">Number of strips</span>
+                <select
+                  value={runwayStripCount(selectedGroup)}
+                  onChange={(event) => handleStripCountChange(Number(event.target.value) as RunwayStripCount)}
+                  className="w-56 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                >
+                  <option value={1}>1 strip</option>
+                  <option value={2}>2 strips (e.g. grass + tarmac)</option>
+                  <option value={3}>3 strips</option>
+                </select>
               </label>
 
               <label className="mt-3 flex max-w-xs flex-col gap-1.5">
@@ -506,12 +506,12 @@ export default function RunwaysPage(): JSX.Element {
                           className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent"
                         />
                         <span className="text-xs text-muted-400">
-                          {selectedGroup.twin ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
+                          {selectedGroup.strips.length > 1 ? `Strip ${stripIndex + 1} colour` : 'Strip colour'}
                         </span>
                       </label>
                       <label className="flex flex-col gap-1.5">
                         <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
-                          {selectedGroup.twin ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
+                          {selectedGroup.strips.length > 1 ? `Strip ${stripIndex + 1} width (px)` : 'Strip width (px)'}
                         </span>
                         <input
                           type="number"

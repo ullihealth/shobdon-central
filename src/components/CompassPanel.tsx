@@ -3,6 +3,7 @@ import { useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
 import { calculateWindComponents, determineArrowColour, DEFAULT_ARROW_THRESHOLDS } from '../utils/windCalculations'
+import { runwayStripCount } from '../utils/runwayStrips'
 import type { ArrowColour, ArrowColourThresholds } from '../utils/windCalculations'
 import type { PressureTrend } from '../types/weather'
 import { useCompassMode, CompassModeButtons, CompassModeNotice } from './CompassModeToggle'
@@ -156,6 +157,13 @@ const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 // real gap (verified: 203 - 198 = 5, exactly matching the strip geometry
 // below at the seeded 22px width) and the general symmetric formula.
 const RUNWAY_STRIP_GAP = 5
+
+// Only used by the three-strip layout (twin/single strips keep their own
+// literals below): colour a strip falls back to if its own is missing, and
+// each strip's fill opacity by position - strip 1 matches the twin layout's
+// first strip (0.65), strips 2 and 3 its second (0.5).
+const THREE_STRIP_DEFAULT_COLOURS = ['#4caf50', '#a8b4c4', '#4caf50']
+const THREE_STRIP_OPACITY = [0.65, 0.5, 0.5]
 
 // Strip width (RunwayStrip.widthPx, per strip) and length
 // (RunwayGroup.stripLengthPx, per group) are both admin-configurable with
@@ -484,6 +492,66 @@ function RunwayGroupGraphic({ group, activeEnd }: { group: RunwayGroup; activeEn
   // live-preview component has its own separate copy of the same old
   // bug, independent of this file - not touched here, flagged
   // separately.)
+  // Three parallel strips (opt-in: only a runway saved with 3 strips reaches
+  // this branch - every 1- and 2-strip runway falls through to the twin /
+  // single branches below, completely untouched). Same spacing logic as the
+  // twin branch: each strip keeps its own width, the physical gap between
+  // neighbours is exactly RUNWAY_STRIP_GAP, and the whole group is centred on
+  // the runway line (x = 200) by its overall width.
+  if (runwayStripCount(group) === 3) {
+    const threeStrips = group.strips.slice(0, 3)
+    const widths = threeStrips.map((strip) => clampStripWidth(strip?.widthPx ?? 22))
+    const groupWidth = widths[0] + widths[1] + widths[2] + RUNWAY_STRIP_GAP * 2
+    let cursorX = 200 - groupWidth / 2
+    const layout = threeStrips.map((strip, index) => {
+      const x = cursorX
+      cursorX += widths[index] + RUNWAY_STRIP_GAP
+      const inset = numberInsetFor(strip)
+      return {
+        strip,
+        x,
+        width: widths[index],
+        centreX: x + widths[index] / 2,
+        colour: strip?.colour ?? THREE_STRIP_DEFAULT_COLOURS[index],
+        opacity: THREE_STRIP_OPACITY[index],
+        numberTopY: stripTop + inset,
+        numberBottomY: stripBottom - inset,
+      }
+    })
+    const leftEdge = layout[0].x
+    const rightEdge = layout[2].x + layout[2].width
+    return (
+      <g transform={`rotate(${group.headingDegrees} 200 200)`}>
+        {layout.map((l, i) => (
+          <rect key={`rect-${i}`} x={l.x} y={stripTop} width={l.width} height={stripHeight} fill={l.colour} opacity={l.opacity} />
+        ))}
+        {layout.map((l, i) =>
+          l.strip?.hasThresholdMarkings ? (
+            <ThresholdMarkingBlocks key={`marks-${i}`} stripX={l.x} stripWidth={l.width} stripTop={stripTop} stripBottom={stripBottom} />
+          ) : null
+        )}
+        {layout.map((l, i) => (
+          <ThresholdLightBars key={`lights-${i}`} stripX={l.x} stripWidth={l.width} stripTop={stripTop} stripBottom={stripBottom} topActive={isTopActive} bottomActive={isBottomActive} />
+        ))}
+        {layout.map((l, i) =>
+          showsCenterline(l.strip) ? (
+            <line key={`centre-${i}`} x1={l.centreX} y1={centrelineTop} x2={l.centreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
+          ) : null
+        )}
+        <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
+        <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+        {layout.map((l, i) =>
+          l.strip?.showIdentifierLabel ? (
+            <g key={`label-${i}`}>
+              <RunwayIdentifierText x={l.centreX} y={l.numberTopY} text={labelTop} fontSize={fontSize} rotate180 />
+              <RunwayIdentifierText x={l.centreX} y={l.numberBottomY} text={labelBottom} fontSize={fontSize} />
+            </g>
+          ) : null
+        )}
+      </g>
+    )
+  }
+
   if (group.twin) {
     const [stripA, stripB] = group.strips
     const stripAWidth = clampStripWidth(stripA?.widthPx ?? 22)

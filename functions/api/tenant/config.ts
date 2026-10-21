@@ -10,6 +10,7 @@
 // matches functions/api/public/[tenant]/config.ts exactly.
 
 import { requireOwner, jsonResponse, syncOrganizationIdentity, type D1Database } from "../_utils/tenantAuth";
+import { validateRunwayGroups } from "../_utils/runwayStrips.mjs";
 import { buildPublicConfigData } from "../_utils/publicConfig";
 import { resolveTenantSlug, triggerTenantRefresh } from "../_utils/refreshDisplays";
 import { geocodePostcode } from "../_utils/postcodeGeocode";
@@ -353,6 +354,14 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     overscanSafeMarginPercent?: unknown;
   } | null;
   if (!body) return jsonResponse({ error: "Invalid JSON body" }, 400);
+
+  // Runway strip rules (1-3 strips per runway) are checked up front, before
+  // ANY write below, so a rejected request changes nothing - in particular
+  // it can never reach the delete-and-reinsert of this tenant's runways.
+  if (body.runwayGroups !== undefined && body.runwayGroups !== null) {
+    const runwayError = validateRunwayGroups(body.runwayGroups);
+    if (runwayError) return jsonResponse({ error: runwayError }, 400);
+  }
 
   const now = new Date().toISOString();
 

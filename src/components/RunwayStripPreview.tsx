@@ -1,4 +1,5 @@
 import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
+import { runwayStripCount } from '../utils/runwayStrips'
 
 // Deliberately NOT imported from or sharing any code with CompassPanel.tsx,
 // the safety-relevant component driving the real public dashboard (has
@@ -45,6 +46,11 @@ const SOUTH_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 180)
 const WEST_POINT = circlePoint(200, 200, CARDINAL_LETTER_RADIUS, 270)
 
 const RUNWAY_STRIP_GAP = 5
+
+// Three-strip layout only (see CompassPanel.tsx's identical constants): fallback
+// colours and per-position fill opacity.
+const THREE_STRIP_DEFAULT_COLOURS = ['#4caf50', '#a8b4c4', '#4caf50']
+const THREE_STRIP_OPACITY = [0.65, 0.5, 0.5]
 const MIN_STRIP_HALF_LENGTH = 30
 const MIN_STRIP_WIDTH_PX = 4
 
@@ -142,6 +148,63 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const centrelineTop = stripTop
   const centrelineBottom = stripBottom
   const fontSize = group.identifierFontSizePx
+
+  // Three parallel strips (opt-in: only a runway saved with 3 strips reaches
+  // this branch - every 1- and 2-strip runway falls through to the twin /
+  // single branches below, completely untouched). Same spacing logic as the
+  // twin branch (this preview, like that one, has no threshold light bars): each strip keeps its own width, the physical gap between
+  // neighbours is exactly RUNWAY_STRIP_GAP, and the whole group is centred on
+  // the runway line (x = 200) by its overall width.
+  if (runwayStripCount(group) === 3) {
+    const threeStrips = group.strips.slice(0, 3)
+    const widths = threeStrips.map((strip) => clampStripWidth(strip?.widthPx ?? 22))
+    const groupWidth = widths[0] + widths[1] + widths[2] + RUNWAY_STRIP_GAP * 2
+    let cursorX = 200 - groupWidth / 2
+    const layout = threeStrips.map((strip, index) => {
+      const x = cursorX
+      cursorX += widths[index] + RUNWAY_STRIP_GAP
+      const inset = numberInsetFor(strip)
+      return {
+        strip,
+        x,
+        width: widths[index],
+        centreX: x + widths[index] / 2,
+        colour: strip?.colour ?? THREE_STRIP_DEFAULT_COLOURS[index],
+        opacity: THREE_STRIP_OPACITY[index],
+        numberTopY: stripTop + inset,
+        numberBottomY: stripBottom - inset,
+      }
+    })
+    const leftEdge = layout[0].x
+    const rightEdge = layout[2].x + layout[2].width
+    return (
+      <g transform={`rotate(${group.headingDegrees} 200 200)`}>
+        {layout.map((l, i) => (
+          <rect key={`rect-${i}`} x={l.x} y={stripTop} width={l.width} height={stripHeight} fill={l.colour} opacity={l.opacity} />
+        ))}
+        {layout.map((l, i) =>
+          l.strip?.hasThresholdMarkings ? (
+            <ThresholdMarkingBlocks key={`marks-${i}`} stripX={l.x} stripWidth={l.width} stripTop={stripTop} stripBottom={stripBottom} />
+          ) : null
+        )}
+        {layout.map((l, i) =>
+          showsCenterline(l.strip) ? (
+            <line key={`centre-${i}`} x1={l.centreX} y1={centrelineTop} x2={l.centreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
+          ) : null
+        )}
+        <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
+        <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+        {layout.map((l, i) =>
+          l.strip?.showIdentifierLabel ? (
+            <g key={`label-${i}`}>
+              <RunwayIdentifierText x={l.centreX} y={l.numberTopY} text={labelTop} fontSize={fontSize} rotate180 />
+              <RunwayIdentifierText x={l.centreX} y={l.numberBottomY} text={labelBottom} fontSize={fontSize} />
+            </g>
+          ) : null
+        )}
+      </g>
+    )
+  }
 
   if (group.twin) {
     const [stripA, stripB] = group.strips
