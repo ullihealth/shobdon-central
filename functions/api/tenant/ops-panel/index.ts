@@ -62,6 +62,8 @@ interface OpsPanelRow {
   notamsOpsDurationSeconds: number;
   notamsFullDurationSeconds: number;
   noticesDurationSeconds: number;
+  // Dwell time of the QR / Pilot's App view (migration 0118).
+  qrSlideDurationSeconds: number;
   weatherSummaryChartEnabled: number;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
@@ -104,6 +106,7 @@ interface OpsPanelInput {
   notamsOpsDurationSeconds: number;
   notamsFullDurationSeconds: number;
   noticesDurationSeconds: number;
+  qrSlideDurationSeconds: number;
   weatherSummaryChartEnabled: boolean;
   weatherSummaryStateADurationSeconds: number;
   weatherSummaryStateBDurationSeconds: number;
@@ -129,6 +132,11 @@ const SAFETY_NOTICE_MAX_ROWS = 10;
 const NOTICE_SIZES = ["sm", "md", "lg", "xl"];
 const NOTAMS_INTERVAL_MIN_SECONDS = 2;
 const NOTAMS_INTERVAL_MAX_SECONDS = 30;
+// QR / Pilot's App view (migration 0118) gets a wider range than the
+// other states: a scan needs time, and a tenant may want it much longer
+// than the ops cards.
+const QR_SLIDE_DURATION_MIN_SECONDS = 5;
+const QR_SLIDE_DURATION_MAX_SECONDS = 300;
 // Same bounds as the NOTAMS interval above, per the approved plan - no
 // reason for Weather Summary's own rotation to allow a wider range.
 const WEATHER_SUMMARY_DURATION_MIN_SECONDS = 2;
@@ -197,7 +205,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const row = await env.DB
     .prepare(
-      "SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?"
+      "SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, qrSlideDurationSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled FROM ops_panel_state WHERE organizationId = ?"
     )
     .bind(organizationId)
     .first<OpsPanelRow>();
@@ -213,6 +221,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       notamsOpsDurationSeconds: 5,
       notamsFullDurationSeconds: 5,
       noticesDurationSeconds: 5,
+      qrSlideDurationSeconds: 10,
       weatherSummaryChartEnabled: false,
       weatherSummaryStateADurationSeconds: 8,
       weatherSummaryStateBDurationSeconds: 5,
@@ -264,6 +273,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     notamsOpsDurationSeconds: row.notamsOpsDurationSeconds,
     notamsFullDurationSeconds: row.notamsFullDurationSeconds,
     noticesDurationSeconds: row.noticesDurationSeconds,
+    qrSlideDurationSeconds: row.qrSlideDurationSeconds,
     weatherSummaryChartEnabled: !!row.weatherSummaryChartEnabled,
     weatherSummaryStateADurationSeconds: row.weatherSummaryStateADurationSeconds,
     weatherSummaryStateBDurationSeconds: row.weatherSummaryStateBDurationSeconds,
@@ -376,6 +386,16 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       400
     );
   }
+  if (
+    !Number.isInteger(body.qrSlideDurationSeconds) ||
+    body.qrSlideDurationSeconds < QR_SLIDE_DURATION_MIN_SECONDS ||
+    body.qrSlideDurationSeconds > QR_SLIDE_DURATION_MAX_SECONDS
+  ) {
+    return jsonResponse(
+      { error: `qrSlideDurationSeconds must be an integer between ${QR_SLIDE_DURATION_MIN_SECONDS} and ${QR_SLIDE_DURATION_MAX_SECONDS}` },
+      400
+    );
+  }
   if (typeof body.weatherSummaryChartEnabled !== "boolean") {
     return jsonResponse({ error: "weatherSummaryChartEnabled must be a boolean" }, 400);
   }
@@ -462,8 +482,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const now = new Date().toISOString();
   await env.DB
     .prepare(
-      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO ops_panel_state (organizationId, activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, qrSlideDurationSeconds, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, runwayAutomationEnabled, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(organizationId) DO UPDATE SET
          activeRunwayEnd = excluded.activeRunwayEnd,
          circuitDirection = excluded.circuitDirection,
@@ -474,6 +494,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
          notamsOpsDurationSeconds = excluded.notamsOpsDurationSeconds,
          notamsFullDurationSeconds = excluded.notamsFullDurationSeconds,
          noticesDurationSeconds = excluded.noticesDurationSeconds,
+         qrSlideDurationSeconds = excluded.qrSlideDurationSeconds,
          weatherSummaryChartEnabled = excluded.weatherSummaryChartEnabled,
          weatherSummaryStateADurationSeconds = excluded.weatherSummaryStateADurationSeconds,
          weatherSummaryStateBDurationSeconds = excluded.weatherSummaryStateBDurationSeconds,
@@ -492,6 +513,7 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
       body.notamsOpsDurationSeconds,
       body.notamsFullDurationSeconds,
       body.noticesDurationSeconds,
+      body.qrSlideDurationSeconds,
       body.weatherSummaryChartEnabled ? 1 : 0,
       body.weatherSummaryStateADurationSeconds,
       body.weatherSummaryStateBDurationSeconds,

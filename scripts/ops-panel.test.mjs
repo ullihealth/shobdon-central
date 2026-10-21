@@ -79,6 +79,7 @@ function fullBodyFrom(opsPanel, overrides) {
     notamsOpsDurationSeconds: opsPanel.notamsOpsDurationSeconds,
     notamsFullDurationSeconds: opsPanel.notamsFullDurationSeconds,
     noticesDurationSeconds: opsPanel.noticesDurationSeconds,
+    qrSlideDurationSeconds: opsPanel.qrSlideDurationSeconds,
     weatherSummaryChartEnabled: opsPanel.weatherSummaryChartEnabled,
     weatherSummaryStateADurationSeconds: opsPanel.weatherSummaryStateADurationSeconds,
     weatherSummaryStateBDurationSeconds: opsPanel.weatherSummaryStateBDurationSeconds,
@@ -144,4 +145,30 @@ test('ops-panel PUT: malformed notices payload is still rejected with 400', asyn
     fullBodyFrom(before, { safetyNotices: Array.from({ length: 11 }, (_, i) => ({ text: `n${i}`, size: 'md', enabled: true })) })
   );
   assert.equal(tooMany.status, 400);
+});
+
+test('ops-panel PUT: qrSlideDurationSeconds accepts integers 5-300 only, and round-trips', async () => {
+  const cookie = await login();
+  const before = await getOpsPanel(cookie);
+  assert.equal(typeof before.qrSlideDurationSeconds, 'number', 'GET must return qrSlideDurationSeconds (migration 0118)');
+
+  try {
+    for (const bad of [4, 301, 12.5, 0, -1, '30', null, undefined]) {
+      const { status } = await putOpsPanel(cookie, fullBodyFrom(before, { safetyNotices: before.safetyNotices, qrSlideDurationSeconds: bad }));
+      assert.equal(status, 400, `qrSlideDurationSeconds=${String(bad)} must be rejected`);
+    }
+    // A rejected save must not have changed anything.
+    assert.equal((await getOpsPanel(cookie)).qrSlideDurationSeconds, before.qrSlideDurationSeconds);
+
+    for (const good of [5, 300, 30]) {
+      const { status } = await putOpsPanel(cookie, fullBodyFrom(before, { safetyNotices: before.safetyNotices, qrSlideDurationSeconds: good }));
+      assert.equal(status, 200, `qrSlideDurationSeconds=${good} must be accepted (got ${status})`);
+      assert.equal((await getOpsPanel(cookie)).qrSlideDurationSeconds, good);
+    }
+    // ops-card validation stays 2-30.
+    assert.equal((await putOpsPanel(cookie, fullBodyFrom(before, { safetyNotices: before.safetyNotices, notamsOpsDurationSeconds: 31 }))).status, 400);
+    assert.equal((await putOpsPanel(cookie, fullBodyFrom(before, { safetyNotices: before.safetyNotices, notamsOpsDurationSeconds: 2 }))).status, 200);
+  } finally {
+    await putOpsPanel(cookie, fullBodyFrom(before, { safetyNotices: before.safetyNotices }));
+  }
 });

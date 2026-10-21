@@ -148,6 +148,7 @@ interface OpsPanelRow {
   notamsOpsDurationSeconds: number;
   notamsFullDurationSeconds: number;
   noticesDurationSeconds: number;
+  qrSlideDurationSeconds: number | null;
   reverseCompassNeedle: number;
   weatherSummaryChartEnabled: number;
   weatherSummaryStateADurationSeconds: number;
@@ -530,7 +531,7 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         websiteFixedCanvas: number;
       }>(),
     env.DB
-      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
+      .prepare("SELECT activeRunwayEnd, circuitDirection, airfieldInfoText, safetyNoticesJson, showAutoNotams, notamsCarouselIntervalSeconds, notamsOpsDurationSeconds, notamsFullDurationSeconds, noticesDurationSeconds, qrSlideDurationSeconds, reverseCompassNeedle, weatherSummaryChartEnabled, weatherSummaryStateADurationSeconds, weatherSummaryStateBDurationSeconds, runwaysClosed, pilot_clock_mode AS pilotClockMode FROM ops_panel_state WHERE organizationId = ?")
       .bind(organizationId)
       .first<OpsPanelRow>(),
     // Which dashboard template renders at "/" for this tenant - the
@@ -1215,6 +1216,8 @@ export async function buildPublicConfigData(organizationId: string, env: PublicC
         notamsOpsDurationSeconds: opsPanelRow.notamsOpsDurationSeconds,
         notamsFullDurationSeconds: opsPanelRow.notamsFullDurationSeconds,
         noticesDurationSeconds: opsPanelRow.noticesDurationSeconds,
+        // Migration 0118; 10 = the previously hardcoded QR view duration.
+        qrSlideDurationSeconds: opsPanelRow.qrSlideDurationSeconds ?? 10,
         reverseCompassNeedle: !!(parentOpsPanelRow?.reverseCompassNeedle ?? opsPanelRow.reverseCompassNeedle),
         weatherSummaryChartEnabled: !!opsPanelRow.weatherSummaryChartEnabled,
         weatherSummaryStateADurationSeconds: opsPanelRow.weatherSummaryStateADurationSeconds,

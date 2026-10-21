@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import CafeTicker, { type TickerGasPrices, type TickerSlot, type TickerStyle } from '../components/CafeTicker'
 import ColorField from '../components/ColorField'
 import CompassPanel from '../components/CompassPanel'
@@ -219,6 +221,26 @@ export default function PilotPanelPage(): JSX.Element {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [safetyNotices, setSafetyNotices] = useState<SafetyNotice[]>([])
   const [gasPrices, setGasPrices] = useState<TickerGasPrices>(DEFAULT_GAS_PRICES)
+  // Read-only pointer to the TV dashboard's QR / ops-cards timing (edited
+  // in Dashboard Manager). Null until both loads resolve; stays null (line
+  // hidden) when the tenant's QR slide is off.
+  const [tvTiming, setTvTiming] = useState<{ qr: number; ops: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      fetch('/api/tenant/ops-panel').then((r) => (r.ok ? r.json() : null)),
+      fetch(PUBLIC_CONFIG_URL).then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([ops, config]) => {
+        if (cancelled || !config?.qrSlide?.enabled || !ops) return
+        setTvTiming({ qr: ops.qrSlideDurationSeconds ?? 10, ops: ops.notamsOpsDurationSeconds ?? 5 })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -297,6 +319,15 @@ export default function PilotPanelPage(): JSX.Element {
       <p className="mt-2 text-sm text-muted-400">
         Configure the /pilot mobile view's ticker and background, independently of the desktop dashboard.
       </p>
+      {tvTiming && (
+        <p className="mt-2 text-sm text-muted-400">
+          TV dashboard: Pilot's App QR shown for {tvTiming.qr}s, ops cards for {tvTiming.ops}s. Change in{' '}
+          <Link to="/media-manager#panel-rotation-timing" className="text-accent-sky-400 underline">
+            Dashboard Manager
+          </Link>
+          .
+        </p>
+      )}
 
       {loading ? (
         <p className="mt-6 text-xs text-muted-500">Loading…</p>

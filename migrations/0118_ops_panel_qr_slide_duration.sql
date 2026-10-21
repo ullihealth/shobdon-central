@@ -1,0 +1,11 @@
+-- Per-tenant dwell time for the Reception Dashboard right-hand Ops Panel's
+-- QR / Pilot's App view (RightInfoPanel.tsx 'qr' rotation state), separate
+-- from the ops-cards view's own notamsOpsDurationSeconds (migration 0077).
+--
+-- Default 10 equals the previously hardcoded QR_CARD_DURATION_SECONDS, so no
+-- tenant's screen changes until someone edits it in Dashboard Manager ->
+-- Panel Rotation Timing.
+--
+-- DEPLOY ORDER: apply this migration BEFORE deploying the code - the ops-panel
+-- route and the public config both SELECT this column.
+ALTER TABLE ops_panel_state ADD COLUMN qrSlideDurationSeconds INTEGER NOT NULL DEFAULT 10;

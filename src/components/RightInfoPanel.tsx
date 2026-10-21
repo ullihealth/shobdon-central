@@ -47,6 +47,10 @@ export interface OpsPanelPublic {
   notamsOpsDurationSeconds?: number
   notamsFullDurationSeconds?: number
   noticesDurationSeconds?: number
+  // QR / Pilot's App view dwell time (migration 0118) - optional for the
+  // same cached-response reason as the fields above; read with
+  // `?? QR_CARD_DURATION_SECONDS` in the rotation effect.
+  qrSlideDurationSeconds?: number
   // ATC-triggered override (migration 0054) - when true, every render
   // location that shows activeRunwayEnd/circuitDirection shows
   // "RUNWAYS CLOSED" instead (see the Runway In Use card below).
@@ -235,17 +239,15 @@ function computeQrSizePx(params: {
   return finalSize
 }
 
-// Standalone Pilot App QR rotation card - deliberately its own fixed
-// duration, not a reuse of notamsFullDurationSeconds (that field is
-// semantically "NOTAMs," and reusing it would tie QR screen time to a
-// setting an admin thinks only controls NOTAM display). Hardcoded for
-// now rather than a new tenant-configurable column/migration - can
-// become one later without disturbing anything else here. 10s, not the
-// 5s other cards default to: a QR needs meaningfully more than a
-// glance-and-read duration for a genuine "notice it, get phone out,
-// open camera, scan" cold-start flow - 10s (2x the other cards'
-// default) is a round, easy-to-explain floor without disproportionately
-// stretching the total cycle at high NOTAM counts.
+// Standalone Pilot App QR rotation card - deliberately its own duration,
+// not a reuse of notamsFullDurationSeconds (that field is semantically
+// "NOTAMs," and reusing it would tie QR screen time to a setting an
+// admin thinks only controls NOTAM display). Now a tenant setting
+// (opsPanel.qrSlideDurationSeconds, migration 0118, edited in Dashboard
+// Manager -> Panel Rotation Timing); this constant is its DEFAULT, used
+// when the config doesn't carry one. 10s, not the 5s other cards default
+// to: a QR needs meaningfully more than a glance-and-read duration for a
+// genuine "notice it, get phone out, open camera, scan" cold-start flow.
 const QR_CARD_DURATION_SECONDS = 10
 
 // QR sizing for the standalone slide's bottom strip (Ops Panel's
@@ -1073,7 +1075,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
         state.type === 'ops'
           ? (opsPanel?.notamsOpsDurationSeconds ?? 5)
           : state.type === 'qr'
-            ? QR_CARD_DURATION_SECONDS
+            ? (opsPanel?.qrSlideDurationSeconds ?? QR_CARD_DURATION_SECONDS)
             : (opsPanel?.notamsFullDurationSeconds ?? 5)
       timerRef.current = window.setTimeout(() => {
         index += 1
@@ -1084,7 +1086,7 @@ export default function RightInfoPanel({ notamsOnly, opsPanelData, onQrSlideChan
     scheduleNext()
 
     return () => window.clearTimeout(timerRef.current)
-  }, [notamsOnly, rotationStates.length, opsPanel?.notamsOpsDurationSeconds, opsPanel?.notamsFullDurationSeconds])
+  }, [notamsOnly, rotationStates.length, opsPanel?.notamsOpsDurationSeconds, opsPanel?.notamsFullDurationSeconds, opsPanel?.qrSlideDurationSeconds])
 
   const currentRotationState = rotationStates[rotationIndex % rotationStates.length]
 

@@ -61,6 +61,7 @@ interface OpsPanelFullState {
   notamsOpsDurationSeconds: number
   notamsFullDurationSeconds: number
   noticesDurationSeconds: number
+  qrSlideDurationSeconds: number
   weatherSummaryChartEnabled: boolean
   weatherSummaryStateADurationSeconds: number
   weatherSummaryStateBDurationSeconds: number
@@ -83,6 +84,18 @@ function clampDurationInput(raw: string, previous: number): number {
   const parsed = Number(raw)
   if (!Number.isFinite(parsed)) return previous
   return Math.min(PANEL_TIMING_MAX_SECONDS, Math.max(PANEL_TIMING_MIN_SECONDS, Math.round(parsed)))
+}
+
+// QR / Pilot's App view (migration 0118) - wider range than the other
+// timings, matching QR_SLIDE_DURATION_MIN/MAX_SECONDS in the ops-panel route.
+const QR_SLIDE_MIN_SECONDS = 5
+const QR_SLIDE_MAX_SECONDS = 300
+
+function clampQrSlideInput(raw: string, previous: number): number {
+  if (raw === '') return QR_SLIDE_MIN_SECONDS
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return previous
+  return Math.min(QR_SLIDE_MAX_SECONDS, Math.max(QR_SLIDE_MIN_SECONDS, Math.round(parsed)))
 }
 
 function priceToInputValue(value: number | null): string {
@@ -115,6 +128,9 @@ export default function MediaManagerPage(): JSX.Element {
   // cameraOptions below since both come from the same PUBLIC_CONFIG_URL
   // fetch; false (today's unconditional behaviour) until that resolves.
   const [gyropediaDisabled, setGyropediaDisabled] = useState(false)
+  // Whether this tenant's Reception Dashboard QR slide is switched on
+  // (public config qrSlide.enabled) - greys out the QR duration field.
+  const [qrSlideEnabled, setQrSlideEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   // selectedSlotNumber: which slot the single shared editor panel is
   // currently showing (defaults to 1, so the panel is never blank).
@@ -201,8 +217,17 @@ export default function MediaManagerPage(): JSX.Element {
         }))
         setCameraOptions([...legacy, ...newCameras].filter((c: CameraOption) => c.url))
         setGyropediaDisabled(!!data?.gyropediaDisabled)
+        setQrSlideEnabled(!!data?.qrSlide?.enabled)
       })
   }
+
+  // Deep link from the Pilot Panel page (/media-manager#panel-rotation-timing):
+  // the section only exists once loading finishes, so the browser's own
+  // hash-scroll on page load misses it - scroll to it here instead.
+  useEffect(() => {
+    if (loading || window.location.hash !== '#panel-rotation-timing') return
+    document.getElementById('panel-rotation-timing')?.scrollIntoView()
+  }, [loading])
 
   useEffect(() => {
     Promise.all([loadLibrary(), loadSlots(), loadCameraOptions(), loadGasPrices(), loadOpsPanel()]).finally(() =>
@@ -478,13 +503,13 @@ export default function MediaManagerPage(): JSX.Element {
           section - moved here so timing for both panels has a single
           home instead of being split across two admin pages). */}
       {!loading && opsPanelState && (
-        <section className="mt-8 rounded-2xl border border-border bg-panel p-6">
+        <section id="panel-rotation-timing" className="mt-8 scroll-mt-6 rounded-2xl border border-border bg-panel p-6">
           <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
             Panel Rotation Timing
           </div>
           <p className="mb-5 max-w-2xl text-sm text-muted-400">
             How long each internal slide stays on screen before the live dashboard's Left and Right info panels
-            rotate to the next one. {PANEL_TIMING_MIN_SECONDS}-{PANEL_TIMING_MAX_SECONDS} seconds each.
+            rotate to the next one. {PANEL_TIMING_MIN_SECONDS}-{PANEL_TIMING_MAX_SECONDS} seconds each ({QR_SLIDE_MIN_SECONDS}-{QR_SLIDE_MAX_SECONDS} for the QR / Pilot's App view).
           </p>
 
           <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-500">
@@ -536,10 +561,10 @@ export default function MediaManagerPage(): JSX.Element {
           <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-500">
             Right Panel (NOTAMs / Notices)
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
-                Ops card duration (sec)
+                Ops cards view (seconds)
               </label>
               <input
                 type="number"
@@ -553,6 +578,30 @@ export default function MediaManagerPage(): JSX.Element {
                 }
                 className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
+                QR / Pilot's App view (seconds)
+              </label>
+              <input
+                type="number"
+                min={QR_SLIDE_MIN_SECONDS}
+                max={QR_SLIDE_MAX_SECONDS}
+                disabled={!qrSlideEnabled}
+                value={opsPanelState.qrSlideDurationSeconds ?? 10}
+                onChange={(event) =>
+                  updateOpsPanelTiming({
+                    qrSlideDurationSeconds: clampQrSlideInput(event.target.value, opsPanelState.qrSlideDurationSeconds ?? 10),
+                  })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              {!qrSlideEnabled && <p className="mt-1 text-xs text-muted-500">Turn on the QR slide to use this</p>}
+              {qrSlideEnabled && (
+                <p className="mt-1 text-xs text-muted-500">
+                  {QR_SLIDE_MIN_SECONDS}-{QR_SLIDE_MAX_SECONDS} seconds.
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-500">
