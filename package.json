@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/generate-pilot-version.mjs && vite",
-    "build": "node scripts/generate-pilot-version.mjs && vite build",
+    "build": "node scripts/generate-pilot-version.mjs && vite build && node scripts/stamp-pilot-sw.mjs",
     "preview": "vite preview",
     "test": "node --test scripts/*.test.mjs",
     "prepare": "husky"
