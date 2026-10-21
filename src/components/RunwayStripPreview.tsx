@@ -1,5 +1,5 @@
 import type { RunwayGroup, RunwayStrip } from '../types/clubProfile'
-import { runwayStripCount } from '../utils/runwayStrips'
+import { runwayStripCount, stripExtent, stripLengthPct } from '../utils/runwayStrips'
 
 // Deliberately NOT imported from or sharing any code with CompassPanel.tsx,
 // the safety-relevant component driving the real public dashboard (has
@@ -164,6 +164,7 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
       const x = cursorX
       cursorX += widths[index] + RUNWAY_STRIP_GAP
       const inset = numberInsetFor(strip)
+      const extent = stripExtent(stripTop, stripBottom, stripHeight, stripLengthPct(strip))
       return {
         strip,
         x,
@@ -171,29 +172,44 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
         centreX: x + widths[index] / 2,
         colour: strip?.colour ?? THREE_STRIP_DEFAULT_COLOURS[index],
         opacity: THREE_STRIP_OPACITY[index],
-        numberTopY: stripTop + inset,
-        numberBottomY: stripBottom - inset,
+        top: extent.top,
+        bottom: extent.bottom,
+        height: extent.height,
+        numberTopY: extent.top + inset,
+        numberBottomY: extent.bottom - inset,
       }
     })
+    const anyShortened = threeStrips.some((strip) => stripLengthPct(strip) < 100)
     const leftEdge = layout[0].x
     const rightEdge = layout[2].x + layout[2].width
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
         {layout.map((l, i) => (
-          <rect key={`rect-${i}`} x={l.x} y={stripTop} width={l.width} height={stripHeight} fill={l.colour} opacity={l.opacity} />
+          <rect key={`rect-${i}`} x={l.x} y={l.top} width={l.width} height={l.height} fill={l.colour} opacity={l.opacity} />
         ))}
         {layout.map((l, i) =>
           l.strip?.hasThresholdMarkings ? (
-            <ThresholdMarkingBlocks key={`marks-${i}`} stripX={l.x} stripWidth={l.width} stripTop={stripTop} stripBottom={stripBottom} />
+            <ThresholdMarkingBlocks key={`marks-${i}`} stripX={l.x} stripWidth={l.width} stripTop={l.top} stripBottom={l.bottom} />
           ) : null
         )}
         {layout.map((l, i) =>
           showsCenterline(l.strip) ? (
-            <line key={`centre-${i}`} x1={l.centreX} y1={centrelineTop} x2={l.centreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
+            <line key={`centre-${i}`} x1={l.centreX} y1={l.top} x2={l.centreX} y2={l.bottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
           ) : null
         )}
-        <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+        {anyShortened ? (
+          layout.map((l, i) => (
+            <g key={`cap-${i}`}>
+              <line x1={l.x} y1={l.top} x2={l.x + l.width} y2={l.top} stroke="white" strokeWidth="2" opacity="0.18" />
+              <line x1={l.x} y1={l.bottom} x2={l.x + l.width} y2={l.bottom} stroke="white" strokeWidth="2" opacity="0.18" />
+            </g>
+          ))
+        ) : (
+          <>
+            <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
+            <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+          </>
+        )}
         {layout.map((l, i) =>
           l.strip?.showIdentifierLabel ? (
             <g key={`label-${i}`}>
@@ -218,24 +234,38 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
     const stripBCentreX = stripBX + stripBWidth / 2
     const stripAInset = numberInsetFor(stripA)
     const stripBInset = numberInsetFor(stripB)
-    const stripANumberTopY = stripTop + stripAInset
-    const stripANumberBottomY = stripBottom - stripAInset
-    const stripBNumberTopY = stripTop + stripBInset
-    const stripBNumberBottomY = stripBottom - stripBInset
+    const extA = stripExtent(stripTop, stripBottom, stripHeight, stripLengthPct(stripA))
+    const extB = stripExtent(stripTop, stripBottom, stripHeight, stripLengthPct(stripB))
+    const anyShortened = extA.shortened || extB.shortened
+    const stripANumberTopY = extA.top + stripAInset
+    const stripANumberBottomY = extA.bottom - stripAInset
+    const stripBNumberTopY = extB.top + stripBInset
+    const stripBNumberBottomY = extB.bottom - stripBInset
     return (
       <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-        <rect x={stripAX} y={stripTop} width={stripAWidth} height={stripHeight} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
-        <rect x={stripBX} y={stripTop} width={stripBWidth} height={stripHeight} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
-        {stripA?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={stripAX} stripWidth={stripAWidth} stripTop={stripTop} stripBottom={stripBottom} />}
-        {stripB?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={stripBX} stripWidth={stripBWidth} stripTop={stripTop} stripBottom={stripBottom} />}
+        <rect x={stripAX} y={extA.top} width={stripAWidth} height={extA.height} fill={stripA?.colour ?? '#4caf50'} opacity="0.65" />
+        <rect x={stripBX} y={extB.top} width={stripBWidth} height={extB.height} fill={stripB?.colour ?? '#a8b4c4'} opacity="0.5" />
+        {stripA?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={stripAX} stripWidth={stripAWidth} stripTop={extA.top} stripBottom={extA.bottom} />}
+        {stripB?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={stripBX} stripWidth={stripBWidth} stripTop={extB.top} stripBottom={extB.bottom} />}
         {showsCenterline(stripA) && (
-          <line x1={stripACentreX} y1={centrelineTop} x2={stripACentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
+          <line x1={stripACentreX} y1={extA.top} x2={stripACentreX} y2={extA.bottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
         {showsCenterline(stripB) && (
-          <line x1={stripBCentreX} y1={centrelineTop} x2={stripBCentreX} y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
+          <line x1={stripBCentreX} y1={extB.top} x2={stripBCentreX} y2={extB.bottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />
         )}
-        <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
-        <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+        {anyShortened ? (
+          <>
+            <line x1={stripAX} y1={extA.top} x2={stripAX + stripAWidth} y2={extA.top} stroke="white" strokeWidth="2" opacity="0.18" />
+            <line x1={stripAX} y1={extA.bottom} x2={stripAX + stripAWidth} y2={extA.bottom} stroke="white" strokeWidth="2" opacity="0.18" />
+            <line x1={stripBX} y1={extB.top} x2={stripBX + stripBWidth} y2={extB.top} stroke="white" strokeWidth="2" opacity="0.18" />
+            <line x1={stripBX} y1={extB.bottom} x2={stripBX + stripBWidth} y2={extB.bottom} stroke="white" strokeWidth="2" opacity="0.18" />
+          </>
+        ) : (
+          <>
+            <line x1={leftEdge} y1={stripTop} x2={rightEdge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
+            <line x1={leftEdge} y1={stripBottom} x2={rightEdge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+          </>
+        )}
         {stripA?.showIdentifierLabel && (
           <>
             <RunwayIdentifierText x={stripACentreX} y={stripANumberTopY} text={labelTop} fontSize={fontSize} rotate180 />
@@ -257,15 +287,16 @@ function RunwayStripGraphic({ group }: { group: RunwayGroup }): JSX.Element {
   const stripX = 200 - width / 2
   const edge = stripX + width
   const inset = numberInsetFor(strip)
-  const numberTopY = stripTop + inset
-  const numberBottomY = stripBottom - inset
+  const ext = stripExtent(stripTop, stripBottom, stripHeight, stripLengthPct(strip))
+  const numberTopY = ext.top + inset
+  const numberBottomY = ext.bottom - inset
   return (
     <g transform={`rotate(${group.headingDegrees} 200 200)`}>
-      <rect x={stripX} y={stripTop} width={width} height={stripHeight} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
-      {strip?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={stripX} stripWidth={width} stripTop={stripTop} stripBottom={stripBottom} />}
-      {showsCenterline(strip) && <line x1="200" y1={centrelineTop} x2="200" y2={centrelineBottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />}
-      <line x1={stripX} y1={stripTop} x2={edge} y2={stripTop} stroke="white" strokeWidth="2" opacity="0.18" />
-      <line x1={stripX} y1={stripBottom} x2={edge} y2={stripBottom} stroke="white" strokeWidth="2" opacity="0.18" />
+      <rect x={stripX} y={ext.top} width={width} height={ext.height} fill={strip?.colour ?? '#a8b4c4'} opacity="0.5" />
+      {strip?.hasThresholdMarkings && <ThresholdMarkingBlocks stripX={stripX} stripWidth={width} stripTop={ext.top} stripBottom={ext.bottom} />}
+      {showsCenterline(strip) && <line x1="200" y1={ext.top} x2="200" y2={ext.bottom} stroke="#ffffff" strokeWidth="1.5" strokeDasharray="6,4" opacity="1" />}
+      <line x1={stripX} y1={ext.top} x2={edge} y2={ext.top} stroke="white" strokeWidth="2" opacity="0.18" />
+      <line x1={stripX} y1={ext.bottom} x2={edge} y2={ext.bottom} stroke="white" strokeWidth="2" opacity="0.18" />
       {strip?.showIdentifierLabel && (
         <>
           <RunwayIdentifierText x={200} y={numberTopY} text={labelTop} fontSize={fontSize} rotate180 />

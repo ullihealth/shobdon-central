@@ -8,6 +8,11 @@
 // stays 0/1 and stripsJson is already an open array).
 export const MAX_RUNWAY_STRIPS = 3;
 
+// Optional per-strip length, a whole-number percentage of the runway (see
+// src/utils/runwayStrips.ts). Missing = 100 = full length.
+export const MIN_STRIP_LENGTH_PCT = 10;
+export const MAX_STRIP_LENGTH_PCT = 100;
+
 // Same rule the dashboard uses: 3 strips in the array = 3; otherwise the
 // stored `twin` flag decides 1 vs 2 (so every row saved before three strips
 // existed keeps resolving exactly as it always did).
@@ -35,6 +40,16 @@ export function validateRunwayGroups(groups) {
     }
     if (group.strips.some((strip) => !strip || typeof strip !== "object" || Array.isArray(strip))) {
       return `${label}: each strip must be an object`;
+    }
+    for (const [stripIndex, strip] of group.strips.entries()) {
+      // lengthPct is optional: absent (undefined) is fine and means 100. Anything that is present
+      // must be a whole number from 10 to 100 - null, strings, decimals and out-of-range are rejected.
+      if (Object.prototype.hasOwnProperty.call(strip, "lengthPct") && strip.lengthPct !== undefined) {
+        const value = strip.lengthPct;
+        if (typeof value !== "number" || !Number.isInteger(value) || value < MIN_STRIP_LENGTH_PCT || value > MAX_STRIP_LENGTH_PCT) {
+          return `${label}, strip ${stripIndex + 1}: lengthPct must be a whole number from ${MIN_STRIP_LENGTH_PCT} to ${MAX_STRIP_LENGTH_PCT}`;
+        }
+      }
     }
     if (group.strips.length === MAX_RUNWAY_STRIPS && !group.twin) {
       return `${label}: a 3-strip runway must have twin set to true`;

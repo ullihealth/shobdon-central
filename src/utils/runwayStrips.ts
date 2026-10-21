@@ -44,3 +44,35 @@ export function withStripCount(
   })
   return { twin: count >= 2, strips }
 }
+
+// ---- Per-strip length (optional "Length (% of runway)" on each strip) ----
+export const MIN_STRIP_LENGTH_PCT = 10
+export const MAX_STRIP_LENGTH_PCT = 100
+
+// A strip's length as a percentage of the runway. Missing, non-numeric or
+// out-of-range values read as the safe default - the full length - so any
+// runway saved before this field existed (and any bad value) draws exactly as
+// it always did. In-range values are rounded to a whole number.
+export function stripLengthPct(strip: { lengthPct?: unknown } | undefined | null): number {
+  const raw = strip?.lengthPct
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return MAX_STRIP_LENGTH_PCT
+  return Math.min(MAX_STRIP_LENGTH_PCT, Math.max(MIN_STRIP_LENGTH_PCT, Math.round(raw)))
+}
+
+export interface StripExtent {
+  top: number
+  bottom: number
+  height: number
+  shortened: boolean
+}
+
+// Where a strip starts and ends along the runway axis. At 100% this returns the
+// runway's own top/bottom/height UNTOUCHED (the very same numbers the renderers
+// computed before), which is what keeps every existing runway pixel-identical.
+// Below 100% the strip is centred on the runway's midpoint (y = 200, the
+// compass pivot), so a 35% strip leaves 32.5% of the runway clear at each end.
+export function stripExtent(runwayTop: number, runwayBottom: number, runwayHeight: number, lengthPct: number): StripExtent {
+  if (lengthPct >= MAX_STRIP_LENGTH_PCT) return { top: runwayTop, bottom: runwayBottom, height: runwayHeight, shortened: false }
+  const half = (runwayHeight / 2) * (lengthPct / 100)
+  return { top: 200 - half, bottom: 200 + half, height: half * 2, shortened: true }
+}

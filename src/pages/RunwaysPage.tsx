@@ -4,7 +4,7 @@ import type { RunwayGroup } from '../types/clubProfile'
 import RunwayStripPreview from '../components/RunwayStripPreview'
 import { useCompassMode, CompassModeButtons, CompassModeNotice } from '../components/CompassModeToggle'
 import { resolveActiveRunwayHeading } from '../utils/windCalculations'
-import { runwayStripCount, withStripCount, type RunwayStripCount } from '../utils/runwayStrips'
+import { MAX_STRIP_LENGTH_PCT, MIN_STRIP_LENGTH_PCT, runwayStripCount, stripLengthPct, withStripCount, type RunwayStripCount } from '../utils/runwayStrips'
 
 const MAX_GROUPS = 3
 
@@ -52,6 +52,38 @@ function createBlankGroup(): RunwayGroup {
     stripLengthPx: DEFAULT_STRIP_LENGTH_PX,
     identifierFontSizePx: DEFAULT_IDENTIFIER_FONT_SIZE_PX,
   }
+}
+
+// Whole-number % input (10-100) with its own text state, so typing "3" on the way
+// to "35" doesn't get snapped to the minimum mid-edit. Only a valid whole number in
+// range is committed; anything else is put back to the last good value on blur.
+function StripLengthInput({ pct, onCommit }: { pct: number; onCommit: (pct: number | undefined) => void }) {
+  const [text, setText] = useState(String(pct))
+  useEffect(() => {
+    setText(String(pct))
+  }, [pct])
+  return (
+    <input
+      type="number"
+      min={MIN_STRIP_LENGTH_PCT}
+      max={MAX_STRIP_LENGTH_PCT}
+      step={1}
+      value={text}
+      onChange={(event) => {
+        const raw = event.target.value
+        setText(raw)
+        const parsed = Number(raw)
+        if (raw.trim() !== '' && Number.isInteger(parsed) && parsed >= MIN_STRIP_LENGTH_PCT && parsed <= MAX_STRIP_LENGTH_PCT) {
+          onCommit(parsed === MAX_STRIP_LENGTH_PCT ? undefined : parsed)
+        }
+      }}
+      onBlur={() => {
+        const parsed = Number(text)
+        if (text.trim() === '' || !Number.isInteger(parsed) || parsed < MIN_STRIP_LENGTH_PCT || parsed > MAX_STRIP_LENGTH_PCT) setText(String(pct))
+      }}
+      className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+    />
+  )
 }
 
 export default function RunwaysPage(): JSX.Element {
@@ -186,6 +218,17 @@ export default function RunwaysPage(): JSX.Element {
   // third strip. Existing strips are kept; only newly added ones get defaults.
   function handleStripCountChange(count: RunwayStripCount) {
     updateSelectedGroup(withStripCount(selectedGroup, count, DEFAULT_STRIP_WIDTH_PX))
+  }
+
+  // Per-strip length as a % of the runway (10-100). 100 is the default and is stored
+  // as NO value at all, so a runway nobody touches saves byte-for-byte as before.
+  function handleStripLengthPctChange(stripIndex: number, lengthPct: number | undefined) {
+    const strips = selectedGroup.strips.map((strip, i) => {
+      if (i !== stripIndex) return strip
+      const { lengthPct: _previous, ...rest } = strip
+      return lengthPct === undefined || lengthPct >= MAX_STRIP_LENGTH_PCT ? rest : { ...rest, lengthPct }
+    })
+    updateSelectedGroup({ strips })
   }
 
   function handleStripColourChange(stripIndex: number, colour: string) {
@@ -520,6 +563,12 @@ export default function RunwaysPage(): JSX.Element {
                           onChange={(event) => handleStripWidthChange(stripIndex, event.target.value)}
                           className="w-24 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                         />
+                      </label>
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-widest text-muted-400">
+                          {selectedGroup.strips.length > 1 ? `Strip ${stripIndex + 1} length (% of runway)` : 'Strip length (% of runway)'}
+                        </span>
+                        <StripLengthInput pct={stripLengthPct(strip)} onCommit={(pct) => handleStripLengthPctChange(stripIndex, pct)} />
                       </label>
                     </div>
                     <label className="flex items-center gap-2">

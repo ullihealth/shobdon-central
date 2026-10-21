@@ -3,6 +3,10 @@ export interface RunwayStrip {
   widthPx: number // this strip's own width, independent of any other strip in the group (e.g. a narrower grass strip beside a wider tarmac one)
   hasThresholdMarkings: boolean // checkerboard block at each end of this specific strip - independent per strip (e.g. tarmac on, grass off)
   showIdentifierLabel: boolean // whether this strip's own identifier numbers (e.g. "08"/"26") render at both its ends - independent per strip
+  // Optional per-strip length as a whole-number percentage of the runway's own length (10-100). Missing = 100,
+  // i.e. the strip runs the full runway length exactly as every strip did before this field existed. A shorter
+  // strip is drawn centred on the runway's midpoint, with its markings/labels/centreline at ITS own ends.
+  lengthPct?: number
   showCenterline: boolean // dashed centreline drawn along this specific strip's own axis - independent per strip (e.g. only the paved surface has one painted, matching real-world practice)
 }
 
