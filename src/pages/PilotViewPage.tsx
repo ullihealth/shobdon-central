@@ -343,7 +343,7 @@ function PilotViewContent({
 // permanently, natural document scroll.
 export default function PilotViewPage(): JSX.Element {
   useDisplayHeartbeat('pilot')
-  const { updateAvailable, applyUpdate } = usePilotServiceWorker()
+  const { updateAvailable, applyUpdate, checkForUpdate } = usePilotServiceWorker()
 
   // Scopes the touch-action/overscroll-behavior fix (index.css's own
   // .pilot-view-scroll-root rule) to this route only - html/body are
@@ -462,6 +462,10 @@ export default function PilotViewPage(): JSX.Element {
   function handleManualRefresh() {
     setRefreshTick((tick) => tick + 1)
     loadBranding()
+    // Also ask whether a new app version is waiting (same check as on open,
+    // rate-limited, never throws). If one is, the existing banner appears; the
+    // reload itself is still only ever the pilot's tap on that banner.
+    checkForUpdate()
   }
 
   if (unavailable) return <TenantUnavailable />

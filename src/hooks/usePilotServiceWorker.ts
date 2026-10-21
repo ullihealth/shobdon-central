@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createUpdateChecker } from '../utils/pilotUpdateCheck'
 
 export interface PilotServiceWorkerUpdate {
   // True once a NEW service worker has finished installing and is
@@ -14,6 +15,13 @@ export interface PilotServiceWorkerUpdate {
   // only ever in response to a pilot tapping the update banner
   // (PilotUpdateBanner.tsx).
   applyUpdate: () => void
+  // Pull-to-refresh's "is a new version waiting?" check (PilotViewPage.tsx):
+  // the same registration.update() the app runs on open and every 6 hours,
+  // rate-limited to once per 30 seconds and safe to call at any time - it
+  // never throws, never activates a worker and never reloads. If it finds a
+  // newer version the usual banner appears; applying it is still only ever the
+  // pilot's tap (applyUpdate above).
+  checkForUpdate: () => void
 }
 
 // Pilot View - registers public/pilot-sw.js, scoped to /pilot only (not
@@ -53,6 +61,8 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
   // them mid-read for a reason they didn't ask for would be worse than
   // the stale-bundle bug this hook exists to fix.
   const reloadingRef = useRef(false)
+  const registrationRef = useRef<ServiceWorkerRegistration | null>(null)
+  const updateCheckerRef = useRef(createUpdateChecker({ getRegistration: () => registrationRef.current }))
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -85,6 +95,7 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
     navigator.serviceWorker
       .register('/pilot-sw.js', { scope: '/pilot' })
       .then((registration) => {
+        registrationRef.current = registration
         // Covers the case where a worker already finished installing
         // and started waiting BEFORE this particular page load (e.g. a
         // background update from an earlier tab/periodic check) - by
@@ -103,8 +114,10 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
         // waiting, it never activates anything on its own, so this
         // can't bypass the tap-to-reload banner above.
         registration.update().catch(() => {})
+        updateCheckerRef.current.noteCheck()
         updateIntervalId = window.setInterval(() => {
           registration.update().catch(() => {})
+          updateCheckerRef.current.noteCheck()
         }, UPDATE_CHECK_INTERVAL_MS)
       })
       .catch(() => {})
@@ -121,5 +134,9 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
     waitingWorker.postMessage({ type: 'SKIP_WAITING' })
   }, [waitingWorker])
 
-  return { updateAvailable: !!waitingWorker, applyUpdate }
+  const checkForUpdate = useCallback(() => {
+    updateCheckerRef.current.check()
+  }, [])
+
+  return { updateAvailable: !!waitingWorker, applyUpdate, checkForUpdate }
 }
