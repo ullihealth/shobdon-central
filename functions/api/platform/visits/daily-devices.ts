@@ -12,7 +12,13 @@
 // `date` is a UK local day (Europe/London) converted to a UTC window
 // here (_utils/londonDay.ts) - the list route's own From/To stay UTC.
 // Counted in SQL (COUNT DISTINCT), so unlike the list route there is no
-// MAX_ROWS cap in play. hideGroups joins ip_labels exactly as the list
+// MAX_ROWS cap in play.
+//
+// Visitors (visitorsMain/Pilot/Total): same windows and filters, but one
+// visitor per ip_labels GROUP (a person on several IPs - wifi, mobile data,
+// VPN - labelled under one group counts once); an unlabelled IP counts once
+// on its own. Keys are prefixed ('g:' / 'ip:') so a group name can never
+// collide with an IP string. Devices (above) are unchanged. hideGroups joins ip_labels exactly as the list
 // route does, so hidden labels drop out of the counts the same way they
 // drop out of the list. tenantId omitted = all tenants.
 //
@@ -28,6 +34,8 @@ type PagesFunction<Env = unknown> = (context: {
 interface Env {
   DB: D1Database;
 }
+
+const VISITOR_KEY = "CASE WHEN l.group_name IS NOT NULL THEN 'g:' || l.group_name ELSE 'ip:' || v.ip_address END";
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
@@ -60,13 +68,31 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .prepare(
       `SELECT COUNT(DISTINCT CASE WHEN v.display_slug = 'main' THEN v.ip_address END) AS main,
               COUNT(DISTINCT CASE WHEN v.display_slug = 'pilot' THEN v.ip_address END) AS pilot,
-              COUNT(DISTINCT v.ip_address) AS total
+              COUNT(DISTINCT v.ip_address) AS total,
+              COUNT(DISTINCT CASE WHEN v.display_slug = 'main' THEN ${VISITOR_KEY} END) AS visitorsMain,
+              COUNT(DISTINCT CASE WHEN v.display_slug = 'pilot' THEN ${VISITOR_KEY} END) AS visitorsPilot,
+              COUNT(DISTINCT ${VISITOR_KEY}) AS visitorsTotal
        FROM display_visits v
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
        WHERE ${conditions.join(" AND ")}`
     )
     .bind(...bindings)
-    .first<{ main: number; pilot: number; total: number }>();
+    .first<{
+      main: number;
+      pilot: number;
+      total: number;
+      visitorsMain: number;
+      visitorsPilot: number;
+      visitorsTotal: number;
+    }>();
 
-  return jsonResponse({ date, main: row?.main ?? 0, pilot: row?.pilot ?? 0, total: row?.total ?? 0 });
+  return jsonResponse({
+    date,
+    main: row?.main ?? 0,
+    pilot: row?.pilot ?? 0,
+    total: row?.total ?? 0,
+    visitorsMain: row?.visitorsMain ?? 0,
+    visitorsPilot: row?.visitorsPilot ?? 0,
+    visitorsTotal: row?.visitorsTotal ?? 0,
+  });
 };

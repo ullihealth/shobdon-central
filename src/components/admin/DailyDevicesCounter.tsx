@@ -28,6 +28,9 @@ interface Counts {
   main: number
   pilot: number
   total: number
+  visitorsMain: number
+  visitorsPilot: number
+  visitorsTotal: number
 }
 
 interface Props {
@@ -37,8 +40,9 @@ interface Props {
   refreshTick: number
 }
 
-// Unique devices (distinct IP) that used the app on one London day, split
-// Main / Pilot / Total. TOTAL is distinct across both views, not Main + Pilot.
+// Unique devices (distinct IP) and visitors (one per label group, unlabelled
+// IPs once each) that used the app on one London day, split Main / Pilot /
+// Total. TOTAL is distinct across both views, not Main + Pilot.
 export function DailyDevicesCounter({ tenantId, hideGroups, refreshTick }: Props) {
   const today = londonToday()
   const earliest = shiftDay(today, -RETENTION_DAYS)
@@ -59,7 +63,14 @@ export function DailyDevicesCounter({ tenantId, hideGroups, refreshTick }: Props
       .then((data) => {
         if (cancelled) return
         if (data && typeof data.total === 'number') {
-          setCounts({ main: data.main, pilot: data.pilot, total: data.total })
+          setCounts({
+            main: data.main,
+            pilot: data.pilot,
+            total: data.total,
+            visitorsMain: data.visitorsMain,
+            visitorsPilot: data.visitorsPilot,
+            visitorsTotal: data.visitorsTotal,
+          })
           setError(false)
         } else {
           setError(true)
@@ -84,7 +95,7 @@ export function DailyDevicesCounter({ tenantId, hideGroups, refreshTick }: Props
   const cell = (label: string, value: number | undefined) => (
     <div className="flex-1 text-center">
       <div className="text-xs font-semibold uppercase tracking-widest text-muted-500">{label}</div>
-      <div className={`text-4xl font-black tabular-nums text-primary ${loading ? 'opacity-50' : ''}`}>
+      <div className={`text-3xl font-black tabular-nums text-primary ${loading ? 'opacity-50' : ''}`}>
         {error || value === undefined ? '—' : value}
       </div>
     </div>
@@ -115,13 +126,24 @@ export function DailyDevicesCounter({ tenantId, hideGroups, refreshTick }: Props
           ›
         </button>
       </div>
+      <div className="mb-1 text-center text-[0.65rem] font-semibold uppercase tracking-widest text-muted-400">
+        Devices (by IP)
+      </div>
       <div className="flex items-start gap-2">
         {cell('Main', counts?.main)}
         {cell('Pilot', counts?.pilot)}
         {cell('Total', counts?.total)}
       </div>
+      <div className="mb-1 mt-3 border-t border-border pt-3 text-center text-[0.65rem] font-semibold uppercase tracking-widest text-muted-400">
+        Visitors (by label)
+      </div>
+      <div className="flex items-start gap-2">
+        {cell('Main', counts?.visitorsMain)}
+        {cell('Pilot', counts?.visitorsPilot)}
+        {cell('Total', counts?.visitorsTotal)}
+      </div>
       <p className="mt-3 text-center text-xs text-muted-500">
-        Devices counted by IP address
+        Visitors: labelled IPs count once per label; unlabelled IPs count once each.
         {hideKey && ' (excluding hidden labels)'}
       </p>
     </div>
