@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { LabelPill } from '../components/admin/LabelPill'
 import { IpLabelEditor } from '../components/admin/IpLabelEditor'
+import { DailyDevicesCounter } from '../components/admin/DailyDevicesCounter'
 import { resolveLabelColor } from '../utils/labelColors'
 
 const VISITS_URL = '/api/platform/visits'
@@ -155,6 +156,8 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
   const [hideGroups, setHideGroups] = useState<Set<string>>(loadPersistedHideGroups)
   const [unlabeledOnly, setUnlabeledOnly] = useState(false)
+  // Bumped by the Refresh button so the daily-devices counter refetches with it.
+  const [refreshTick, setRefreshTick] = useState(0)
   // Visit Log sidebar's "solo" set - deliberately NOT persisted (unlike
   // hideGroups above). This is a quick "is this one alive right now"
   // check, not a standing preference, so every fresh page load starts
@@ -468,12 +471,21 @@ export default function PlatformVisitsPage(): JSX.Element {
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to px-6 pb-16 pt-10 text-slate-100">
       <div className="mx-auto max-w-[1900px]">
-        <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Platform · Visit Log</h1>
-        <p className="mb-4 max-w-2xl text-sm text-muted-400">
-          Every logged display visit, across every tenant. A row is written on every ~30-minute heartbeat ping (or
-          immediately if the IP/user-agent changes). Rows older than 30 days are pruned automatically. Click a row to
-          see its captured location and label it.
-        </p>
+        <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Platform · Visit Log</h1>
+            <p className="max-w-2xl text-sm text-muted-400">
+              Every logged display visit, across every tenant. A row is written on every ~30-minute heartbeat ping (or
+              immediately if the IP/user-agent changes). Rows older than 30 days are pruned automatically. Click a row to
+              see its captured location and label it.
+            </p>
+          </div>
+          <DailyDevicesCounter
+            tenantId={tenantFilter ? knownTenants.get(tenantFilter)?.id : undefined}
+            hideGroups={Array.from(hideGroups)}
+            refreshTick={refreshTick}
+          />
+        </div>
 
         <div className="flex gap-6">
           <aside className="w-64 shrink-0">
@@ -631,7 +643,10 @@ export default function PlatformVisitsPage(): JSX.Element {
           </button>
           <button
             type="button"
-            onClick={loadVisits}
+            onClick={() => {
+              setRefreshTick((tick) => tick + 1)
+              loadVisits()
+            }}
             disabled={loading}
             className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-muted-400 hover:border-slate-500 disabled:opacity-40"
             title="Pull fresh data from the server for the current filters - e.g. if labels were added elsewhere since this page loaded"
