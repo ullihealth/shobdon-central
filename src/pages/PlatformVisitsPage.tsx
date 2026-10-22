@@ -5,10 +5,12 @@ import { IpLabelEditor } from '../components/admin/IpLabelEditor'
 import { DailyDevicesCounter } from '../components/admin/DailyDevicesCounter'
 import { IpSearchInput } from '../components/admin/IpSearchInput'
 import { resolveLabelColor } from '../utils/labelColors'
+import { suggestRangeGroup } from '../utils/ipRange'
 
 const VISITS_URL = '/api/platform/visits'
 const VISITS_EXPORT_URL = '/api/platform/visits/export'
 const IP_LABELS_URL = '/api/platform/ip-labels'
+const IP_RANGE_LABELS_URL = '/api/platform/ip-range-labels'
 const MY_IP_URL = '/api/platform/my-ip'
 
 // The hide-set is the one piece of this page's filter state that's
@@ -68,8 +70,20 @@ interface Visit {
   labelGroup: string | null
   // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
   labelColor: string | null
+  // labelGroup is the EFFECTIVE label (exact > longest range label, migration
+  // 0119); labelSource says which, rangePrefix is set for 'range'.
+  labelSource: 'ip' | 'range' | null
+  rangePrefix: string | null
   // Computed server-side from userAgent (functions/api/_utils/visitorKind.ts).
   kind: 'human' | 'robot' | 'test'
+}
+
+interface RangeLabel {
+  id: number
+  prefix: string
+  groupName: string
+  ipsCovered: number
+  tenantsCovered: number
 }
 
 interface IpLabel {
@@ -243,7 +257,15 @@ export default function PlatformVisitsPage(): JSX.Element {
   // one) so a device gets assigned to a real existing group rather than
   // a typo'd near-duplicate of one.
   const [allLabels, setAllLabels] = useState<IpLabel[]>([])
-  const allGroupNames = useMemo(() => Array.from(new Set(allLabels.map((l) => l.groupName))).sort(), [allLabels])
+  // Range labels (migration 0119) - a prefix labelled once, applied to every
+  // matching address. Their groups count as labels everywhere (sidebar, hide).
+  const [rangeLabels, setRangeLabels] = useState<RangeLabel[]>([])
+  // Set by a row's "Same range as: X?" hint: opens that row's editor pre-filled.
+  const [rangePreset, setRangePreset] = useState<{ rowId: number; group: string } | null>(null)
+  const allGroupNames = useMemo(
+    () => Array.from(new Set([...allLabels.map((l) => l.groupName), ...rangeLabels.map((r) => r.groupName)])).sort(),
+    [allLabels, rangeLabels]
+  )
 
   // A group's colour lives per-IP-row (migration 0058), but the "Hide"
   // filter pills operate at the group level - this picks one
@@ -269,8 +291,18 @@ export default function PlatformVisitsPage(): JSX.Element {
       })
   }
 
+  function loadRangeLabels() {
+    return fetch(IP_RANGE_LABELS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data) setRangeLabels(data.rangeLabels ?? [])
+      })
+      .catch(() => {})
+  }
+
   useEffect(() => {
     loadLabels()
+    loadRangeLabels()
   }, [])
 
   // display_visits is well beyond the backing endpoint's single-response
@@ -464,10 +496,41 @@ export default function PlatformVisitsPage(): JSX.Element {
   // triggered it) rather than requiring a full refetch, and refreshes
   // the sidebar's own label list either way.
   async function handleLabelSaved(ipAddress: string, groupName: string, color: string | null) {
-    setVisits((prev) => prev.map((v) => (v.ipAddress === ipAddress ? { ...v, labelGroup: groupName, labelColor: color } : v)))
+    setVisits((prev) =>
+      prev.map((v) =>
+        v.ipAddress === ipAddress ? { ...v, labelGroup: groupName, labelColor: color, labelSource: 'ip', rangePrefix: null } : v
+      )
+    )
     await loadLabels()
     setExpandedRowId(null)
     setMyIpTarget(null)
+  }
+
+  // A range label changes MANY rows at once (and the counter's Visitors row),
+  // so reload everything rather than patching rows locally.
+  async function handleRangeSaved() {
+    setExpandedRowId(null)
+    setMyIpTarget(null)
+    setRangePreset(null)
+    await Promise.all([loadVisits(), loadLabels(), loadRangeLabels()])
+    setRefreshTick((tick) => tick + 1)
+  }
+
+  async function handleRenameRange(range: RangeLabel) {
+    const next = window.prompt(`Rename the label for ${range.prefix}`, range.groupName)?.trim()
+    if (!next || next === range.groupName) return
+    await fetch(`${IP_RANGE_LABELS_URL}/${range.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupName: next }),
+    })
+    await handleRangeSaved()
+  }
+
+  async function handleDeleteRange(range: RangeLabel) {
+    if (!window.confirm(`Remove the range label "${range.groupName}" for ${range.prefix}? Exact IP labels are not affected.`)) return
+    await fetch(`${IP_RANGE_LABELS_URL}/${range.id}`, { method: 'DELETE' })
+    await handleRangeSaved()
   }
 
   // Server-side detection (CF-Connecting-IP, same header heartbeat.ts
@@ -604,6 +667,36 @@ export default function PlatformVisitsPage(): JSX.Element {
                   </div>
                 </>
               )}
+              <div className="mt-3 border-t border-border pt-3">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-widest text-muted-500">Range labels</span>
+                {rangeLabels.length === 0 ? (
+                  <p className="text-xs text-muted-500">None. Open a row to label a whole range.</p>
+                ) : (
+                  <div className="flex max-h-[30vh] flex-col gap-1 overflow-y-auto">
+                    {rangeLabels.map((range) => (
+                      <div key={range.id} className="rounded-lg px-1.5 py-1 text-xs">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="min-w-0 truncate font-mono text-primary" title={range.prefix}>
+                            {range.prefix}*
+                          </span>
+                          <span className="flex shrink-0 gap-1">
+                            <button type="button" onClick={() => handleRenameRange(range)} className="text-muted-400 hover:text-primary">
+                              Rename
+                            </button>
+                            <button type="button" onClick={() => handleDeleteRange(range)} className="text-status-bad hover:underline">
+                              Delete
+                            </button>
+                          </span>
+                        </div>
+                        <div className="text-muted-500">
+                          <LabelPill groupName={range.groupName} color={groupColors.get(range.groupName) ?? null} /> · {range.ipsCovered} IP
+                          {range.ipsCovered === 1 ? '' : 's'} in 30 days
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </aside>
 
@@ -727,6 +820,7 @@ export default function PlatformVisitsPage(): JSX.Element {
               initialColor={myIpTarget.color}
               allGroupNames={allGroupNames}
               onSaved={(groupName, color) => handleLabelSaved(myIpTarget.ipAddress, groupName, color)}
+              onRangeSaved={handleRangeSaved}
               onCancel={() => setMyIpTarget(null)}
             />
           </div>
@@ -853,7 +947,19 @@ export default function PlatformVisitsPage(): JSX.Element {
                           onClick={() => setExpandedRowId(isExpanded ? null : visit.id)}
                         >
                           {visit.labelGroup ? (
-                            <LabelPill groupName={visit.labelGroup} color={visit.labelColor} />
+                            visit.labelSource === 'range' ? (
+                              // Range-applied label: same chip colour as the group, with a
+                              // dotted underline + tooltip so it's distinguishable from an
+                              // exact-IP label.
+                              <LabelPill
+                                groupName={visit.labelGroup}
+                                color={visit.labelColor ?? groupColors.get(visit.labelGroup) ?? null}
+                                className="underline decoration-dotted underline-offset-2"
+                                title={`From range label ${visit.rangePrefix}*`}
+                              />
+                            ) : (
+                              <LabelPill groupName={visit.labelGroup} color={visit.labelColor} />
+                            )
                           ) : visit.kind !== 'human' ? (
                             <span
                               className="rounded border border-dashed border-slate-600 px-1.5 py-0.5 text-[0.65rem] italic text-muted-500"
@@ -862,7 +968,30 @@ export default function PlatformVisitsPage(): JSX.Element {
                               {KIND_CHIP_TEXT[visit.kind]}
                             </span>
                           ) : (
-                            <span className="text-muted-600">—</span>
+                            (() => {
+                              // Suggestion only (never automatic, never affects counts,
+                              // hiding, filtering or export): an unlabelled address in
+                              // the same range as an exact-labelled one.
+                              const suggested = visit.ipAddress ? suggestRangeGroup(visit.ipAddress, allLabels) : null
+                              return suggested ? (
+                                <span className="text-[0.65rem] text-muted-500">
+                                  Same range as: {suggested}?{' '}
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setRangePreset({ rowId: visit.id, group: suggested })
+                                      setExpandedRowId(visit.id)
+                                    }}
+                                    className="text-accent-sky-400 hover:underline"
+                                  >
+                                    Apply to range
+                                  </button>
+                                </span>
+                              ) : (
+                                <span className="text-muted-600">—</span>
+                              )
+                            })()
                           )}
                         </td>
                         <td
@@ -899,12 +1028,14 @@ export default function PlatformVisitsPage(): JSX.Element {
                                   Label this IP:
                                 </span>
                                 <IpLabelEditor
-                                  key={visit.ipAddress}
+                                  key={`${visit.ipAddress}-${rangePreset?.rowId === visit.id ? 'range' : 'exact'}`}
                                   ipAddress={visit.ipAddress}
-                                  initialGroupName={visit.labelGroup}
-                                  initialColor={visit.labelColor}
+                                  initialGroupName={rangePreset?.rowId === visit.id ? rangePreset.group : visit.labelSource === 'ip' ? visit.labelGroup : null}
+                                  initialColor={visit.labelSource === 'ip' ? visit.labelColor : null}
+                                  initialScope={rangePreset?.rowId === visit.id ? 'three' : 'exact'}
                                   allGroupNames={allGroupNames}
                                   onSaved={(groupName, color) => handleLabelSaved(visit.ipAddress as string, groupName, color)}
+                                  onRangeSaved={handleRangeSaved}
                                 />
                               </div>
                             )}

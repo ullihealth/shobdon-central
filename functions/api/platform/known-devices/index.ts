@@ -3,6 +3,7 @@
 // (excluding already-decided IPs, see suggestions.ts) and Phase C's uptime
 // report (which only counts visits from status='confirmed', active=1 rows).
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { rangeLabelJoin, EFFECTIVE_GROUP_SQL } from "../../_utils/ipRange";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -64,10 +65,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       `SELECT k.id AS id, k.tenant_id AS tenantId, t.name AS tenantName, t.slug AS tenantSlug,
               k.display_slug AS displaySlug, k.ip_address AS ipAddress, k.label AS label,
               k.status AS status, k.active AS active, k.confirmed_at AS confirmedAt,
-              l.group_name AS globalLabelGroup, l.color AS globalLabelColor
+              ${EFFECTIVE_GROUP_SQL} AS globalLabelGroup, l.color AS globalLabelColor
        FROM tenant_known_devices k
        JOIN tenants t ON t.id = k.tenant_id
        LEFT JOIN ip_labels l ON l.ip_address = k.ip_address
+       ${rangeLabelJoin("k.ip_address")}
        ${whereClause}
        ORDER BY k.active DESC, k.confirmed_at DESC`
     )

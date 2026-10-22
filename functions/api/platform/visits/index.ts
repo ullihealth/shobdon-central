@@ -9,6 +9,7 @@
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { visitorKind, visitorKindSql, type VisitorKind } from "../../_utils/visitorKind";
 import { ipPrefixCondition } from "../../_utils/ipPrefix";
+import { rangeLabelJoin, EFFECTIVE_GROUP_SQL, UNLABELED_SQL, LABEL_SOURCE_SQL } from "../../_utils/ipRange";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -44,6 +45,11 @@ interface VisitRow {
   labelGroup: string | null;
   // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
   labelColor: string | null;
+  // Where labelGroup came from: an exact ip_labels row ('ip'), a range label
+  // (migration 0119, 'range', with rangePrefix set), or null. labelGroup is
+  // always the EFFECTIVE label (exact > longest range).
+  labelSource: "ip" | "range" | null;
+  rangePrefix: string | null;
   // Computed from userAgent (_utils/visitorKind.ts), not stored.
   kind: VisitorKind;
 }
@@ -99,7 +105,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const hideGroupsParam = url.searchParams.get("hideGroups");
   const hideGroups = hideGroupsParam ? hideGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
   if (hideGroups.length > 0) {
-    conditions.push(`(l.group_name IS NULL OR l.group_name NOT IN (${hideGroups.map(() => "?").join(",")}))`);
+    conditions.push(`(${EFFECTIVE_GROUP_SQL} IS NULL OR ${EFFECTIVE_GROUP_SQL} NOT IN (${hideGroups.map(() => "?").join(",")}))`);
     bindings.push(...hideGroups);
   }
   // The discovery view for a newly onboarded tenant - everything not
@@ -107,7 +113,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // "hidden by name", so this is deliberately a separate flag rather
   // than folded into hideGroups).
   if (url.searchParams.get("unlabeledOnly") === "true") {
-    conditions.push("l.id IS NULL");
+    conditions.push(UNLABELED_SQL);
   }
   // Visit Log sidebar's "solo" mode - the positive-selection mirror of
   // hideGroups above (same comma-separated shape, same AND-composed
@@ -124,7 +130,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const onlyGroupsParam = url.searchParams.get("onlyGroups");
   const onlyGroups = onlyGroupsParam ? onlyGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
   if (onlyGroups.length > 0) {
-    conditions.push(`l.group_name IN (${onlyGroups.map(() => "?").join(",")})`);
+    conditions.push(`${EFFECTIVE_GROUP_SQL} IN (${onlyGroups.map(() => "?").join(",")})`);
     bindings.push(...onlyGroups);
   }
   // Robot / automated-test rows (classified from the user agent, same
@@ -153,10 +159,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               v.ip_address AS ipAddress, v.user_agent AS userAgent,
               v.geo_country AS geoCountry, v.geo_region AS geoRegion, v.geo_city AS geoCity,
               v.geo_latitude AS geoLatitude, v.geo_longitude AS geoLongitude,
-              l.group_name AS labelGroup, l.color AS labelColor
+              ${EFFECTIVE_GROUP_SQL} AS labelGroup, l.color AS labelColor,
+              ${LABEL_SOURCE_SQL} AS labelSource, rl.prefix AS rangePrefix
        FROM display_visits v
        JOIN tenants t ON t.id = v.tenant_id
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
+       ${rangeLabelJoin("v.ip_address")}
        ${whereClause}
        ORDER BY v.visited_at DESC
        LIMIT ${MAX_ROWS}`

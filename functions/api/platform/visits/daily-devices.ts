@@ -32,6 +32,7 @@
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { londonDayWindow } from "../../_utils/londonDay";
 import { visitorKindSql } from "../../_utils/visitorKind";
+import { rangeLabelJoin, EFFECTIVE_GROUP_SQL } from "../../_utils/ipRange";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -43,7 +44,9 @@ interface Env {
 }
 
 const KIND = visitorKindSql("v.user_agent");
-const VISITOR_KEY = "CASE WHEN l.group_name IS NOT NULL THEN 'g:' || l.group_name ELSE 'ip:' || v.ip_address END";
+// Effective label = exact ip_labels group, else the longest matching range
+// label (migration 0119) - so every address in one range label is ONE visitor.
+const VISITOR_KEY = `CASE WHEN ${EFFECTIVE_GROUP_SQL} IS NOT NULL THEN 'g:' || ${EFFECTIVE_GROUP_SQL} ELSE 'ip:' || v.ip_address END`;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const result = await requirePlatformAdmin(request, env);
@@ -68,7 +71,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const hideGroupsParam = url.searchParams.get("hideGroups");
   const hideGroups = hideGroupsParam ? hideGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
   if (hideGroups.length > 0) {
-    conditions.push(`(l.group_name IS NULL OR l.group_name NOT IN (${hideGroups.map(() => "?").join(",")}))`);
+    conditions.push(`(${EFFECTIVE_GROUP_SQL} IS NULL OR ${EFFECTIVE_GROUP_SQL} NOT IN (${hideGroups.map(() => "?").join(",")}))`);
     bindings.push(...hideGroups);
   }
 
@@ -84,6 +87,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               COUNT(DISTINCT CASE WHEN ${KIND} = 'test' THEN v.ip_address END) AS tests
        FROM display_visits v
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
+       ${rangeLabelJoin("v.ip_address")}
        WHERE ${conditions.join(" AND ")}`
     )
     .bind(...bindings)

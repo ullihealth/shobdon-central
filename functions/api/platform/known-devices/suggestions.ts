@@ -11,6 +11,7 @@
 // surfaces every candidate that hasn't been decided on yet; a human
 // (Jeff) picks which ones are real.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { rangeLabelJoin, EFFECTIVE_GROUP_SQL } from "../../_utils/ipRange";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -72,11 +73,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       `SELECT v.tenant_id AS tenantId, t.name AS tenantName, t.slug AS tenantSlug,
               v.display_slug AS displaySlug, td.name AS displayName, v.ip_address AS ipAddress,
               COUNT(*) AS visitCount, MIN(v.visited_at) AS firstSeen, MAX(v.visited_at) AS lastSeen,
-              l.group_name AS labelGroup, l.color AS labelColor
+              ${EFFECTIVE_GROUP_SQL} AS labelGroup, l.color AS labelColor
        FROM display_visits v
        JOIN tenants t ON t.id = v.tenant_id
        LEFT JOIN tenant_displays td ON td.tenant_id = v.tenant_id AND td.slug = v.display_slug
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
+       ${rangeLabelJoin("v.ip_address")}
        WHERE ${whereClause}
          AND NOT EXISTS (
            SELECT 1 FROM tenant_known_devices k

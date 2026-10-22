@@ -14,6 +14,7 @@
 import { requirePlatformAdmin, type D1Database } from "../../_utils/tenantAuth";
 import { visitorKind } from "../../_utils/visitorKind";
 import { ipPrefixCondition } from "../../_utils/ipPrefix";
+import { rangeLabelJoin, EFFECTIVE_GROUP_SQL, UNLABELED_SQL } from "../../_utils/ipRange";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -121,11 +122,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const hideGroupsParam = url.searchParams.get("hideGroups");
   const hideGroups = hideGroupsParam ? hideGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
   if (hideGroups.length > 0) {
-    conditions.push(`(l.group_name IS NULL OR l.group_name NOT IN (${hideGroups.map(() => "?").join(",")}))`);
+    conditions.push(`(${EFFECTIVE_GROUP_SQL} IS NULL OR ${EFFECTIVE_GROUP_SQL} NOT IN (${hideGroups.map(() => "?").join(",")}))`);
     bindings.push(...hideGroups);
   }
   if (url.searchParams.get("unlabeledOnly") === "true") {
-    conditions.push("l.id IS NULL");
+    conditions.push(UNLABELED_SQL);
   }
   // Solo mode - same param/semantics as index.ts's own onlyGroups (see
   // that file's own comment for the "hidden wins" reasoning, which
@@ -133,7 +134,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const onlyGroupsParam = url.searchParams.get("onlyGroups");
   const onlyGroups = onlyGroupsParam ? onlyGroupsParam.split(",").map((g) => g.trim()).filter(Boolean) : [];
   if (onlyGroups.length > 0) {
-    conditions.push(`l.group_name IN (${onlyGroups.map(() => "?").join(",")})`);
+    conditions.push(`${EFFECTIVE_GROUP_SQL} IN (${onlyGroups.map(() => "?").join(",")})`);
     bindings.push(...onlyGroups);
   }
   // IP search box on the page: "starts with" match, ANDed with everything
@@ -150,10 +151,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       `SELECT v.visited_at AS visitedAt, t.name AS tenantName, t.slug AS tenantSlug,
               v.display_slug AS displaySlug, v.ip_address AS ipAddress, v.user_agent AS userAgent,
               v.geo_country AS geoCountry, v.geo_region AS geoRegion, v.geo_city AS geoCity,
-              l.group_name AS labelGroup
+              ${EFFECTIVE_GROUP_SQL} AS labelGroup
        FROM display_visits v
        JOIN tenants t ON t.id = v.tenant_id
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
+       ${rangeLabelJoin("v.ip_address")}
        ${whereClause}
        ORDER BY v.visited_at DESC
        LIMIT ${EXPORT_MAX_ROWS}`
