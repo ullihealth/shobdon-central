@@ -7,6 +7,7 @@
 // tenants/index.ts's own comment: this must work independent of any
 // org-membership resolution.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { visitorKind, visitorKindSql, type VisitorKind } from "../../_utils/visitorKind";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -42,6 +43,8 @@ interface VisitRow {
   labelGroup: string | null;
   // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
   labelColor: string | null;
+  // Computed from userAgent (_utils/visitorKind.ts), not stored.
+  kind: VisitorKind;
 }
 
 // Caps a single response - this is a live ops log, not an export; the
@@ -123,6 +126,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     conditions.push(`l.group_name IN (${onlyGroups.map(() => "?").join(",")})`);
     bindings.push(...onlyGroups);
   }
+  // Robot / automated-test rows (classified from the user agent, same
+  // expression the daily counter uses) - hidden by the page by default;
+  // still logged either way. Real SQL filters, so they apply before
+  // MAX_ROWS rather than after it.
+  if (url.searchParams.get("hideRobots") === "true") {
+    conditions.push(`${visitorKindSql("v.user_agent")} <> 'robot'`);
+  }
+  if (url.searchParams.get("hideTests") === "true") {
+    conditions.push(`${visitorKindSql("v.user_agent")} <> 'test'`);
+  }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const { results } = await env.DB
@@ -141,7 +154,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        LIMIT ${MAX_ROWS}`
     )
     .bind(...bindings)
-    .all<VisitRow>();
+    .all<Omit<VisitRow, "kind">>();
 
-  return jsonResponse({ visits: results });
+  return jsonResponse({ visits: results.map((r) => ({ ...r, kind: visitorKind(r.userAgent) })) });
 };

@@ -18,13 +18,20 @@
 // visitor per ip_labels GROUP (a person on several IPs - wifi, mobile data,
 // VPN - labelled under one group counts once); an unlabelled IP counts once
 // on its own. Keys are prefixed ('g:' / 'ip:') so a group name can never
-// collide with an IP string. Devices (above) are unchanged. hideGroups joins ip_labels exactly as the list
+// collide with an IP string. Devices (above) are unchanged.
+//
+// Robots and automated test runs (_utils/visitorKind.ts, classified from the
+// user agent) are EXCLUDED from every device/visitor number above; they are
+// counted separately as `robots` / `tests` (distinct IPs for the day) so the
+// panel can show what was left out. Display/counting only - they are still
+// logged. hideGroups joins ip_labels exactly as the list
 // route does, so hidden labels drop out of the counts the same way they
 // drop out of the list. tenantId omitted = all tenants.
 //
 // requirePlatformAdmin, same as visits/index.ts.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { londonDayWindow } from "../../_utils/londonDay";
+import { visitorKindSql } from "../../_utils/visitorKind";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -35,6 +42,7 @@ interface Env {
   DB: D1Database;
 }
 
+const KIND = visitorKindSql("v.user_agent");
 const VISITOR_KEY = "CASE WHEN l.group_name IS NOT NULL THEN 'g:' || l.group_name ELSE 'ip:' || v.ip_address END";
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -66,12 +74,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const row = await env.DB
     .prepare(
-      `SELECT COUNT(DISTINCT CASE WHEN v.display_slug = 'main' THEN v.ip_address END) AS main,
-              COUNT(DISTINCT CASE WHEN v.display_slug = 'pilot' THEN v.ip_address END) AS pilot,
-              COUNT(DISTINCT v.ip_address) AS total,
-              COUNT(DISTINCT CASE WHEN v.display_slug = 'main' THEN ${VISITOR_KEY} END) AS visitorsMain,
-              COUNT(DISTINCT CASE WHEN v.display_slug = 'pilot' THEN ${VISITOR_KEY} END) AS visitorsPilot,
-              COUNT(DISTINCT ${VISITOR_KEY}) AS visitorsTotal
+      `SELECT COUNT(DISTINCT CASE WHEN ${KIND} = 'human' AND v.display_slug = 'main' THEN v.ip_address END) AS main,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'human' AND v.display_slug = 'pilot' THEN v.ip_address END) AS pilot,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'human' THEN v.ip_address END) AS total,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'human' AND v.display_slug = 'main' THEN ${VISITOR_KEY} END) AS visitorsMain,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'human' AND v.display_slug = 'pilot' THEN ${VISITOR_KEY} END) AS visitorsPilot,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'human' THEN ${VISITOR_KEY} END) AS visitorsTotal,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'robot' THEN v.ip_address END) AS robots,
+              COUNT(DISTINCT CASE WHEN ${KIND} = 'test' THEN v.ip_address END) AS tests
        FROM display_visits v
        LEFT JOIN ip_labels l ON l.ip_address = v.ip_address
        WHERE ${conditions.join(" AND ")}`
@@ -84,6 +94,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       visitorsMain: number;
       visitorsPilot: number;
       visitorsTotal: number;
+      robots: number;
+      tests: number;
     }>();
 
   return jsonResponse({
@@ -94,5 +106,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     visitorsMain: row?.visitorsMain ?? 0,
     visitorsPilot: row?.visitorsPilot ?? 0,
     visitorsTotal: row?.visitorsTotal ?? 0,
+    robots: row?.robots ?? 0,
+    tests: row?.tests ?? 0,
   });
 };

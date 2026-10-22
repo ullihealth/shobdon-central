@@ -16,6 +16,22 @@ const MY_IP_URL = '/api/platform/my-ip'
 // the only filter persisted across reloads. unlabeledOnly/soloGroups
 // are both deliberately session-only (see their own state comments).
 const HIDE_GROUPS_STORAGE_KEY = 'platformVisits.hideGroups'
+// "Hide robots" / "Hide test runs" - also standing preferences, both default
+// ON (crawlers and automated test runs are noise nearly every time).
+const HIDE_ROBOTS_STORAGE_KEY = 'platformVisits.hideRobots'
+const HIDE_TESTS_STORAGE_KEY = 'platformVisits.hideTests'
+
+function loadPersistedFlag(key: string): boolean {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? true : raw === 'true'
+  } catch {
+    return true
+  }
+}
+
+// Computed chip for rows with no real ip_labels label (a real label always wins).
+const KIND_CHIP_TEXT: Record<'robot' | 'test', string> = { robot: 'Robot', test: 'Test run' }
 
 function loadPersistedHideGroups(): Set<string> {
   try {
@@ -51,6 +67,8 @@ interface Visit {
   labelGroup: string | null
   // Migration 0058 - fixed-palette key; see src/utils/labelColors.ts.
   labelColor: string | null
+  // Computed server-side from userAgent (functions/api/_utils/visitorKind.ts).
+  kind: 'human' | 'robot' | 'test'
 }
 
 interface IpLabel {
@@ -96,7 +114,7 @@ function visitsToClipboardText(rows: Visit[]): string {
       v.displaySlug,
       v.ipAddress ?? '—',
       v.userAgent ?? '—',
-      v.labelGroup ?? '',
+      v.labelGroup ?? (v.kind !== 'human' ? KIND_CHIP_TEXT[v.kind] : ''),
     ].join('\t')
   )
   return [header, ...lines].join('\n')
@@ -156,6 +174,8 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
   const [hideGroups, setHideGroups] = useState<Set<string>>(loadPersistedHideGroups)
   const [unlabeledOnly, setUnlabeledOnly] = useState(false)
+  const [hideRobots, setHideRobots] = useState<boolean>(() => loadPersistedFlag(HIDE_ROBOTS_STORAGE_KEY))
+  const [hideTests, setHideTests] = useState<boolean>(() => loadPersistedFlag(HIDE_TESTS_STORAGE_KEY))
   // Bumped by the Refresh button so the daily-devices counter refetches with it.
   const [refreshTick, setRefreshTick] = useState(0)
   // Visit Log sidebar's "solo" set - deliberately NOT persisted (unlike
@@ -178,6 +198,15 @@ export default function PlatformVisitsPage(): JSX.Element {
       // for a convenience feature.
     }
   }, [hideGroups])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDE_ROBOTS_STORAGE_KEY, String(hideRobots))
+      localStorage.setItem(HIDE_TESTS_STORAGE_KEY, String(hideTests))
+    } catch {
+      // Same posture as hideGroups above - works for the session regardless.
+    }
+  }, [hideRobots, hideTests])
 
   // "This is my device" - detects the caller's own IP (server-side, via
   // the same CF-Connecting-IP header heartbeat.ts logs) and opens the
@@ -257,6 +286,8 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (hideGroups.size > 0) params.set('hideGroups', Array.from(hideGroups).join(','))
     if (unlabeledOnly) params.set('unlabeledOnly', 'true')
     if (soloGroups.size > 0) params.set('onlyGroups', Array.from(soloGroups).join(','))
+    if (hideRobots) params.set('hideRobots', 'true')
+    if (hideTests) params.set('hideTests', 'true')
     const query = params.toString()
 
     return fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
@@ -294,7 +325,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     // time instead (the .get() above), deliberately left out of the
     // dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly, soloGroups])
+  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly, soloGroups, hideRobots, hideTests])
 
   const tenantOptions = useMemo(() => Array.from(knownTenants.keys()).sort(), [knownTenants])
   const slugOptions = useMemo(() => Array.from(knownSlugs).sort(), [knownSlugs])
@@ -699,6 +730,24 @@ export default function PlatformVisitsPage(): JSX.Element {
             />
             Unlabeled only
           </label>
+          <label className="flex items-center gap-2 text-xs text-muted-300">
+            <input
+              type="checkbox"
+              checked={hideRobots}
+              onChange={(e) => setHideRobots(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Hide robots
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-300">
+            <input
+              type="checkbox"
+              checked={hideTests}
+              onChange={(e) => setHideTests(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Hide test runs
+          </label>
         </div>
 
         {loading ? (
@@ -792,6 +841,13 @@ export default function PlatformVisitsPage(): JSX.Element {
                         >
                           {visit.labelGroup ? (
                             <LabelPill groupName={visit.labelGroup} color={visit.labelColor} />
+                          ) : visit.kind !== 'human' ? (
+                            <span
+                              className="rounded border border-dashed border-slate-600 px-1.5 py-0.5 text-[0.65rem] italic text-muted-500"
+                              title="Computed from the user agent - not a saved label"
+                            >
+                              {KIND_CHIP_TEXT[visit.kind]}
+                            </span>
                           ) : (
                             <span className="text-muted-600">—</span>
                           )}
@@ -854,6 +910,8 @@ export default function PlatformVisitsPage(): JSX.Element {
                       dateTo ||
                       hideGroups.size > 0 ||
                       unlabeledOnly ||
+                      hideRobots ||
+                      hideTests ||
                       soloGroups.size > 0
                         ? 'No visits match the current filters.'
                         : 'No visits logged yet.'}

@@ -12,6 +12,7 @@
 // differently-formatted read of the exact same data that gate already
 // protects, not a new access boundary.
 import { requirePlatformAdmin, type D1Database } from "../../_utils/tenantAuth";
+import { visitorKind } from "../../_utils/visitorKind";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -57,7 +58,7 @@ function csvField(value: string): string {
 }
 
 function toCsv(rows: VisitExportRow[]): string {
-  const header = ["Time", "Tenant", "Display", "IP Address", "User Agent", "Country", "Region", "City", "Label"]
+  const header = ["Time", "Tenant", "Display", "IP Address", "User Agent", "Country", "Region", "City", "Label", "Kind"]
     .map(csvField)
     .join(",");
   const lines = rows.map((r) =>
@@ -71,6 +72,9 @@ function toCsv(rows: VisitExportRow[]): string {
       r.geoRegion ?? "",
       r.geoCity ?? "",
       r.labelGroup ?? "",
+      // human / robot / test, computed from the user agent. The export is
+      // deliberately NOT filtered by kind - this column lets you do that.
+      visitorKind(r.userAgent),
     ]
       .map((v) => csvField(v))
       .join(",")

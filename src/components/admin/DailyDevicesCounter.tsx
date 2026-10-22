@@ -31,6 +31,8 @@ interface Counts {
   visitorsMain: number
   visitorsPilot: number
   visitorsTotal: number
+  robots: number
+  tests: number
 }
 
 interface Props {
@@ -70,6 +72,8 @@ export function DailyDevicesCounter({ tenantId, hideGroups, refreshTick }: Props
             visitorsMain: data.visitorsMain,
             visitorsPilot: data.visitorsPilot,
             visitorsTotal: data.visitorsTotal,
+            robots: data.robots ?? 0,
+            tests: data.tests ?? 0,
           })
           setError(false)
         } else {
@@ -146,6 +150,12 @@ export function DailyDevicesCounter({ tenantId, hideGroups, refreshTick }: Props
         Visitors: labelled IPs count once per label; unlabelled IPs count once each.
         {hideKey && ' (excluding hidden labels)'}
       </p>
+      {!error && counts && (counts.robots > 0 || counts.tests > 0) && (
+        <p className="mt-1 text-center text-xs text-muted-500">
+          Excluded: {counts.robots} robot{counts.robots === 1 ? '' : 's'}, {counts.tests} test run
+          {counts.tests === 1 ? '' : 's'}
+        </p>
+      )}
     </div>
   )
 }
