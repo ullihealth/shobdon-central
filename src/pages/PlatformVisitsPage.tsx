@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { LabelPill } from '../components/admin/LabelPill'
 import { IpLabelEditor } from '../components/admin/IpLabelEditor'
 import { DailyDevicesCounter } from '../components/admin/DailyDevicesCounter'
+import { IpSearchInput } from '../components/admin/IpSearchInput'
 import { resolveLabelColor } from '../utils/labelColors'
 
 const VISITS_URL = '/api/platform/visits'
@@ -174,6 +175,15 @@ export default function PlatformVisitsPage(): JSX.Element {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
   const [hideGroups, setHideGroups] = useState<Set<string>>(loadPersistedHideGroups)
   const [unlabeledOnly, setUnlabeledOnly] = useState(false)
+  // IP search ("starts with"), debounced ~300 ms from the four-box input
+  // below. Deliberately NOT persisted - starts empty on every visit. The
+  // daily counter panel ignores it.
+  const [ipPrefix, setIpPrefix] = useState('')
+  const ipPrefixTimerRef = useRef<number | undefined>(undefined)
+  function handleIpPrefixChange(prefix: string) {
+    window.clearTimeout(ipPrefixTimerRef.current)
+    ipPrefixTimerRef.current = window.setTimeout(() => setIpPrefix(prefix), 300)
+  }
   const [hideRobots, setHideRobots] = useState<boolean>(() => loadPersistedFlag(HIDE_ROBOTS_STORAGE_KEY))
   const [hideTests, setHideTests] = useState<boolean>(() => loadPersistedFlag(HIDE_TESTS_STORAGE_KEY))
   // Bumped by the Refresh button so the daily-devices counter refetches with it.
@@ -288,6 +298,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (soloGroups.size > 0) params.set('onlyGroups', Array.from(soloGroups).join(','))
     if (hideRobots) params.set('hideRobots', 'true')
     if (hideTests) params.set('hideTests', 'true')
+    if (ipPrefix) params.set('ipPrefix', ipPrefix)
     const query = params.toString()
 
     return fetch(query ? `${VISITS_URL}?${query}` : VISITS_URL)
@@ -325,7 +336,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     // time instead (the .get() above), deliberately left out of the
     // dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly, soloGroups, hideRobots, hideTests])
+  }, [tenantFilter, slugFilter, dateFrom, dateTo, hideGroups, unlabeledOnly, soloGroups, hideRobots, hideTests, ipPrefix])
 
   const tenantOptions = useMemo(() => Array.from(knownTenants.keys()).sort(), [knownTenants])
   const slugOptions = useMemo(() => Array.from(knownSlugs).sort(), [knownSlugs])
@@ -441,6 +452,7 @@ export default function PlatformVisitsPage(): JSX.Element {
     if (hideGroups.size > 0) params.set('hideGroups', Array.from(hideGroups).join(','))
     if (unlabeledOnly) params.set('unlabeledOnly', 'true')
     if (soloGroups.size > 0) params.set('onlyGroups', Array.from(soloGroups).join(','))
+    if (ipPrefix) params.set('ipPrefix', ipPrefix)
     const query = params.toString()
     window.location.href = query ? `${VISITS_EXPORT_URL}?${query}` : VISITS_EXPORT_URL
   }
@@ -651,6 +663,7 @@ export default function PlatformVisitsPage(): JSX.Element {
               Clear dates
             </button>
           )}
+          <IpSearchInput onPrefixChange={handleIpPrefixChange} />
           <button
             type="button"
             onClick={handleCopy}
@@ -912,6 +925,7 @@ export default function PlatformVisitsPage(): JSX.Element {
                       unlabeledOnly ||
                       hideRobots ||
                       hideTests ||
+                      ipPrefix ||
                       soloGroups.size > 0
                         ? 'No visits match the current filters.'
                         : 'No visits logged yet.'}

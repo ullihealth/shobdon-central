@@ -8,6 +8,7 @@
 // org-membership resolution.
 import { requirePlatformAdmin, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { visitorKind, visitorKindSql, type VisitorKind } from "../../_utils/visitorKind";
+import { ipPrefixCondition } from "../../_utils/ipPrefix";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -135,6 +136,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   if (url.searchParams.get("hideTests") === "true") {
     conditions.push(`${visitorKindSql("v.user_agent")} <> 'test'`);
+  }
+  // IP search box on the page: "starts with" match, ANDed with everything
+  // above, applied in SQL (so before any row cap).
+  const ipPrefix = ipPrefixCondition(url.searchParams.get("ipPrefix"));
+  if (ipPrefix) {
+    conditions.push(ipPrefix.sql);
+    bindings.push(ipPrefix.binding);
   }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 

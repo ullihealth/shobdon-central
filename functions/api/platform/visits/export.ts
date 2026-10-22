@@ -13,6 +13,7 @@
 // protects, not a new access boundary.
 import { requirePlatformAdmin, type D1Database } from "../../_utils/tenantAuth";
 import { visitorKind } from "../../_utils/visitorKind";
+import { ipPrefixCondition } from "../../_utils/ipPrefix";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -134,6 +135,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (onlyGroups.length > 0) {
     conditions.push(`l.group_name IN (${onlyGroups.map(() => "?").join(",")})`);
     bindings.push(...onlyGroups);
+  }
+  // IP search box on the page: "starts with" match, ANDed with everything
+  // above, applied in SQL (so before any row cap).
+  const ipPrefix = ipPrefixCondition(url.searchParams.get("ipPrefix"));
+  if (ipPrefix) {
+    conditions.push(ipPrefix.sql);
+    bindings.push(ipPrefix.binding);
   }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
