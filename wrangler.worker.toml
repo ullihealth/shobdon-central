@@ -118,15 +118,26 @@ id = "c5ada3c64f1745509ed0977c0ab0c323"
 [vars]
 MEDIA_PUBLIC_BASE_URL = "https://pub-49e7730844f6446db2a9bf40e27356cf.r2.dev"
 
-# Stripe groundwork (Airfield Pack round, Phase B) - test mode only, same
-# non-secret test-mode price ids already declared in wrangler.toml's own
-# [vars] (investigation round found this file was missing them - the
-# Worker, not Pages, is what actually serves every tenant subdomain's
-# checkout traffic, so without these here Phase B's product-mapping
-# would silently fail to resolve a product for every real tenant).
-STRIPE_PRICE_PACK = "price_1UNFGQPidShgOHShVaDq5CzF"
-STRIPE_PRICE_PILOT_APP = "price_1UNFGkPidShgOHSho400RtF5"
-STRIPE_PRICE_MEDIA_SCREEN = "price_1UNFH3PidShgOHShe8svQZ62"
+# Stripe billing - LIVE MODE. These are the same three LIVE price ids as
+# wrangler.toml's own [vars] (Stripe price/product ids are public identifiers,
+# not secrets - they appear in Checkout URLs). They must be kept identical to
+# wrangler.toml's: this Worker, not Pages, is what actually serves every tenant
+# subdomain, including the Billing / "Activate subscription" / Customer Portal
+# routes (functions/api/tenant/billing/*) and Checkout Session creation, so a
+# stale (test-mode) id here would send a live customer to a test price.
+# (Local/sandbox testing uses TEST-mode ids from .dev.vars and never reads this
+# file.)
+#
+# STRIPE_SECRET_KEY (the LIVE-mode secret key) is a real secret, NOT declared
+# here - set it on THIS Worker with:
+#   npx wrangler secret put STRIPE_SECRET_KEY --config wrangler.worker.toml
+# (without it every Stripe call from a tenant subdomain fails with "Stripe is not
+# configured"). STRIPE_WEBHOOK_SECRET is only needed by /api/stripe/webhook, which
+# Stripe calls at the bare apex (served by Pages, where it is already set) - set it
+# here too only if the webhook endpoint is ever moved to a tenant/Worker host.
+STRIPE_PRICE_PACK = "price_1UQqSAPd2BNJ7KAabNnZU21g"
+STRIPE_PRICE_PILOT_APP = "price_1UQqSGPd2BNJ7KAa1JtVcn5z"
+STRIPE_PRICE_MEDIA_SCREEN = "price_1UQqSAPd2BNJ7KAasNuRrQau"
 
 # AUTH_SECRET, MET_OFFICE_API_KEY set via:
 #   npx wrangler secret put AUTH_SECRET --config wrangler.worker.toml
