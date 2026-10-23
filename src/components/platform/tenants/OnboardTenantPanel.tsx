@@ -309,8 +309,8 @@ export default function OnboardTenantPanel({
 
   return (
     <>
-        <div className="mb-6 rounded-2xl border border-border bg-panel p-6">
-          <div className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Onboard New Tenant</div>
+        <div className="dev-type mb-6 rounded-2xl border border-border bg-panel p-6 [&_button]:min-h-[44px] [&_select]:min-h-[44px] [&_input:not([type=checkbox]):not([type=file]):not([type=radio])]:min-h-[44px]">
+          <div className="mb-1 text-[18px] font-semibold leading-tight text-slate-50">Onboard New Tenant</div>
           <p className="mb-4 text-xs text-muted-500">
             Creates a new tenant and a single-use invite link. Subdomain is required and pre-filled from the name,
             but can be overridden before submitting. Latitude/longitude are required - without them there's no sane
@@ -584,7 +584,7 @@ export default function OnboardTenantPanel({
 
         {inviteResult && (
           <div className="mb-8 rounded-2xl border border-accent-sky-500/40 bg-panel p-6">
-            <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">
+            <div className="mb-2 text-[18px] font-semibold leading-tight text-slate-50">
               New tenant created: {inviteResult.slug}
             </div>
             <p className="mb-3 text-xs text-muted-500">

@@ -96,8 +96,8 @@ export default function PlatformTenantsListPage(): JSX.Element {
     <div className="min-h-screen px-4 pb-16 pt-6 text-slate-100 sm:px-6">
       <div className="mx-auto max-w-[1500px]">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <h1 className="text-2xl font-black uppercase tracking-wide text-primary">
-            <Link to={dashboardLandingPage} className="transition-colors hover:text-accent-sky-400" title="Back to Dashboard">
+          <h1 className="text-[32px] font-bold leading-tight text-primary">
+            <Link to={dashboardLandingPage} className="[font-size:inherit] transition-colors hover:text-accent-sky-400" title="Back to Dashboard">
               Platform · Tenants
             </Link>
           </h1>
@@ -208,21 +208,21 @@ export default function PlatformTenantsListPage(): JSX.Element {
           <p className="text-sm text-muted-400">Loading…</p>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-border bg-panel">
-            <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="border-b border-border text-xs uppercase tracking-widest text-muted-400">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="border-b border-border text-[14px] font-semibold text-muted-300">
                 <tr>
-                  <th scope="col" className="px-4 py-3 font-bold">Tenant</th>
-                  <th scope="col" className="px-4 py-3 font-bold">Status</th>
-                  <th scope="col" className="px-4 py-3 font-bold">Plan</th>
-                  <th scope="col" className="px-4 py-3 font-bold">Media box</th>
-                  <th scope="col" className="px-4 py-3 text-right font-bold">Members</th>
-                  <th scope="col" className="px-4 py-3 font-bold">Joined</th>
+                  <th scope="col" className="px-4 py-3.5 font-semibold">Tenant</th>
+                  <th scope="col" className="px-4 py-3.5 font-semibold">Status</th>
+                  <th scope="col" className="px-4 py-3.5 font-semibold">Plan</th>
+                  <th scope="col" className="px-4 py-3.5 font-semibold">Media box</th>
+                  <th scope="col" className="px-4 py-3.5 text-right font-semibold">Members</th>
+                  <th scope="col" className="px-4 py-3.5 font-semibold">Joined</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-400">
+                    <td colSpan={6} className="px-5 py-8 text-center text-[16px] text-muted-400">
                       No tenants match.
                     </td>
                   </tr>
@@ -236,34 +236,34 @@ export default function PlatformTenantsListPage(): JSX.Element {
                       onClick={() => openTenant(tenant.slug)}
                       className="cursor-pointer border-b border-border/50 last:border-0 hover:bg-slate-800/40"
                     >
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-3">
                         <Link
                           to={`/platform/tenants/${tenant.slug}`}
                           onClick={(event) => {
                             event.stopPropagation()
                             rememberRecentTenant(tenant.slug)
                           }}
-                          className="flex min-h-[44px] items-center gap-3"
+                          className="flex min-h-[48px] items-center gap-3"
                         >
                           <TenantAvatar name={tenant.name} logoUrl={tenant.logoUrl} />
                           <span className="min-w-0">
-                            <span className="block truncate font-semibold text-white">{tenant.name}</span>
-                            <span className="block truncate text-xs text-muted-400">{tenant.slug}</span>
+                            <span className="block text-[16px] font-semibold text-white">{tenant.name}</span>
+                            <span className="block text-[15px] text-muted-400">{tenant.slug}</span>
                           </span>
                         </Link>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-3">
                         <span className="flex flex-wrap gap-1">
                           {statusBadges(tenant).map((badge) => (
                             <StatusBadge key={badge.label} badge={badge} />
                           ))}
                         </span>
                       </td>
-                      <td className="px-4 py-2">{plan ? <StatusBadge badge={plan} /> : <span className="text-muted-400">None</span>}</td>
-                      <td className="px-4 py-2">
+                      <td className="px-4 py-3">{plan ? <StatusBadge badge={plan} /> : <span className="text-muted-400">None</span>}</td>
+                      <td className="px-4 py-3">
                         {tenant.mediaBoxIdentifier || units.length > 0 ? (
-                          <span className="flex flex-col gap-0.5">
-                            <span className="font-medium text-slate-100">
+                          <span className="flex max-w-[180px] flex-col gap-0.5">
+                            <span className="break-all text-[16px] font-medium text-slate-50">
                               {tenant.mediaBoxIdentifier || units.map((u) => u.serialNumber).join(', ')}
                             </span>
                             {units.length > 0 && <PiStateText state={piState(units[0], now)} />}
@@ -272,8 +272,8 @@ export default function PlatformTenantsListPage(): JSX.Element {
                           <span className="text-muted-400">None</span>
                         )}
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums">{tenant.members.length}</td>
-                      <td className="whitespace-nowrap px-4 py-2 text-muted-300">{formatDate(tenant.createdAt)}</td>
+                      <td className="px-4 py-3 text-right text-[16px] font-medium tabular-nums">{tenant.members.length}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-[16px] text-muted-300">{formatDate(tenant.createdAt)}</td>
                     </tr>
                   )
                 })}

@@ -197,3 +197,44 @@ body.pilot-view-scroll-root {
 .kiosk-hide-cursor * {
   cursor: none !important;
 }
+
+/* Developer Platform Tenants pages only (/platform/tenants and
+   /platform/tenants/:slug): a readable type floor, applied by wrapping the page
+   in .dev-type so the many small editors it embeds are lifted without editing
+   each one. Sizes are in px, not rem, on purpose: this app's root font size is
+   clamp(12px, 1.5vmin, 20px), so 1rem is only 12-13.5px here; px still follows
+   browser zoom. Nothing below 14px, body 16px, helper text 15px, sentence case
+   labels, muted greys lightened to #b4c0d0 (7.9:1 on the lightest surface used,
+   10.8:1 on a card). Scoped: no other page is affected. */
+.dev-type .text-xs,
+.dev-type .text-\[11px\] { font-size: 15px; line-height: 1.5; }
+.dev-type .text-\[10px\],
+.dev-type .text-\[9px\] { font-size: 14px; line-height: 1.5; }
+.dev-type .text-sm,
+.dev-type .text-base { font-size: 16px; line-height: 1.5; }
+.dev-type .text-lg { font-size: 18px; line-height: 1.25; }
+.dev-type .text-xl { font-size: 20px; line-height: 1.25; }
+.dev-type .text-2xl { font-size: 24px; line-height: 1.25; }
+:where(.dev-type) :where(button, a) { font-size: 16px; line-height: 1.5; }
+.dev-type .uppercase { text-transform: none; }
+.dev-type .tracking-widest,
+.dev-type .tracking-wide { letter-spacing: normal; }
+.dev-type .uppercase.font-semibold { font-weight: 500; }
+.dev-type .text-muted-500,
+.dev-type .text-muted-400,
+.dev-type .text-slate-500,
+.dev-type .text-slate-400 { color: #b4c0d0; }
+.dev-type input:not([type='checkbox']):not([type='radio']):not([type='file']),
+.dev-type select,
+.dev-type textarea { font-size: 16px; line-height: 1.5; }
+.dev-type input::placeholder,
+.dev-type textarea::placeholder { color: #a3b1c6; opacity: 1; }
+/* White on the sky/red fills was 2.8-3.8:1; dark text on sky, a deeper red fill. */
+.dev-type .bg-accent-sky-500 { color: #020617; }
+.dev-type .bg-status-bad { background-color: #dc2626; color: #ffffff; }
+/* Number/time/text boxes in the embedded editors were sized for 10px text. */
+.dev-type input.w-16,
+.dev-type input.w-20,
+.dev-type input.w-24 { width: 112px; }
+.dev-type input.w-28 { width: 150px; }
+.dev-type input.w-32 { width: 150px; }

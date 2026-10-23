@@ -47,15 +47,15 @@ export default function DeveloperSidebar(): JSX.Element {
   const activePath = location.pathname.startsWith('/platform/tenants/') ? '/platform/tenants' : location.pathname
 
   return (
-    <aside className="sticky top-0 flex h-screen w-64 flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
+    <aside className="sticky top-0 flex h-screen w-[264px] flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
       <div className="px-5 pb-4 pt-6">
-        <Link to="/" className="mb-1 block text-xs font-semibold text-muted-400 transition hover:text-accent-sky-400">
+        <Link to="/" className="mb-1 block text-[14px] font-semibold text-muted-300 transition hover:text-accent-sky-400">
           ← Back to Dashboard
         </Link>
         <div className="text-lg font-black uppercase tracking-wide text-primary">Developer</div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav className="flex-1 overflow-y-auto px-3 pb-4 [&_a]:py-2.5 [&_a]:text-[16px] [&_button]:tracking-normal [&_button]:text-[14px] [&_button]:py-2.5 [&_button_span]:text-[14px]">
         {DEVELOPER_SIDEBAR_GROUPS.map((group) => {
           const hasActiveItem = group.items.some((item) => item.to === activePath)
           const collapsed = !hasActiveItem && !!collapsedGroups[group.id]

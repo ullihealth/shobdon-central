@@ -32,13 +32,13 @@ export default function DeveloperLayout(): JSX.Element {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100 lg:flex">
-      <div className="sticky top-0 z-40 flex h-12 items-center border-b border-slate-800 bg-[#071229]/95 px-3 backdrop-blur lg:hidden">
+      <div className="sticky top-0 z-40 flex h-[52px] items-center border-b border-slate-800 bg-[#071229]/95 px-3 backdrop-blur lg:hidden">
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
           aria-label="Open developer menu"
           aria-expanded={menuOpen}
-          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-sm font-semibold text-slate-100"
+          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 text-[16px] font-semibold text-slate-100"
         >
           <span aria-hidden="true">☰</span> Developer menu
         </button>

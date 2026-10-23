@@ -49,10 +49,10 @@ function Shell(): JSX.Element {
   }
 
   return (
-    <>
+    <div className="dev-type">
       <Outlet context={{ openSwitcher: () => setSwitcherOpen(true) } satisfies PlatformTenantsOutletContext} />
       <QuickSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
-    </>
+    </div>
   )
 }
 

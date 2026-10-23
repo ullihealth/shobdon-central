@@ -81,7 +81,7 @@ function OpenLink({ tab, onOpenTab }: { tab: TabKey; onOpenTab: (tab: TabKey) =>
     <button
       type="button"
       onClick={() => onOpenTab(tab)}
-      className="mt-3 inline-flex min-h-[44px] items-center text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
+      className="mt-3 inline-flex min-h-[44px] items-center text-[16px] font-semibold text-accent-sky-400 hover:text-accent-sky-500"
     >
       Open -&gt;
     </button>
@@ -97,20 +97,20 @@ export function OverviewTab({ tenant, parentName, onOpenTab }: TabProps): JSX.El
   const owner = tenant.members.find((m) => m.role === 'owner')
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <section
         aria-label="Needs attention"
-        className={`rounded-2xl border p-5 ${issues.length ? 'border-amber-400/40 bg-amber-950/30' : 'border-emerald-400/30 bg-emerald-950/20'}`}
+        className={`rounded-2xl border p-6 ${issues.length ? 'border-amber-400/40 bg-amber-950/30' : 'border-emerald-400/30 bg-emerald-950/20'}`}
       >
-        <h3 className="mb-2 text-sm font-bold uppercase tracking-widest text-slate-100">
+        <h3 className="mb-2 text-[18px] font-semibold leading-tight text-slate-50">
           {issues.length ? `Needs attention (${issues.length})` : 'Nothing needs attention'}
         </h3>
         {issues.length === 0 ? (
-          <p className="text-sm text-emerald-200">No problems found in this tenant's billing, status or linked devices.</p>
+          <p className="text-[16px] text-emerald-200">No problems found in this tenant's billing, status or linked devices.</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {issues.map((issue) => (
-              <li key={issue.id} className={`text-sm ${issue.severity === 'bad' ? 'text-red-200' : 'text-amber-200'}`}>
+              <li key={issue.id} className={`text-[16px] ${issue.severity === 'bad' ? 'text-red-200' : 'text-amber-200'}`}>
                 {issue.text}
               </li>
             ))}
@@ -118,7 +118,7 @@ export function OverviewTab({ tenant, parentName, onOpenTab }: TabProps): JSX.El
         )}
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         <Card title="Billing & plan">
           <dl>
             <Fact label="Status">
@@ -194,7 +194,7 @@ export function BillingTab({ tenant }: TabProps): JSX.Element {
   const archived = isArchived(tenant)
   const plan = planBadge(tenant)
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card
         title="Billing status"
         description="Set by hand ahead of full Stripe automation. Separate from Suspend/Resume and from per-display entitlement."
@@ -219,7 +219,7 @@ export function BillingTab({ tenant }: TabProps): JSX.Element {
                 <button
                   type="button"
                   onClick={() => setShowAllHistory((v) => !v)}
-                  className="self-start text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500"
+                  className="min-h-[44px] self-start text-[16px] font-semibold text-accent-sky-400 hover:text-accent-sky-500"
                 >
                   {showAllHistory ? 'Show fewer' : `Show all ${tenant.subscriptionHistory.length} changes`}
                 </button>
@@ -258,7 +258,7 @@ export function ProductsTab({ tenant }: TabProps): JSX.Element {
     store.handleBooleanToggle(tenant, field, next)
   const cafeTvDisplay = tenant.displays.find((d) => d.slug === 'cafe-tv')
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card
         title="Reception Dashboard"
         description={`The TV/clubhouse screen - Airfield Pack, ${formatGBP(findPricingPlan('pack')?.priceGBP ?? 44)}/mo.`}
@@ -283,7 +283,7 @@ export function ProductsTab({ tenant }: TabProps): JSX.Element {
             helper="Adds a QR-code slide to the carousel that promotes the Pilot's App, using the target URL/caption/mockup image set below."
           />
         </div>
-        <div className="mt-4 flex flex-wrap items-end gap-6">
+        <div className="mt-4 flex flex-wrap items-start gap-8">
           <div>
             <CarouselBudgetEditor tenant={tenant} onSaved={(seconds) => store.handleCarouselBudgetSaved(tenant.id, seconds)} />
             <p className="mt-1 max-w-[200px] text-xs text-muted-400">How much time (MM:SS) the tenant's own slides share, once reserved slots are on.</p>
@@ -354,7 +354,7 @@ export function WeatherTab({ tenant, onParentChanged }: TabProps): JSX.Element {
   const toggle = (field: Parameters<typeof store.handleBooleanToggle>[1]) => (next: boolean) =>
     store.handleBooleanToggle(tenant, field, next)
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card title="Parent airfield" description="Links this tenant to another tenant's weather, NOTAMs and runway data (a co-located club sharing one real station).">
         <ParentAirfieldEditor tenant={tenant} allTenants={store.tenants} onChanged={onParentChanged} />
       </Card>
@@ -375,7 +375,7 @@ export function WeatherTab({ tenant, onParentChanged }: TabProps): JSX.Element {
             helper="Shows whether the AFISO (radio) service is currently open, on both the dashboard and the Pilot's App. Manual - nothing sets this automatically."
           />
         </div>
-        <div className="mt-4 flex flex-wrap items-end gap-6">
+        <div className="mt-4 flex flex-wrap items-start gap-8">
           <div>
             <AfisoFrequencyEditor tenant={tenant} onSaved={(frequency) => store.handleAfisoFrequencySaved(tenant.id, frequency)} />
             <p className="mt-1 max-w-[220px] text-xs text-muted-400">Radio frequency shown alongside the AFISO status.</p>
@@ -396,7 +396,7 @@ export function DevicesTab({ tenant }: TabProps): JSX.Element {
   const store = useTenants()
   const units = piUnitsForTenant(store.piUnits, tenant.id)
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card title="Displays" description="Support/maintenance force-off, per display - independent of billing.">
         {tenant.displays.length === 0 ? (
           <span className="text-xs text-muted-400">No displays yet</span>
@@ -448,7 +448,7 @@ export function DevicesTab({ tenant }: TabProps): JSX.Element {
             ))}
           </ul>
         )}
-        <Link to="/platform/pi-fleet" className="mt-3 inline-flex min-h-[44px] items-center text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500">
+        <Link to="/platform/pi-fleet" className="mt-3 inline-flex min-h-[44px] items-center text-[16px] font-semibold text-accent-sky-400 hover:text-accent-sky-500">
           Open Pi Fleet →
         </Link>
       </Card>
@@ -459,7 +459,7 @@ export function DevicesTab({ tenant }: TabProps): JSX.Element {
 export function MembersTab({ tenant }: TabProps): JSX.Element {
   const { refreshTenants } = useTenants()
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card title="Members">
         <MembersSection tenant={tenant} onChanged={refreshTenants} />
       </Card>
@@ -475,7 +475,7 @@ export function InternalTab({ tenant, onDeleted }: TabProps): JSX.Element {
   const toggle = (field: Parameters<typeof store.handleBooleanToggle>[1]) => (next: boolean) =>
     store.handleBooleanToggle(tenant, field, next)
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card title="Platform-internal" description="Not customer-facing - developer/support tools only.">
         <div className="overflow-hidden rounded-xl border border-border/60">
           <SettingsToggleRow

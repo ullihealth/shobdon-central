@@ -1067,7 +1067,7 @@ export function ActivationLinkSection({ tenant }: { tenant: PlatformTenant }): J
 
   return (
     <div className="mt-3 rounded-lg border border-border bg-slate-900/60 p-3">
-      <div className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-sky-400">Activation link</div>
+      <div className="mb-2 text-[18px] font-semibold leading-tight text-slate-50">Activation link</div>
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={plan}
@@ -1557,7 +1557,7 @@ export function SettingsToggleRow({
     flash(result !== false)
   }
   return (
-    <div className="border-b border-border/60 px-4 py-2.5 last:border-0">
+    <div className="border-b border-border/60 px-5 py-3.5 last:border-0">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm text-muted-300">{label}</span>
         <span className="flex items-center gap-2">
@@ -1712,7 +1712,7 @@ export function MembersSection({ tenant, onChanged }: { tenant: PlatformTenant; 
     <div>
       {revealedPassword && (
         <div className="mb-4 rounded-xl border border-accent-sky-500 bg-panel p-4">
-          <div className="mb-1 text-xs font-bold uppercase tracking-widest text-accent-sky-400">
+          <div className="mb-1 text-[18px] font-semibold leading-tight text-slate-50">
             Temporary password for {revealedPassword.email}
           </div>
           <div className="mb-2 flex items-center gap-3">

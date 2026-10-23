@@ -62,7 +62,7 @@ function ArchiveDialog({ tenant, onClose }: { tenant: PlatformTenant; onClose: (
         }}
         className="w-full max-w-md rounded-2xl border border-red-400/40 bg-slate-950 p-6 shadow-2xl"
       >
-        <h2 id="archive-title" className="mb-2 text-lg font-black text-red-200">
+        <h2 id="archive-title" className="mb-2 text-[18px] font-semibold leading-tight text-red-200">
           Archive {tenant.name}?
         </h2>
         <p className="mb-4 text-sm text-slate-200">
@@ -240,7 +240,7 @@ export default function PlatformTenantPage(): JSX.Element {
   if (!tenant) {
     return (
       <div className="px-6 py-10">
-        <h1 className="mb-2 text-xl font-black text-white">Tenant not found</h1>
+        <h1 className="mb-2 text-[24px] font-bold leading-tight text-white">Tenant not found</h1>
         <p className="mb-4 max-w-lg text-sm text-muted-300">
           There is no live tenant with the slug "{slug}". Archived tenants no longer appear after a page reload.
         </p>
@@ -276,7 +276,7 @@ export default function PlatformTenantPage(): JSX.Element {
 
   return (
     <div className="min-h-screen pb-16 text-slate-100">
-      <header className="sticky top-12 z-30 border-b border-border bg-[#071229]/95 px-4 pb-0 pt-3 backdrop-blur lg:top-0 sm:px-6">
+      <header className="sticky top-[52px] z-30 border-b border-border bg-[#071229]/95 px-4 pb-0 pt-3 backdrop-blur lg:top-0 sm:px-6">
         <div className="mx-auto max-w-[1500px]">
           <nav aria-label="Breadcrumb" className="-mt-2 mb-0 flex items-center text-xs text-muted-300">
             <Link to="/platform/tenants" className="-my-1 inline-flex min-h-[44px] items-center font-semibold text-accent-sky-400 hover:text-accent-sky-500">
@@ -293,9 +293,9 @@ export default function PlatformTenantPage(): JSX.Element {
                 type="button"
                 onClick={openSwitcher}
                 title={`Switch tenant (${isMac ? '⌘K' : 'Ctrl+K'})`}
-                className="min-h-[44px] min-w-0 truncate rounded-lg px-2 text-left text-xl font-black text-white hover:bg-slate-800/60 sm:text-2xl"
+                className="min-h-[44px] min-w-0 break-words rounded-lg px-2 text-left text-[32px] font-bold leading-tight text-white hover:bg-slate-800/60"
               >
-                {tenant.name} <span className="text-base text-muted-300">▾</span>
+                {tenant.name} <span className="text-[16px] font-medium text-muted-300">▾</span>
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -335,8 +335,8 @@ export default function PlatformTenantPage(): JSX.Element {
                 aria-selected={tab === t.key}
                 aria-controls={`panel-${t.key}`}
                 onClick={() => selectTab(t.key)}
-                className={`min-h-[44px] shrink-0 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold transition ${
-                  tab === t.key ? 'border-accent-sky-400 text-white' : 'border-transparent text-muted-300 hover:text-white'
+                className={`min-h-[48px] shrink-0 whitespace-nowrap border-b-2 px-5 py-2.5 text-[16px] transition ${
+                  tab === t.key ? 'border-accent-sky-400 font-semibold text-white' : 'border-transparent font-medium text-muted-300 hover:text-white'
                 }`}
               >
                 {t.label}
@@ -346,7 +346,7 @@ export default function PlatformTenantPage(): JSX.Element {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1500px] px-4 pt-5 sm:px-6">
+      <main className="mx-auto max-w-[1500px] px-4 pt-6 sm:px-6">
         {isArchived(tenant) && (
           <div className="mb-4 rounded-xl border border-slate-500/50 bg-slate-800/60 px-4 py-3 text-sm text-slate-100">
             Archived {tenant.deletedAt ? formatDate(tenant.deletedAt) : ''}. Their team is locked out. Permanently delete is on the Internal tab.

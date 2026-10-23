@@ -17,7 +17,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
 export function StatusBadge({ badge }: { badge: Badge }): JSX.Element {
   return (
     <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-bold ${TONE_CLASSES[badge.tone]}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full border px-3 py-1 text-[14px] font-semibold leading-tight ${TONE_CLASSES[badge.tone]}`}
     >
       {badge.label}
     </span>
@@ -50,10 +50,10 @@ export function TenantAvatar({ name, logoUrl, size = 36 }: { name: string; logoU
 
 export function Card({ title, description, children }: { title: string; description?: string; children: ReactNode }): JSX.Element {
   return (
-    <section className="rounded-2xl border border-border bg-panel p-5">
-      <h3 className="mb-1 text-sm font-bold uppercase tracking-widest text-accent-sky-400">{title}</h3>
-      {description && <p className="mb-3 text-xs text-muted-400">{description}</p>}
-      {!description && <div className="mb-2" />}
+    <section className="rounded-2xl border border-border bg-panel p-6">
+      <h3 className="mb-1 text-[18px] font-semibold leading-tight text-slate-50">{title}</h3>
+      {description && <p className="mb-4 text-[15px] text-muted-400">{description}</p>}
+      {!description && <div className="mb-3" />}
       {children}
     </section>
   )
@@ -61,9 +61,9 @@ export function Card({ title, description, children }: { title: string; descript
 
 export function Fact({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-border/50 py-1.5 text-sm last:border-0">
+    <div className="flex items-baseline justify-between gap-3 border-b border-border/50 py-2.5 text-[16px] last:border-0">
       <dt className="text-muted-400">{label}</dt>
-      <dd className="min-w-0 truncate text-right font-medium text-slate-100">{children}</dd>
+      <dd className="min-w-0 text-right font-medium text-slate-50">{children}</dd>
     </div>
   )
 }
@@ -76,7 +76,7 @@ export function PiStateText({ state }: { state: 'online' | 'offline' | 'unknown'
     unknown: { dot: 'bg-slate-400', text: 'text-slate-300', label: 'No check-in yet' },
   }[state]
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${map.text}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[15px] font-semibold ${map.text}`}>
       <span className={`h-2 w-2 rounded-full ${map.dot}`} aria-hidden="true" />
       {map.label}
     </span>

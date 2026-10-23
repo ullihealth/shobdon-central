@@ -93,28 +93,28 @@ export default function QuickSwitcher({ open, onClose }: { open: boolean; onClos
           role="combobox"
           aria-expanded="true"
           aria-controls="tenant-switcher-list"
-          className="min-h-[52px] w-full border-b border-border bg-transparent px-4 text-base text-white placeholder:text-muted-400 focus:outline-none"
+          className="min-h-[56px] w-full border-b border-border bg-transparent px-5 text-[17px] text-white placeholder:text-muted-400 focus:outline-none"
         />
         <ul id="tenant-switcher-list" role="listbox" className="max-h-[60vh] overflow-y-auto p-2">
-          {results.length === 0 && <li className="px-3 py-4 text-sm text-muted-400">No tenants match.</li>}
+          {results.length === 0 && <li className="px-3 py-4 text-[16px] text-muted-400">No tenants match.</li>}
           {results.map((tenant, index) => (
             <li key={tenant.id} role="presentation">
-              {recentCount > 0 && index === 0 && <div className="px-3 pb-1 pt-1 text-xs font-bold uppercase tracking-widest text-muted-400">Recent</div>}
-              {recentCount > 0 && index === recentCount && <div className="px-3 pb-1 pt-3 text-xs font-bold uppercase tracking-widest text-muted-400">All tenants</div>}
+              {recentCount > 0 && index === 0 && <div className="px-3 pb-1 pt-1 text-[14px] font-semibold text-muted-300">Recent</div>}
+              {recentCount > 0 && index === recentCount && <div className="px-3 pb-1 pt-3 text-[14px] font-semibold text-muted-300">All tenants</div>}
               <button
                 type="button"
                 role="option"
                 aria-selected={index === active}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => choose(index)}
-                className={`flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left ${
+                className={`flex min-h-[56px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left ${
                   index === active ? 'bg-accent-sky-500/15' : 'hover:bg-slate-800/60'
                 }`}
               >
                 <TenantAvatar name={tenant.name} logoUrl={tenant.logoUrl} size={32} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-white">{tenant.name}</span>
-                  <span className="block truncate text-xs text-muted-400">{tenant.slug}</span>
+                  <span className="block break-words text-[16px] font-semibold text-white">{tenant.name}</span>
+                  <span className="block break-all text-[15px] text-muted-400">{tenant.slug}</span>
                 </span>
                 <span className="flex shrink-0 flex-wrap justify-end gap-1">
                   {statusBadges(tenant).slice(0, 2).map((badge) => (
@@ -125,7 +125,7 @@ export default function QuickSwitcher({ open, onClose }: { open: boolean; onClos
             </li>
           ))}
         </ul>
-        <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-400">
+        <div className="flex items-center justify-between border-t border-border px-5 py-3 text-[15px] text-muted-400">
           <span>Up/Down to move, Enter to open</span>
           <span>Esc to close</span>
         </div>
