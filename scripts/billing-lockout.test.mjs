@@ -71,7 +71,7 @@ test('wiring: Suspend (active 1 -> 0, not an archive) revokes automatically; the
   const route = read('functions/api/platform/tenants/[id]/revoke-sessions.ts');
   assert.match(route, /requirePlatformAdmin\(request, env\)/);
   assert.match(route, /revokeNonDeveloperSessions\(env\.DB, tenantId\)/);
-  const page = read('src/pages/PlatformTenantsPage.tsx');
+  const page = read('src/components/platform/tenants/tenantEditors.tsx') + read('src/pages/PlatformTenantPage.tsx');
   assert.match(page, /Log everyone out/);
   assert.match(page, /window\.confirm\(\s*`Log everyone out of/);
 });
@@ -113,9 +113,10 @@ test('payment never resumes a tenant: no billing code writes tenants.active; web
 });
 
 test('Platform Tenants badge: only a SUSPENDED tenant with an active Stripe subscription', () => {
-  const page = read('src/pages/PlatformTenantsPage.tsx');
-  assert.match(page, /return !tenant\.active && tenant\.subscriptionStatus === 'active' && !!tenant\.hasStripeSubscription/);
-  assert.match(page, /Paid — awaiting Resume/); // developer-only page: unchanged
+  const page = read('src/components/platform/tenants/tenantStatus.ts');
+  assert.match(page, /return tenant\.subscriptionStatus === 'active' && !!tenant\.hasStripeSubscription/);
+  assert.match(page, /return !tenant\.active && isPaying\(tenant\)/);
+  assert.match(page, /Paid - awaiting Resume/); // developer-only page
   assert.match(read('functions/api/platform/tenants/index.ts'), /\(stripe_subscription_id IS NOT NULL\) AS hasStripeSubscription/);
 });
 

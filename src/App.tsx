@@ -32,6 +32,8 @@ import PlatformCarouselOwnerSlotsPage from './pages/PlatformCarouselOwnerSlotsPa
 import PlatformCafeCarouselOwnerSlotsPage from './pages/PlatformCafeCarouselOwnerSlotsPage'
 import PlatformOnboardingContentPage from './pages/PlatformOnboardingContentPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
+import PlatformTenantsListPage from './pages/PlatformTenantsListPage'
+import PlatformTenantPage from './pages/PlatformTenantPage'
 import PlatformPiFleetPage from './pages/PlatformPiFleetPage'
 import PlatformPreviewPage from './pages/PlatformPreviewPage'
 import PlatformDevFeaturesPage from './pages/PlatformDevFeaturesPage'
@@ -171,7 +173,14 @@ export default function App(): JSX.Element {
             </RequireAuth>
           }
         >
-          <Route path="/platform/tenants" element={<PlatformTenantsPage />} />
+          {/* Searchable tenant list + one deep-linkable page per tenant,
+              sharing one data provider (PlatformTenantsPage is the layout
+              route). /platform/tenants/:id/carousel-owner-slots below is a
+              longer path, so it is still matched separately. */}
+          <Route path="/platform/tenants" element={<PlatformTenantsPage />}>
+            <Route index element={<PlatformTenantsListPage />} />
+            <Route path=":slug" element={<PlatformTenantPage />} />
+          </Route>
           <Route path="/platform/pi-fleet" element={<PlatformPiFleetPage />} />
           {/* Reserved Owner Slots & Time Budget round - assigns owner ad
               content to one specific tenant's slots 5/8/12, linked from
