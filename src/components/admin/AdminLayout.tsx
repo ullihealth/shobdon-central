@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import AdminSidebar from './AdminSidebar'
 import DevPreviewBanner from './DevPreviewBanner'
-import { SubscriptionLockBanner, SubscriptionLockedPanel } from './SubscriptionLockBanner'
+import { LockedShell, SubscriptionTakeover, type TakeoverMe } from './SubscriptionTakeover'
+import { installAdminFetchGuard, SESSION_EXPIRED_EVENT, SUBSCRIPTION_INACTIVE_EVENT } from '../../lib/adminFetchGuard'
 import { isAdminLocked, isPathAllowedWhileLocked } from '../../utils/subscriptionLock'
 
 // Shared shell for every authenticated admin page (/config, /design,
@@ -10,39 +11,91 @@ import { isAdminLocked, isPathAllowedWhileLocked } from '../../utils/subscriptio
 // /developertools) - rendered once as a React Router layout route wrapping
 // all of them, replacing each page's own previously-duplicated header/back-
 // link/account row. Per-route access gating (RequireAuth) is unchanged and
-// still wraps each individual child route in App.tsx - this component only
-// owns the persistent nav chrome, nothing about auth.
+// still wraps each individual child route in App.tsx - this component owns the
+// persistent nav chrome and the session / subscription state of the whole app.
 //
-// Suspended-tenant lock (Jeff's decision; the real lock is server-side in
-// tenantAuth.ts requireTenant): for a SUSPENDED tenant's non-developer users the
-// sidebar greys out everything except My Account, a banner explains why, and a
-// direct link to any other admin page shows the same message instead of the
-// page (so it never mounts and never fires requests that would 403). One small
-// /api/tenant/me read here, same as the sidebar and RequireAuth each do. A
-// failed read never locks anyone, and ordinary tenants render exactly as before
-// (the page mounts immediately; only a confirmed lock swaps it out).
+// SUSPENDED-TENANT LOCK (Jeff's decision; the real lock is server-side in
+// tenantAuth.ts requireTenant): for a suspended tenant's non-developer users the
+// whole admin app is replaced by ONE full-page "Your subscription isn't active"
+// screen (SubscriptionTakeover) - no sidebar, no admin pages; only My Account and
+// Billing open, in a minimal shell. It switches on:
+//   - /api/tenant/me saying subscriptionActive false (on load, and re-checked
+//     whenever the tab regains focus / becomes visible - so Resume or a new
+//     suspension is picked up without a manual refresh);
+//   - ANY /api/tenant/* response of 403 "Subscription not active" anywhere in the
+//     app (lib/adminFetchGuard.ts) - immediately, with no half-working page or
+//     error toast.
+// A revoked / expired session (401 anywhere, or /me answering 401) sends the tab
+// straight to the login page. A failed /me read never locks anyone.
 export default function AdminLayout(): JSX.Element {
   const location = useLocation()
-  const [locked, setLocked] = useState(false)
+  const [me, setMe] = useState<(TakeoverMe & { subscriptionActive?: unknown; isDeveloper?: unknown }) | null>(null)
+  const [forcedLocked, setForcedLocked] = useState(false)
+  const leavingRef = useRef(false)
 
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/tenant/me')
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled) setLocked(isAdminLocked(data))
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
+  const goToLogin = useCallback(() => {
+    if (leavingRef.current) return
+    leavingRef.current = true
+    window.location.assign('/login')
   }, [])
 
-  const blockPage = locked && !isPathAllowedWhileLocked(location.pathname)
+  const refreshMe = useCallback(() => {
+    fetch('/api/tenant/me')
+      .then((response) => {
+        if (response.status === 401) {
+          goToLogin()
+          return null
+        }
+        return response.ok ? response.json() : null
+      })
+      .then((data) => {
+        if (!data) return
+        setMe(data)
+        // The server's answer is authoritative: clears a lock forced by an earlier 403 once the tenant is resumed.
+        setForcedLocked(isAdminLocked(data))
+      })
+      .catch(() => {})
+  }, [goToLogin])
+
+  useEffect(() => {
+    const uninstall = installAdminFetchGuard()
+    const onSessionExpired = () => goToLogin()
+    const onInactive = () => {
+      setForcedLocked(true)
+      refreshMe()
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
+    window.addEventListener(SUBSCRIPTION_INACTIVE_EVENT, onInactive)
+    refreshMe()
+    // Re-check when the user comes back to the tab / window.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshMe()
+    }
+    window.addEventListener('focus', refreshMe)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      uninstall()
+      window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
+      window.removeEventListener(SUBSCRIPTION_INACTIVE_EVENT, onInactive)
+      window.removeEventListener('focus', refreshMe)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [goToLogin, refreshMe])
+
+  if (forcedLocked) {
+    if (isPathAllowedWhileLocked(location.pathname)) {
+      return (
+        <LockedShell me={me}>
+          <Outlet />
+        </LockedShell>
+      )
+    }
+    return <SubscriptionTakeover me={me} onChanged={refreshMe} />
+  }
 
   return (
     <div className="flex min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
-      <AdminSidebar locked={locked} />
+      <AdminSidebar />
       <main className="min-w-0 flex-1">
         {/* Renders null for every ordinary tenant admin - only shows when
             the page currently being administered doesn't match the host
@@ -53,8 +106,7 @@ export default function AdminLayout(): JSX.Element {
             need its own z-index coordination against every page's own
             content. */}
         <DevPreviewBanner />
-        {locked && <SubscriptionLockBanner />}
-        {blockPage ? <SubscriptionLockedPanel /> : <Outlet />}
+        <Outlet />
       </main>
     </div>
   )

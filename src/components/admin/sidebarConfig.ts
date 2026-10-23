@@ -136,6 +136,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       // App product (bundled into the aviation "Airfield Pack"), not
       // something a standalone venue tenant has.
       { to: '/pilot-panel', label: 'Pilot Panel', allowedRoles: ['owner', 'admin', 'atc'], hideForTenantType: ['venue_cafe'] },
+      { to: '/billing', label: 'Billing', allowedRoles: ['owner', 'admin'] },
     ],
   },
   // Formerly an 11-item "Platform Admin" group listing every /platform/*

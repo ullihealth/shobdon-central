@@ -7,6 +7,7 @@
 
 import { requireTenant, listUserMemberships, jsonResponse, type D1Database } from "../_utils/tenantAuth";
 import { TERMS_VERSION } from "../_utils/termsVersion";
+import { loadBillingContext } from "../_utils/billingContext";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -15,6 +16,7 @@ type PagesFunction<Env = unknown> = (context: {
 
 interface Env {
   DB: D1Database;
+  MEDIA_PUBLIC_BASE_URL?: string;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -111,6 +113,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         .first())
     : false;
 
+  // Subscription block for the "subscription not active" page: which plan it
+  // would sell, whether payment is already in (still suspended = awaiting a
+  // developer Resume), and whether checkout still needs consent steps. Plus the
+  // tenant's logo, because a suspended tenant's PUBLIC config is offline.
+  const billing = await loadBillingContext(env.DB, result.membership.organizationId, result.userId);
+  const logoRow = await env.DB
+    .prepare("SELECT logo_r2_key AS logoR2Key FROM tenants WHERE organization_id = ?")
+    .bind(result.membership.organizationId)
+    .first<{ logoR2Key: string | null }>();
+
   return jsonResponse({
     role: result.membership.role,
     organizationSlug: result.membership.slug,
@@ -129,6 +141,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // server enforces it independently (tenantAuth.ts requireTenant). Missing
     // row = treated as active, never a lock.
     subscriptionActive: tenantRow ? !!tenantRow.active : true,
+    logoUrl: logoRow?.logoR2Key && env.MEDIA_PUBLIC_BASE_URL ? `${env.MEDIA_PUBLIC_BASE_URL}/${logoRow.logoR2Key}` : null,
+    subscription: billing
+      ? {
+          planId: billing.plan,
+          paymentReceived: billing.paymentReceived,
+          hasStripeCustomer: !!billing.stripeCustomerId,
+          includesMediaBox: billing.includesMediaBox,
+          hasMediaBoxConsent: billing.hasMediaBoxConsent,
+        }
+      : null,
     subscriptionPending: tenantRow?.subscriptionStatus === "pending",
     pendingPlan: tenantRow?.subscriptionStatus === "pending" ? tenantRow?.pendingPlan ?? null : null,
     cafeEntitled,

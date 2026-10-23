@@ -18,6 +18,7 @@
 // documented queries) - this is the first UI-reachable way to change
 // either.
 import { requirePlatformAdmin, jsonResponse, syncOrganizationIdentity, type D1Database } from "../../_utils/tenantAuth";
+import { revokeNonDeveloperSessions } from "../../_utils/revokeTenantSessions";
 
 type PagesFunction<Env = unknown> = (context: {
   request: Request;
@@ -418,5 +419,17 @@ export const onRequestPatch: PagesFunction<Env> = async ({ request, env, params 
       .run();
   }
 
-  return jsonResponse(next);
+  // SUSPEND (active 1 -> 0, not an archive): also sign the tenant's non-developer
+  // members out, so admin tabs already open - including ones on old code that
+  // can't know the tenant was suspended - end up on the login page the next time
+  // they re-check their session or make a request. After logging in again they
+  // see the "subscription not active" page. Developers and other tenants'
+  // users are never affected (see _utils/revokeTenantSessions.ts). Resume does
+  // not need anything: nobody is logged in to be restored.
+  let sessionsRevoked: { users: number; sessions: number; alsoMemberOfOtherTenants: number } | null = null;
+  if (current.active && !next.active && body.archived !== true) {
+    sessionsRevoked = await revokeNonDeveloperSessions(env.DB, tenantId);
+  }
+
+  return jsonResponse(sessionsRevoked ? { ...next, sessionsRevoked } : next);
 };

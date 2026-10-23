@@ -182,6 +182,9 @@ interface PlatformTenant {
   displays: PlatformDisplay[]
   members: PlatformMember[]
   subscriptionStatus: SubscriptionStatus
+  // A Stripe subscription id is stored (webhook-written). With subscriptionStatus 'active' on a
+  // SUSPENDED tenant this is the "Paid - awaiting Resume" badge (payment never resumes a tenant).
+  hasStripeSubscription?: boolean
   subscriptionNotes: string
   subscriptionHistory: SubscriptionHistoryEntry[]
   // Migration 0044 - deliberately absent from GET /platform/tenants's own
@@ -257,6 +260,20 @@ async function triggerRefreshDisplays(tenant: string): Promise<boolean> {
 // Pilot's App (on the new code) to update itself within about a minute; see
 // functions/api/platform/force-pilot-update.ts. Separate from "Refresh
 // displays" (dashboards), which deliberately never touches /pilot.
+// "Log everyone out" - revokes every active session of the tenant's NON-developer
+// members (never developers, never other tenants' users). Suspend does this too.
+async function triggerRevokeSessions(tenantId: number): Promise<{ users: number; sessions: number; alsoMemberOfOtherTenants: number } | null> {
+  const response = await fetch(`${TENANTS_URL}/${tenantId}/revoke-sessions`, { method: 'POST' })
+  return response.ok ? response.json() : null
+}
+
+// "Paid - awaiting Resume": the tenant is SUSPENDED but Stripe shows an active
+// subscription. Payment deliberately never resumes a tenant (Resume is a manual
+// developer action), so this is the prompt to do it.
+function isPaidAwaitingResume(tenant: PlatformTenant): boolean {
+  return !tenant.active && tenant.subscriptionStatus === 'active' && !!tenant.hasStripeSubscription
+}
+
 async function triggerForcePilotUpdate(tenant: string): Promise<boolean> {
   const response = await fetch(FORCE_PILOT_UPDATE_URL, {
     method: 'POST',
@@ -648,6 +665,46 @@ function RefreshDisplaysButton({ tenant }: { tenant: PlatformTenant }): JSX.Elem
             ? 'Failed - retry'
             : 'Refresh this tenant’s displays'}
     </button>
+  )
+}
+
+// Per-tenant "Log everyone out" (confirm-gated). Signs out every NON-developer
+// member of this tenant; tabs already open end up on the login page.
+function LogEveryoneOutButton({ tenant }: { tenant: PlatformTenant }): JSX.Element {
+  const [status, setStatus] = useState<RefreshDisplaysStatus>('idle')
+  const [detail, setDetail] = useState('')
+
+  async function handleClick() {
+    if (
+      !window.confirm(
+        `Log everyone out of ${tenant.name}? Every active session of this tenant's non-developer members is revoked - open tabs go to the login page. Developers and other tenants' users are not affected.`
+      )
+    )
+      return
+    setStatus('loading')
+    const result = await triggerRevokeSessions(tenant.id)
+    setStatus(result ? 'success' : 'error')
+    if (result) {
+      setDetail(
+        `${result.sessions} session${result.sessions === 1 ? '' : 's'} / ${result.users} user${result.users === 1 ? '' : 's'}` +
+          (result.alsoMemberOfOtherTenants > 0 ? ` (${result.alsoMemberOfOtherTenants} also in another tenant)` : '')
+      )
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={status === 'loading'}
+        title="Revoke every active session of this tenant's non-developer members"
+        className="rounded-lg border border-status-bad/60 px-3 py-2 text-xs font-semibold text-status-bad transition hover:bg-status-bad/10 disabled:opacity-60"
+      >
+        {status === 'loading' ? 'Logging out…' : status === 'success' ? 'Logged out ✓' : status === 'error' ? 'Failed - retry' : 'Log everyone out'}
+      </button>
+      {status === 'success' && detail && <span className="text-xs text-muted-500">{detail}</span>}
+    </span>
   )
 }
 
@@ -1975,7 +2032,7 @@ export default function PlatformTenantsPage(): JSX.Element {
     const next = !tenant.active
     const message = next
       ? `Resume ${tenant.name}? Their public dashboard becomes reachable again and their team's admin access is restored immediately.`
-      : `Suspend ${tenant.name}? Their public dashboard stops resolving immediately, and their own team can log in only to manage their account and pay - everything else in their admin area is locked until you Resume.`
+      : `Suspend ${tenant.name}? Their public dashboard stops resolving immediately, and their own team can log in only to manage their account and pay - everything else in their admin area is locked until you Resume. Everyone on their team is also signed out right now (open tabs go to the login page).`
     if (!window.confirm(message)) return
     handleBooleanToggle(tenant, 'active', next)
   }
@@ -2728,6 +2785,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{tenant.name}</span>
+                      {isPaidAwaitingResume(tenant) && (
+                        <span className="mt-0.5 inline-block rounded-full border border-status-good/50 bg-status-good/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-status-good">
+                          Paid — awaiting Resume
+                        </span>
+                      )}
                       <span className="block truncate text-xs text-muted-500">
                         {tenant.slug} · Joined {formatDate(tenant.createdAt)}
                       </span>
@@ -2778,6 +2840,11 @@ export default function PlatformTenantsPage(): JSX.Element {
                         >
                           {selectedTenant.active ? 'Suspend tenant' : 'Resume tenant'}
                         </button>
+                        {isPaidAwaitingResume(selectedTenant) && (
+                          <span className="rounded-full border border-status-good/50 bg-status-good/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-status-good">
+                            Paid — awaiting Resume
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleArchiveTenant(selectedTenant)}
@@ -2905,6 +2972,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                     </Link>
                     <RefreshDisplaysButton tenant={selectedTenant} />
                     <ForcePilotUpdateButton tenant={selectedTenant} />
+                    <LogEveryoneOutButton tenant={selectedTenant} />
                   </div>
                 </section>
 

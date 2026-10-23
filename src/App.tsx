@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom'
 import AccountPage from './pages/AccountPage'
 import AtcControlPage from './pages/AtcControlPage'
 import ChecklistPage from './pages/ChecklistPage'
@@ -43,6 +43,7 @@ import IpDirectoryPage from './pages/IpDirectoryPage'
 import CaptureHistoryPage from './pages/CaptureHistoryPage'
 import RunwaysPage from './pages/RunwaysPage'
 import PilotPanelPage from './pages/PilotPanelPage'
+import BillingPage from './pages/BillingPage'
 import TenantDisplayPage from './pages/TenantDisplayPage'
 import UpgradeCafeDisplayPage from './pages/UpgradeCafeDisplayPage'
 import PreviewBanner from './components/PreviewBanner'
@@ -362,6 +363,28 @@ export default function App(): JSX.Element {
             element={
               <RequireAuth requireRole={['owner', 'admin', 'atc']}>
                 <AtcControlPage />
+              </RequireAuth>
+            }
+          />
+          {/* Billing (owner/admin): plan, status, next payment, invoices, Stripe
+              Customer Portal. Also one of the two pages a SUSPENDED tenant's
+              users can still open (AdminLayout's locked shell). */}
+          <Route
+            path="/billing"
+            element={
+              <RequireAuth requireRole={['owner', 'admin']}>
+                <BillingPage />
+              </RequireAuth>
+            }
+          />
+          {/* Landing for the "subscription not active" page's own links: while a
+              tenant is suspended AdminLayout shows the takeover for this path; for
+              an active tenant it just goes to the normal landing page. */}
+          <Route
+            path="/subscription"
+            element={
+              <RequireAuth>
+                <Navigate to="/media-manager" replace />
               </RequireAuth>
             }
           />

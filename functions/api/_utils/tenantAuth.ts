@@ -315,8 +315,10 @@ export const SUBSCRIPTION_NOT_ACTIVE_ERROR = "Subscription not active";
 //   /api/tenant/me                       - who am I / role / subscription state (the app's own gate reads it)
 //   /api/tenant/terms/accept             - mandatory terms acceptance
 //   /api/tenant/media-box-consent/accept - Media Box loan consent (activation flow)
-//   /api/stripe/checkout                 - start payment (does not use requireTenant today; listed so it
-//                                          could never be locked by accident if it ever does)
+//   /api/tenant/billing/status|checkout|portal - the Billing page and "Activate subscription"
+//                                          (no activation link needed); owner/admin only (requireOwner)
+//   /api/stripe/checkout                 - legacy activation-link checkout (does not use requireTenant
+//                                          today; listed so it could never be locked by accident)
 // My Account (view/edit own account, change password, log out) runs on the
 // sign-in system's own /api/auth/* routes, and the /activate/<token> link
 // check on /api/public/activation/*, neither of which goes through
@@ -325,6 +327,9 @@ export const SUSPENDED_TENANT_ALLOWED_PATHS: readonly string[] = [
   "/api/tenant/me",
   "/api/tenant/terms/accept",
   "/api/tenant/media-box-consent/accept",
+  "/api/tenant/billing/status",
+  "/api/tenant/billing/checkout",
+  "/api/tenant/billing/portal",
   "/api/stripe/checkout",
 ];
 

@@ -1,16 +1,14 @@
-// Client side of the "suspended tenant" back-office lock (the real lock is
-// server-side: functions/api/_utils/tenantAuth.ts requireTenant returns 403
-// {error: "Subscription not active"} for a suspended tenant's non-developer
-// users on every /api/tenant/* route except a short allow-list). This only
-// makes the admin UI say so clearly instead of showing pages that would 403.
+// Client side of the "suspended tenant" lock (the real lock is server-side:
+// functions/api/_utils/tenantAuth.ts requireTenant returns 403 {error:
+// "Subscription not active"} for a suspended tenant's non-developer users on
+// every /api/tenant/* route except a short allow-list). A locked user sees ONE
+// full-page "Your subscription isn't active" screen (SubscriptionTakeover.tsx)
+// instead of the admin app - no sidebar, no admin pages.
 
-// Exactly what the brief specifies for the banner / locked page.
-export const SUBSCRIPTION_NOT_ACTIVE_MESSAGE =
-  'Subscription not active. Your account is on hold — please activate your subscription to restore access.'
-
-// The only admin page a locked user can open (everything else in the sidebar
-// is greyed out and a direct link shows the message instead).
-export const SUSPENDED_ALLOWED_PATHS: readonly string[] = ['/account']
+// Admin pages a locked user may still open (inside a minimal shell, no sidebar):
+// My Account, and Billing (reached from the takeover). Anything else shows the
+// takeover itself.
+export const SUSPENDED_ALLOWED_PATHS: readonly string[] = ['/account', '/billing']
 
 // Locked = the tenant is suspended (GET /api/tenant/me -> subscriptionActive
 // false) AND the user is not a developer (developers must keep full access to
@@ -23,4 +21,11 @@ export function isAdminLocked(me: { subscriptionActive?: unknown; isDeveloper?: 
 
 export function isPathAllowedWhileLocked(pathname: string): boolean {
   return SUSPENDED_ALLOWED_PATHS.includes(pathname.replace(/\/+$/, '') || '/')
+}
+
+// A response that means "this tenant is suspended" (what every locked
+// /api/tenant/* route returns) - the central fetch guard switches the app to
+// the takeover the moment it sees one.
+export function isSubscriptionInactiveResponse(status: number, body: unknown): boolean {
+  return status === 403 && !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'Subscription not active'
 }

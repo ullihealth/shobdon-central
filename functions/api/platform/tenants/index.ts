@@ -58,6 +58,9 @@ interface TenantRow {
   createdAt: string;
   subscriptionStatus: string;
   subscriptionNotes: string;
+  // 1 when a Stripe subscription id is stored (webhook-written). With
+  // subscriptionStatus 'active' on a suspended tenant this is the "Paid - awaiting Resume" badge.
+  hasStripeSubscription: number;
   // Step 1 of the QR/phone-mockup slide's per-tenant config rollout
   // (migration 0089) - RightInfoPanel.tsx's own gating logic is
   // untouched this step (still tenantSlug === 'shobdon'), these fields
@@ -132,6 +135,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                 mobile_enabled AS mobileEnabled, dashboard_enabled AS dashboardEnabled, qnh_qfe_offset_hpa AS qnhQfeOffsetHpa,
                 organization_id AS organizationId, logo_r2_key AS logoR2Key, created_at AS createdAt,
                 subscription_status AS subscriptionStatus, subscription_notes AS subscriptionNotes,
+                (stripe_subscription_id IS NOT NULL) AS hasStripeSubscription,
                 qr_slide_enabled AS qrSlideEnabled, qr_target_url AS qrTargetUrl,
                 qr_caption_text AS qrCaptionText, qr_mockup_r2_key AS qrMockupR2Key,
                 media_box_consent_at AS mediaBoxConsentAt, media_box_identifier AS mediaBoxIdentifier,
@@ -270,6 +274,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       })) ?? [],
       subscriptionStatus: tenant.subscriptionStatus,
       subscriptionNotes: tenant.subscriptionNotes,
+      hasStripeSubscription: !!tenant.hasStripeSubscription,
       subscriptionHistory: (historyByTenant.get(tenant.id) ?? []).map((entry) => ({
         id: entry.id,
         status: entry.status,

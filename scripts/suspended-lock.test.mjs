@@ -44,8 +44,8 @@ function makeDb({ active = 1, deletedAt = null, developer = 0, role = 'owner' } 
 const call = (db, pathname, fn = requireTenant) => fn(new Request(`https://tiger.example${pathname}`, { headers: { cookie: 'better-auth.session_token=tok.sig' } }), { DB: db });
 const errBody = async (r) => ({ status: r.error.status, body: await r.error.json() });
 
-test('exact allow-list: me, terms, media box consent, checkout - nothing else', () => {
-  assert.deepEqual([...SUSPENDED_TENANT_ALLOWED_PATHS], ['/api/tenant/me', '/api/tenant/terms/accept', '/api/tenant/media-box-consent/accept', '/api/stripe/checkout']);
+test('exact allow-list: me, terms, media box consent, billing status/checkout/portal, legacy checkout - nothing else', () => {
+  assert.deepEqual([...SUSPENDED_TENANT_ALLOWED_PATHS], ['/api/tenant/me', '/api/tenant/terms/accept', '/api/tenant/media-box-consent/accept', '/api/tenant/billing/status', '/api/tenant/billing/checkout', '/api/tenant/billing/portal', '/api/stripe/checkout']);
   for (const p of SUSPENDED_TENANT_ALLOWED_PATHS) assert.equal(isSuspendedTenantAllowedPath(p), true, p);
   assert.equal(isSuspendedTenantAllowedPath('/api/tenant/me/'), true, 'trailing slash tolerated');
   for (const p of ['/api/tenant/ops-panel', '/api/tenant/config', '/api/tenant/media-library/upload', '/api/tenant/pilot-view', '/api/tenant/carousel', '/api/tenant/members', '/api/tenant/me/extra', '/api/tenant/terms', '/api/tenant/switch-org', '/api/tenant/bug-reports']) {
@@ -116,27 +116,28 @@ test('/api/tenant/me exposes subscriptionActive (missing tenant row = active, ne
 
 // ---------------- client ----------------
 test('client: locked only for a suspended tenant AND a non-developer; failures never lock', () => {
-  const { isAdminLocked, isPathAllowedWhileLocked, SUBSCRIPTION_NOT_ACTIVE_MESSAGE } = lock;
+  const { isAdminLocked, isPathAllowedWhileLocked, isSubscriptionInactiveResponse } = lock;
   assert.equal(isAdminLocked({ subscriptionActive: false, isDeveloper: false }), true);
   assert.equal(isAdminLocked({ subscriptionActive: false, isDeveloper: true }), false);
   assert.equal(isAdminLocked({ subscriptionActive: true, isDeveloper: false }), false);
   for (const bad of [null, undefined, {}, { subscriptionActive: 'false' }, { subscriptionActive: 0 }, { isDeveloper: false }]) assert.equal(isAdminLocked(bad), false, JSON.stringify(bad));
-  assert.equal(isPathAllowedWhileLocked('/account'), true);
-  assert.equal(isPathAllowedWhileLocked('/account/'), true);
+  for (const p of ['/account', '/account/', '/billing']) assert.equal(isPathAllowedWhileLocked(p), true, p);
   for (const p of ['/media-manager', '/atc-control', '/runways', '/pilot-panel', '/config', '/members', '/help']) assert.equal(isPathAllowedWhileLocked(p), false, p);
-  assert.equal(SUBSCRIPTION_NOT_ACTIVE_MESSAGE, 'Subscription not active. Your account is on hold — please activate your subscription to restore access.');
+  assert.equal(isSubscriptionInactiveResponse(403, { error: 'Subscription not active' }), true);
+  for (const [status, body] of [[403, { error: 'Forbidden' }], [403, null], [401, { error: 'Subscription not active' }], [200, { error: 'Subscription not active' }], [403, 'x']]) assert.equal(isSubscriptionInactiveResponse(status, body), false);
 });
 
-test('client wiring: layout swaps the page for the message, sidebar greys everything but My Account', () => {
+test('client wiring: layout = takeover (no sidebar) when locked; central 401/403 handling; focus re-check', () => {
   const layout = read('src/components/admin/AdminLayout.tsx');
-  assert.match(layout, /isAdminLocked\(data\)/);
-  assert.match(layout, /\{locked && <SubscriptionLockBanner \/>\}/);
-  assert.match(layout, /blockPage \? <SubscriptionLockedPanel \/> : <Outlet \/>/);
-  const sidebar = read('src/components/admin/AdminSidebar.tsx');
-  assert.match(sidebar, /AdminSidebar\(\{ locked = false \}/);
-  assert.match(sidebar, /locked=\{locked\}/);
-  const group = read('src/components/admin/SidebarGroup.tsx');
-  assert.match(group, /aria-disabled="true"/);
-  // My Account / Log out live in SidebarUserMenu, which has no lock logic at all.
-  assert.ok(!/locked/.test(read('src/components/admin/SidebarUserMenu.tsx')));
+  assert.match(layout, /installAdminFetchGuard\(\)/);
+  assert.match(layout, /SESSION_EXPIRED_EVENT[\s\S]*goToLogin/);
+  assert.match(layout, /SUBSCRIPTION_INACTIVE_EVENT/);
+  assert.match(layout, /addEventListener\('focus', refreshMe\)/);
+  assert.match(layout, /addEventListener\('visibilitychange', onVisibility\)/);
+  assert.match(layout, /return <SubscriptionTakeover me=\{me\} onChanged=\{refreshMe\} \/>/);
+  assert.match(layout, /response\.status === 401/);
+  // the 98c6928 greyed-sidebar / banner UI is gone
+  assert.ok(!fs.existsSync(path.join(root, 'src/components/admin/SubscriptionLockBanner.tsx')));
+  assert.ok(!/locked/.test(read('src/components/admin/AdminSidebar.tsx')));
+  assert.ok(!/aria-disabled/.test(read('src/components/admin/SidebarGroup.tsx')));
 });
