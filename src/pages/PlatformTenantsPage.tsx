@@ -1967,13 +1967,15 @@ export default function PlatformTenantsPage(): JSX.Element {
   // Confirm-gated, reuses the existing generic optimistic toggle -
   // relabeled "Suspend"/"Resume" in the UI, but this is exactly today's
   // `active` flag, unchanged (see resolveTenantHost.ts's own comment on
-  // what it does/doesn't affect - unlike Archive below, this leaves the
-  // tenant's own back-office reachable).
+  // what it does/doesn't affect). Suspend takes the public dashboard offline
+  // AND limits the tenant's own (non-developer) users to My Account + paying
+  // - see tenantAuth.ts requireTenant; Archive below goes further and locks
+  // them out entirely.
   function handleSuspendToggle(tenant: PlatformTenant) {
     const next = !tenant.active
     const message = next
-      ? `Resume ${tenant.name}? Their public dashboard becomes reachable again immediately.`
-      : `Suspend ${tenant.name}? Their public dashboard stops resolving immediately - their own team can still log in and manage settings, same as today.`
+      ? `Resume ${tenant.name}? Their public dashboard becomes reachable again and their team's admin access is restored immediately.`
+      : `Suspend ${tenant.name}? Their public dashboard stops resolving immediately, and their own team can log in only to manage their account and pay - everything else in their admin area is locked until you Resume.`
     if (!window.confirm(message)) return
     handleBooleanToggle(tenant, 'active', next)
   }

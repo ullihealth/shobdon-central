@@ -306,6 +306,32 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// What a suspended tenant's non-developer users get from every locked route.
+export const SUBSCRIPTION_NOT_ACTIVE_ERROR = "Subscription not active";
+
+// The ONLY routes that still work for a suspended tenant's non-developer
+// users - exactly what is needed to log in, accept the terms, give Media Box
+// consent, and pay:
+//   /api/tenant/me                       - who am I / role / subscription state (the app's own gate reads it)
+//   /api/tenant/terms/accept             - mandatory terms acceptance
+//   /api/tenant/media-box-consent/accept - Media Box loan consent (activation flow)
+//   /api/stripe/checkout                 - start payment (does not use requireTenant today; listed so it
+//                                          could never be locked by accident if it ever does)
+// My Account (view/edit own account, change password, log out) runs on the
+// sign-in system's own /api/auth/* routes, and the /activate/<token> link
+// check on /api/public/activation/*, neither of which goes through
+// requireTenant at all, so they are never locked. Exact-path matches only.
+export const SUSPENDED_TENANT_ALLOWED_PATHS: readonly string[] = [
+  "/api/tenant/me",
+  "/api/tenant/terms/accept",
+  "/api/tenant/media-box-consent/accept",
+  "/api/stripe/checkout",
+];
+
+export function isSuspendedTenantAllowedPath(pathname: string): boolean {
+  return SUSPENDED_TENANT_ALLOWED_PATHS.includes(pathname.replace(/\/+$/, ""));
+}
+
 export type RequireTenantResult =
   | { membership: TenantMembership; userId: string }
   | { error: Response };
@@ -386,20 +412,32 @@ export async function requireTenant(request: Request, env: { DB: D1Database }): 
   // Migration 0044 - archived tenant. A single choke point applied
   // regardless of which branch above resolved membership, same
   // reasoning as resolveTenantHost.ts's own active=1 check being the
-  // one place that gates the public dashboard. Deliberately stronger
-  // than pause (active=0 alone, which this function never checked at
-  // all before this) - resolveTenantHost.ts's own comment already
-  // documents that a paused tenant's back-office stays reachable; an
-  // archived one should not, since archiving is meant to mean "this
-  // tenant is genuinely gone," not "temporarily off." Treated
-  // identically to "not a member" (403) - an archived tenant's own
-  // logged-in users see the same outcome as someone who was never a
-  // member at all.
+  // one place that gates the public dashboard. Archiving is the stronger
+  // state ("this tenant is genuinely gone") - treated identically to "not
+  // a member" (403): an archived tenant's own logged-in users see the same
+  // outcome as someone who was never a member at all.
+  //
+  // SUSPENDED tenant (active = 0, not archived) - Jeff's decision, which
+  // SUPERSEDES the earlier "a paused tenant's back-office stays reachable":
+  // a suspended tenant's own (non-developer) users can still log in, but
+  // only to manage their account and pay. Every /api/tenant/* route funnels
+  // through this function (directly, or via requireRoles / requireOwner /
+  // requireDeveloper), so this is the single server-side lock - it holds
+  // for admin pages already open in a browser on OLD code, which simply
+  // start getting 403s. Developers / platform admins are completely
+  // unaffected (they must be able to manage and Resume the tenant).
+  // Resuming stays a manual developer action: payment never flips
+  // tenants.active (see stripe/webhook.ts).
   const tenantRow = await env.DB
-    .prepare("SELECT deleted_at AS deletedAt FROM tenants WHERE organization_id = ?")
+    .prepare("SELECT deleted_at AS deletedAt, active AS active FROM tenants WHERE organization_id = ?")
     .bind(membership.organizationId)
-    .first<{ deletedAt: string | null }>();
+    .first<{ deletedAt: string | null; active: number }>();
   if (tenantRow?.deletedAt) return { error: jsonResponse({ error: "Forbidden" }, 403) };
+
+  if (tenantRow && !tenantRow.active && !isSuspendedTenantAllowedPath(new URL(request.url).pathname)) {
+    const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(userId).first<{ developer: number }>();
+    if (!userRow?.developer) return { error: jsonResponse({ error: SUBSCRIPTION_NOT_ACTIVE_ERROR }, 403) };
+  }
 
   return { membership, userId };
 }

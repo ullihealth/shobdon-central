@@ -93,9 +93,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // that file's own comment) - no pre-existing/comped tenant can ever
   // have it, so this gate is airtight without a new column.
   const tenantRow = await env.DB
-    .prepare("SELECT id, subdomain, tenant_type AS tenantType, subscription_status AS subscriptionStatus, subscription_notes AS pendingPlan FROM tenants WHERE organization_id = ?")
+    .prepare("SELECT id, subdomain, active, tenant_type AS tenantType, subscription_status AS subscriptionStatus, subscription_notes AS pendingPlan FROM tenants WHERE organization_id = ?")
     .bind(result.membership.organizationId)
-    .first<{ id: number; subdomain: string | null; tenantType: string; subscriptionStatus: string; pendingPlan: string | null }>();
+    .first<{ id: number; subdomain: string | null; active: number; tenantType: string; subscriptionStatus: string; pendingPlan: string | null }>();
 
   // Tenant-facing TV schedule round (migration 0115) - drives
   // sidebarConfig.ts's own requireTvScheduleBox gate (same pattern
@@ -124,6 +124,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // "never accepted" from "accepted an old version".
     termsAcceptedAt: userRow?.termsAcceptedAt ?? null,
     termsAcceptedVersion: userRow?.termsAcceptedVersion ?? null,
+    // false = this tenant is SUSPENDED (tenants.active = 0): the app locks the
+    // admin area to My Account for non-developers (AdminLayout.tsx) - the
+    // server enforces it independently (tenantAuth.ts requireTenant). Missing
+    // row = treated as active, never a lock.
+    subscriptionActive: tenantRow ? !!tenantRow.active : true,
     subscriptionPending: tenantRow?.subscriptionStatus === "pending",
     pendingPlan: tenantRow?.subscriptionStatus === "pending" ? tenantRow?.pendingPlan ?? null : null,
     cafeEntitled,

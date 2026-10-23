@@ -12,10 +12,12 @@
 // flipping a tenant's active flag off here is the single point that
 // takes its public dashboard offline everywhere at once - no per-file
 // changes needed. Authenticated /api/tenant/* admin routes resolve via
-// requireTenant (tenantAuth.ts), a completely separate path keyed off
-// session + membership that never queries the tenants table at all -
-// confirmed by inspection, not assumed - so admin access to a paused
-// tenant is unaffected by this check.
+// requireTenant (tenantAuth.ts), a separate path keyed off session +
+// membership. UPDATED (Jeff's decision, superseding "admin access to a
+// paused tenant is unaffected"): requireTenant now ALSO checks this flag -
+// a suspended tenant's non-developer users are limited to My Account and
+// the pay/activate flow (403 {error: "Subscription not active"} on every
+// other /api/tenant/* route); developers are unaffected.
 //
 // Reuses the existing `active` column (already gating the cross-tenant
 // directory listing, functions/api/public/tenants.ts) rather than

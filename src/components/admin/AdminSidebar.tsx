@@ -45,7 +45,7 @@ function isItemVisible(
 // the already-tested access-control gate in RequireAuth.tsx stays
 // completely untouched by this change, at the cost of one extra
 // lightweight JSON request per admin page load.
-export default function AdminSidebar(): JSX.Element {
+export default function AdminSidebar({ locked = false }: { locked?: boolean }): JSX.Element {
   const location = useLocation()
   const [role, setRole] = useState<MemberRole | null>(null)
   const [isDeveloper, setIsDeveloper] = useState(false)
@@ -156,7 +156,11 @@ export default function AdminSidebar(): JSX.Element {
           entirely. h-screen locks it to one viewport; sticky keeps it
           pinned while <main> scrolls independently. */}
       <div className="px-5 pb-4 pt-6">
-        {subdomainConfirmedDown ? (
+        {locked ? (
+          // Suspended tenant: the public dashboard is offline, and the whole
+          // admin area is locked except My Account - nothing here to click.
+          <div className="text-lg font-black uppercase tracking-wide text-muted-400">{organizationName}</div>
+        ) : subdomainConfirmedDown ? (
           <div
             className="text-lg font-black uppercase tracking-wide text-muted-400"
             title="Your dashboard URL isn't live yet - contact support"
@@ -206,6 +210,7 @@ export default function AdminSidebar(): JSX.Element {
                   activePath={location.pathname}
                   collapsed={collapsed}
                   onToggle={() => toggleGroup(group.id)}
+                  locked={locked}
                 />
               )
             })}
@@ -214,6 +219,18 @@ export default function AdminSidebar(): JSX.Element {
               <div className="mt-4 flex flex-col gap-0.5 border-t border-slate-800 pt-4">
                 {visibleStandalone.map((item) => {
                   const active = item.to === location.pathname
+                  if (locked) {
+                    return (
+                      <span
+                        key={item.to}
+                        aria-disabled="true"
+                        title="Subscription not active"
+                        className="block cursor-not-allowed select-none rounded-lg py-2 pl-[17px] pr-3 text-sm font-semibold text-slate-300 opacity-40"
+                      >
+                        {item.label}
+                      </span>
+                    )
+                  }
                   return (
                     <Link
                       key={item.to}

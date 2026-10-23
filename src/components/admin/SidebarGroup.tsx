@@ -6,9 +6,11 @@ interface SidebarGroupProps {
   activePath: string
   collapsed: boolean
   onToggle: () => void
+  // Suspended-tenant lock: items render greyed out and unclickable.
+  locked?: boolean
 }
 
-export default function SidebarGroup({ group, activePath, collapsed, onToggle }: SidebarGroupProps): JSX.Element {
+export default function SidebarGroup({ group, activePath, collapsed, onToggle, locked = false }: SidebarGroupProps): JSX.Element {
   return (
     <div className="mb-2">
       <button
@@ -23,6 +25,18 @@ export default function SidebarGroup({ group, activePath, collapsed, onToggle }:
         <div className="flex flex-col gap-0.5">
           {group.items.map((item) => {
             const active = item.to === activePath
+            if (locked) {
+              return (
+                <span
+                  key={item.to}
+                  aria-disabled="true"
+                  title="Subscription not active"
+                  className="block cursor-not-allowed select-none rounded-lg py-2 pl-[17px] pr-3 text-sm font-semibold text-slate-300 opacity-40"
+                >
+                  {item.label}
+                </span>
+              )
+            }
             return (
               <Link
                 key={item.to}
