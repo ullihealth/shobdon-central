@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CropRect } from '../types/mediaLibrary'
 import { buildPilotThemeStyle, type PilotThemeOverride } from '../utils/pilotThemeStyle'
@@ -6,6 +6,7 @@ import { WeatherProvider, useWeather } from '../context/WeatherContext'
 import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 import { usePullToRefresh, REFRESH_THRESHOLD_PX } from '../hooks/usePullToRefresh'
+import { mobileCheckDue, resolveMobileEnabled } from '../utils/pilotMobileGate'
 import { usePilotHomeScreenMeta } from '../hooks/usePilotHomeScreenMeta'
 import { usePilotServiceWorker } from '../hooks/usePilotServiceWorker'
 import { usePilotDataFreshnessGuard } from '../hooks/usePilotDataFreshnessGuard'
@@ -397,8 +398,33 @@ export default function PilotViewPage(): JSX.Element {
   // see PilotCameraView's own comment) until the real fetch resolves.
   const [primaryCameraCropRect, setPrimaryCameraCropRect] = useState<CropRect>({ x: 0, y: 0, width: 100, height: 100 })
   const [cameraViewOpen, setCameraViewOpen] = useState(false)
+  // When the tenant's config was last read (any path) - lets the foreground
+  // re-check skip itself if something just read it (see pilotMobileGate.ts).
+  const lastConfigReadRef = useRef<number | null>(null)
+  // Only the newest re-check may apply its result, so a slow older response
+  // can't flip the screen back after a newer one.
+  const mobileCheckSeqRef = useRef(0)
+
+  // Re-reads ONLY mobileEnabled from the public config while the app is open,
+  // so switching Mobile Pilot View off (unpaid) locks an already-open app, and
+  // switching it back on (e.g. after Stripe payment) unlocks it - no reload.
+  // Deliberately separate from loadBranding(): that one shows the "unavailable"
+  // screen on any non-OK response, whereas a failed/offline check here must
+  // leave the app exactly as it is. Only an explicit mobileEnabled boolean in
+  // an OK response changes anything (resolveMobileEnabled).
+  function checkMobileEnabled() {
+    lastConfigReadRef.current = Date.now()
+    const seq = ++mobileCheckSeqRef.current
+    fetch(PUBLIC_CONFIG_URL, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (seq === mobileCheckSeqRef.current) setMobileEnabled((current) => resolveMobileEnabled(current, data))
+      })
+      .catch(() => {})
+  }
 
   function loadBranding() {
+    lastConfigReadRef.current = Date.now()
     fetch(PUBLIC_CONFIG_URL)
       .then((response) => {
         if (!response.ok) {
@@ -450,8 +476,30 @@ export default function PilotViewPage(): JSX.Element {
   // forced to 60s). Fuel/notices are excluded entirely - load-on-mount
   // only, per spec.
   useEffect(() => {
-    const interval = window.setInterval(() => setRefreshTick((tick) => tick + 1), REFRESH_INTERVAL_MS)
+    const interval = window.setInterval(() => {
+      setRefreshTick((tick) => tick + 1)
+      // Same 60 s cadence - no extra network load beyond it.
+      checkMobileEnabled()
+    }, REFRESH_INTERVAL_MS)
     return () => window.clearInterval(interval)
+    // checkMobileEnabled only touches refs and a state setter, so it is safe
+    // to capture once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Coming back to the foreground (phone unlocked, tab switched back): a
+  // backgrounded page's timers are throttled or frozen, so re-check at once -
+  // but at most once every 30 s. Pull-to-refresh already re-reads the config
+  // through loadBranding() (and records the time above).
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === 'visible' && mobileCheckDue(Date.now(), lastConfigReadRef.current)) {
+        checkMobileEnabled()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Passed down to PilotViewContent as onManualRefresh - the non-weather
