@@ -41,3 +41,9 @@ Fix only the problem I describe, at the size I describe it - do not extend a fix
 
 ## No long dashes in customer-facing text
 Never use em dashes (—) or en dashes (–) in any text a customer, pilot or member of the public can see (UI, messages, emails, display screens, Pi box pages). Use a plain hyphen with spaces ( - ) or rewrite the sentence. Code comments are exempt.
+
+## World-class SaaS rule
+Before proposing any feature or fix, work out how top SaaS companies (Stripe, Netflix, Shopify, Slack, Notion, Atlassian, Google Workspace) solve the same problem and propose against that standard. Cover the whole lifecycle (signup, payment, failed payment, suspension, resumption, cancellation, export), every surface (tenant admin web, Pilot's App, TV/Pi boxes, emails, platform admin), and every state (tabs and apps left open for weeks, offline devices, old cached code, multiple users per tenant). Include the standard admin controls (revoke sessions, suspend/resume, audit trail, clear status messaging). Present options ranked and flag anything standard that we are missing. Build only what Jeff has agreed.
+
+## Deployed-devices rule
+For any change meant to affect devices already in the field (Pilot's Apps on phones, Pi boxes, TV dashboards, admin pages already open in browsers), the FIRST line of the report must be "Reaches devices running today's code: YES / NO". If NO, say so up front and name the lever that does reach them (server-side change, session revocation, pilot-sw.js, remote box access). Every test plan for such a change must include a device running the currently deployed code.
