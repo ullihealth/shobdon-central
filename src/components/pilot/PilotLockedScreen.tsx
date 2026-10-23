@@ -8,7 +8,8 @@ interface PilotLockedScreenProps {
 
 // Mobile access gating round (migration 0071) - shown by PilotViewPage.tsx
 // in place of the full mobile dashboard when tenants.mobile_enabled is
-// false. No new branding logic here: same logo/name fallback PilotHeader
+// false (the app returns by itself within about a minute of it being switched
+// back on - PilotViewPage.tsx re-checks on its 60 s tick and on foreground). No new branding logic here: same logo/name fallback PilotHeader
 // already uses (img if logoUrl resolved, else the airfield name as text),
 // and the same club_theme CSS-variable override mechanism DashboardPage.tsx
 // already applies to the TV templates (theme -> CSSProperties -> spread
@@ -29,10 +30,11 @@ export default function PilotLockedScreen({ airfieldName, logoUrl, themeOverride
         <span className="text-xl font-bold uppercase tracking-wide text-primary">{airfieldName ?? 'Airfield Central'}</span>
       )}
       <div className="flex max-w-xs flex-col gap-2">
-        <div className="text-sm font-semibold uppercase tracking-widest text-accent-sky-400">Mobile Pilot View</div>
+        <div className="text-sm font-semibold uppercase tracking-widest text-accent-sky-400">
+          Pilot&apos;s App: subscription not yet active
+        </div>
         <p className="text-sm text-muted-400">
-          This airfield hasn't unlocked the mobile Pilot View yet. Ask your club to enable it to see live weather,
-          NOTAMs, and airfield info on your phone.
+          Your airfield can activate it in a couple of minutes. The app will return automatically once it&apos;s done.
         </p>
       </div>
     </div>

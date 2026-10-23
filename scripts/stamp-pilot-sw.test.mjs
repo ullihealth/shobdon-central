@@ -1,7 +1,8 @@
 // Post-build stamp of the released version into dist/pilot-sw.js
 // (scripts/stamp-pilot-sw.mjs). The point: pilot-sw.js changes bytes ONLY when a
-// new version is released, so the Pilot's App "Update available" banner appears
-// for releases and never for ordinary deploys - and a stamp problem can never
+// new version is released, so the Pilot's App update (the "A new version of the
+// app is available" box / the automatic release update) happens for releases and
+// never for ordinary deploys - and a stamp problem can never
 // break a build.
 //
 // Run with: node --test scripts/stamp-pilot-sw.test.mjs (or npm test)

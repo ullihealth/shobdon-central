@@ -1,8 +1,11 @@
 // Pilot's App: pull-to-refresh also runs the "is a new version waiting?" check.
 // Pure-logic tests of src/utils/pilotUpdateCheck.ts (transpiled in memory) plus
-// source guards that the wiring can't quietly start reloading or activating
-// anything. The tap on the "Update available" banner must stay the ONLY way
-// the Pilot's App updates.
+// source guards that the CHECK itself can't quietly start reloading or
+// activating anything. (Update policy: the app reloads on the pilot's tap on
+// "Update now", on a developer "Force Pilot App update", or automatically after
+// a release - all of that lives in usePilotServiceWorker.ts / PilotViewPage.tsx
+// and is covered by scripts/pilot-force-update.test.mjs; this file guards that
+// the plain check stays side-effect free.)
 //
 // Run with: node --test scripts/pilot-update-check.test.mjs (or npm test)
 import { test } from 'node:test';
@@ -127,19 +130,17 @@ test('it can only ever call update(): no reload, no activation, no messaging', a
   assert.ok(!/reload\(|skipWaiting|SKIP_WAITING|postMessage|location\./.test(source), 'the helper contains no reload/activate/message code');
 });
 
-test('wiring guards: pull-to-refresh calls the check; the tap stays the only way to update', () => {
+test('wiring guards: pull-to-refresh calls the check; the check itself never reloads or activates', () => {
   const page = read('src/pages/PilotViewPage.tsx');
   const hook = read('src/hooks/usePilotServiceWorker.ts').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const handler = page.match(/function handleManualRefresh\(\) \{[\s\S]*?\n  \}/)?.[0] ?? '';
   assert.match(handler, /checkForUpdate\(\)/, 'handleManualRefresh (the pull-to-refresh path) runs the update check');
   assert.match(handler, /loadBranding\(\)/, 'the existing data refresh is still there');
-  assert.match(page, /const \{ updateAvailable, applyUpdate, checkForUpdate \} = usePilotServiceWorker\(\)/);
-  assert.match(page, /\{updateAvailable && <PilotUpdateBanner onTap=\{applyUpdate\} \/>\}/, 'the banner is still driven only by updateAvailable and applyUpdate on tap');
-  // Exactly one reload in the hook, still behind the tap-only guard.
-  assert.equal((hook.match(/location\.reload\(\)/g) || []).length, 1, 'still exactly one reload');
-  assert.match(hook, /function handleControllerChange\(\) \{\s*if \(!reloadingRef\.current\) return\s*reloadingRef\.current = false\s*window\.location\.reload\(\)/, 'the reload is still guarded by reloadingRef');
-  assert.equal((hook.match(/reloadingRef\.current = true/g) || []).length, 1, 'reloadingRef is only ever set in applyUpdate');
-  assert.equal((hook.match(/SKIP_WAITING/g) || []).length, 1, 'SKIP_WAITING is still sent from exactly one place (applyUpdate)');
+  assert.match(page, /const \{ updateAvailable, applyUpdate, forceUpdate, checkForUpdate \} = usePilotServiceWorker\(\)/);
+  // One reload site in the hook (the once-only wrapper), reached only through our own activation.
+  assert.equal((hook.match(/location\.reload\(\)/g) || []).length, 1, 'exactly one reload in the hook');
+  assert.match(hook, /function handleControllerChange\(\) \{\s*if \(!reloadingRef\.current\) return\s*reloadingRef\.current = false\s*reloadOnceRef\.current\(\)/, 'controllerchange only reloads while WE are activating');
+  assert.equal((hook.match(/SKIP_WAITING/g) || []).length, 1, 'the hook sends SKIP_WAITING from exactly one place (applyUpdate); the forced path sends it from runForcedUpdate');
   const checkFn = hook.match(/const checkForUpdate = useCallback\([\s\S]*?\}, \[\]\)/)?.[0] ?? '';
   assert.ok(checkFn && !/reload|SKIP_WAITING|postMessage|waitingWorker/.test(checkFn), 'checkForUpdate itself neither reloads nor activates');
 });

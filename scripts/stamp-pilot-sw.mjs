@@ -5,14 +5,15 @@
 //
 //     // pilot-release: AIRFIELD CENTRAL V1.0.20
 //
-// Why: the Pilot's App "Update available - tap to refresh" banner appears when
-// the browser finds that pilot-sw.js has different bytes (usePilotServiceWorker.ts
+// Why: the Pilot's App update box ("A new version of the app is available", or the
+// automatic release update) is triggered when the browser finds that pilot-sw.js
+// has different bytes (usePilotServiceWorker.ts
 // asks it to re-check on open, every 6 hours and on pull-to-refresh). That file is
 // otherwise a plain static file, so ordinary deploys never changed it and no
 // banner could ever appear. With this stamp its bytes change ONLY when a new
 // version is released in Developer Features - ordinary deploys leave it
 // byte-identical (the stamp contains nothing but the label: no timestamp, no
-// build id) and so never trigger the banner.
+// build id) and so never trigger an update.
 //
 // The label comes from src/generated/pilotVersion.ts, which
 // scripts/generate-pilot-version.mjs wrote moments earlier from the same

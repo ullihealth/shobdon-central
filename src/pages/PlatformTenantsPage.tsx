@@ -8,6 +8,7 @@ import { findPricingPlan, formatGBP } from '../config/pricing'
 
 const TENANTS_URL = '/api/platform/tenants'
 const REFRESH_DISPLAYS_URL = '/api/platform/refresh-displays'
+const FORCE_PILOT_UPDATE_URL = '/api/platform/force-pilot-update'
 
 // Client-side mirror of functions/api/_utils/tenantSlug.ts's own
 // SLUG_FORMAT - instant typo feedback without a network round-trip.
@@ -245,6 +246,19 @@ async function patchTenant(id: number, body: Record<string, boolean | number | s
 // Worker actually checks never reaches this client at all.
 async function triggerRefreshDisplays(tenant: string): Promise<boolean> {
   const response = await fetch(REFRESH_DISPLAYS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tenant }),
+  })
+  return response.ok
+}
+
+// "Force Pilot App update" - `tenant` is a slug or "all". Asks every open
+// Pilot's App (on the new code) to update itself within about a minute; see
+// functions/api/platform/force-pilot-update.ts. Separate from "Refresh
+// displays" (dashboards), which deliberately never touches /pilot.
+async function triggerForcePilotUpdate(tenant: string): Promise<boolean> {
+  const response = await fetch(FORCE_PILOT_UPDATE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tenant }),
@@ -633,6 +647,37 @@ function RefreshDisplaysButton({ tenant }: { tenant: PlatformTenant }): JSX.Elem
           : status === 'error'
             ? 'Failed - retry'
             : 'Refresh this tenant’s displays'}
+    </button>
+  )
+}
+
+// Per-tenant "Force Pilot App update" (next to RefreshDisplaysButton). No
+// confirm: it only makes that tenant's open Pilot's Apps reload onto the latest
+// version, which is what an update is.
+function ForcePilotUpdateButton({ tenant }: { tenant: PlatformTenant }): JSX.Element {
+  const [status, setStatus] = useState<RefreshDisplaysStatus>('idle')
+
+  async function handleClick() {
+    setStatus('loading')
+    const ok = await triggerForcePilotUpdate(tenant.slug)
+    setStatus(ok ? 'success' : 'error')
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={status === 'loading'}
+      title="Open Pilot's Apps for this tenant update to the latest version within about a minute"
+      className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10 disabled:opacity-60"
+    >
+      {status === 'loading'
+        ? 'Forcing…'
+        : status === 'success'
+          ? 'Update forced ✓'
+          : status === 'error'
+            ? 'Failed - retry'
+            : 'Force Pilot App update'}
     </button>
   )
 }
@@ -1982,6 +2027,19 @@ export default function PlatformTenantsPage(): JSX.Element {
     setRefreshAllStatus(ok ? 'success' : 'error')
   }
 
+  // Page-level "Force Pilot App update" for every active tenant - confirm-gated
+  // like Refresh all (platform-wide blast radius).
+  const [forcePilotAllStatus, setForcePilotAllStatus] = useState<RefreshDisplaysStatus>('idle')
+
+  async function handleForcePilotUpdateAll() {
+    const message =
+      'Force every tenant’s open Pilot’s Apps to update now? Each open app (on the latest code) will show “Updating to the latest version…” and reload within about a minute.'
+    if (!window.confirm(message)) return
+    setForcePilotAllStatus('loading')
+    const ok = await triggerForcePilotUpdate('all')
+    setForcePilotAllStatus(ok ? 'success' : 'error')
+  }
+
   const [onboarding, setOnboarding] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; slug: string; email: string } | null>(null)
   const [onboardError, setOnboardError] = useState<string | null>(null)
@@ -2286,6 +2344,20 @@ export default function PlatformTenantsPage(): JSX.Element {
                   : refreshAllStatus === 'error'
                     ? 'Failed - retry'
                     : 'Refresh all tenant displays'}
+            </button>
+            <button
+              type="button"
+              onClick={handleForcePilotUpdateAll}
+              disabled={forcePilotAllStatus === 'loading'}
+              className="rounded-lg border border-accent-sky-500/40 px-3 py-2 text-xs font-semibold text-accent-sky-400 transition hover:bg-accent-sky-500/10 disabled:opacity-60"
+            >
+              {forcePilotAllStatus === 'loading'
+                ? 'Forcing all…'
+                : forcePilotAllStatus === 'success'
+                  ? 'Update forced for all ✓'
+                  : forcePilotAllStatus === 'error'
+                    ? 'Failed - retry'
+                    : 'Force Pilot App update (all tenants)'}
             </button>
             <Link
               to="/platform/onboarding-content"
@@ -2830,6 +2902,7 @@ export default function PlatformTenantsPage(): JSX.Element {
                       {selectedTenant.tenantType === 'venue_cafe' ? 'Manage reserved slots →' : 'Manage reserved slots (5/8/12) →'}
                     </Link>
                     <RefreshDisplaysButton tenant={selectedTenant} />
+                    <ForcePilotUpdateButton tenant={selectedTenant} />
                   </div>
                 </section>
 

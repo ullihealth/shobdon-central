@@ -3,14 +3,15 @@
 // (usePilotServiceWorker.ts). Same underlying call - registration.update() -
 // so it can only ever do what those checks already do: ask the browser to
 // re-fetch pilot-sw.js and, if its bytes differ, install the new worker into
-// `waiting`, which is exactly what makes the existing "Update available - tap
-// to refresh" banner appear.
+// `waiting`, which is what makes the "A new version of the app is available"
+// box appear (or, right after a release, the app update itself).
 //
-// Deliberately NOT able to update anything itself: this file never activates a
-// worker (no SKIP_WAITING message), never reloads the page, and never touches
-// the banner. The tap on the banner stays the only way the Pilot's App
-// updates. A check that fails (offline, server error) is swallowed - pull-to-
-// refresh's data refresh must carry on exactly as it did before.
+// This file is only the CHECK: it never activates a worker (no SKIP_WAITING
+// message), never reloads the page and never touches the update box.
+// Activating and reloading live in usePilotServiceWorker.ts (applyUpdate /
+// forceUpdate) - see README "Pilot's App updates" for the full policy. A check
+// that fails (offline, server error) is swallowed - pull-to-refresh's data
+// refresh must carry on exactly as it did before.
 
 // At most one pull-triggered check per this long, so pulling repeatedly can't
 // hammer the server.

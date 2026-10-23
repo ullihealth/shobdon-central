@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createUpdateChecker } from '../utils/pilotUpdateCheck'
+import { createReloadOnce, FORCE_FALLBACK_RELOAD_MS, runForcedUpdate } from '../utils/pilotForceUpdate'
 
 export interface PilotServiceWorkerUpdate {
   // True once a NEW service worker has finished installing and is
@@ -9,18 +10,23 @@ export interface PilotServiceWorkerUpdate {
   // on a genuinely first-ever /pilot visit (no prior controller to
   // update FROM) - see trackInstallingWorker's own comment below.
   updateAvailable: boolean
-  // Tells the waiting worker to activate (postMessage SKIP_WAITING,
-  // handled in pilot-sw.js's own message listener) and reloads this
-  // page once it actually takes control - never called automatically,
-  // only ever in response to a pilot tapping the update banner
-  // (PilotUpdateBanner.tsx).
+  // Tells the waiting worker to activate (postMessage SKIP_WAITING, handled in
+  // pilot-sw.js's own message listener) and reloads this page once it takes
+  // control. Called by the "Update now" box (PilotUpdateBanner.tsx) when the
+  // pilot taps it, and automatically by PilotViewPage.tsx right after a RELEASE
+  // when AUTO_FORCE_UPDATE_ON_RELEASE is on (src/config/pilotUpdatePolicy.ts).
   applyUpdate: () => void
-  // Pull-to-refresh's "is a new version waiting?" check (PilotViewPage.tsx):
-  // the same registration.update() the app runs on open and every 6 hours,
-  // rate-limited to once per 30 seconds and safe to call at any time - it
-  // never throws, never activates a worker and never reloads. If it finds a
-  // newer version the usual banner appears; applying it is still only ever the
-  // pilot's tap (applyUpdate above).
+  // Developer "Force Pilot App update" / any other forced path: asks the
+  // browser for the newest worker, activates a waiting one, then reloads
+  // (once). Resolves 'failed' - having reloaded NOTHING - when offline or when
+  // the check itself fails. See runForcedUpdate in utils/pilotForceUpdate.ts.
+  forceUpdate: () => Promise<'reloading' | 'failed'>
+  // "Is a new version waiting?" check (pull-to-refresh and the 60-second tick
+  // in PilotViewPage.tsx): the same registration.update() the app runs on open
+  // and every 6 hours, rate-limited to once per 30 seconds and safe to call at
+  // any time - it never throws, never activates a worker and never reloads
+  // itself. If it finds a newer version the update box appears (or, right
+  // after a release, the app updates itself - see applyUpdate above).
   checkForUpdate: () => void
 }
 
@@ -35,7 +41,10 @@ export interface PilotServiceWorkerUpdate {
 // requirement for the page to function.
 //
 // Update-banner round: this hook now also surfaces WHEN a newer version
-// has installed, instead of just registering and forgetting. A pilot
+// has installed, instead of just registering and forgetting. (Update policy,
+// superseding the original tap-only rule: a new version is applied by the
+// pilot tapping "Update now", automatically after a release, or on a developer
+// "Force Pilot App update" - see README "Pilot's App updates".) A pilot
 // who adds /pilot to their home screen and reopens it days later was
 // otherwise stuck on whatever JS bundle first loaded into that tab -
 // clients.claim() (pilot-sw.js's own activate handler) only ever
@@ -55,12 +64,13 @@ const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
-  // Guards the reload in handleControllerChange below so it only ever
-  // fires in response to OUR OWN applyUpdate() call, not some other,
-  // unrelated controllerchange - reloading a pilot's page out from under
-  // them mid-read for a reason they didn't ask for would be worse than
-  // the stale-bundle bug this hook exists to fix.
+  // Set only while WE are activating a waiting worker (applyUpdate /
+  // forceUpdate), so handleControllerChange below reloads in response to OUR
+  // activation and never to some other, unrelated controllerchange.
   const reloadingRef = useRef(false)
+  // However many paths ask for a reload (controllerchange, the fallback timer,
+  // a plain reload), the page reloads at most once.
+  const reloadOnceRef = useRef(createReloadOnce(() => window.location.reload()))
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null)
   const updateCheckerRef = useRef(createUpdateChecker({ getRegistration: () => registrationRef.current }))
 
@@ -72,7 +82,7 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
     function handleControllerChange() {
       if (!reloadingRef.current) return
       reloadingRef.current = false
-      window.location.reload()
+      reloadOnceRef.current()
     }
     navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)
 
@@ -111,8 +121,7 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
         // cached from an earlier visit), then again every
         // UPDATE_CHECK_INTERVAL_MS for as long as this tab stays open -
         // update() itself only ever moves a new script into installing/
-        // waiting, it never activates anything on its own, so this
-        // can't bypass the tap-to-reload banner above.
+        // waiting, it never activates anything on its own.
         registration.update().catch(() => {})
         updateCheckerRef.current.noteCheck()
         updateIntervalId = window.setInterval(() => {
@@ -132,11 +141,26 @@ export function usePilotServiceWorker(): PilotServiceWorkerUpdate {
     if (!waitingWorker) return
     reloadingRef.current = true
     waitingWorker.postMessage({ type: 'SKIP_WAITING' })
+    // If controllerchange never arrives, still reload (once).
+    window.setTimeout(reloadOnceRef.current, FORCE_FALLBACK_RELOAD_MS)
   }, [waitingWorker])
+
+  const forceUpdate = useCallback(
+    () =>
+      runForcedUpdate({
+        getRegistration: () => registrationRef.current,
+        isOnline: () => navigator.onLine,
+        reload: reloadOnceRef.current,
+        onActivating: () => {
+          reloadingRef.current = true
+        },
+      }),
+    []
+  )
 
   const checkForUpdate = useCallback(() => {
     updateCheckerRef.current.check()
   }, [])
 
-  return { updateAvailable: !!waitingWorker, applyUpdate, checkForUpdate }
+  return { updateAvailable: !!waitingWorker, applyUpdate, forceUpdate, checkForUpdate }
 }

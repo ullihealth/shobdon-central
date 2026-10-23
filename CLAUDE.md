@@ -36,5 +36,5 @@ regardless, since the hook only helps on a machine it's actually installed on.
 
 Before proposing or making any change, first find and report what already exists for this area - including separate or parallel mechanisms (e.g. a route with its own service worker, hook or component), code comments describing deliberate behaviour ("only", "deliberately", "never"), and released items on Developer Updates / Developer Features.
 Treat existing behaviour as intentional unless I say otherwise.
-STOP and ask me before removing, replacing or bypassing anything that is documented as deliberate, or anything that is part of my manual processes (e.g. revision releases, tap-to-update, approval gates).
+STOP and ask me before removing, replacing or bypassing anything that is documented as deliberate, or anything that is part of my manual processes (e.g. revision releases, the Pilot's App update system - see README "Pilot's App updates", approval gates).
 Fix only the problem I describe, at the size I describe it - do not extend a fix to other routes, devices or tenants unless I ask.

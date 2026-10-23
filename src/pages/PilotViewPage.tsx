@@ -7,6 +7,9 @@ import { PUBLIC_CONFIG_URL } from '../config/publicApi'
 import { useDisplayHeartbeat } from '../hooks/useDisplayHeartbeat'
 import { usePullToRefresh, REFRESH_THRESHOLD_PX } from '../hooks/usePullToRefresh'
 import { mobileCheckDue, resolveMobileEnabled } from '../utils/pilotMobileGate'
+import { REFRESH_CHECK_URL } from '../config/captureEndpoint'
+import { AUTO_FORCE_UPDATE_ON_RELEASE } from '../config/pilotUpdatePolicy'
+import { autoUpdateAllowed, createForceWatcher, pilotForceTenantParam } from '../utils/pilotForceUpdate'
 import { usePilotHomeScreenMeta } from '../hooks/usePilotHomeScreenMeta'
 import { usePilotServiceWorker } from '../hooks/usePilotServiceWorker'
 import { usePilotDataFreshnessGuard } from '../hooks/usePilotDataFreshnessGuard'
@@ -344,7 +347,7 @@ function PilotViewContent({
 // permanently, natural document scroll.
 export default function PilotViewPage(): JSX.Element {
   useDisplayHeartbeat('pilot')
-  const { updateAvailable, applyUpdate, checkForUpdate } = usePilotServiceWorker()
+  const { updateAvailable, applyUpdate, forceUpdate, checkForUpdate } = usePilotServiceWorker()
 
   // Scopes the touch-action/overscroll-behavior fix (index.css's own
   // .pilot-view-scroll-root rule) to this route only - html/body are
@@ -398,6 +401,33 @@ export default function PilotViewPage(): JSX.Element {
   // see PilotCameraView's own comment) until the real fetch resolves.
   const [primaryCameraCropRect, setPrimaryCameraCropRect] = useState<CropRect>({ x: 0, y: 0, width: 100, height: 100 })
   const [cameraViewOpen, setCameraViewOpen] = useState(false)
+  // Developer "Force Pilot App update" (platform admin -> per-tenant/all flag in
+  // the same Worker KV the dashboards' "Refresh displays" uses, under the key
+  // `pilot:<slug>`). `updating` shows the "Updating to the latest version…" box.
+  const [updating, setUpdating] = useState(false)
+  const updatingRef = useRef(false)
+  const slugRef = useRef<string | null>(null)
+  const forceWatcherRef = useRef(
+    createForceWatcher({
+      // Which force request this browser already acted on - survives the reload
+      // it causes, so the request that reloaded the app can never reload it again.
+      getHandled: () => {
+        try {
+          return localStorage.getItem('pilotForceHandledAt')
+        } catch {
+          return null
+        }
+      },
+      setHandled: (value) => {
+        try {
+          if (value === null) localStorage.removeItem('pilotForceHandledAt')
+          else localStorage.setItem('pilotForceHandledAt', value)
+        } catch {
+          // Storage unavailable - the in-memory baseline still prevents repeats this session.
+        }
+      },
+    })
+  )
   // When the tenant's config was last read (any path) - lets the foreground
   // re-check skip itself if something just read it (see pilotMobileGate.ts).
   const lastConfigReadRef = useRef<number | null>(null)
@@ -412,6 +442,38 @@ export default function PilotViewPage(): JSX.Element {
   // screen on any non-OK response, whereas a failed/offline check here must
   // leave the app exactly as it is. Only an explicit mobileEnabled boolean in
   // an OK response changes anything (resolveMobileEnabled).
+  // Runs the forced-update sequence behind the "Updating…" box. If it cannot run
+  // (offline, update check failed) NOTHING is reloaded: the box goes away, the
+  // app is untouched, and the same request may be retried on a later check.
+  async function startForcedUpdate(requestedAt: string) {
+    if (updatingRef.current) return
+    updatingRef.current = true
+    setUpdating(true)
+    const result = await forceUpdate()
+    if (result === 'failed') {
+      updatingRef.current = false
+      setUpdating(false)
+      forceWatcherRef.current.forgive(requestedAt)
+    }
+    // 'reloading': the page is about to reload; leave the box up until it does.
+  }
+
+  // Reads this tenant's force flag (a failed read changes nothing). The first
+  // successful read is a baseline, only a LATER new timestamp forces an update.
+  async function readForceFlag() {
+    const slug = slugRef.current
+    if (!slug) return
+    try {
+      const response = await fetch(`${REFRESH_CHECK_URL}&tenant=${encodeURIComponent(pilotForceTenantParam(slug))}`, { cache: 'no-store' })
+      if (!response.ok) return
+      const data: { refreshRequestedAt?: unknown } = await response.json()
+      const requestedAt = typeof data.refreshRequestedAt === 'string' ? data.refreshRequestedAt : null
+      if (forceWatcherRef.current.observe(requestedAt) === 'force' && requestedAt) void startForcedUpdate(requestedAt)
+    } catch {
+      // Offline / blocked: nothing happens.
+    }
+  }
+
   function checkMobileEnabled() {
     lastConfigReadRef.current = Date.now()
     const seq = ++mobileCheckSeqRef.current
@@ -419,6 +481,10 @@ export default function PilotViewPage(): JSX.Element {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (seq === mobileCheckSeqRef.current) setMobileEnabled((current) => resolveMobileEnabled(current, data))
+        if (data && typeof data.slug === 'string') {
+          slugRef.current = data.slug
+          void readForceFlag()
+        }
       })
       .catch(() => {})
   }
@@ -445,6 +511,10 @@ export default function PilotViewPage(): JSX.Element {
           setAfisoFrequency(data.afiso.frequency ?? '')
         }
         if (typeof data.mobileEnabled === 'boolean') setMobileEnabled(data.mobileEnabled)
+        if (typeof data.slug === 'string') {
+          slugRef.current = data.slug
+          void readForceFlag()
+        }
         setShowFuelPrices(shouldShowFuelPrices(data.fuelPricesEnabled, data.gasPrices))
         if (data.theme) setThemeOverride(data.theme as CSSProperties)
         if (data.pilotBackgroundOverride) setPilotBackgroundOverride(data.pilotBackgroundOverride)
@@ -478,8 +548,11 @@ export default function PilotViewPage(): JSX.Element {
   useEffect(() => {
     const interval = window.setInterval(() => {
       setRefreshTick((tick) => tick + 1)
-      // Same 60 s cadence - no extra network load beyond it.
+      // Same 60 s cadence: the mobile-enabled re-check (which also reads the
+      // developer force flag) and a "new version waiting?" check (rate-limited
+      // to once per 30 s) so a release reaches an open app within about a minute.
       checkMobileEnabled()
+      checkForUpdate()
     }, REFRESH_INTERVAL_MS)
     return () => window.clearInterval(interval)
     // checkMobileEnabled only touches refs and a state setter, so it is safe
@@ -495,6 +568,7 @@ export default function PilotViewPage(): JSX.Element {
     function onVisibility() {
       if (document.visibilityState === 'visible' && mobileCheckDue(Date.now(), lastConfigReadRef.current)) {
         checkMobileEnabled()
+        checkForUpdate()
       }
     }
     document.addEventListener('visibilitychange', onVisibility)
@@ -511,17 +585,56 @@ export default function PilotViewPage(): JSX.Element {
     setRefreshTick((tick) => tick + 1)
     loadBranding()
     // Also ask whether a new app version is waiting (same check as on open,
-    // rate-limited, never throws). If one is, the existing banner appears; the
-    // reload itself is still only ever the pilot's tap on that banner.
+    // rate-limited, never throws). If one is, the update box appears (or, after
+    // a release, the app updates itself - see the effect below).
     checkForUpdate()
   }
+
+  // A new version is waiting (pilot-sw.js changed = a release went live):
+  // update automatically when AUTO_FORCE_UPDATE_ON_RELEASE is on, at most once
+  // per cooldown (autoUpdateAllowed) so it can never loop; otherwise - or when
+  // the cooldown says no - the "A new version… Update now" box is shown.
+  // Whether the post-release auto-update may run right now (switch on, and not
+  // within the 10-minute cooldown of the last one).
+  function autoUpdateDue(): boolean {
+    if (!AUTO_FORCE_UPDATE_ON_RELEASE) return false
+    let last: number | null = null
+    try {
+      const raw = localStorage.getItem('pilotAutoUpdateAt')
+      last = raw ? Number(raw) : null
+    } catch {
+      last = null
+    }
+    return autoUpdateAllowed(Date.now(), last !== null && Number.isFinite(last) ? last : null)
+  }
+
+  useEffect(() => {
+    if (!updateAvailable || updatingRef.current || !autoUpdateDue()) return
+    try {
+      localStorage.setItem('pilotAutoUpdateAt', String(Date.now()))
+    } catch {
+      // Storage unavailable: still update once this session (updatingRef guards repeats).
+    }
+    updatingRef.current = true
+    setUpdating(true)
+    applyUpdate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateAvailable])
+
+  // When an auto-update is about to start, go straight to "Updating…" (never a
+  // one-frame flash of the "Update now" box first).
+  const updateBox = updating || (updateAvailable && autoUpdateDue()) ? (
+    <PilotUpdateBanner mode="updating" onUpdate={applyUpdate} />
+  ) : updateAvailable ? (
+    <PilotUpdateBanner mode="available" onUpdate={applyUpdate} />
+  ) : null
 
   if (unavailable) return <TenantUnavailable />
   if (!loaded) return <div className="min-h-screen bg-page-from" />
   if (!mobileEnabled) {
     return (
       <>
-        {updateAvailable && <PilotUpdateBanner onTap={applyUpdate} />}
+        {updateBox}
         <PilotLockedScreen airfieldName={airfieldName} logoUrl={logoUrl} themeOverride={themeOverride} />
       </>
     )
@@ -529,7 +642,7 @@ export default function PilotViewPage(): JSX.Element {
 
   return (
     <WeatherProvider>
-      {updateAvailable && <PilotUpdateBanner onTap={applyUpdate} />}
+      {updateBox}
       <PilotViewContent
         airfieldName={airfieldName}
         logoUrl={logoUrl}

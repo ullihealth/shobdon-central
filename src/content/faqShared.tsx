@@ -181,8 +181,8 @@ export const FAQ_CLOUD_BASE: FaqItemData = {
 }
 
 export const FAQ_UPDATE_BANNER: FaqItemData = {
-  q: `What does "Update available — tap to refresh" mean?`,
-  blocks: [{ p: `A newer version of the app is ready. Tap the banner to update. The app only ever updates when you tap it, so it never reloads by surprise while someone is reading it.` }],
+  q: `What does "A new version of the app is available" mean?`,
+  blocks: [{ p: `A newer version of the app is ready. Tap **Update now** and the app reloads on the latest version. Sometimes the app updates itself after a new release, showing "Updating to the latest version…" for a moment, so everyone stays on the current version.` }],
 }
 
 export const FAQ_VERSION_NUMBER: FaqItemData = {
