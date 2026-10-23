@@ -22,6 +22,9 @@ interface RequireAuthProps {
   // holds 'owner' role at Shobdon, and a role-only check would let every
   // other owner/admin in too.
   requireDeveloper?: boolean
+  // With requireRole: ALSO let developers / platform admins in (they see every tenant's
+  // page read-only where the page supports it, e.g. Billing).
+  allowDeveloper?: boolean
   // Set only on /design's route (the branding step of the onboarding
   // flow) and /onboarding/terms itself (which must not redirect to
   // itself). Every other authenticated route enforces the mandatory
@@ -43,7 +46,7 @@ interface RequireAuthProps {
 // working at the phase-0 login checkpoint - not a separate, hand-rolled
 // check. Deliberately NOT used on the public dashboard route ("/") -
 // that must stay unauthenticated for everyone.
-export default function RequireAuth({ children, requireRole, requireDeveloper, skipTermsGate, skipSubscriptionGate }: RequireAuthProps): JSX.Element | null {
+export default function RequireAuth({ children, requireRole, requireDeveloper, allowDeveloper, skipTermsGate, skipSubscriptionGate }: RequireAuthProps): JSX.Element | null {
   const { data: session, isPending } = authClient.useSession()
   // Unconditional (not gated on requireRole/requireDeveloper being set) -
   // the mandatory terms/privacy gate below needs hasAcceptedTerms on
@@ -88,11 +91,17 @@ export default function RequireAuth({ children, requireRole, requireDeveloper, s
   }, [session])
 
   if (isPending) return null
-  if (!session) return <Navigate to="/login" replace />
+  // No session (revoked, expired, never logged in): a FULL page load of /login, not a
+  // client-side <Navigate>. A tab that stayed open on an old build would otherwise show
+  // the login page inside that old app and, after logging in, keep running the old code.
+  if (!session) {
+    window.location.assign('/login')
+    return null
+  }
   if (meCheck.loading) return null
 
   const allowedRoles = requireRole ? (Array.isArray(requireRole) ? requireRole : [requireRole]) : null
-  const roleOk = !allowedRoles || (!!meCheck.role && allowedRoles.includes(meCheck.role as MemberRole))
+  const roleOk = !allowedRoles || (!!meCheck.role && allowedRoles.includes(meCheck.role as MemberRole)) || (!!allowDeveloper && meCheck.isDeveloper)
   const developerOk = !requireDeveloper || meCheck.isDeveloper
 
   if (!roleOk || !developerOk) {

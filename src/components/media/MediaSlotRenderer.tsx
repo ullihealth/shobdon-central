@@ -240,7 +240,7 @@ function GyropediaPanel(): JSX.Element {
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-950 p-2 text-white">
       <div className="mb-1 flex-shrink-0 text-center font-bold uppercase tracking-widest text-primary" style={{ fontSize: GYROPEDIA_HEADER_FONT }}>
-        Gyropedia Departures/Arrivals — UK
+        Gyropedia Departures/Arrivals - UK
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.length === 0 ? (

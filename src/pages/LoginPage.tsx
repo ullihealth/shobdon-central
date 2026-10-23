@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { activateLatestWorker, CURRENT_BUILD_ID, fetchLatestBuildId, shouldReloadForBuild } from '../lib/appVersion'
 import { authClient } from '../lib/auth/authClient'
 
 // Confirmed directly against production (2026-07-11): sign-in requests
@@ -80,8 +81,21 @@ function landingPageForMe(me: { role?: string | null; tenantType?: string | null
           : '/media-manager'
 }
 
+// After a successful login: a FULL page load of the landing page (never a client-side
+// navigate()), so the user lands on the CURRENT code even if this tab has been open on an
+// older build for days. The app-shell service worker would otherwise answer that load from
+// its old precache, so if a newer build is published its worker is activated first.
+async function goToLanding(path: string): Promise<void> {
+  try {
+    const latest = await fetchLatestBuildId(2500)
+    if (shouldReloadForBuild(CURRENT_BUILD_ID, latest, null)) await activateLatestWorker(6000)
+  } catch {
+    // A failed check never blocks the login.
+  }
+  window.location.assign(path)
+}
+
 export default function LoginPage(): JSX.Element {
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   // Post-payment landing round - checkout.ts's own success_url sets
   // both of these (see that file's own comment on why it can't just
@@ -112,7 +126,7 @@ export default function LoginPage(): JSX.Element {
   // data of its own to include, unlike DashboardPage.tsx's dynamic
   // per-tenant title.
   useEffect(() => {
-    document.title = 'Sign In — Airfield Central'
+    document.title = 'Sign In - Airfield Central'
   }, [])
 
   async function handleSubmit(event: React.FormEvent) {
@@ -169,7 +183,7 @@ export default function LoginPage(): JSX.Element {
           .then((response) => (response.ok ? response.json() : null))
           .catch(() => null)
         if (polled && !polled.subscriptionPending) {
-          navigate(landingPageForMe(polled))
+          void goToLanding(landingPageForMe(polled))
           return
         }
       }
@@ -178,7 +192,7 @@ export default function LoginPage(): JSX.Element {
     }
 
     setSubmitting(false)
-    navigate(landingPageForMe(me))
+    await goToLanding(landingPageForMe(me))
   }
 
   if (activationState === 'polling') {
@@ -220,7 +234,7 @@ export default function LoginPage(): JSX.Element {
 
         {welcome && (
           <p className="mb-6 rounded-lg border border-accent-sky-500/40 bg-accent-sky-500/10 p-3 text-sm text-slate-200">
-            Welcome to Airfield Central — payment received. Log in to set up your dashboard.
+            Welcome to Airfield Central - payment received. Log in to set up your dashboard.
           </p>
         )}
 

@@ -58,7 +58,7 @@ export default function ActivationPage(): JSX.Element {
   }
 
   useEffect(() => {
-    document.title = 'Activate your subscription — Airfield Central'
+    document.title = 'Activate your subscription - Airfield Central'
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { authClient } from '../../lib/auth/authClient'
 
 interface SidebarUserMenuProps {
@@ -10,13 +10,13 @@ interface SidebarUserMenuProps {
 // block, divider, bottom-anchored) - account actions aren't content
 // navigation and shouldn't compete visually with it.
 export default function SidebarUserMenu({ activePath }: SidebarUserMenuProps): JSX.Element {
-  const navigate = useNavigate()
   const [loggingOut, setLoggingOut] = useState(false)
 
   async function handleLogout() {
     setLoggingOut(true)
     await authClient.signOut()
-    navigate('/login')
+    // Full page load: lands on the login page of the CURRENT code (see RequireAuth.tsx).
+    window.location.assign('/login')
   }
 
   return (

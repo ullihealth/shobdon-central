@@ -134,7 +134,7 @@ function useClockText(): string {
   }, [])
   const date = now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: AIRFIELD_TIMEZONE })
   const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: AIRFIELD_TIMEZONE })
-  return `${date} — ${time}`
+  return `${date} - ${time}`
 }
 
 // Icons, not the text category label ("Very Good" etc.) - reuses

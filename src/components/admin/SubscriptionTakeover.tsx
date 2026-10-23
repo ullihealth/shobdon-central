@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { authClient } from '../../lib/auth/authClient'
 import { findPricingPlan, formatGBP } from '../../config/pricing'
 import { ActivateSubscription } from './ActivateSubscription'
@@ -31,7 +31,6 @@ interface Props {
 // billing. Payment does NOT resume the tenant - a developer does that - so once
 // Stripe reports it paid this shows "Payment received" instead of the button.
 export function SubscriptionTakeover({ me, onChanged }: Props): JSX.Element {
-  const navigate = useNavigate()
   const [loggingOut, setLoggingOut] = useState(false)
   const sub = me?.subscription
   const plan = findPricingPlan((sub?.planId as 'pack' | 'pilotApp') ?? 'pack')
@@ -40,7 +39,7 @@ export function SubscriptionTakeover({ me, onChanged }: Props): JSX.Element {
   async function logout() {
     setLoggingOut(true)
     await authClient.signOut()
-    navigate('/login')
+    window.location.assign('/login') // full page load, see RequireAuth.tsx
   }
 
   const link = 'text-sm font-semibold text-accent-sky-400 hover:text-accent-sky-500'
@@ -60,13 +59,13 @@ export function SubscriptionTakeover({ me, onChanged }: Props): JSX.Element {
 
         {plan && (
           <div className="mb-6 rounded-xl border border-border bg-slate-900/60 px-4 py-3 text-sm">
-            <span className="font-bold text-white">{plan.name}</span> <span className="text-muted-400">— {formatGBP(plan.priceGBP)}/month</span>
+            <span className="font-bold text-white">{plan.name}</span> <span className="text-muted-400">- {formatGBP(plan.priceGBP)}/month</span>
           </div>
         )}
 
         {sub?.paymentReceived ? (
           <div role="status" className="mb-6 rounded-xl border border-status-good/40 bg-status-good/10 px-4 py-4 text-sm font-semibold text-status-good">
-            Payment received — your account will be reactivated shortly.
+            Payment received - your account will be reactivated shortly.
           </div>
         ) : canPay ? (
           <div className="mb-6">
@@ -106,7 +105,6 @@ export function SubscriptionTakeover({ me, onChanged }: Props): JSX.Element {
 // Billing): no sidebar, just the tenant name, a way back to the subscription page
 // and Log out.
 export function LockedShell({ me, children }: { me: TakeoverMe | null; children: React.ReactNode }): JSX.Element {
-  const navigate = useNavigate()
   return (
     <div className="min-h-screen bg-gradient-to-b from-page-from via-page-via to-page-to text-slate-100">
       <header className="flex items-center justify-between border-b border-slate-800 bg-slate-950/60 px-6 py-3">
@@ -119,7 +117,7 @@ export function LockedShell({ me, children }: { me: TakeoverMe | null; children:
             type="button"
             onClick={async () => {
               await authClient.signOut()
-              navigate('/login')
+              window.location.assign('/login')
             }}
             className="text-sm font-semibold text-muted-400 hover:text-status-bad"
           >

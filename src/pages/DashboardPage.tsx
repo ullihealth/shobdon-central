@@ -135,7 +135,7 @@ export default function DashboardPage(): JSX.Element {
           // prominent (a kiosk TV has no tab bar; a laptop/tablet browser
           // does). Set once real data arrives rather than left permanently
           // wrong for every other tenant.
-          document.title = `${data.airfieldName} — Airfield Central`
+          document.title = `${data.airfieldName} - Airfield Central`
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.mainTemplateId) setMainTemplateId(data.mainTemplateId as string)

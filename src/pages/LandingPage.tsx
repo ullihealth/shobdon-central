@@ -43,7 +43,7 @@ const STAT_CALLOUTS: StatCallout[] = [
 // best-effort, not-guaranteed-everywhere upgrade (see the Pricing
 // section's own disclaimer line below for the fuller version of this).
 const BENEFITS: string[] = [
-  'Wind, QNH, temperature, visibility — Met Office data as standard, your own weather station connectable any time',
+  'Wind, QNH, temperature, visibility - Met Office data as standard, your own weather station connectable any time',
   'Digital ops panel for runway status, NOTAMs, PPR, fuel, radio changes',
   "Reception Dashboard for your clubhouse screen, plus the Pilot's App for members and visiting pilots on their phone",
   'Your own branded address (yourclub.airfieldcentral.com)',
@@ -58,11 +58,11 @@ interface FaqEntry {
 const FAQ_ENTRIES: FaqEntry[] = [
   {
     question: 'Do I need a weather station to start?',
-    answer: "No — your dashboard works from day one using Met Office weather data. Connecting your own station is an optional upgrade, whenever you're ready.",
+    answer: "No - your dashboard works from day one using Met Office weather data. Connecting your own station is an optional upgrade, whenever you're ready.",
   },
   {
     question: "What if my weather station isn't a Davis Vantage Pro2?",
-    answer: "Tell us your setup — Shobdon's integration took 2 days once we got started, and we move fast on these.",
+    answer: "Tell us your setup - Shobdon's integration took 2 days once we got started, and we move fast on these.",
   },
   {
     question: 'When do I get charged?',
@@ -70,11 +70,11 @@ const FAQ_ENTRIES: FaqEntry[] = [
   },
   {
     question: 'Can I cancel anytime?',
-    answer: "After the 3-month minimum, yes — 30 days' notice to cancel.",
+    answer: "After the 3-month minimum, yes - 30 days' notice to cancel.",
   },
   {
     question: 'Do I need to install anything?',
-    answer: 'No — works in any browser, phone, tablet, or desktop.',
+    answer: 'No - works in any browser, phone, tablet, or desktop.',
   },
 ]
 
@@ -363,7 +363,7 @@ function SignupForm({ signupType, setSignupType }: ProductChoiceProps): JSX.Elem
         <p className="mt-2 text-slate-300">
           {(signupType === 'venue_cafe' ? venueName : clubName)}'s space is reserved at{' '}
           <span className="font-mono text-sky-400">{result.subdomain}</span>. We'll be in touch to finish setting
-          things up — if you have any questions in the meantime, contact us at{' '}
+          things up - if you have any questions in the meantime, contact us at{' '}
           <a href={`mailto:${SUPPORT_EMAIL}`} className="text-sky-400 hover:underline">
             {SUPPORT_EMAIL}
           </a>
@@ -822,7 +822,7 @@ function PaidSignupForm(): JSX.Element {
           onChange={(event) => setParentTenantId(event.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
         >
-          <option value="">None — my airfield has its own weather station / not listed</option>
+          <option value="">None - my airfield has its own weather station / not listed</option>
           {parentOptions.map((option) => (
             <option key={option.id} value={option.id}>
               {option.name}
@@ -841,7 +841,7 @@ function PaidSignupForm(): JSX.Element {
         >
           {purchasablePlans.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name} — {formatGBP(p.priceGBP)}/mo{p.highlighted ? " (Recommended — dashboard + Pilot's App)" : ''}
+              {p.name} - {formatGBP(p.priceGBP)}/mo{p.highlighted ? " (Recommended - dashboard + Pilot's App)" : ''}
             </option>
           ))}
         </select>
@@ -1140,7 +1140,7 @@ export default function LandingPage(): JSX.Element {
             <div className="ml-auto w-full max-w-sm rounded-2xl border border-white/10 bg-slate-950/70 p-5 text-left shadow-2xl shadow-black/40 backdrop-blur-md sm:translate-x-[35px] sm:-translate-y-[35px]">
               <h2 className="text-lg font-bold text-white">See it live</h2>
               <p className="mt-2 text-sm text-white/80">
-                This is a real airfield's real dashboard, right now — not a demo.{' '}
+                This is a real airfield's real dashboard, right now - not a demo.{' '}
                 <a
                   href={SHOBDON_LIVE_URL}
                   target="_blank"
@@ -1201,7 +1201,7 @@ export default function LandingPage(): JSX.Element {
               >
                 <div className="flex items-center gap-2">
                   <div className="text-lg font-semibold text-slate-100">
-                    {plan.name} — {formatGBP(plan.priceGBP)}/month
+                    {plan.name} - {formatGBP(plan.priceGBP)}/month
                   </div>
                   {plan.highlighted && (
                     <span className="rounded-full bg-sky-500 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-950">
@@ -1225,7 +1225,7 @@ export default function LandingPage(): JSX.Element {
               the FAQ above now use. */}
           <p className="mx-auto mt-6 max-w-2xl text-center text-sm text-slate-500">
             Weather is Met Office-based as standard on every plan. Connecting your own weather station is an
-            optional, best-effort upgrade, available any time — not guaranteed at every site.
+            optional, best-effort upgrade, available any time - not guaranteed at every site.
           </p>
           {/* No-free-trial round - this line replaces the old "14-day
               free trial" copy (there isn't one on the paid plans below -

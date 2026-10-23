@@ -46,7 +46,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     priceGBP: 44.0,
     priceEnvKey: "STRIPE_PRICE_PACK",
     description:
-      "The Reception Dashboard for your clubhouse screen, plus the Pilot's App — a branded mobile app for members, students and visiting pilots, installable on their phone straight from the browser.",
+      "The Reception Dashboard for your clubhouse screen, plus the Pilot's App - a branded mobile app for members, students and visiting pilots, installable on their phone straight from the browser.",
     highlighted: true,
     requiresPack: false,
   },
@@ -65,7 +65,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     priceGBP: 29.99,
     priceEnvKey: "STRIPE_PRICE_MEDIA_SCREEN",
     description:
-      "A full-screen advertising display for cafés and similar venues, with an advertising revenue split on slots sold. Add-on — requires the Airfield Pack.",
+      "A full-screen advertising display for cafés and similar venues, with an advertising revenue split on slots sold. Add-on - requires the Airfield Pack.",
     highlighted: false,
     requiresPack: true,
   },

@@ -234,7 +234,7 @@ export default function CafeMediaPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Media Screen — Airfield Central'
+    document.title = 'Media Screen - Airfield Central'
   }, [])
 
   const [loading, setLoading] = useState(true)

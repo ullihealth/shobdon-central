@@ -68,7 +68,7 @@ export default function WeatherSourceSelector({ value, onChange, hasPhysicalAtc,
                 className="h-4 w-4 accent-sky-500"
               />
               {WEATHER_PROVIDERS[id].label}
-              {!lockedByParent && atcDisabled && <span className="text-xs text-muted-400">— Unavailable</span>}
+              {!lockedByParent && atcDisabled && <span className="text-xs text-muted-400">- Unavailable</span>}
             </label>
           )
         })}

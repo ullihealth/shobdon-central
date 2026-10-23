@@ -794,7 +794,7 @@ export default function SlideEditor({ files, editingFile, onClose, onSaved, onLi
                           onChange={(event) => setAddImageExistingId(event.target.value)}
                           className="flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
                         >
-                          <option value="">— choose an image —</option>
+                          <option value="">(choose an image)</option>
                           {imageFiles.map((f) => (
                             <option key={f.id} value={f.id}>
                               {f.filename}

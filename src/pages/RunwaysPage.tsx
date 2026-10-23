@@ -90,7 +90,7 @@ export default function RunwaysPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Runways — Airfield Central'
+    document.title = 'Runways - Airfield Central'
   }, [])
 
   const [loading, setLoading] = useState(true)
@@ -359,7 +359,7 @@ export default function RunwaysPage(): JSX.Element {
         <div>
           <h1 className="mb-2 text-2xl font-black uppercase tracking-wide text-primary">Runways</h1>
           <p className="max-w-2xl text-sm text-muted-400">
-            The physical facts about this airfield's runway(s) — identifiers, precise magnetic heading, and
+            The physical facts about this airfield's runway(s) - identifiers, precise magnetic heading, and
             surface colours. These drive both the compass graphic and the headwind/crosswind maths, so accuracy
             matters here more than anywhere else. Edits are staged below until you click "Update Dashboard".
           </p>

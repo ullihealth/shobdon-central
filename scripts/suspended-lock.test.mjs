@@ -134,7 +134,7 @@ test('client wiring: layout = takeover (no sidebar) when locked; central 401/403
   assert.match(layout, /SUBSCRIPTION_INACTIVE_EVENT/);
   assert.match(layout, /addEventListener\('focus', refreshMe\)/);
   assert.match(layout, /addEventListener\('visibilitychange', onVisibility\)/);
-  assert.match(layout, /return <SubscriptionTakeover me=\{me\} onChanged=\{refreshMe\} \/>/);
+  assert.match(layout, /<SubscriptionTakeover me=\{me\} onChanged=\{refreshMe\} \/>/);
   assert.match(layout, /response\.status === 401/);
   // the 98c6928 greyed-sidebar / banner UI is gone
   assert.ok(!fs.existsSync(path.join(root, 'src/components/admin/SubscriptionLockBanner.tsx')));

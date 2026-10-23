@@ -6,7 +6,7 @@ import { CUSTOMER_TERMS_TITLE, customerTermsMarkdown } from '../content/legalTer
 // for the shared chrome/deploy-reachability notes.
 export default function TermsPage(): JSX.Element {
   useEffect(() => {
-    document.title = `${CUSTOMER_TERMS_TITLE} — AirfieldCentral`
+    document.title = `${CUSTOMER_TERMS_TITLE} - AirfieldCentral`
   }, [])
 
   // Media Box consent round - this page is reached from a brand-new

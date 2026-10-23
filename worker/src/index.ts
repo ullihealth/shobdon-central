@@ -1174,7 +1174,7 @@ async function handleGet(env: Env): Promise<Response> {
 </style>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#03101a; color:#e2e8f0; padding:2rem; max-width:900px; margin:0 auto;">
-  <h1 style="font-size:1.25rem;">Shobdon Central — Weather Captures</h1>
+  <h1 style="font-size:1.25rem;">Shobdon Central - Weather Captures</h1>
   <div class="no-print" style="display:flex; gap:0.75rem; margin:0.75rem 0 1.5rem;">
     <button id="copy-btn" class="action-btn" onclick="copyLogs()">Copy</button>
     <button class="action-btn" onclick="window.print()">Print</button>

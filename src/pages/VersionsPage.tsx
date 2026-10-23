@@ -38,7 +38,7 @@ export default function VersionsPage(): JSX.Element {
         <Link to="/features" className="mb-4 inline-block text-xs font-semibold text-sky-400 hover:text-sky-300">
           ← Feature Requests
         </Link>
-        <h1 className="mb-2 text-2xl font-bold">Airfield Central — Version History</h1>
+        <h1 className="mb-2 text-2xl font-bold">Airfield Central - Version History</h1>
         <p className="mb-8 text-sm text-slate-400">What's shipped, grouped by release.</p>
 
         {loading ? <p className="text-sm text-slate-400">Loading…</p> : <ReleasedVersionsList updates={updates} />}

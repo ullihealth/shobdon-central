@@ -4,7 +4,7 @@
 // Still works for a SUSPENDED tenant (allow-listed in tenantAuth.ts) - the whole
 // point is letting them see and settle billing. A Stripe failure never fails the
 // request: it returns what the database knows plus stripeError: true.
-import { requireOwner, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
+import { requireTenant, jsonResponse, type D1Database } from "../../_utils/tenantAuth";
 import { loadBillingContext } from "../../_utils/billingContext";
 import { isStripeFailure, listInvoices, retrieveSubscription, type StripeEnv } from "../../_utils/stripeApi";
 
@@ -14,8 +14,16 @@ interface Env extends StripeEnv {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
-  const auth = await requireOwner(request, env);
+  // Owner / admin of the tenant, OR a developer / platform admin (read-only: they may
+  // VIEW any tenant's billing but never act as the tenant - checkout.ts and portal.ts
+  // refuse developers).
+  const auth = await requireTenant(request, env);
   if ("error" in auth) return auth.error;
+  const userRow = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(auth.userId).first<{ developer: number }>();
+  const isDeveloper = !!userRow?.developer;
+  if (!isDeveloper && !["owner", "admin"].includes(auth.membership.role)) {
+    return jsonResponse({ error: "Role must be one of: owner, admin" }, 403);
+  }
   const ctx = await loadBillingContext(env.DB, auth.membership.organizationId, auth.userId);
   if (!ctx) return jsonResponse({ error: "Tenant not found" }, 404);
 
@@ -72,5 +80,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     hasMediaBoxConsent: ctx.hasMediaBoxConsent,
     hasAcceptedTerms: ctx.hasAcceptedTerms,
     stripeError,
+    isDeveloper,
   });
 };

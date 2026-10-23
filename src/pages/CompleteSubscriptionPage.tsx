@@ -16,7 +16,7 @@ export default function CompleteSubscriptionPage(): JSX.Element {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    document.title = 'Complete your subscription — Airfield Central'
+    document.title = 'Complete your subscription - Airfield Central'
     let cancelled = false
     fetch('/api/tenant/me')
       .then((response) => (response.ok ? response.json() : null))

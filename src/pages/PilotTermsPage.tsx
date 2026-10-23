@@ -8,7 +8,7 @@ import { PILOT_TERMS_TITLE, pilotTermsMarkdown } from '../content/legalTerms'
 // shared chrome/deploy-reachability notes.
 export default function PilotTermsPage(): JSX.Element {
   useEffect(() => {
-    document.title = `${PILOT_TERMS_TITLE} — AirfieldCentral`
+    document.title = `${PILOT_TERMS_TITLE} - AirfieldCentral`
   }, [])
 
   return <LegalPageLayout title={PILOT_TERMS_TITLE} markdown={pilotTermsMarkdown} activePage="pilot-terms" />

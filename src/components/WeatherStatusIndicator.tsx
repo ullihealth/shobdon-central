@@ -60,7 +60,7 @@ export default function WeatherStatusIndicator({ hideIcon = false, textColorOver
   // numbers on screen are the substituted mock fixture, not real data -
   // that must never be labelled as if it were the selected live source.
   const { emoji, label } = weatherLocationNotSet
-    ? { emoji: '🔴', label: 'WEATHER LOCATION NOT SET — SET IT IN WEATHER CONFIG' }
+    ? { emoji: '🔴', label: 'WEATHER LOCATION NOT SET - SET IT IN WEATHER CONFIG' }
     : liveDataUnavailable
     ? { emoji: '🔴', label: 'NO LIVE READING' }
     : activeProvider === 'atc'

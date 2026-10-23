@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { authClient } from '../lib/auth/authClient'
 
 const MIN_PASSWORD_LENGTH = 8
 
 export default function AccountPage(): JSX.Element {
-  const navigate = useNavigate()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -55,7 +53,7 @@ export default function AccountPage(): JSX.Element {
   async function handleLogout() {
     setLoggingOut(true)
     await authClient.signOut()
-    navigate('/login')
+    window.location.assign('/login') // full page load, see RequireAuth.tsx
   }
 
   return (

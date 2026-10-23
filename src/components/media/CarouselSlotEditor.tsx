@@ -389,7 +389,7 @@ function slotSourceLabel(slot: CarouselSlot, files: MediaLibraryFile[], cameraOp
   }
   if (slot.mediaType === 'gyropedia') return 'Gyropedia Departures/Arrivals'
   if (slot.mediaType === 'website') return slot.externalUrl || 'Website (no URL set)'
-  return files.find((f) => f.id === slot.mediaLibraryId)?.filename ?? '— none —'
+  return files.find((f) => f.id === slot.mediaLibraryId)?.filename ?? '(none)'
 }
 
 // Compact always-visible list of all 12 slots - replaces the old grid of
@@ -612,7 +612,7 @@ function CarouselSlotEditor({
   if (slot.isReserved) {
     return (
       <div className="rounded-xl border border-border bg-card p-5">
-        <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber} — Reserved by AirfieldCentral</div>
+        <div className="mb-2 text-sm font-bold uppercase tracking-widest text-accent-sky-400">Slot {slot.slotNumber} - Reserved by AirfieldCentral</div>
         <p className="text-sm text-muted-400">
           This slot is reserved for AirfieldCentral marketing/ad content and isn't editable here.
         </p>
@@ -631,7 +631,7 @@ function CarouselSlotEditor({
           onChange={(event) => onSourceChange(event.target.value)}
           className="rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
         >
-          <option value="">— none —</option>
+          <option value="">(none)</option>
           {/* Zero-config data feed - no file/camera picker needed, unlike
               every other option here. Available to every tenant except
               one with gyropediaDisabled set (migration 0110, Tiger

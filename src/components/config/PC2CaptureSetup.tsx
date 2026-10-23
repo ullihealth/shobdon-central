@@ -92,7 +92,7 @@ export default function PC2CaptureSetup(): JSX.Element {
       )}
       {refreshStatus === 'error' && (
         <p className="mb-4 text-sm font-semibold text-status-bad">
-          ❌ Could not reach the refresh trigger — check connectivity and try again.
+          ❌ Could not reach the refresh trigger - check connectivity and try again.
         </p>
       )}
 

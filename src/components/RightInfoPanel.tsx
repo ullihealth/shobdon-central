@@ -516,7 +516,7 @@ function NotamsPanel({ notices, compact = false }: { notices: SafetyNotice[]; co
       </div>
       {hiddenCount > 0 && (
         <div className={`flex-shrink-0 font-bold text-status-bad ${compact ? 'text-sm' : 'text-lg'}`}>
-          +{hiddenCount} more — see /atc-control
+          +{hiddenCount} more - see /atc-control
         </div>
       )}
       {hiddenCount === 0 && notices.length > 0 && (
@@ -525,7 +525,7 @@ function NotamsPanel({ notices, compact = false }: { notices: SafetyNotice[]; co
           className={`invisible absolute left-0 top-0 font-bold ${compact ? 'text-sm' : 'text-lg'}`}
           aria-hidden="true"
         >
-          +{notices.length} more — see /atc-control
+          +{notices.length} more - see /atc-control
         </div>
       )}
     </div>

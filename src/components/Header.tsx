@@ -252,7 +252,7 @@ export default function Header({
         // so nothing should look clickable.
         if (subdomainConfirmedDown) {
           return (
-            <div className="flex min-w-0" title="Your dashboard URL isn't live yet — contact support">
+            <div className="flex min-w-0" title="Your dashboard URL isn't live yet - contact support">
               {headerLinkContent}
             </div>
           )
@@ -297,7 +297,7 @@ export default function Header({
       <div className="flex-shrink-0 flex flex-col items-center sm:absolute sm:left-1/2 sm:-translate-x-1/2">
         <div className="text-lg font-extrabold text-primary sm:text-5xl">{timeString}</div>
         <div className="hidden text-sm font-medium text-muted-300 leading-tight sm:block">
-          {subdomainConfirmedDown ? "Your dashboard URL isn't live yet — contact support" : `Last updated ${lastUpdatedString}`}
+          {subdomainConfirmedDown ? "Your dashboard URL isn't live yet - contact support" : `Last updated ${lastUpdatedString}`}
         </div>
       </div>
 

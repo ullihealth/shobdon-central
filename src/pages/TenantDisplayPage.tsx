@@ -85,7 +85,7 @@ export default function TenantDisplayPage(): JSX.Element {
         if (data?.theme) setThemeOverride(data.theme as CSSProperties)
         if (data?.airfieldName) {
           setAirfieldName(data.airfieldName as string)
-          document.title = `${data.airfieldName} — Airfield Central`
+          document.title = `${data.airfieldName} - Airfield Central`
         }
         if (data?.logoUrl) setLogoUrl(data.logoUrl as string)
         if (data?.brandDisplay) setBrandDisplay(data.brandDisplay)

@@ -50,7 +50,7 @@
 // accepted as a parameter here for symmetry/future use but genuinely does
 // not change the result for any code in this range.
 export function weatherIconFor(code: number | undefined, isDaytime?: boolean): string {
-  if (code === undefined) return '–'
+  if (code === undefined) return '-'
   switch (code) {
     case 0: return '🌙' // Clear night
     case 1: return '☀️' // Sunny day

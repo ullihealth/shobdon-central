@@ -22,6 +22,10 @@ interface Env extends StripeEnv {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const auth = await requireOwner(request, env);
   if ("error" in auth) return auth.error;
+  // Developers / platform admins can VIEW a tenant's billing (status.ts) but must never
+  // act as the tenant: no checkout and no billing portal.
+  const dev = await env.DB.prepare("SELECT developer FROM user WHERE id = ?").bind(auth.userId).first<{ developer: number }>();
+  if (dev?.developer) return jsonResponse({ error: "Developers cannot start a checkout on behalf of a tenant.", code: "developer_read_only" }, 403);
   const ctx = await loadBillingContext(env.DB, auth.membership.organizationId, auth.userId);
   if (!ctx) return jsonResponse({ error: "Tenant not found" }, 404);
 

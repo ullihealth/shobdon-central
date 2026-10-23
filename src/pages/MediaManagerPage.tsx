@@ -118,7 +118,7 @@ export default function MediaManagerPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Dashboard Manager — Airfield Central'
+    document.title = 'Dashboard Manager - Airfield Central'
   }, [])
 
   const [files, setFiles] = useState<MediaLibraryFile[]>([])

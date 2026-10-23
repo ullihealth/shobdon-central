@@ -264,7 +264,7 @@ export default function OnboardInvitePage(): JSX.Element {
         >
           <h1 className="mb-2 text-xl font-black uppercase tracking-wide text-primary">Choose your address</h1>
           <p className="mb-6 text-base text-muted-400">
-            Your dashboard will have its own unique web address — pick one below to get started.
+            Your dashboard will have its own unique web address - pick one below to get started.
           </p>
 
           <label className="mb-1 flex flex-col gap-1.5">

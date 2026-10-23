@@ -35,6 +35,7 @@ function isItemVisible(
   if (item.requireCafeEntitlement && !cafeEntitled) return false
   if (item.requireTvScheduleBox && !hasTvScheduleBox) return false
   if (item.requireDeveloper) return isDeveloper
+  if (item.allowDeveloper && isDeveloper) return true
   if (item.allowedRoles) return !!role && item.allowedRoles.includes(role)
   return true
 }

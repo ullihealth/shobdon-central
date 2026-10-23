@@ -276,7 +276,7 @@ function BoxCard({ box, onChange }: { box: TvScheduleBox; onChange: (patch: Part
 
 export default function TvSchedulePage(): JSX.Element {
   useEffect(() => {
-    document.title = 'TV Schedule — Airfield Central'
+    document.title = 'TV Schedule - Airfield Central'
   }, [])
 
   const [boxes, setBoxes] = useState<TvScheduleBox[]>([])

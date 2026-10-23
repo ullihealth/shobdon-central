@@ -39,7 +39,7 @@ export default function MembersPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Members — Airfield Central'
+    document.title = 'Members - Airfield Central'
   }, [])
 
   const [members, setMembers] = useState<TenantMember[]>([])
@@ -128,7 +128,7 @@ export default function MembersPage(): JSX.Element {
             <CopyButton text={revealedPassword.password} />
           </div>
           <p className="text-xs text-status-bad">
-            Copy this now — it won't be shown again. Share it with them directly (not email/chat, if you can
+            Copy this now - it won't be shown again. Share it with them directly (not email/chat, if you can
             help it).
           </p>
           <button

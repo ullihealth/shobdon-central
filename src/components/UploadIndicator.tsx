@@ -40,7 +40,7 @@ export default function UploadIndicator(): JSX.Element | null {
 
   const label =
     status === 'uploading'
-      ? `Uploading ${filename} — ${percent}%`
+      ? `Uploading ${filename} - ${percent}%`
       : status === 'success'
         ? `✅ ${filename} uploaded`
         : `❌ ${errorMessage ?? 'Upload failed'}`

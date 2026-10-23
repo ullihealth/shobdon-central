@@ -61,8 +61,8 @@ const SEVERITY_STYLES: Record<string, string> = {
 }
 
 function formatWind(w: WeatherListing): string {
-  if (w.windSpeedKt == null) return '—'
-  const dir = w.windDirDeg != null ? `${Math.round(w.windDirDeg)}°` : '—'
+  if (w.windSpeedKt == null) return '-'
+  const dir = w.windDirDeg != null ? `${Math.round(w.windDirDeg)}°` : '-'
   const gust = w.windGustKt != null ? ` (gust ${Math.round(w.windGustKt)}kt)` : ''
   return `${dir} ${Math.round(w.windSpeedKt)}kt${gust}`
 }
@@ -83,14 +83,14 @@ function WeatherBlock({ weather }: { weather: WeatherListing }): JSX.Element {
           <span className="text-slate-500">Wind</span> {formatWind(weather)}
         </div>
         <div>
-          <span className="text-slate-500">QNH</span> {weather.qnhHpa != null ? `${Math.round(weather.qnhHpa)} hPa` : '—'}
+          <span className="text-slate-500">QNH</span> {weather.qnhHpa != null ? `${Math.round(weather.qnhHpa)} hPa` : '-'}
         </div>
         <div>
-          <span className="text-slate-500">Temp</span> {weather.tempC != null ? `${Math.round(weather.tempC)}°C` : '—'}
+          <span className="text-slate-500">Temp</span> {weather.tempC != null ? `${Math.round(weather.tempC)}°C` : '-'}
         </div>
         <div>
           <span className="text-slate-500">Visibility</span>{' '}
-          {weather.visibilityM != null ? `${(weather.visibilityM / 1000).toFixed(1)}km` : '—'}
+          {weather.visibilityM != null ? `${(weather.visibilityM / 1000).toFixed(1)}km` : '-'}
         </div>
       </div>
     </div>
@@ -170,7 +170,7 @@ export default function GlobalDashboardPage(): JSX.Element {
     <div className="min-h-screen w-screen bg-slate-950 px-6 py-10 text-slate-100">
       <div className="mx-auto max-w-4xl">
         <header className="mb-8">
-          <h1 className="text-2xl font-bold">Airfield Central — Public Conditions</h1>
+          <h1 className="text-2xl font-bold">Airfield Central - Public Conditions</h1>
           <p className="mt-1 text-sm text-slate-400">
             Live weather and operational status from participating airfields.
           </p>

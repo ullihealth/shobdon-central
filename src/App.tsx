@@ -372,7 +372,7 @@ export default function App(): JSX.Element {
           <Route
             path="/billing"
             element={
-              <RequireAuth requireRole={['owner', 'admin']}>
+              <RequireAuth requireRole={['owner', 'admin']} allowDeveloper>
                 <BillingPage />
               </RequireAuth>
             }

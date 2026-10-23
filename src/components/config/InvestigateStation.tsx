@@ -13,8 +13,8 @@ const CHECKS: CheckDefinition[] = [
     href: 'https://192.168.2.1/disp/adisp.php',
     presets: [
       '✅ Loaded fine',
-      '⚠️ Certificate warning — clicked through, same page loaded',
-      "⚠️ Certificate warning — didn't click through",
+      '⚠️ Certificate warning - clicked through, same page loaded',
+      "⚠️ Certificate warning - didn't click through",
       "❌ Couldn't connect",
       '❓ Something else',
     ],
@@ -85,7 +85,7 @@ export default function InvestigateStation(): JSX.Element {
               </div>
               {logged && (
                 <p className={`mt-1 text-xs ${logged.ok ? 'text-green-400' : 'text-red-400'}`}>
-                  {logged.ok ? `✓ Logged: ${logged.label}` : `⚠️ Could not log "${logged.label}" — check connectivity.`}
+                  {logged.ok ? `✓ Logged: ${logged.label}` : `⚠️ Could not log "${logged.label}" - check connectivity.`}
                 </p>
               )}
             </div>

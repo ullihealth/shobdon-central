@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ActivateSubscription } from '../components/admin/ActivateSubscription'
 import { findPricingPlan, formatGBP } from '../config/pricing'
+import { customerStatusLabel } from '../utils/billingStatus'
 
 const BILLING_STATUS_URL = '/api/tenant/billing/status'
 const BILLING_PORTAL_URL = '/api/tenant/billing/portal'
@@ -33,19 +34,12 @@ interface BillingStatus {
   hasMediaBoxConsent: boolean
   hasAcceptedTerms: boolean
   stripeError: boolean
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  trial: 'Trial',
-  past_due: 'Payment overdue',
-  cancelled: 'Cancelled',
-  comped: 'Complimentary',
-  pending: 'Awaiting payment',
+  // A developer / platform admin viewing this tenant's billing: read-only (no checkout, no portal).
+  isDeveloper?: boolean
 }
 
 function formatDate(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
 }
 
 function formatMoney(value: number, currency: string): string {
@@ -78,7 +72,7 @@ export default function BillingPage(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    document.title = 'Billing — Airfield Central'
+    document.title = 'Billing - Airfield Central'
     load()
   }, [load])
 
@@ -121,11 +115,11 @@ export default function BillingPage(): JSX.Element {
       {status && (
         <div className="flex flex-col gap-6">
           {justPaid && !status.hasStripeSubscription && (
-            <p className="rounded-xl border border-border bg-slate-900/60 px-4 py-3 text-sm text-slate-300">Thanks — we're confirming your payment…</p>
+            <p className="rounded-xl border border-border bg-slate-900/60 px-4 py-3 text-sm text-slate-300">Thanks - we're confirming your payment…</p>
           )}
           {status.paymentReceived && (
             <p role="status" className="rounded-xl border border-status-good/40 bg-status-good/10 px-4 py-3 text-sm font-semibold text-status-good">
-              Payment received — your account will be reactivated shortly.
+              Payment received - your account will be reactivated shortly.
             </p>
           )}
 
@@ -140,8 +134,7 @@ export default function BillingPage(): JSX.Element {
               </div>
               <div>
                 <div className={label}>Status</div>
-                <div className="mt-1 text-base font-bold text-white">{STATUS_LABELS[status.subscriptionStatus] ?? status.subscriptionStatus}</div>
-                {!status.tenantActive && <div className="text-sm text-status-warn">Account on hold</div>}
+                <div className="mt-1 text-base font-bold text-white">{customerStatusLabel(status)}</div>
                 {status.cancelAtPeriodEnd && <div className="text-sm text-status-warn">Ends at the end of this period</div>}
               </div>
               <div>
@@ -152,29 +145,36 @@ export default function BillingPage(): JSX.Element {
             {status.stripeError && <p className="mt-4 text-xs text-muted-500">Live billing details from Stripe are unavailable right now.</p>}
           </section>
 
-          <section className={card}>
-            {status.hasStripeCustomer ? (
-              <>
-                <button
-                  type="button"
-                  onClick={openPortal}
-                  disabled={openingPortal}
-                  className="rounded-lg bg-accent-sky-500 px-5 py-3 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
-                >
-                  {openingPortal ? 'Opening…' : 'Update card / manage billing'}
-                </button>
-                <p className="mt-2 text-xs text-muted-500">Opens Stripe's secure billing portal.</p>
-                {portalError && <p className="mt-2 text-sm font-semibold text-status-bad">{portalError}</p>}
-              </>
-            ) : status.paymentReceived || status.hasStripeSubscription ? null : (
-              <ActivateSubscription
-                hasAcceptedTerms={status.hasAcceptedTerms}
-                includesMediaBox={status.includesMediaBox}
-                hasMediaBoxConsent={status.hasMediaBoxConsent}
-                onChanged={load}
-              />
-            )}
-          </section>
+          {(status.isDeveloper || status.hasStripeCustomer || !(status.paymentReceived || status.hasStripeSubscription)) && (
+            <section className={card}>
+              {status.isDeveloper ? (
+                // Developers / platform admins can SEE a tenant's billing but never act as the tenant.
+                <p className="text-sm text-muted-400">
+                  Read-only view for developers. Checkout and the billing portal are only available to the tenant's own owner or admin.
+                </p>
+              ) : status.hasStripeCustomer ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={openPortal}
+                    disabled={openingPortal}
+                    className="rounded-lg bg-accent-sky-500 px-5 py-3 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-accent-sky-400 disabled:opacity-50"
+                  >
+                    {openingPortal ? 'Opening...' : 'Update card / manage billing'}
+                  </button>
+                  <p className="mt-2 text-xs text-muted-500">Opens Stripe's secure billing portal.</p>
+                  {portalError && <p className="mt-2 text-sm font-semibold text-status-bad">{portalError}</p>}
+                </>
+              ) : (
+                <ActivateSubscription
+                  hasAcceptedTerms={status.hasAcceptedTerms}
+                  includesMediaBox={status.includesMediaBox}
+                  hasMediaBoxConsent={status.hasMediaBoxConsent}
+                  onChanged={load}
+                />
+              )}
+            </section>
+          )}
 
           <section className={card}>
             <div className={`mb-3 ${label}`}>Recent invoices</div>
@@ -197,7 +197,7 @@ export default function BillingPage(): JSX.Element {
                       <td className="py-2 text-slate-300">{formatDate(invoice.created)}</td>
                       <td className="py-2 text-slate-300">{invoice.number ?? invoice.id}</td>
                       <td className="py-2 text-slate-300">{formatMoney(invoice.amountPaid, invoice.currency)}</td>
-                      <td className="py-2 capitalize text-slate-300">{invoice.status ?? '—'}</td>
+                      <td className="py-2 capitalize text-slate-300">{invoice.status ?? '-'}</td>
                       <td className="py-2 text-right">
                         {invoice.hostedUrl && (
                           <a href={invoice.hostedUrl} target="_blank" rel="noopener noreferrer" className="text-accent-sky-400 hover:underline">

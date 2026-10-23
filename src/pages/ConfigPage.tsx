@@ -16,7 +16,7 @@ export default function ConfigPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Weather Config — Airfield Central'
+    document.title = 'Weather Config - Airfield Central'
   }, [])
 
   // Starts with the synchronous local value (unchanged, no blank flash),
@@ -217,7 +217,7 @@ export default function ConfigPage(): JSX.Element {
       {weatherShare && (
         <div className="mb-6 rounded-2xl border border-accent-sky-500/30 bg-accent-sky-500/10 px-6 py-4 text-sm text-slate-200">
           Currently using <span className="font-semibold text-accent-sky-400">{weatherShare.sourceTenantName}</span>&apos;s
-          weather station — configured by your platform administrator.
+          weather station - configured by your platform administrator.
         </div>
       )}
 

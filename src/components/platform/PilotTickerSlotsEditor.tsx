@@ -38,7 +38,7 @@ function parseSlotOptionValue(value: string): Partial<TickerSlot> {
 
 function buildSlotOptions(notices: SafetyNotice[]): { value: string; label: string }[] {
   return [
-    { value: '', label: '— None —' },
+    { value: '', label: '(None)' },
     { value: 'clock', label: 'Clock / Date' },
     { value: 'forecast', label: '6-Hour Met Office Forecast' },
     { value: 'conditions', label: 'Current Conditions (Temp / Wind)' },

@@ -38,3 +38,6 @@ Before proposing or making any change, first find and report what already exists
 Treat existing behaviour as intentional unless I say otherwise.
 STOP and ask me before removing, replacing or bypassing anything that is documented as deliberate, or anything that is part of my manual processes (e.g. revision releases, the Pilot's App update system - see README "Pilot's App updates", approval gates).
 Fix only the problem I describe, at the size I describe it - do not extend a fix to other routes, devices or tenants unless I ask.
+
+## No long dashes in customer-facing text
+Never use em dashes (—) or en dashes (–) in any text a customer, pilot or member of the public can see (UI, messages, emails, display screens, Pi box pages). Use a plain hyphen with spaces ( - ) or rewrite the sentence. Code comments are exempt.

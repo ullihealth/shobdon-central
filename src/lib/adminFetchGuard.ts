@@ -1,4 +1,5 @@
 import { isSubscriptionInactiveResponse } from '../utils/subscriptionLock'
+import { installUnsavedWorkGuard, isTrackedWrite, noteWriteEnd, noteWriteStart } from './unsavedWorkGuard'
 
 // Central handling of the two server answers that mean "this admin tab can't
 // carry on": 401 (session revoked / expired - e.g. "Log everyone out", Suspend)
@@ -17,6 +18,7 @@ export const SUBSCRIPTION_INACTIVE_EVENT = 'aic:subscription-inactive'
 
 let installCount = 0
 let originalFetch: typeof window.fetch | null = null
+let uninstallUnsaved: (() => void) | null = null
 
 function requestPath(input: RequestInfo | URL): string | null {
   try {
@@ -32,9 +34,22 @@ export function installAdminFetchGuard(): () => void {
   installCount += 1
   if (installCount === 1) {
     originalFetch = window.fetch.bind(window)
+    uninstallUnsaved = installUnsavedWorkGuard()
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const response = await (originalFetch as typeof window.fetch)(input, init)
       const path = requestPath(input)
+      // Saves / uploads in flight make the tab "busy" for the new-version check
+      // (lib/unsavedWorkGuard.ts); a successful one clears its "unsaved edits" flag.
+      const method = init?.method ?? (typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET')
+      const tracked = !!path && isTrackedWrite(method, path)
+      if (tracked) noteWriteStart()
+      let response: Response
+      try {
+        response = await (originalFetch as typeof window.fetch)(input, init)
+      } catch (error) {
+        if (tracked) noteWriteEnd(false)
+        throw error
+      }
+      if (tracked) noteWriteEnd(response.ok)
       if (path && path.startsWith('/api/tenant/')) {
         if (response.status === 401) {
           window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
@@ -55,6 +70,8 @@ export function installAdminFetchGuard(): () => void {
     if (installCount === 0 && originalFetch) {
       window.fetch = originalFetch
       originalFetch = null
+      uninstallUnsaved?.()
+      uninstallUnsaved = null
     }
   }
 }

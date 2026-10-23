@@ -203,7 +203,7 @@ function PilotViewContent({
           itself says pilots aren't asked to accept anything - this is
           informational only, matching that). */}
       <p className="mx-auto mt-2 max-w-lg px-4 text-center text-xs leading-snug text-slate-400">
-        Information only — not for flight planning.
+        Information only - not for flight planning.
       </p>
 
       {/* Data-freshness safety net (dataStale, WeatherContext.tsx) -
@@ -503,7 +503,7 @@ export default function PilotViewPage(): JSX.Element {
         if (!data) return
         if (data.airfieldName) {
           setAirfieldName(data.airfieldName)
-          document.title = `${data.airfieldName} — Pilot View`
+          document.title = `${data.airfieldName} - Pilot View`
         }
         if (data.logoUrl) setLogoUrl(data.logoUrl)
         if (data.afiso) {

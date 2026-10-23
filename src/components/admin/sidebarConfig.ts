@@ -35,6 +35,9 @@ export interface SidebarItem {
   label: string
   allowedRoles?: MemberRole[]
   requireDeveloper?: boolean
+  // Visible to developers / platform admins on every tenant IN ADDITION to allowedRoles
+  // (read-only pages, e.g. Billing).
+  allowDeveloper?: boolean
   requireCafeEntitlement?: boolean
   hideForTenantType?: TenantType[]
   // Tenant-facing TV schedule round (migration 0115) - same orthogonal,
@@ -136,7 +139,7 @@ export const SIDEBAR_GROUPS: SidebarGroupConfig[] = [
       // App product (bundled into the aviation "Airfield Pack"), not
       // something a standalone venue tenant has.
       { to: '/pilot-panel', label: 'Pilot Panel', allowedRoles: ['owner', 'admin', 'atc'], hideForTenantType: ['venue_cafe'] },
-      { to: '/billing', label: 'Billing', allowedRoles: ['owner', 'admin'] },
+      { to: '/billing', label: 'Billing', allowedRoles: ['owner', 'admin'], allowDeveloper: true },
     ],
   },
   // Formerly an 11-item "Platform Admin" group listing every /platform/*

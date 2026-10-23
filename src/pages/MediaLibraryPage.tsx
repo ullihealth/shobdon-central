@@ -621,7 +621,7 @@ export default function MediaLibraryPage(): JSX.Element {
   // Static title - this page had no document.title of its own, so its
   // tab was permanently stuck on index.html's generic default.
   useEffect(() => {
-    document.title = 'Media Library — Airfield Central'
+    document.title = 'Media Library - Airfield Central'
   }, [])
 
   const [files, setFiles] = useState<MediaLibraryFile[]>([])

@@ -88,7 +88,7 @@ export default function PreviewBanner(): JSX.Element | null {
         pointerEvents: 'none',
       }}
     >
-      Preview — not the live site ({window.location.hostname})
+      Preview - not the live site ({window.location.hostname})
     </div>
   )
 }

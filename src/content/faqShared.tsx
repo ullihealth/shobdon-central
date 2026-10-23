@@ -24,7 +24,7 @@ export function FaqSubheading({ title, children }: { title: string; children: JS
 }
 
 export const SUPPORT_EMAIL = 'support@airfieldcentral.com'
-export const DISCLAIMER = 'Information only — not for flight planning. Always check official sources.'
+export const DISCLAIMER = 'Information only - not for flight planning. Always check official sources.'
 
 // Answer content for the newer, longer sections below is plain data
 // (strings, no JSX) so apostrophes/quotes need no escaping and the copy is

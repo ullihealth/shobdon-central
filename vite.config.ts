@@ -3,8 +3,24 @@ import react from '@vitejs/plugin-react'
 import { frontmanPlugin } from '@frontman-ai/vite';
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Build id of THIS build: baked into the bundle (__BUILD_ID__) and published, uncached,
+// as /version.json, so an admin tab that has been open for days can tell it is out of
+// date (src/lib/appVersion.ts). The commit SHA when one is available - the GitHub
+// Actions Worker deploy (GITHUB_SHA) and the Cloudflare Pages build (CF_PAGES_COMMIT_SHA)
+// of the same commit therefore publish the SAME id - else a unique per-build value for
+// local builds. Computed here (not in a separate script) so EVERY build path that runs
+// `vite build` gets it, whatever command the Pages dashboard uses.
+const BUILD_ID = (process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || '').slice(0, 12) || `local-${Date.now()}`
+
 export default defineConfig({
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [
+    {
+      name: 'emit-version-json',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ buildId: BUILD_ID }) })
+      },
+    },
     frontmanPlugin({ host: 'api.frontman.sh' }), react(),
     // Kiosk offline-resilience round - lets a Pi kiosk render its last-
     // successfully-loaded dashboard instead of a blank/error page when

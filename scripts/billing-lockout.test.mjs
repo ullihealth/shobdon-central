@@ -88,7 +88,8 @@ test('plans: Pack includes the Media Box (consent required), Pilot\'s App does n
 test('billing routes: owner/admin only, tenant from the session, consent re-checked, no key in responses', () => {
   for (const f of ['status', 'checkout', 'portal']) {
     const src = read(`functions/api/tenant/billing/${f}.ts`);
-    assert.match(src, /requireOwner\(request, env\)/, f);
+    // status = owner/admin OR a developer (read-only); checkout/portal = owner/admin and never a developer
+    assert.match(src, f === 'status' ? /requireTenant\(request, env\)[\s\S]*\["owner", "admin"\]/ : /requireOwner\(request, env\)/, f);
     assert.ok(!/request\.json\(\)/.test(src.replace(/\/\/.*$/gm, '')), `${f}: tenant/plan never read from the request body`);
     assert.ok(!/STRIPE_SECRET_KEY/.test(src), `${f}: no direct key use`);
   }
@@ -114,7 +115,7 @@ test('payment never resumes a tenant: no billing code writes tenants.active; web
 test('Platform Tenants badge: only a SUSPENDED tenant with an active Stripe subscription', () => {
   const page = read('src/pages/PlatformTenantsPage.tsx');
   assert.match(page, /return !tenant\.active && tenant\.subscriptionStatus === 'active' && !!tenant\.hasStripeSubscription/);
-  assert.match(page, /Paid — awaiting Resume/);
+  assert.match(page, /Paid — awaiting Resume/); // developer-only page: unchanged
   assert.match(read('functions/api/platform/tenants/index.ts'), /\(stripe_subscription_id IS NOT NULL\) AS hasStripeSubscription/);
 });
 
@@ -123,7 +124,7 @@ test('takeover content, links and the "Payment received" state', () => {
   const t = read('src/components/admin/SubscriptionTakeover.tsx');
   assert.match(t, /Your subscription isn't active/);
   assert.match(t, /Activate your subscription to restore your dashboard, media screen and Pilot's App\./);
-  assert.match(t, /Payment received — your account will be reactivated shortly\./);
+  assert.match(t, /Payment received - your account will be reactivated shortly\./);
   assert.match(t, /sub\?\.paymentReceived \?/);
   assert.match(t, /mailto:support@airfieldcentral\.com/);
   for (const label of ['Billing', 'My Account', 'Contact support', 'Log out']) assert.ok(t.includes(label), label);
@@ -146,7 +147,7 @@ test('central fetch guard: only same-origin /api/tenant/*, never alters the resp
 
 test('billing page + sidebar entry are owner/admin only and reachable while locked', () => {
   assert.match(read('src/App.tsx'), /path="\/billing"[\s\S]*requireRole=\{\['owner', 'admin'\]\}[\s\S]*<BillingPage \/>/);
-  assert.match(read('src/components/admin/sidebarConfig.ts'), /\{ to: '\/billing', label: 'Billing', allowedRoles: \['owner', 'admin'\] \}/);
+  assert.match(read('src/components/admin/sidebarConfig.ts'), /\{ to: '\/billing', label: 'Billing', allowedRoles: \['owner', 'admin'\], allowDeveloper: true \}/);
   const b = read('src/pages/BillingPage.tsx');
   for (const text of ['Update card / manage billing', 'Recent invoices', 'Next payment']) assert.ok(b.includes(text), text);
 });

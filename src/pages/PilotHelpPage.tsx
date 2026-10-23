@@ -92,7 +92,7 @@ const SECTIONS: { key: string; title: string; content: () => ReactNode }[] = [
 
 export default function PilotHelpPage() {
   useEffect(() => {
-    document.title = `Pilot's App Help — AirfieldCentral`
+    document.title = `Pilot's App Help - AirfieldCentral`
   }, [])
 
   // One section open at a time: opening one closes any other, tapping the
